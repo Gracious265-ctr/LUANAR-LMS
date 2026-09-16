@@ -19,11 +19,11 @@ The system should be designed so that organization-specific infrastructure can b
 | Styling | Tailwind CSS | Frontend styling and responsive layouts |
 | Backend | Django | Core application logic, business rules, workflow processing, and server-side operations |
 | API | Django REST Framework | Provides API endpoints consumed by the Next.js frontend |
-| Database | PostgreSQL | Stores structured application data, users, leave applications, workflows, approvals, configuration, and audit records |
+| Database | PostgreSQL | Stores structured application data, users, leave applications, workflows, approvals, configuration, and audit records; also backs the background-job queue (Django-Q2 ORM broker), so no separate broker service is required |
 | Authentication | Django authentication / LUANAR institutional authentication* | Authenticates users and establishes their system identity |
 | File Storage | supabase | Stores supporting documents and generated approved leave documents; organization infrastructure must be investigated before final selection |
-| Cache | redis | Temporary caching and performance-related data if required |
-| Background Processing | celery | Handles operations that should not block normal web requests, such as document generation or email processing |
+| Cache | Django local-memory cache (dev) | Temporary caching and performance-related data if required; production cache technology remains TBD (no Redis dependency introduced for this) |
+| Background Processing | Django-Q2 (ORM broker) | Handles operations that should not block normal web requests, such as document generation or email processing; uses Postgres as the broker, no Redis dependency |
 | Email | smtp | Sends application, approval, rejection, correction, delegation, cancellation, and final-approval notifications |
 
 \* Final technologies that depend on LUANAR's existing infrastructure must be confirmed before production deployment.
@@ -379,7 +379,7 @@ Potential background operations include:
 * Synchronizing public-holiday information.
 * Other integrations introduced during implementation.
 
-The background-processing technology is currently **TBD**.
+The background-processing technology is **Django-Q2**, using Postgres as its ORM-based broker (no Redis dependency).
 
 Background jobs must not become the authoritative source of business state. Important state transitions must be persisted in the database.
 
@@ -548,8 +548,8 @@ The following decisions are intentionally left open until the relevant LUANAR in
 | Production database infrastructure       | TBD    |
 | Institutional identity provider          | TBD    |
 | Employee-data source/integration         | TBD    |
-| Cache technology                         | TBD    |
-| Background-job technology                | TBD    |
+| Cache technology                         | TBD (dev uses Django's local-memory cache; no Redis dependency) |
+| Background-job technology                | Confirmed: Django-Q2, Postgres as ORM broker (no Redis) |
 | Email provider/institutional mail system | TBD    |
 | Public-holiday data source and fallback  | TBD    |
 | Personal-file/document integration       | TBD    |
