@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
@@ -45,10 +46,21 @@ const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 const HOD_AND_ABOVE = ["hod", "dean", "registrar", "dvc"];
 const HR_ROLE = "hr";
 
+function getSelectedTitle(pathname: string): string {
+  if (pathname === "/dashboard") return "Dashboard";
+  if (pathname.startsWith("/dashboard/leave/drafts")) return "My Applications";
+  if (pathname.startsWith("/dashboard/leave")) return "New Application";
+  if (pathname.startsWith("/dashboard/approvals")) return "Approvals";
+  if (pathname.startsWith("/dashboard/department")) return "Department";
+  if (pathname.startsWith("/dashboard/hr-admin")) return "HR Administration";
+  if (pathname.startsWith("/dashboard/settings")) return "Settings";
+  return "Dashboard";
+}
+
 export function DashboardShell({ user, children }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selected, setSelected] = useState("Dashboard");
   const [isDark, setIsDark] = useState(false);
+  const pathname = usePathname();
 
   const showApprovals = APPROVER_ROLES.includes(user.role);
   const showDepartment = HOD_AND_ABOVE.includes(user.role);
@@ -78,8 +90,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         <Sidebar
           open={sidebarOpen}
           setOpen={setSidebarOpen}
-          selected={selected}
-          setSelected={setSelected}
+          pathname={pathname}
           user={user}
           showApprovals={showApprovals}
           showDepartment={showDepartment}
@@ -102,8 +113,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 function Sidebar({
   open,
   setOpen,
-  selected,
-  setSelected,
+  pathname,
   user,
   showApprovals,
   showDepartment,
@@ -111,13 +121,14 @@ function Sidebar({
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
-  selected: string;
-  setSelected: (v: string) => void;
+  pathname: string;
   user: User;
   showApprovals: boolean;
   showDepartment: boolean;
   showHR: boolean;
 }) {
+  const selected = getSelectedTitle(pathname);
+
   return (
     <nav
       className={cn(
@@ -134,23 +145,20 @@ function Sidebar({
           title="Dashboard"
           href="/dashboard"
           selected={selected}
-          setSelected={setSelected}
           open={open}
         />
         <Option
           Icon={FileText}
           title="My Applications"
-          href="/dashboard/my-applications"
+          href="/dashboard/leave/drafts"
           selected={selected}
-          setSelected={setSelected}
           open={open}
         />
         <Option
-          Icon={FileText}
+          Icon={Calendar}
           title="New Application"
-          href="/dashboard/new-application"
+          href="/dashboard/leave/new"
           selected={selected}
-          setSelected={setSelected}
           open={open}
         />
         {showApprovals && (
@@ -159,7 +167,6 @@ function Sidebar({
             title="Approvals"
             href="/dashboard/approvals"
             selected={selected}
-            setSelected={setSelected}
             open={open}
           />
         )}
@@ -169,7 +176,6 @@ function Sidebar({
             title="Department"
             href="/dashboard/department"
             selected={selected}
-            setSelected={setSelected}
             open={open}
           />
         )}
@@ -179,7 +185,6 @@ function Sidebar({
             title="HR Administration"
             href="/dashboard/hr-admin"
             selected={selected}
-            setSelected={setSelected}
             open={open}
           />
         )}
@@ -195,7 +200,6 @@ function Sidebar({
             title="Settings"
             href="/dashboard/settings"
             selected={selected}
-            setSelected={setSelected}
             open={open}
           />
         </div>
@@ -211,14 +215,12 @@ function Option({
   title,
   href,
   selected,
-  setSelected,
   open,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   title: string;
   href: string;
   selected: string;
-  setSelected: (v: string) => void;
   open: boolean;
 }) {
   const isSelected = selected === title;
@@ -226,7 +228,6 @@ function Option({
   return (
     <Link
       href={href}
-      onClick={() => setSelected(title)}
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-all duration-200",
         isSelected
@@ -330,7 +331,7 @@ function Header({
   setIsDark: (v: boolean) => void;
 }) {
   return (
-    <header className="flex items-center justify-between px-6 py-4 bg-surface-card border-b border-border-default shadow-subtle">
+    <header className="flex items-center justify-between px-6 py-4 bg-surface-card  shadow-subtle">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Leave Management</h1>
         <p className="text-sm text-text-secondary">Welcome back, {user.full_name}</p>
