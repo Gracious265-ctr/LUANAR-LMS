@@ -23,11 +23,13 @@ export interface LeaveApplication {
   documents: SupportingDocument[];
 }
 
-export async function getLeaveApplications(): Promise<{
+export async function getLeaveApplications(status?: string): Promise<{
   count: number;
   results: LeaveApplication[];
 }> {
-  const res = await fetch("/api/leave/leave-applications/", {
+  const url = new URL("/api/leave/leave-applications/", window.location.origin);
+  if (status) url.searchParams.set("status", status);
+  const res = await fetch(url.toString(), {
     credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to fetch applications");

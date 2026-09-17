@@ -16,12 +16,8 @@ export function useLeaveApplications(statusFilter?: string) {
     try {
       setLoading(true);
       setError(null);
-      const data = await getLeaveApplications();
-      let results = data.results;
-      if (statusFilter) {
-        results = results.filter((app) => app.status === statusFilter);
-      }
-      setApplications(results);
+      const data = await getLeaveApplications(statusFilter);
+      setApplications(data.results);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load applications");
     } finally {

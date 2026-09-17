@@ -6,7 +6,7 @@ from django.db.models import F
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -24,7 +24,11 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
-        return LeaveApplication.objects.filter(employee=self.request.user)
+        qs = LeaveApplication.objects.filter(employee=self.request.user)
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(employee=self.request.user, status=LeaveApplication.Status.DRAFT)
@@ -63,7 +67,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if instance.status != LeaveApplication.Status.DRAFT:
-            raise PermissionDenied("Submitted applications cannot be deleted.")
+            raise ValidationError("Submitted applications cannot be deleted.")
         for doc in instance.documents.all():
             try:
                 delete_document(doc.file_path)
@@ -167,11 +171,11 @@ class SupportingDocumentViewSet(viewsets.ModelViewSet):
             id=self.kwargs["application_pk"], employee=self.request.user
         )
         if application.status != LeaveApplication.Status.DRAFT:
-            raise PermissionDenied("Cannot upload documents to a submitted application.")
+            raise ValidationError("Cannot upload documents to a submitted application.")
 
         file = self.request.FILES.get("file")
         if not file:
-            raise PermissionDenied("No file provided.")
+            raise ValidationError("No file provided.")
 
         result = upload_document(file, str(application.id))
         serializer.save(
@@ -185,7 +189,7 @@ class SupportingDocumentViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         if instance.application.status != LeaveApplication.Status.DRAFT:
-            raise PermissionDenied("Cannot remove documents from a submitted application.")
+            raise ValidationError("Cannot remove documents from a submitted application.")
         try:
             delete_document(instance.file_path)
         except Exception:

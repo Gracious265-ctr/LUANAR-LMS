@@ -3,16 +3,25 @@
 import { useEffect, useState } from "react";
 
 import { type LeaveApplication, getLeaveApplication } from "@/lib/leave-api";
+import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { ReviewSummary } from "@/components/leave/ReviewSummary";
 
 export function ReviewSummaryClient({ applicationId }: { applicationId: string }) {
   const [application, setApplication] = useState<LeaveApplication | null>(null);
+  const [leaveTypeName, setLeaveTypeName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getLeaveApplication(applicationId)
-      .then(setApplication)
+    Promise.all([
+      getLeaveApplication(applicationId),
+      getLeaveTypes(),
+    ])
+      .then(([app, types]) => {
+        setApplication(app);
+        const match = types.find((t) => t.id === app.leave_type_id);
+        setLeaveTypeName(match?.name || `Type #${app.leave_type_id}`);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [applicationId]);
@@ -36,5 +45,5 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
 
   if (!application) return null;
 
-  return <ReviewSummary application={application} />;
+  return <ReviewSummary application={application} leaveTypeName={leaveTypeName} />;
 }

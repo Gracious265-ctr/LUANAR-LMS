@@ -153,7 +153,7 @@ class LeaveApplicationAPITest(TestCase):
             reason="Test",
         )
         response = self.client.delete(f"/api/v1/leave-applications/{app.id}/")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_preview_days(self):
         response = self.client.post(
@@ -286,7 +286,7 @@ class SupportingDocumentAPITest(TestCase):
             {"file": file},
             format="multipart",
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class UnauthenticatedAccessTest(TestCase):

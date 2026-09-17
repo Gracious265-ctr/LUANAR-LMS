@@ -331,7 +331,7 @@ function Header({
   setIsDark: (v: boolean) => void;
 }) {
   return (
-    <header className="flex items-center justify-between px-6 py-4 bg-surface-card  shadow-subtle">
+    <header className="flex items-center justify-between px-6 py-4 bg-surface-card border-b border-border-default shadow-subtle">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Leave Management</h1>
         <p className="text-sm text-text-secondary">Welcome back, {user.full_name}</p>

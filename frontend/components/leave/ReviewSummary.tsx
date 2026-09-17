@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,26 +14,18 @@ import {
   type LeaveApplication,
   submitLeaveApplication,
 } from "@/lib/leave-api";
-import { getLeaveTypes, type LeaveType } from "@/lib/services/leaveTypes";
 
 interface ReviewSummaryProps {
   application: LeaveApplication;
+  leaveTypeName: string;
 }
 
-export function ReviewSummary({ application }: ReviewSummaryProps) {
+export function ReviewSummary({ application, leaveTypeName }: ReviewSummaryProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [referenceNumber, setReferenceNumber] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [leaveTypeName, setLeaveTypeName] = useState<string>("");
-
-  useEffect(() => {
-    getLeaveTypes().then((types) => {
-      const match = types.find((t) => t.id === application.leave_type_id);
-      setLeaveTypeName(match?.name || `Type #${application.leave_type_id}`);
-    });
-  }, [application.leave_type_id]);
 
   const handleSubmit = async () => {
     setSubmitting(true);

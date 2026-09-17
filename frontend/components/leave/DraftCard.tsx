@@ -2,34 +2,20 @@
 
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { CalendarDays, FileText, Edit3, Trash2, CheckCircle2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { FileText, Edit3, Trash2, CheckCircle2 } from "lucide-react";
+import { useState } from "react";
 
 import { type LeaveApplication, deleteLeaveApplication } from "@/lib/leave-api";
-import { getLeaveTypes } from "@/lib/services/leaveTypes";
 
 interface DraftCardProps {
   application: LeaveApplication;
+  leaveTypeName: string;
   onDelete: (id: string) => void;
 }
 
-export function DraftCard({ application, onDelete }: DraftCardProps) {
+export function DraftCard({ application, leaveTypeName, onDelete }: DraftCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [leaveTypeName, setLeaveTypeName] = useState<string>(
-    application.leave_type_id ? `Type #${application.leave_type_id}` : "Not selected"
-  );
-
-  useEffect(() => {
-    if (!application.leave_type_id) {
-      setLeaveTypeName("Not selected");
-      return;
-    }
-    getLeaveTypes().then((types) => {
-      const match = types.find((t) => t.id === application.leave_type_id);
-      setLeaveTypeName(match?.name || `Type #${application.leave_type_id}`);
-    });
-  }, [application.leave_type_id]);
 
   const handleDelete = async () => {
     setDeleting(true);

@@ -2,12 +2,25 @@
 
 import { FileText, Plus } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
+import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { DraftCard } from "./DraftCard";
 
 export function DraftsList() {
   const { applications, loading, error, refetch } = useLeaveApplications("draft");
+  const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    getLeaveTypes().then((types) => {
+      const map: Record<number, string> = {};
+      for (const t of types) {
+        map[t.id] = t.name;
+      }
+      setLeaveTypeNames(map);
+    });
+  }, []);
 
   if (loading) {
     return (
@@ -71,7 +84,16 @@ export function DraftsList() {
       ) : (
         <div className="grid gap-4">
           {applications.map((app) => (
-            <DraftCard key={app.id} application={app} onDelete={refetch} />
+            <DraftCard
+              key={app.id}
+              application={app}
+              leaveTypeName={
+                app.leave_type_id != null
+                  ? leaveTypeNames[app.leave_type_id] || `Type #${app.leave_type_id}`
+                  : "Not selected"
+              }
+              onDelete={refetch}
+            />
           ))}
         </div>
       )}
