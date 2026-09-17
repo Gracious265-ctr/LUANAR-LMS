@@ -3,8 +3,10 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .serializers import LoginSerializer, UserSerializer
+from .throttles import LoginRateThrottle
 
 User = get_user_model()
 
@@ -13,6 +15,7 @@ class LoginView(APIView):
     """Authenticate user and return JWT tokens."""
 
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -40,28 +43,10 @@ class LoginView(APIView):
         )
 
 
-class RefreshView(APIView):
+class RefreshView(TokenRefreshView):
     """Refresh access token using refresh token."""
 
     permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        refresh_token = request.data.get("refresh")
-
-        if not refresh_token:
-            return Response(
-                {"detail": "Refresh token is required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            refresh = RefreshToken(refresh_token)
-            return Response({"access": str(refresh.access_token)})
-        except Exception:
-            return Response(
-                {"detail": "Invalid refresh token"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
 
 
 class MeView(APIView):

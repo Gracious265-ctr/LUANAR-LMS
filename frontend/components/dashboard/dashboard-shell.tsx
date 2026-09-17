@@ -1,21 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   Bell,
-  Calendar,
   ChevronDown,
   ChevronsRight,
   FileText,
   Home,
   LogOut,
-  Moon,
   Settings,
   ShieldCheck,
-  Sun,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
@@ -47,30 +45,18 @@ const HR_ROLE = "hr";
 
 export function DashboardShell({ user, children }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selected, setSelected] = useState("Dashboard");
-  const [isDark, setIsDark] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
 
   const showApprovals = APPROVER_ROLES.includes(user.role);
   const showDepartment = HOD_AND_ABOVE.includes(user.role);
   const showHR = user.role === HR_ROLE;
 
-  useEffect(() => {
-    const stored = localStorage.getItem("luanar-dark-mode");
-    if (stored !== null) {
-      setIsDark(stored === "true");
-    } else {
-      setIsDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("luanar-dark-mode", String(isDark));
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [isDark]);
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="flex h-screen">
@@ -78,8 +64,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         <Sidebar
           open={sidebarOpen}
           setOpen={setSidebarOpen}
-          selected={selected}
-          setSelected={setSelected}
+          currentPath={pathname}
           user={user}
           showApprovals={showApprovals}
           showDepartment={showDepartment}
@@ -87,11 +72,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header
-            user={user}
-            isDark={isDark}
-            setIsDark={setIsDark}
-          />
+          <Header user={user} onLogout={handleLogout} />
           <main className="flex-1 overflow-auto p-6">{children}</main>
         </div>
       </div>
@@ -102,8 +83,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 function Sidebar({
   open,
   setOpen,
-  selected,
-  setSelected,
+  currentPath,
   user,
   showApprovals,
   showDepartment,
@@ -111,8 +91,7 @@ function Sidebar({
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
-  selected: string;
-  setSelected: (v: string) => void;
+  currentPath: string;
   user: User;
   showApprovals: boolean;
   showDepartment: boolean;
@@ -133,24 +112,21 @@ function Sidebar({
           Icon={Home}
           title="Dashboard"
           href="/dashboard"
-          selected={selected}
-          setSelected={setSelected}
+          currentPath={currentPath}
           open={open}
         />
         <Option
           Icon={FileText}
           title="My Applications"
           href="/dashboard/my-applications"
-          selected={selected}
-          setSelected={setSelected}
+          currentPath={currentPath}
           open={open}
         />
         <Option
           Icon={FileText}
           title="New Application"
           href="/dashboard/new-application"
-          selected={selected}
-          setSelected={setSelected}
+          currentPath={currentPath}
           open={open}
         />
         {showApprovals && (
@@ -158,8 +134,7 @@ function Sidebar({
             Icon={ShieldCheck}
             title="Approvals"
             href="/dashboard/approvals"
-            selected={selected}
-            setSelected={setSelected}
+            currentPath={currentPath}
             open={open}
           />
         )}
@@ -168,8 +143,7 @@ function Sidebar({
             Icon={Users}
             title="Department"
             href="/dashboard/department"
-            selected={selected}
-            setSelected={setSelected}
+            currentPath={currentPath}
             open={open}
           />
         )}
@@ -178,8 +152,7 @@ function Sidebar({
             Icon={Users}
             title="HR Administration"
             href="/dashboard/hr-admin"
-            selected={selected}
-            setSelected={setSelected}
+            currentPath={currentPath}
             open={open}
           />
         )}
@@ -194,8 +167,7 @@ function Sidebar({
             Icon={Settings}
             title="Settings"
             href="/dashboard/settings"
-            selected={selected}
-            setSelected={setSelected}
+            currentPath={currentPath}
             open={open}
           />
         </div>
@@ -210,23 +182,20 @@ function Option({
   Icon,
   title,
   href,
-  selected,
-  setSelected,
+  currentPath,
   open,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   title: string;
   href: string;
-  selected: string;
-  setSelected: (v: string) => void;
+  currentPath: string;
   open: boolean;
 }) {
-  const isSelected = selected === title;
+  const isSelected = currentPath === href;
 
   return (
     <Link
       href={href}
-      onClick={() => setSelected(title)}
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-all duration-200",
         isSelected
@@ -322,12 +291,10 @@ function ToggleClose({
 
 function Header({
   user,
-  isDark,
-  setIsDark,
+  onLogout,
 }: {
   user: User;
-  isDark: boolean;
-  setIsDark: (v: boolean) => void;
+  onLogout: () => void;
 }) {
   return (
     <header className="flex items-center justify-between px-6 py-4 bg-surface-card border-b border-border-default shadow-subtle">
@@ -341,10 +308,11 @@ function Header({
           <span className="absolute -top-1 -right-1 h-3 w-3 bg-status-rejected rounded-full" />
         </button>
         <button
-          onClick={() => setIsDark(!isDark)}
+          onClick={onLogout}
+          aria-label="Sign out"
           className="flex h-10 w-10 items-center justify-center rounded-lg border border-border-default bg-surface-card text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
         >
-          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          <LogOut className="h-4 w-4" />
         </button>
         <div className="flex items-center gap-3">
           <div className="text-right">

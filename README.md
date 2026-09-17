@@ -128,6 +128,16 @@ The seed command creates one user per role with password `testpass123`:
 | Deputy Vice-Chancellor | dvc@test.luanar |
 | Human Resources | hr@test.luanar |
 
+### Admin / Django-Q2 task inspection
+
+The seed command does not create a superuser. Create one to inspect the Django
+admin (including the Django-Q2 queue and task results):
+
+```bash
+cd backend
+uv run manage.py createsuperuser
+```
+
 ## Running Tests
 
 ### Backend
@@ -135,6 +145,14 @@ The seed command creates one user per role with password `testpass123`:
 ```bash
 cd backend
 uv run manage.py test
+```
+
+If the test runner fails with `permission denied to create database`, the
+database role needs the `CREATEDB` privilege (Django creates a temporary test
+database):
+
+```sql
+ALTER USER luanar CREATEDB;
 ```
 
 ### Frontend
