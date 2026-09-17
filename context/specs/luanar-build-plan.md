@@ -396,31 +396,7 @@ The Employee + Approver developer owns the following units and handles both fron
 
 Development fixtures may be used where HR-managed data does not yet exist.
 
-## Unit 12 — Employee Profile and Leave Dashboard
 
-### What it builds
-
-Create the employee experience for:
-
-- Authenticated employee.
-- Employee profile.
-- Grade.
-- Designation.
-- Department.
-- Date of appointment.
-- Annual entitlement.
-- Current balance.
-- Leave history.
-- Application status summary.
-
-### Visible result
-
-An employee dashboard showing the employee's leave information.
-
-### Dependencies
-
-- Unit 1.
-- Employee API/data contract from Unit 2.
 
 ---
 
