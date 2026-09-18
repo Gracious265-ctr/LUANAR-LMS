@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import User
+from .models import EmployeeProfile, User
 
 
 @admin.register(User)
@@ -21,3 +21,32 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         ("Role", {"fields": ("role",)}),
     )
+
+
+@admin.register(EmployeeProfile)
+class EmployeeProfileAdmin(admin.ModelAdmin):
+    """Admin for HR-managed employee records."""
+
+    list_display = [
+        "user",
+        "designation",
+        "department",
+        "category",
+        "grade",
+        "active",
+    ]
+    list_filter = ["category", "department", "user__is_active"]
+    search_fields = [
+        "user__username",
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "designation",
+        "department",
+        "grade",
+    ]
+    autocomplete_fields = ["user"]
+
+    @admin.display(boolean=True, description="Active")
+    def active(self, obj: EmployeeProfile) -> bool:
+        return obj.user.is_active

@@ -1,11 +1,13 @@
 from django.contrib.auth import authenticate, get_user_model
-from rest_framework import permissions, status
+from rest_framework import filters, mixins, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .serializers import LoginSerializer, UserSerializer
+from .models import EmployeeProfile
+from .permissions import IsHRRole
+from .serializers import EmployeeSerializer, LoginSerializer, UserSerializer
 from .throttles import LoginRateThrottle
 
 User = get_user_model()
@@ -55,3 +57,40 @@ class MeView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+
+class EmployeeViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """HR-only CRUD for employee records (no hard delete)."""
+
+    serializer_class = EmployeeSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = [
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+        "designation",
+        "department",
+        "grade",
+    ]
+    ordering_fields = [
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+        "designation",
+        "department",
+        "grade",
+        "appointment_date",
+    ]
+    ordering = ["user__first_name", "user__last_name"]
+
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        return EmployeeProfile.objects.select_related("user")

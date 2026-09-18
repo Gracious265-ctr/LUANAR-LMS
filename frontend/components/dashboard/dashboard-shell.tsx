@@ -3,14 +3,20 @@
 import React, { useState } from "react";
 import {
   Bell,
+  CalendarDays,
+  CalendarRange,
   ChevronDown,
   ChevronsRight,
+  ClipboardList,
   FileText,
   Home,
   LogOut,
   Settings,
   ShieldCheck,
+  Tags,
+  UserCheck,
   Users,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -148,13 +154,71 @@ function Sidebar({
           />
         )}
         {showHR && (
-          <Option
-            Icon={Users}
-            title="HR Administration"
-            href="/dashboard/hr-admin"
-            currentPath={currentPath}
-            open={open}
-          />
+          <>
+            <Option
+              Icon={Users}
+              title="HR Administration"
+              href="/dashboard/hr-admin"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={Users}
+              title="Employees"
+              href="/dashboard/hr-admin/employees"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={CalendarRange}
+              title="Entitlements"
+              href="/dashboard/hr-admin/entitlements"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={ClipboardList}
+              title="Leave Rules"
+              href="/dashboard/hr-admin/leave-rules"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={Workflow}
+              title="Workflows"
+              href="/dashboard/hr-admin/workflows"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={Tags}
+              title="Leave Types"
+              href="/dashboard/hr-admin/leave-types"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={CalendarDays}
+              title="Calendar"
+              href="/dashboard/hr-admin/calendar"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={UserCheck}
+              title="Delegations"
+              href="/dashboard/hr-admin/delegations"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={FileText}
+              title="Document Template"
+              href="/dashboard/hr-admin/leave-document-template"
+              currentPath={currentPath}
+              open={open}
+            />
+          </>
         )}
       </div>
 
