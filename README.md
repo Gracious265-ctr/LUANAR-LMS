@@ -128,6 +128,16 @@ The seed command creates one user per role with password `testpass123`:
 | Deputy Vice-Chancellor | dvc@test.luanar |
 | Human Resources | hr@test.luanar |
 
+### Admin / Django-Q2 task inspection
+
+The seed command does not create a superuser. Create one to inspect the Django
+admin (including the Django-Q2 queue and task results):
+
+```bash
+cd backend
+uv run manage.py createsuperuser
+```
+
 ## Running Tests
 
 ### Backend
@@ -135,6 +145,14 @@ The seed command creates one user per role with password `testpass123`:
 ```bash
 cd backend
 uv run manage.py test
+```
+
+If the test runner fails with `permission denied to create database`, the
+database role needs the `CREATEDB` privilege (Django creates a temporary test
+database):
+
+```sql
+ALTER USER luanar CREATEDB;
 ```
 
 ### Frontend
@@ -153,6 +171,43 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/auth/login/` | Authenticate user |
 | POST | `/api/v1/auth/refresh/` | Refresh access token |
 | GET | `/api/v1/auth/me/` | Get current user profile |
+| GET | `/api/v1/employees/` | List employee profiles (paginated; `search=`, `ordering=`) |
+| POST | `/api/v1/employees/` | Create employee record (and linked user if email is new) |
+| GET | `/api/v1/employees/{id}/` | Retrieve one employee profile |
+| PATCH | `/api/v1/employees/{id}/` | Update the employee profile (incl. `is_active`) |
+| GET | `/api/v1/entitlements/` | List grade/entitlement rules (paginated, newest effective first) |
+| POST | `/api/v1/entitlements/` | Create a grade/entitlement rule |
+| GET | `/api/v1/entitlements/{id}/` | Retrieve one grade/entitlement rule |
+| PATCH | `/api/v1/entitlements/{id}/` | Update a grade/entitlement rule |
+| GET | `/api/v1/entitlements/resolve/?grade=B[&as_of=YYYY-MM-DD]` | Resolve a grade to its effective annual entitlement |
+| GET | `/api/v1/leave-types/` | List leave types (paginated) |
+| POST | `/api/v1/leave-types/` | Create a leave type (code derived from name when blank) |
+| GET | `/api/v1/leave-types/{id}/` | Retrieve one leave type |
+| PATCH | `/api/v1/leave-types/{id}/` | Update a leave type |
+| GET | `/api/v1/leave-rules/` | List leave rules (paginated, newest effective first; `leave_type=`, `effective=current\|upcoming`) |
+| POST | `/api/v1/leave-rules/` | Create an effective-dated leave rule |
+| GET | `/api/v1/leave-rules/{id}/` | Retrieve one leave rule |
+| PATCH | `/api/v1/leave-rules/{id}/` | Update a leave rule |
+| GET | `/api/v1/financial-years/` | List financial years (paginated, newest first) |
+| POST | `/api/v1/financial-years/` | Create a financial year (must not overlap; activating deactivates the previous active) |
+| GET | `/api/v1/financial-years/{id}/` | Retrieve one financial year |
+| PATCH | `/api/v1/financial-years/{id}/` | Update a financial year |
+| GET | `/api/v1/public-holidays/` | List public holidays (paginated, by date; `year=YYYY` filter) |
+| POST | `/api/v1/public-holidays/` | Create a public holiday (date must be unique) |
+| GET | `/api/v1/public-holidays/{id}/` | Retrieve one public holiday |
+| PATCH | `/api/v1/public-holidays/{id}/` | Update a public holiday |
+| GET | `/api/v1/workflows/` | List approval workflows (paginated, by name; each row includes `state`, `effective_from`, `is_active`) |
+| POST | `/api/v1/workflows/` | Create a workflow with its ordered approval stages (draft unless `effective_from` is sent; activating/scheduling validates approver availability and scope conflicts) |
+| GET | `/api/v1/workflows/{id}/` | Retrieve one workflow with its stages |
+| PATCH | `/api/v1/workflows/{id}/` | Update a workflow (replaces its stage list; `effective_from`/`is_active` may be sent with the same activation validation) |
+| GET | `/api/v1/delegations/` | List delegation requests (HR-only, paginated, newest first; `state=` and `approver=` search filters) |
+| POST | `/api/v1/delegations/` | Create a delegation request (approver self-service forces `approver` to the authenticated user; HR can create on behalf) |
+| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR-only) |
+| POST | `/api/v1/delegations/{id}/approve/` | HR approves (mandatory `decision_reason` and `delegate`; rejects period overlap with an approved delegation) |
+| POST | `/api/v1/delegations/{id}/reject/` | HR rejects with a mandatory `decision_reason` |
+| POST | `/api/v1/delegations/{id}/cancel/` | HR cancels a scheduled/active approved delegation with a mandatory `decision_reason` |
+| GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
+| PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
 
 ## Git Workflow
 
@@ -186,8 +241,8 @@ luanar-lms/
 ├── backend/           # Django application
 │   ├── config/        # Settings and project config
 │   ├── users/         # User model and authentication
-│   ├── leave/         # Leave domain (stub)
-│   ├── workflows/     # Workflows domain (stub)
+│   ├── leave/         # Leave domain (grade entitlements, leave types/rules; applications later)
+│   ├── workflows/     # Approval workflow configuration (workflows, stages)
 │   ├── notifications/ # Notifications domain (stub)
 │   ├── documents/     # Documents domain (stub)
 │   └── audit/         # Audit domain (stub)

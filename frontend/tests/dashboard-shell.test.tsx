@@ -61,4 +61,26 @@ describe("DashboardShell", () => {
 
     expect(screen.getByText("Approvals")).toBeInTheDocument();
   });
+
+  it("renders a sign-out control", () => {
+    render(
+      <DashboardShell user={mockUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+
+  it("does not render a theme toggle", () => {
+    render(
+      <DashboardShell user={mockUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /theme|dark mode/i })
+    ).not.toBeInTheDocument();
+  });
 });

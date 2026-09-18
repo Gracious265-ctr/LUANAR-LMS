@@ -32,14 +32,14 @@ export default async function DashboardPage() {
             value="21"
             subtitle="days remaining"
             icon={<Calendar className="w-5 h-5" />}
-            color="brand-primary"
+            variant="primary"
           />
           <StatCard
             title="Pending Applications"
             value="0"
             subtitle="awaiting review"
             icon={<Clock className="w-5 h-5" />}
-            color="status-pending"
+            variant="pending"
           />
           {showApprovals && (
             <StatCard
@@ -47,7 +47,7 @@ export default async function DashboardPage() {
               value="0"
               subtitle="applications"
               icon={<ShieldCheck className="w-5 h-5" />}
-              color="status-info"
+              variant="info"
             />
           )}
           <StatCard
@@ -55,7 +55,7 @@ export default async function DashboardPage() {
             value="0"
             subtitle="days scheduled"
             icon={<FileText className="w-5 h-5" />}
-            color="brand-secondary"
+            variant="secondary"
           />
         </div>
 
@@ -76,26 +76,31 @@ export default async function DashboardPage() {
   );
 }
 
+const STAT_CARD_VARIANTS = {
+  primary: "bg-brand-primary-subtle text-brand-primary",
+  pending: "bg-status-pending-subtle text-status-pending",
+  info: "bg-status-info-subtle text-status-info",
+  secondary: "bg-brand-secondary-subtle text-brand-secondary",
+} as const;
+
 function StatCard({
   title,
   value,
   subtitle,
   icon,
-  color,
+  variant,
 }: {
   title: string;
   value: string;
   subtitle: string;
   icon: React.ReactNode;
-  color: string;
+  variant: keyof typeof STAT_CARD_VARIANTS;
 }) {
   return (
     <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-5">
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-text-secondary">{title}</span>
-        <div
-          className={`p-2 rounded-lg bg-${color}-subtle text-${color}`}
-        >
+        <div className={`p-2 rounded-lg ${STAT_CARD_VARIANTS[variant]}`}>
           {icon}
         </div>
       </div>

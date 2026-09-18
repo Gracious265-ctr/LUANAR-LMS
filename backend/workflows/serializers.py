@@ -1,0 +1,264 @@
+from django.db import transaction
+from rest_framework import serializers
+
+from users.models import User
+
+from .models import APPROVER_ROLE_CODES, Delegation, Workflow, WorkflowStage
+from .services import (
+    StageSequenceError,
+    is_approver_user,
+    normalize_stage_sequence,
+    open_request_exists,
+    validate_workflow_for_activation,
+)
+
+
+class WorkflowStageSerializer(serializers.ModelSerializer):
+    """One step in a workflow's approval sequence."""
+
+    class Meta:
+        model = WorkflowStage
+        fields = ["id", "order", "approver_role"]
+
+    def validate_approver_role(self, value: str) -> str:
+        if value not in APPROVER_ROLE_CODES:
+            raise serializers.ValidationError("Select a valid approver role.")
+        return value
+
+    def validate_order(self, value: int) -> int:
+        if value is None or value < 1:
+            raise serializers.ValidationError(
+                "Stage order must be a positive whole number."
+            )
+        return value
+
+
+class WorkflowSerializer(serializers.ModelSerializer):
+    """HR-facing serializer for approval workflows and their ordered stages."""
+
+    stages = WorkflowStageSerializer(many=True)
+    state = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Workflow
+        fields = [
+            "id",
+            "name",
+            "employee_category",
+            "department",
+            "effective_from",
+            "is_active",
+            "state",
+            "stages",
+        ]
+
+    def _value(self, attrs: dict, field: str):
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, None)
+
+    def _effective_is_active(self, attrs: dict) -> bool:
+        if "is_active" in attrs:
+            return bool(attrs["is_active"])
+        if self.instance is not None:
+            return bool(self.instance.is_active)
+        return True
+
+    def validate(self, attrs: dict) -> dict:
+        name = self._value(attrs, "name")
+        name = (name or "").strip()
+        if not name:
+            raise serializers.ValidationError({"name": "Name is required."})
+        attrs["name"] = name
+
+        category = self._value(attrs, "employee_category")
+        attrs["employee_category"] = (category or "").strip()
+
+        department = self._value(attrs, "department")
+        attrs["department"] = (department or "").strip()
+
+        stages = attrs.get("stages")
+        if stages is None:
+            raise serializers.ValidationError(
+                {"stages": "Approval stages are required."}
+            )
+        try:
+            normalized_stages = normalize_stage_sequence(stages)
+        except StageSequenceError as exc:
+            raise serializers.ValidationError({exc.field: [exc.message]})
+
+        queryset = Workflow.objects.all()
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.filter(name=name).exists():
+            raise serializers.ValidationError(
+                {"name": "A workflow with this name already exists."}
+            )
+
+        effective_from = self._value(attrs, "effective_from")
+        if effective_from is not None and self._effective_is_active(attrs):
+            self._validate_activation(
+                normalized_stages,
+                (attrs["employee_category"], attrs["department"]),
+            )
+
+        return attrs
+
+    def _validate_activation(
+        self, stages: list[dict], scope: tuple[str, str]
+    ) -> None:
+        workflow_pk = self.instance.pk if self.instance is not None else None
+        issues = validate_workflow_for_activation(workflow_pk, scope, stages)
+        if not issues:
+            return
+        field_errors: dict[str, list[str]] = {}
+        details: list[str] = []
+        for issue in issues:
+            if issue.field is None:
+                details.append(issue.message)
+            else:
+                field_errors.setdefault(issue.field, []).append(issue.message)
+        errors: dict[str, object] = dict(field_errors)
+        if details:
+            errors["detail"] = " ".join(details)
+        raise serializers.ValidationError(errors)
+
+    def create(self, validated_data: dict) -> Workflow:
+        stages = validated_data.pop("stages", [])
+        with transaction.atomic():
+            workflow = Workflow.objects.create(**validated_data)
+            self._replace_stages(workflow, stages)
+        return workflow
+
+    def update(self, instance, validated_data: dict) -> Workflow:
+        stages = validated_data.pop("stages", [])
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            self._replace_stages(instance, stages)
+        return instance
+
+    def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:
+        workflow.stages.all().delete()
+        for stage in normalize_stage_sequence(stages):
+            WorkflowStage.objects.create(workflow=workflow, **stage)
+
+
+class DelegationSerializer(serializers.ModelSerializer):
+    """HR/approver-facing serializer for delegation requests."""
+
+    approver = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False
+    )
+    delegate = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, allow_null=True
+    )
+    approver_name = serializers.SerializerMethodField()
+    approver_role = serializers.SerializerMethodField()
+    delegate_name = serializers.SerializerMethodField()
+    requested_by_name = serializers.SerializerMethodField()
+    state = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Delegation
+        fields = [
+            "id",
+            "approver",
+            "approver_name",
+            "approver_role",
+            "delegate",
+            "delegate_name",
+            "starts_on",
+            "ends_on",
+            "request_reason",
+            "requested_by",
+            "requested_by_name",
+            "decision_reason",
+            "decided_by",
+            "decided_at",
+            "status",
+            "state",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "requested_by",
+            "decision_reason",
+            "decided_by",
+            "decided_at",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_approver_name(self, obj: Delegation) -> str:
+        return obj.approver.get_full_name()
+
+    def get_approver_role(self, obj: Delegation) -> str:
+        return obj.approver.role
+
+    def get_delegate_name(self, obj: Delegation) -> str:
+        return obj.delegate.get_full_name() if obj.delegate else ""
+
+    def get_requested_by_name(self, obj: Delegation) -> str:
+        return obj.requested_by.get_full_name()
+
+    def validate(self, attrs: dict) -> dict:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        is_hr = getattr(user, "role", None) == User.Role.HR
+
+        if is_hr:
+            approver = attrs.get("approver")
+            if approver is None:
+                raise serializers.ValidationError(
+                    {"approver": "Select the approver this delegation is for."}
+                )
+            if not is_approver_user(approver):
+                raise serializers.ValidationError(
+                    {"approver": "Select an active user with an approver role."}
+                )
+        else:
+            approver = user
+            attrs["approver"] = approver
+
+        delegate = attrs.get("delegate")
+        if delegate is not None:
+            if not is_approver_user(delegate):
+                raise serializers.ValidationError(
+                    {"delegate": "Select an active user with an approver role."}
+                )
+            if delegate.pk == approver.pk:
+                raise serializers.ValidationError(
+                    {"delegate": "The delegate must be a different person from the approver."}
+                )
+
+        starts_on = attrs.get("starts_on")
+        ends_on = attrs.get("ends_on")
+        if starts_on is not None and ends_on is not None and ends_on < starts_on:
+            raise serializers.ValidationError(
+                {"ends_on": "End date must be on or after the start date."}
+            )
+
+        if approver is not None and open_request_exists(approver.pk):
+            raise serializers.ValidationError(
+                {"approver": "This approver already has an open delegation request."}
+            )
+
+        return attrs
+
+    def create(self, validated_data: dict) -> Delegation:
+        request = self.context.get("request")
+        validated_data["requested_by"] = getattr(request, "user", None)
+        return super().create(validated_data)
+
+
+class DelegationActionSerializer(serializers.Serializer):
+    """Payload for the HR approve / reject / cancel delegation actions."""
+
+    decision_reason = serializers.CharField(required=False, allow_blank=True)
+    delegate = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, allow_null=True
+    )
+
+    def validate_decision_reason(self, value: str) -> str:
+        return (value or "").strip()
