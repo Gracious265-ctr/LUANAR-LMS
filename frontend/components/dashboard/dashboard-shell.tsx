@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import {
   Bell,
+  Calendar,
   CalendarDays,
   CalendarRange,
   ChevronDown,
@@ -124,14 +125,14 @@ function Sidebar({
         <Option
           Icon={FileText}
           title="My Applications"
-          href="/dashboard/my-applications"
+          href="/dashboard/leave/drafts"
           currentPath={currentPath}
           open={open}
         />
         <Option
-          Icon={FileText}
+          Icon={Calendar}
           title="New Application"
-          href="/dashboard/new-application"
+          href="/dashboard/leave/new"
           currentPath={currentPath}
           open={open}
         />

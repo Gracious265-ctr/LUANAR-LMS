@@ -144,3 +144,9 @@ Q_CLUSTER = {
 
 # Email (console backend for development)
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# Supabase Storage
+SUPABASE_URL = env("SUPABASE_URL", default="")
+SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", default="")
+SUPABASE_BUCKET = env("SUPABASE_BUCKET", default="leave-documents")
+SUPABASE_SIGNED_URL_EXPIRY = env.int("SUPABASE_SIGNED_URL_EXPIRY", default=3600)
