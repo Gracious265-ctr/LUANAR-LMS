@@ -6,16 +6,59 @@ Update this file after every meaningful implementation change.
 
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
+- Unit 9 — HR Emergency Reassignment (COMPLETE)
 
 ## Current Goal
 
-- Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are now
-  merged onto `development`. Unit 13 delivers the application rows the HR track
-  was blocked on, so **Unit 9 is unblocked** and is the HR track's next build.
+- Both independent tracks (HR: Units 2–10; Employee+Approver: Unit 13) are merged
+  onto `development`, and the HR track's next build (Unit 9, unblocked once Unit
+  13 delivered application rows) is complete. **Unit 11 — Finalized Leave +
+  Audit View — is the HR track's next build** and continues to depend on the
+  applications Unit 13 provides.
 
 ## Completed
 
 ### HR track (Units 2–11) — merged via `feature/hr-track`
+
+- Unit 9: HR Emergency Reassignment
+  - Spec: `context/specs/09-hr-emergency-reassignment-spec.md` (drafted, decisions
+    approved: `pending` = a `submitted` application (the only truthful definition
+    before routing); a nullable `current_approver` FK on `LeaveApplication` is the
+    Unit 21 "who must act now" spine with `Reassignment` rows as the history —
+    both additive, HR-only, and cross-track (merges after the Unit 13 model; the
+    FK is *not* added to `LeaveApplicationSerializer` so the Unit 13 contract is
+    preserved); validation reuses `workflows.services.is_approver_user`; no
+    delegation consultation here — `active_delegation_for` routing is Unit 21;
+    no notifications/audit here)
+  - `leave/models.py`: `LeaveApplication.current_approver` FK (SET_NULL, null,
+    blank, `related_name="applications_assigned"`); migration `0005` via
+    `makemigrations leave`
+  - `workflows/models.py`: `Reassignment` model (`application` FK
+    `leave.LeaveApplication`, `from_approver`/`to_approver`/`decided_by` FKs,
+    mandatory `reason`, `created_at`; `Meta.ordering = ["-created_at"]`;
+    `__str__` `Reassignment({ref} → {to_approver})`); migration `0004`
+  - `workflows/services.py`: `reassign_application(...)` validates the shared
+    rules (submitted status, active approver-role `to_approver`, differs from
+    the current approver when set and from the applicant, trimmed mandatory
+    `reason`) then atomically writes the `Reassignment` row
+    (`from_approver` = previous `current_approver`) and sets
+    `application.current_approver`; raises `ReassignmentError(field, message)`
+  - `ReassignmentSerializer` (writable `application`/`to_approver`, read-only
+    history/names, `reason` trimmed on write) + `PendingApplicationSerializer`
+    (`to_representation`) + `ReassignmentViewSet` at `/api/v1/reassignments/`
+    (HR-only list/create/retrieve + `pending/` action queueing submitted apps
+    newest-first, `?application=` filter), SimpleRouter basename `reassignment`
+  - Django admin: `ReassignmentAdmin` view-only inspector
+  - Backend: 265 → 299 tests (34 new) passing via `uv run manage.py test
+    workflows` (131) then `--noinput`; `manage.py check` clean; migrations
+    applied
+  - Frontend: `lib/reassignments.ts` + `lib/reassignments-client.ts` split,
+    proxy handlers `app/api/hr/reassignments/route.ts` + `pending/route.ts`,
+    `PendingApplicationsTable` / `ReassignmentTable` / `ReassignmentForm`,
+    pages `/dashboard/hr-admin/reassignments` (+ `new?application=<uuid>`),
+    sidebar "Reassignments" item (lucide `ArrowLeftRight`), HR index card;
+    `npm test` (124), `npm run lint`, and `npm run build` pass
+  - Root `README.md` API table: `/api/v1/reassignments/` rows added
 
 - Unit 10: HR Approved Leave Document Template
   - Spec: `context/specs/10-hr-approved-leave-document-template-spec.md`
@@ -210,10 +253,9 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **HR track (this developer):** Unit 9 — HR Emergency Reassignment. Unblocked
-  now that Unit 13 delivers application rows; reassign pending applications to
-  replacement approvers with a mandatory reason (Unit 21 consumes
-  `active_delegation_for`). Unit 11 (Finalized Leave + Audit View) follows.
+- **HR track (this developer):** Unit 11 — Finalized Leave + Audit View (depends
+  on the submitted applications Unit 13 delivers; Unit 9's reassignment spine
+  and Unit 21's routing build on from here).
 - **Employee + Approver track:** next application-facing unit per the shared
   build plan; Units 4/5 (Leave Types API, Calendar/Rules API) were listed as
   deferred in the Unit 13 spec but are **already implemented** by the HR track
@@ -249,6 +291,41 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Unit 9 complete (2026-09-18):** HR Emergency Reassignment landed. Big
+  decisions recorded: `pending` = `submitted`; the `current_approver` spine +
+  `Reassignment` history (cross-track — the nullable FK merges after the Unit 13
+  model and is excluded from `LeaveApplicationSerializer`); HR-only everywhere;
+  `is_approver_user` reuse; no consultation of `active_delegation_for` (Unit 21
+  boundary); no notifications/audit app. Fixed during test-writing: the
+  `ReassignmentSerializer` initially listed `reason` in `read_only_fields`, which
+  silently dropped the POST reason and would 400 every create — moved it out so
+  `validate_reason` trims and `create` submits it. `workflows` suite: 131 tests
+  green (97 existing + 34 new) and the full backend suite stays green; frontend
+  124 tests (109 + 15 new), lint + build clean. Misc: `uv run manage.py test
+  workflows` is slow to boot the test DB (~90–150 s per class group) so the
+  earlier 120 s default timeout underran — long timeouts required.
+- **Sidebar active-state fix (2026-09-18):** the sidebar highlight was stale
+  because every dashboard page mounted its own `DashboardShell` on the page
+  root, so the active link reverted to the initial page. Root cause fixed by
+  hoisting the shell into a persistent `app/(dashboard)/layout.tsx` (auth
+  guard + `<DashboardShell user={user}>{children}</DashboardShell>`). The 5
+  shell-wrapped pages (`dashboard`, `leave/new`, `leave/drafts`,
+  `leave/[id]/edit`, `leave/[id]/review`) now return plain content; HR admin
+  pages keep their own role checks and now inherit the shell from the layout
+  (they previously rendered without sidebar/header). `usePathname()`-derived
+  highlight now tracks the real route across client-side navigations. Full
+  frontend verification: 109 tests pass, `tsc --noEmit` clean, lint clean,
+  `npm run build` succeeds.
+- **Sidebar performance pass (2026-09-18):** optimized `dashboard-shell.tsx`
+  before resuming Unit 9. Replaced both `transition-all` utilities with
+  property-scoped transitions (nav `transition-[width]`, nav items
+  `transition-colors`) and aligned durations with `ui-context.md` (300ms →
+  200ms) so the collapse/expand animation no longer transitions layout-affecting
+  properties speculatively. Memoized the presentational subcomponents
+  (`Sidebar`, `Option`, `TitleSection`, `ToggleClose`, `Header`) and wrapped the
+  logout handler in `useCallback`, so toggling the sidebar no longer re-renders
+  the header or unrelated shell nodes. Full frontend verification: 109 tests
+  pass, `tsc --noEmit` clean, `npm run lint` clean, `npm run build` succeeds.
 - **Integration merge (2026-09-18):** merged `feature/hr-track` (Units 2–10 +
   review fixes) and `origin/development` (Unit 13) onto `development`.
   Conflicts resolved in leave models/serializers/views/urls/tests, the

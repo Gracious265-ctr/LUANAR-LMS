@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet
 
-from .models import Delegation, Workflow, WorkflowStage
+from .models import Delegation, Reassignment, Workflow, WorkflowStage
 from .services import validate_workflow_for_activation
 
 
@@ -151,6 +151,38 @@ class DelegationAdmin(admin.ModelAdmin):
     @admin.display(description="State")
     def state(self, obj):
         return obj.state
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Reassignment)
+class ReassignmentAdmin(admin.ModelAdmin):
+    """View-only inspector for reassignments (use the HR API to reassign)."""
+
+    list_display = (
+        "application",
+        "employee_name",
+        "from_approver",
+        "to_approver",
+        "reason",
+        "decided_by",
+        "created_at",
+    )
+    raw_id_fields = ("application", "from_approver", "to_approver", "decided_by")
+    readonly_fields = (
+        "application",
+        "from_approver",
+        "to_approver",
+        "reason",
+        "decided_by",
+        "created_at",
+    )
+    ordering = ("-created_at",)
+
+    @admin.display(description="Employee")
+    def employee_name(self, obj):
+        return obj.application.employee.get_full_name()
 
     def has_delete_permission(self, request, obj=None):
         return False

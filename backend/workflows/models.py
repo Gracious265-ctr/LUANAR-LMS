@@ -182,3 +182,53 @@ class Delegation(models.Model):
     def __str__(self) -> str:
         delegate = self.delegate.get_full_name() if self.delegate else "unassigned"
         return f"{self.approver.get_full_name()} → {delegate} ({self.state})"
+
+
+class Reassignment(models.Model):
+    """An HR emergency reassignment of a pending application to an approver.
+
+    ``from_approver`` records who the application was previously with and may be
+    ``None`` when a submitted application had not yet been routed (the first
+    reassignment is effectively an initial assignment). Reassigning atomically
+    writes this history row and updates
+    ``LeaveApplication.current_approver`` — the live responsible-approver spine
+    Unit 21 consumes.
+    """
+
+    application = models.ForeignKey(
+        "leave.LeaveApplication",
+        on_delete=models.CASCADE,
+        related_name="reassignments",
+        help_text="The pending leave application being reassigned.",
+    )
+    from_approver = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="reassignments_from",
+        null=True,
+        blank=True,
+        help_text="The approver the application was previously assigned to.",
+    )
+    to_approver = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="reassignments_to",
+        help_text="The replacement approver who inherits the pending application.",
+    )
+    reason = models.TextField(
+        help_text="HR's mandatory reason for the reassignment.",
+    )
+    decided_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="reassignments_decided",
+        help_text="The HR user who performed the reassignment.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        application = self.application.reference_number or "Draft"
+        return f"Reassignment({application} → {self.to_approver.get_full_name()})"

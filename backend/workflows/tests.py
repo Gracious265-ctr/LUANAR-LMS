@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 
 from django.contrib.admin.sites import AdminSite
@@ -8,18 +9,21 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from leave.models import LeaveApplication
 from users.models import User
 
 from .admin import (
     DelegationAdmin,
+    ReassignmentAdmin,
     WorkflowAdmin,
     WorkflowAdminForm,
     WorkflowStageForm,
     WorkflowStageInlineFormSet,
 )
-from .models import Delegation, Workflow, WorkflowStage
+from .models import Delegation, Reassignment, Workflow, WorkflowStage
 from .services import (
     DelegationActionError,
+    ReassignmentError,
     StageSequenceError,
     active_delegation_for,
     approve_delegation,
@@ -30,6 +34,7 @@ from .services import (
     missing_approver_roles,
     normalize_stage_sequence,
     open_request_exists,
+    reassign_application,
     reject_delegation,
     resolve_delegate_user,
     scopes_overlap,
@@ -1456,3 +1461,644 @@ class DelegationAdminTests(TestCase):
         admin = DelegationAdmin(Delegation, self.site)
         self.assertEqual(admin.state(delegation), "active")
         self.assertEqual(str(delegation.approver), f"{dean.get_full_name()} (dean)")
+
+
+# ---------------------------------------------------------------------------
+# Reassignment helpers
+# ---------------------------------------------------------------------------
+
+
+def make_application(
+    employee,
+    *,
+    approver=None,
+    ref=None,
+    status=LeaveApplication.Status.SUBMITTED,
+):
+    return LeaveApplication.objects.create(
+        employee=employee,
+        current_approver=approver,
+        status=status,
+        reference_number=ref,
+        start_date=timezone.localdate() + timedelta(days=7),
+        end_date=timezone.localdate() + timedelta(days=14),
+        calculated_days=7,
+        reason="Family emergency",
+        submitted_at=timezone.now(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reassignment model tests
+# ---------------------------------------------------------------------------
+
+
+class ReassignmentModelTests(TestCase):
+    """Reassignment model ordering and string representation."""
+
+    def test_str_includes_reference_number_and_new_approver(self):
+        employee = make_active_user(User.Role.EMPLOYEE, "emp-re01@test.luanar")
+        app = make_application(employee, ref="LUANAR-2026-0001")
+        hod = make_active_user(User.Role.HOD, "hod-re01@test.luanar")
+        reassignment = Reassignment.objects.create(
+            application=app,
+            to_approver=hod,
+            reason="Moved",
+            decided_by=make_active_user(User.Role.HR, "hr-re01@test.luanar"),
+        )
+        self.assertEqual(
+            str(reassignment),
+            f"Reassignment(LUANAR-2026-0001 → {hod.get_full_name()})",
+        )
+
+    def test_ordering_is_newest_first(self):
+        employee = make_active_user(User.Role.EMPLOYEE, "emp-re02@test.luanar")
+        app = make_application(employee, ref="LUANAR-2026-0002")
+        hod = make_active_user(User.Role.HOD, "hod-re02@test.luanar")
+        dean = make_active_user(User.Role.DEAN, "dean-re02@test.luanar")
+        hr = make_active_user(User.Role.HR, "hr-re02@test.luanar")
+        first = Reassignment.objects.create(
+            application=app, to_approver=hod, reason="First", decided_by=hr,
+        )
+        second = Reassignment.objects.create(
+            application=app, to_approver=dean, reason="Second", decided_by=hr,
+        )
+        # ``update`` bypasses auto_now_add so we control the timestamps
+        Reassignment.objects.filter(pk=first.pk).update(
+            created_at=timezone.now() - timedelta(days=1)
+        )
+        Reassignment.objects.filter(pk=second.pk).update(created_at=timezone.now())
+        reassignments = list(
+            Reassignment.objects.filter(application=app).select_related(
+                "to_approver"
+            )
+        )
+        self.assertEqual([r.to_approver.pk for r in reassignments], [dean.pk, hod.pk])
+
+
+# ---------------------------------------------------------------------------
+# Reassignment service tests
+# ---------------------------------------------------------------------------
+
+
+class ReassignmentServiceTests(TestCase):
+    """Service-level reassignment validation."""
+
+    def setUp(self):
+        self.hr = make_active_user(User.Role.HR, "hr-svc@test.luanar")
+        self.employee = make_active_user(User.Role.EMPLOYEE, "emp-svc@test.luanar")
+        self.dean = make_active_user(User.Role.DEAN, "dean-svc@test.luanar")
+        self.hod = make_active_user(User.Role.HOD, "hod-svc@test.luanar")
+
+    def _submitted_app(self, approver=None):
+        return make_application(self.employee, approver=approver)
+
+    def test_happy_path_sets_current_approver_and_records_from(self):
+        app = self._submitted_app()
+        reassignment = reassign_application(
+            application=app,
+            to_approver=self.dean,
+            actor=self.hr,
+            reason="Dean took over",
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.current_approver_id, self.dean.pk)
+        self.assertEqual(reassignment.from_approver_id, None)
+        self.assertEqual(reassignment.to_approver_id, self.dean.pk)
+        self.assertEqual(reassignment.reason, "Dean took over")
+        self.assertEqual(reassignment.decided_by_id, self.hr.pk)
+
+    def test_second_reassignment_records_previous_approver(self):
+        app = self._submitted_app()
+        reassign_application(
+            application=app,
+            to_approver=self.hod,
+            actor=self.hr,
+            reason="First hop",
+        )
+        app.refresh_from_db()
+        second = reassign_application(
+            application=app,
+            to_approver=self.dean,
+            actor=self.hr,
+            reason="Second hop",
+        )
+        app.refresh_from_db()
+        self.assertEqual(second.from_approver_id, self.hod.pk)
+        self.assertEqual(app.current_approver_id, self.dean.pk)
+
+    def test_reason_is_trimmed(self):
+        app = self._submitted_app()
+        reassignment = reassign_application(
+            application=app,
+            to_approver=self.dean,
+            actor=self.hr,
+            reason="  Temporary override  ",
+        )
+        self.assertEqual(reassignment.reason, "Temporary override")
+
+    def test_blank_reason_rejected(self):
+        app = self._submitted_app()
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=app,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="",
+            )
+        self.assertEqual(ctx.exception.field, "reason")
+        with self.assertRaises(ReassignmentError):
+            reassign_application(
+                application=app,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="   ",
+            )
+        app.refresh_from_db()
+        self.assertIsNone(app.current_approver_id)
+
+    def test_draft_application_rejected(self):
+        draft = make_application(
+            self.employee,
+            status=LeaveApplication.Status.DRAFT,
+            ref="DRAFT-001",
+        )
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=draft,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="Mistake",
+            )
+        self.assertEqual(ctx.exception.field, "application")
+
+    def test_inactive_to_approver_rejected(self):
+        app = self._submitted_app()
+        inactive = User.objects.create_user(
+            username="inactive@test.luanar",
+            email="inactive@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Inactive",
+            last_name="Approver",
+            role=User.Role.DEAN,
+            is_active=False,
+        )
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=app,
+                to_approver=inactive,
+                actor=self.hr,
+                reason="Try",
+            )
+        self.assertEqual(ctx.exception.field, "to_approver")
+
+    def test_same_current_approver_rejected(self):
+        app = self._submitted_app(approver=self.dean)
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=app,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="Same",
+            )
+        self.assertEqual(ctx.exception.field, "to_approver")
+        app.refresh_from_db()
+        self.assertEqual(app.current_approver_id, self.dean.pk)
+
+    def test_own_applicant_rejected(self):
+        app = make_application(self.dean, ref="APPLIC-001")
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=app,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="Own app",
+            )
+        self.assertEqual(ctx.exception.field, "to_approver")
+        self.assertIn("applicant", ctx.exception.message)
+
+    def test_error_leaves_application_unchanged(self):
+        app = self._submitted_app()
+        with self.assertRaises(ReassignmentError):
+            reassign_application(
+                application=app,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="",
+            )
+        app.refresh_from_db()
+        self.assertIsNone(app.current_approver_id)
+        self.assertFalse(Reassignment.objects.filter(application=app).exists())
+
+
+# ---------------------------------------------------------------------------
+# Reassignment API tests
+# ---------------------------------------------------------------------------
+
+
+class ReassignmentEndpointTests(TestCase):
+    """API-level reassignment create/list/retrieve and permission checks."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.hr_user = User.objects.create_user(
+            username="hr-api@test.luanar",
+            email="hr-api@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="HR",
+            role=User.Role.HR,
+        )
+        self.employee_user = User.objects.create_user(
+            username="emp-api@test.luanar",
+            email="emp-api@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="Employee",
+            role=User.Role.EMPLOYEE,
+        )
+        self.dean = User.objects.create_user(
+            username="dean-api@test.luanar",
+            email="dean-api@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="Dean",
+            role=User.Role.DEAN,
+        )
+        self.hod = User.objects.create_user(
+            username="hod-api@test.luanar",
+            email="hod-api@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="HOD",
+            role=User.Role.HOD,
+        )
+        self.application = make_application(self.employee_user, ref="LUANAR-2026-0010")
+        self.application.submitted_at = timezone.now() - timedelta(days=10)
+        self.application.save(update_fields=["submitted_at"])
+        self.application_second = make_application(
+            self.employee_user, ref="LUANAR-2026-0011"
+        )
+        self.application_second.submitted_at = timezone.now() - timedelta(days=9)
+        self.application_second.save(update_fields=["submitted_at"])
+
+    def _pending_url(self):
+        return "/api/v1/reassignments/pending/"
+
+    def _create_url(self):
+        return "/api/v1/reassignments/"
+
+    def _detail_url(self, pk):
+        return f"/api/v1/reassignments/{pk}/"
+
+    # --- Authentication / permissions ---
+
+    def test_list_requires_authentication(self):
+        for url in (self._create_url(), self._pending_url()):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_requires_authentication(self):
+        response = self.client.post(
+            self._create_url(), {"application": str(self.application.id)}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_retrieve_requires_authentication(self):
+        response = self.client.get(self._detail_url(self.application.id))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_non_hr_user_gets_403(self):
+        self.client.force_authenticate(user=self.employee_user)
+        for url in (self._create_url(), self._pending_url()):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.post(
+            self._create_url(), {"application": str(self.application.id)}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_employee_cannot_retrieve(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.get(self._detail_url(self.application.id))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delete_not_supported(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.delete(self._detail_url(self.application.id))
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    # --- Pending queue ---
+
+    def test_pending_lists_only_submitted_and_oldest_newest_first(self):
+        draft = make_application(
+            self.employee_user,
+            status=LeaveApplication.Status.DRAFT,
+            ref="DRAFT-100",
+        )
+        app1 = make_application(self.employee_user, ref="PEND-001")
+        app1.submitted_at = timezone.now() - timedelta(days=2)
+        app1.save(update_fields=["submitted_at"])
+        app2 = make_application(self.employee_user, ref="PEND-002")
+        app2.submitted_at = timezone.now() - timedelta(days=1)
+        app2.save(update_fields=["submitted_at"])
+
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self._pending_url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.json()["results"]
+        refs = [r["reference_number"] for r in results]
+        # Newest first. The setUp applications are intentionally old (time-10d /
+        # time-9d); PEND-002/PEND-001 were submitted yesterday/two days ago, so
+        # they lead the queue. Drafts are never shown.
+        self.assertEqual(
+            refs, ["PEND-002", "PEND-001", "LUANAR-2026-0011", "LUANAR-2026-0010"]
+        )
+        self.assertEqual(response.json()["count"], 4)
+
+    def test_pending_object_shape(self):
+        app = make_application(
+            self.employee_user,
+            approver=self.hod,
+            ref="SHAPE-001",
+        )
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self._pending_url())
+        results = response.json()["results"]
+        payload = next(
+            r for r in results if r["reference_number"] == "SHAPE-001"
+        )
+        self.assertEqual(payload["id"], str(app.id))
+        self.assertEqual(payload["reference_number"], "SHAPE-001")
+        self.assertEqual(payload["employee"], self.employee_user.pk)
+        self.assertEqual(payload["employee_name"], self.employee_user.get_full_name())
+        self.assertEqual(payload["current_approver"], self.hod.pk)
+        self.assertEqual(payload["current_approver_name"], self.hod.get_full_name())
+        self.assertIn("leave_type_name", payload)
+        self.assertIn("start_date", payload)
+        self.assertIn("reason", payload)
+        self.assertIn("submitted_at", payload)
+
+    def test_pending_current_approver_fields_when_none(self):
+        make_application(self.employee_user, ref="NOAPPR-001")
+        self.client.force_authenticate(user=self.hr_user)
+        results = self.client.get(self._pending_url()).json()["results"]
+        payload = next(
+            r for r in results if r["reference_number"] == "NOAPPR-001"
+        )
+        self.assertIsNone(payload["current_approver"])
+        self.assertEqual(payload["current_approver_name"], "")
+
+    # --- Create (reassign) ---
+
+    def test_create_happy_path(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "Urgent case",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.json()
+        self.assertEqual(data["application"], str(self.application.id))
+        self.assertEqual(data["to_approver"], self.dean.pk)
+        self.assertEqual(data["to_approver_name"], self.dean.get_full_name())
+        self.assertEqual(data["from_approver"], None)
+        self.assertEqual(data["decided_by"], self.hr_user.pk)
+        self.assertEqual(data["reason"], "Urgent case")
+        self.application.refresh_from_db()
+        self.assertEqual(self.application.current_approver_id, self.dean.pk)
+
+    def test_create_with_second_reassignment_shows_from_approver(self):
+        self.application.current_approver = self.hod
+        self.application.save(update_fields=["current_approver"])
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "Move",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()["from_approver"], self.hod.pk)
+        self.assertEqual(
+            response.json()["from_approver_name"], self.hod.get_full_name()
+        )
+
+    def test_create_blank_reason_400(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("reason", response.json())
+        self.application.refresh_from_db()
+        self.assertIsNone(self.application.current_approver_id)
+
+    def test_create_draft_application_400(self):
+        draft = make_application(
+            self.employee_user,
+            status=LeaveApplication.Status.DRAFT,
+            ref="DRAFT-400",
+        )
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(draft.id),
+                "to_approver": self.dean.pk,
+                "reason": "Bad request",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("application", response.json())
+
+    def test_create_same_current_approver_400(self):
+        self.application.current_approver = self.dean
+        self.application.save(update_fields=["current_approver"])
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "Same",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("to_approver", response.json())
+
+    def test_create_own_applicant_400(self):
+        app = make_application(self.dean, ref="APPLICANT-400")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(app.id),
+                "to_approver": self.dean.pk,
+                "reason": "Own",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("to_approver", response.json())
+
+    def test_create_inactive_to_approver_400(self):
+        inactive = User.objects.create_user(
+            username="inactive-api@test.luanar",
+            email="inactive-api@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Inactive",
+            last_name="User",
+            role=User.Role.DEAN,
+            is_active=False,
+        )
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": inactive.pk,
+                "reason": "Nope",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("to_approver", response.json())
+
+    def test_create_employee_role_to_approver_400(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.employee_user.pk,
+                "reason": "No",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("to_approver", response.json())
+
+    # --- History list + ?application filter ---
+
+    def test_history_lists_all_reassignments(self):
+        self.client.force_authenticate(user=self.hr_user)
+        self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "First",
+            },
+            format="json",
+        )
+        self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.hod.pk,
+                "reason": "Second",
+            },
+            format="json",
+        )
+        response = self.client.get(self._create_url())
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_history_filter_by_application(self):
+        self.client.force_authenticate(user=self.hr_user)
+        self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "App1 only",
+            },
+            format="json",
+        )
+        self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application_second.id),
+                "to_approver": self.hod.pk,
+                "reason": "App2",
+            },
+            format="json",
+        )
+        response = self.client.get(
+            self._create_url(),
+            {"application": str(self.application.id)},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(
+            response.json()["results"][0]["reason"], "App1 only"
+        )
+
+    # --- Retrieve ---
+
+    def test_retrieve(self):
+        self.client.force_authenticate(user=self.hr_user)
+        create_resp = self.client.post(
+            self._create_url(),
+            {
+                "application": str(self.application.id),
+                "to_approver": self.dean.pk,
+                "reason": "Retrieve me",
+            },
+            format="json",
+        )
+        reassignment_id = create_resp.json()["id"]
+        response = self.client.get(self._detail_url(reassignment_id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["reason"], "Retrieve me")
+        self.assertEqual(response.json()["to_approver"], self.dean.pk)
+
+    def test_retrieve_nonexistent_404(self):
+        self.client.force_authenticate(user=self.hr_user)
+        fake_id = uuid.uuid4()
+        response = self.client.get(self._detail_url(fake_id))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+# ---------------------------------------------------------------------------
+# Reassignment admin tests
+# ---------------------------------------------------------------------------
+
+
+class ReassignmentAdminTests(TestCase):
+    """Reassignment admin visibility guards."""
+
+    def setUp(self):
+        self.site = AdminSite()
+
+    def test_registered_and_no_delete(self):
+        admin = ReassignmentAdmin(Reassignment, self.site)
+        self.assertFalse(admin.has_delete_permission(None))
+
+    def test_list_renders_employee_name(self):
+        hr = make_active_user(User.Role.HR, "hr-admin@test.luanar")
+        employee = make_active_user(User.Role.EMPLOYEE, "emp-admin@test.luanar")
+        app = make_application(employee, ref="ADMIN-001")
+        to_approver = make_active_user(User.Role.DEAN, "dean-admin@test.luanar")
+        reassignment = Reassignment.objects.create(
+            application=app, to_approver=to_approver, reason="Admin test", decided_by=hr,
+        )
+        admin = ReassignmentAdmin(Reassignment, self.site)
+        self.assertEqual(admin.employee_name(reassignment), employee.get_full_name())

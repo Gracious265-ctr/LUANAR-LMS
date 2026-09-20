@@ -159,6 +159,17 @@ class LeaveApplication(models.Model):
         max_length=32, unique=True, null=True, blank=True
     )
 
+    # The approver who currently must act on this pending application. Set only
+    # by HR emergency reassignment (Unit 9) for now; Unit 21 (workflow routing)
+    # resolves and writes it as the responsible-approver spine.
+    current_approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="applications_assigned",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)

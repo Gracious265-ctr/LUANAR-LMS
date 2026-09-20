@@ -7,10 +7,11 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
 
-from .models import APPROVER_ROLE_CODES, Delegation, Workflow
+from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow
 
 
 class StageSequenceError(ValueError):
@@ -373,3 +374,78 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             ]
         )
     return delegation
+
+
+class ReassignmentError(ValueError):
+    """Raised when a reassignment cannot be applied.
+
+    ``field`` is the API field the error belongs to (``"application"``,
+    ``"to_approver"``, ``"reason"``, or ``"detail"``).
+    """
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.message = message
+
+
+def require_reassignment_reason(reason: object) -> str:
+    """Trim and require an HR reassignment reason; raises ``ReassignmentError``."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise ReassignmentError(
+            "reason", "A reassignment reason is required."
+        )
+    return reason
+
+
+def reassign_application(
+    *,
+    application: LeaveApplication,
+    to_approver: User,
+    actor: User,
+    reason: object,
+) -> Reassignment:
+    """Reassign a pending application to a replacement approver.
+
+    Validates that the application is pending (``submitted``), the replacement
+    is an active user with an approver role, the replacement differs from the
+    current approver (when one is set) and from the applicant, and that a
+    reason is supplied. On success, records a :class:`Reassignment` history row
+    and atomically moves ``LeaveApplication.current_approver``.
+    """
+    if application.status != LeaveApplication.Status.SUBMITTED:
+        raise ReassignmentError(
+            "application",
+            "Only a pending (submitted) application can be reassigned.",
+        )
+    reason = require_reassignment_reason(reason)
+    if not is_approver_user(to_approver):
+        raise ReassignmentError(
+            "to_approver",
+            "Select an active user with an approver role as the replacement.",
+        )
+    if (
+        application.current_approver is not None
+        and to_approver.pk == application.current_approver.pk
+    ):
+        raise ReassignmentError(
+            "to_approver",
+            "The application is already assigned to this approver.",
+        )
+    if to_approver.pk == application.employee_id:
+        raise ReassignmentError(
+            "to_approver",
+            "A pending application cannot be assigned to its own applicant.",
+        )
+    with transaction.atomic():
+        reassignment = Reassignment.objects.create(
+            application=application,
+            from_approver=application.current_approver,
+            to_approver=to_approver,
+            reason=reason,
+            decided_by=actor,
+        )
+        application.current_approver = to_approver
+        application.save(update_fields=["current_approver", "updated_at"])
+    return reassignment
