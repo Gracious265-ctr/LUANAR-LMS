@@ -4,21 +4,69 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
 - Unit 9 — HR Emergency Reassignment (COMPLETE)
 
 ## Current Goal
 
-- Both independent tracks (HR: Units 2–10; Employee+Approver: Unit 13) are merged
-  onto `development`, and the HR track's next build (Unit 9, unblocked once Unit
-  13 delivered application rows) is complete. **Unit 11 — Finalized Leave +
-  Audit View — is the HR track's next build** and continues to depend on the
-  applications Unit 13 provides.
+- Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are merged
+  onto `development`, and the HR track's next build **Unit 11 — Finalized Leave +
+  Audit View** is complete (depends on the submitted applications Unit 13 provides).
 
 ## Completed
 
 ### HR track (Units 2–11) — merged via `feature/hr-track`
+
+- Unit 11: HR Finalized Leave + Audit View
+  - Spec: `context/specs/11-hr-finalized-leave-audit-view-spec.md` (drafted,
+    decisions approved: audit only existing actions — deferring approval/cancel/
+    correction/document-history to Units 16–19/24; Unit 9 committed to
+    `development` before the feature branch was cut; the `audit` app owns both
+    new endpoints; finalized-leave shows `submitted` only, 404 on draft ids)
+  - `audit/models.py`: `AuditEntry` (actor FK, `Action` choices
+    created/updated/approved/rejected/cancelled/reassigned/submitted,
+    `target_type`/`target_id`/`target_summary`, `detail` JSON, `reason`,
+    `created_at`; `Meta.ordering = ["-created_at"]`; index
+    `auditentry_target_idx` on `(target_type, target_id)`); migration
+    `0001_initial` created and applied
+  - `audit/services.py`: `record_audit` (farmer-safe `current_actor`, `_jsonable`
+    normalization — PostgreSQL/psycopg3 can't serialize nested `date`/`UUID` so
+    dates→isoformat and UUID→str recursively), `changed_fields` building
+    `{"before","after"}` of only-changed fields (before null on create)
+  - `audit/serializers.py`: `AuditedModelSerializer` base (create/update +
+    explicit `_record_audit`), `AuditEntrySerializer` (read-only, `actor_name`),
+    `HRLeaveApplicationSerializer` (rolls up PendingApplicationSerializer +
+    SupportingDocumentSerializer + ReassignmentSerializer + oldest-first
+    `audit_entries`; lazy imports inside `to_representation` to avoid the
+    audit↔workflows import cycle)
+  - Wiring (explicit `record_audit`, same `transaction.atomic()` as the action,
+    NO Django signals, drafts/documents not audited, Django admin not audited —
+    documented boundary, `LeaveApplication` only has draft/submitted):
+    users `EmployeeSerializer` (create/update); leave GradeEntitlement,
+    LeaveType, LeaveRule, FinancialYear, PublicHoliday serializers;
+    workflows `WorkflowSerializer` (stages in the snapshot; `update` bypasses
+    the base via `serializers.ModelSerializer.update(self, instance,
+    validated_data)` so replacement stages are present for the after-snapshot)
+    + delegation approve/reject/cancel + `reassign_application`; documents
+    `LeaveDocumentTemplateView.patch`; leave `LeaveApplicationViewSet.submit`
+  - `audit/views.py` + `audit/urls.py`: `AuditEntryViewSet` +
+    `FinalizedLeaveViewSet` (read-only, `IsHRRole`; filters action/
+    target_type/target_id/actor; finalized-leave `submitted` only,
+    `?employee=` search, 404 on draft) at `/api/v1/audit-entries/` +
+    `/api/v1/finalized-leave/`; `AuditEntryAdmin` view-only
+  - Backend: 265 → 299 tests (34 new in `audit`) passing; existing suites
+    green after wiring (users+documents 50, leave 146, workflows 131)
+  - Frontend: `lib/audit.ts` read client; `AuditEntriesTable` /
+    `FinalizedLeaveTable` / `ApplicationHistoryView` (+ shared `audit-meta`);
+    pages `/dashboard/hr-admin/audit` (finalized leave + administrative history
+    with action/target filters) and `/dashboard/hr-admin/audit/applications/[id]`
+    (summary, documents, reassignment history, audit timeline); sidebar "Audit
+    View" item (lucide `History`) + HR index card; `npm test` (136), `npm run
+    lint`, and `npm run build` pass
+  - Root `README.md` API table: `/api/v1/audit-entries/` +
+    `/api/v1/finalized-leave/` rows added
 
 - Unit 9: HR Emergency Reassignment
   - Spec: `context/specs/09-hr-emergency-reassignment-spec.md` (drafted, decisions
@@ -253,9 +301,9 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **HR track (this developer):** Unit 11 — Finalized Leave + Audit View (depends
-  on the submitted applications Unit 13 delivers; Unit 9's reassignment spine
-  and Unit 21's routing build on from here).
+- **HR track (this developer):** Unit 16+ build on the audit spine (approval/
+  cancel/correction events and application-scoped history), then Unit 21 routing
+  which consumes the `current_approver` spine and `active_delegation_for`.
 - **Employee + Approver track:** next application-facing unit per the shared
   build plan; Units 4/5 (Leave Types API, Calendar/Rules API) were listed as
   deferred in the Unit 13 spec but are **already implemented** by the HR track
@@ -291,6 +339,18 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Unit 11 complete (2026-09-21):** HR Finalized Leave + Audit View landed on
+  `feature/hr-unit-11` (cut from `development` after Unit 9's commit `2a63f55`).
+  Audit is explicit (`record_audit` in the same transaction as the action) — no
+  Django signals, a deliberate boundary: drafts/document uploads and Django
+  admin mutations are not audited. Key bug caught by tests: psycopg3 serializes
+  JSON with plain `json.dumps`, so nested `date`/`UUID` values explode — the
+  `_jsonable` normalizer in `audit/services.py` fixes it. Cross-suite backend
+  runs combined exceed the 10-minute tool timeout, so the full suite must be
+  split per-app in the background (users+documents ~84s/50, leave ~250s/146,
+  workflows ~427s/131, audit ~81s/34). Frontend: 136 tests, lint, and build
+  clean. Not yet committed — commit the feature work on `feature/hr-unit-11`
+  and merge to `development` when the other developer's track is ready.
 - **Unit 9 complete (2026-09-18):** HR Emergency Reassignment landed. Big
   decisions recorded: `pending` = `submitted`; the `current_approver` spine +
   `Reassignment` history (cross-track — the nullable FK merges after the Unit 13

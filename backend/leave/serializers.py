@@ -2,6 +2,8 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from audit.serializers import AuditedModelSerializer
+
 from .models import (
     FinancialYear,
     GradeEntitlement,
@@ -19,8 +21,11 @@ from .services import (
 )
 
 
-class GradeEntitlementSerializer(serializers.ModelSerializer):
+class GradeEntitlementSerializer(AuditedModelSerializer):
     """HR-facing serializer for grade/entitlement rules."""
+
+    target_type = "entitlement"
+    audit_fields = ["grade_start", "grade_end", "days", "effective_from"]
 
     class Meta:
         model = GradeEntitlement
@@ -79,8 +84,11 @@ class GradeEntitlementSerializer(serializers.ModelSerializer):
             )
 
 
-class LeaveTypeSerializer(serializers.ModelSerializer):
+class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
+
+    target_type = "leavetype"
+    audit_fields = ["name", "code"]
 
     class Meta:
         model = LeaveType
@@ -122,8 +130,19 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LeaveRuleSerializer(serializers.ModelSerializer):
+class LeaveRuleSerializer(AuditedModelSerializer):
     """HR-facing serializer for effective-dated leave rules."""
+
+    target_type = "leaverule"
+    audit_fields = [
+        "leave_type_id",
+        "max_duration_days",
+        "eligibility",
+        "min_notice_days",
+        "requires_supporting_document",
+        "consumes_annual_entitlement",
+        "effective_from",
+    ]
 
     leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
     leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
@@ -163,8 +182,11 @@ class LeaveRuleSerializer(serializers.ModelSerializer):
         return value
 
 
-class FinancialYearSerializer(serializers.ModelSerializer):
+class FinancialYearSerializer(AuditedModelSerializer):
     """HR-facing serializer for configured financial-year periods."""
+
+    target_type = "financialyear"
+    audit_fields = ["start_date", "end_date", "is_active"]
 
     class Meta:
         model = FinancialYear
@@ -235,8 +257,11 @@ class FinancialYearSerializer(serializers.ModelSerializer):
         return instance
 
 
-class PublicHolidaySerializer(serializers.ModelSerializer):
+class PublicHolidaySerializer(AuditedModelSerializer):
     """HR-facing serializer for configured public-holiday dates."""
+
+    target_type = "publicholiday"
+    audit_fields = ["name", "date"]
 
     class Meta:
         model = PublicHoliday

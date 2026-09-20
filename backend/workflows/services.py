@@ -7,6 +7,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from audit.models import AuditEntry
+from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
@@ -279,6 +281,40 @@ def require_decision_reason(decision_reason: object) -> str:
     return reason
 
 
+def _delegation_summary(delegation: Delegation) -> str:
+    approver = delegation.approver.get_full_name()
+    delegate = (
+        delegation.delegate.get_full_name()
+        if delegation.delegate_id
+        else "pending"
+    )
+    period = (
+        f"{delegation.starts_on.isoformat()} – "
+        f"{(delegation.ends_on.isoformat() if delegation.ends_on else 'open-ended')}"
+    )
+    return f"Delegation: {approver} → {delegate} ({period})"
+
+
+def _record_delegation_audit(
+    delegation: Delegation, *, action: str, reason: str, before: dict
+) -> None:
+    if delegation.decided_by is None:
+        return
+    after = {
+        "status": delegation.status,
+        "delegate_id": delegation.delegate_id,
+    }
+    record_audit(
+        actor=delegation.decided_by,
+        action=action,
+        target_type="delegation",
+        target_id=delegation.pk,
+        target_summary=_delegation_summary(delegation),
+        detail=changed_fields(before, after),
+        reason=reason,
+    )
+
+
 def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
     """Approve a requested delegation with a concrete delegate and reason."""
     if delegation.status != Delegation.Status.REQUESTED:
@@ -321,6 +357,12 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.APPROVED,
+            reason=reason,
+            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
+        )
     return delegation
 
 
@@ -344,6 +386,12 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "decided_at",
                 "updated_at",
             ]
+        )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.REJECTED,
+            reason=reason,
+            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
     return delegation
 
@@ -372,6 +420,12 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "decided_at",
                 "updated_at",
             ]
+        )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.CANCELLED,
+            reason=reason,
+            before={"status": Delegation.Status.APPROVED},
         )
     return delegation
 
@@ -439,13 +493,29 @@ def reassign_application(
             "A pending application cannot be assigned to its own applicant.",
         )
     with transaction.atomic():
+        from_approver = application.current_approver
         reassignment = Reassignment.objects.create(
             application=application,
-            from_approver=application.current_approver,
+            from_approver=from_approver,
             to_approver=to_approver,
             reason=reason,
             decided_by=actor,
         )
         application.current_approver = to_approver
         application.save(update_fields=["current_approver", "updated_at"])
+        if actor is not None:
+            record_audit(
+                actor=actor,
+                action=AuditEntry.Action.REASSIGNED,
+                target_type="reassignment",
+                target_id=reassignment.pk,
+                target_summary=(
+                    f"Reassignment of {application.reference_number}"
+                ),
+                detail=changed_fields(
+                    {"current_approver_id": from_approver.pk if from_approver else None},
+                    {"current_approver_id": to_approver.pk},
+                ),
+                reason=reason,
+            )
     return reassignment

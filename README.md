@@ -212,6 +212,10 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
+| GET | `/api/v1/audit-entries/` | Administrative audit trail, paginated newest first; immutably records config changes, decisions, and submissions with the acting user. Filters: `action=`, `target_type=`, `target_id=`, `actor=` (HR-only) |
+| GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
+| GET | `/api/v1/finalized-leave/` | Finalized (submitted) leave applications, newest submission first, with employee, leave type, dates/days, reference, and current approver; `employee=` name/email search (HR-only) |
+| GET | `/api/v1/finalized-leave/{id}/` | One submitted application with its documents, reassignment history, and oldest-first audit trail (HR-only; 404 for draft ids) |
 
 ## Git Workflow
 

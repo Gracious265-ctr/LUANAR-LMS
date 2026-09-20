@@ -1,6 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from audit.serializers import AuditedModelSerializer
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
@@ -36,8 +37,10 @@ class WorkflowStageSerializer(serializers.ModelSerializer):
         return value
 
 
-class WorkflowSerializer(serializers.ModelSerializer):
+class WorkflowSerializer(AuditedModelSerializer):
     """HR-facing serializer for approval workflows and their ordered stages."""
+
+    target_type = "workflow"
 
     stages = WorkflowStageSerializer(many=True)
     state = serializers.CharField(read_only=True)
@@ -126,18 +129,43 @@ class WorkflowSerializer(serializers.ModelSerializer):
             errors["detail"] = " ".join(details)
         raise serializers.ValidationError(errors)
 
+    def _audit_snapshot(self, instance: Workflow) -> dict:
+        return {
+            "name": instance.name,
+            "employee_category": instance.employee_category,
+            "department": instance.department,
+            "effective_from": instance.effective_from,
+            "is_active": instance.is_active,
+            "stages": list(
+                instance.stages.order_by("order").values_list(
+                    "approver_role", flat=True
+                )
+            ),
+        }
+
+    def _audit_target_summary(self, instance: Workflow) -> str:
+        scope = instance.employee_category or "All categories"
+        if instance.department:
+            scope += f" / {instance.department}"
+        return f"{instance.name} ({scope})"
+
     def create(self, validated_data: dict) -> Workflow:
         stages = validated_data.pop("stages", [])
         with transaction.atomic():
             workflow = Workflow.objects.create(**validated_data)
             self._replace_stages(workflow, stages)
+        self._audit_after_create(workflow)
         return workflow
 
     def update(self, instance, validated_data: dict) -> Workflow:
         stages = validated_data.pop("stages", [])
+        before = self._audit_snapshot(instance)
         with transaction.atomic():
-            instance = super().update(instance, validated_data)
+            # Bypass the automated audited update so the replacement stages are
+            # in place before the "after" snapshot is taken.
+            instance = serializers.ModelSerializer.update(self, instance, validated_data)
             self._replace_stages(instance, stages)
+        self._audit_after_update(instance, before)
         return instance
 
     def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:

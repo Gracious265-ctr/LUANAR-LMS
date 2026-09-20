@@ -10,6 +10,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
+from audit.models import AuditEntry
+from audit.services import changed_fields, record_audit
+
 from users.permissions import IsHRRole
 
 from .models import (
@@ -293,6 +296,18 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
                     "submitted_at",
                     "calculated_days",
                 ]
+            )
+
+            record_audit(
+                actor=request.user,
+                action=AuditEntry.Action.SUBMITTED,
+                target_type="application",
+                target_id=instance.pk,
+                target_summary=reference_number,
+                detail=changed_fields(
+                    {"status": LeaveApplication.Status.DRAFT},
+                    {"status": LeaveApplication.Status.SUBMITTED},
+                ),
             )
 
         return Response(

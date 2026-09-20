@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, Tags, UserCheck, Users, Workflow } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 
@@ -140,6 +140,19 @@ export default async function HRAdminPage() {
           <p className="mt-1 text-sm text-text-secondary">
             Configure the official template used for approved leave documents:
             wording, fields, and signature areas.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/hr-admin/audit"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <History className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">Audit View</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Review finalized leave applications and the administrative audit
+            trail of system actions.
           </p>
         </Link>
       </div>
