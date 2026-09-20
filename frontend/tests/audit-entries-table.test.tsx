@@ -65,6 +65,60 @@ describe("AuditEntriesTable", () => {
     expect(screen.getByText("name: Academic leave")).toBeInTheDocument();
   });
 
+it("links editable targets to their edit page", () => {
+    render(
+      <AuditEntriesTable
+        entries={[
+          { ...baseEntry, target_type: "leaverule", target_id: "7" },
+          { ...baseEntry, id: 2, target_type: "employee", target_id: "42" },
+          {
+            ...baseEntry,
+            id: 3,
+            target_type: "financialyear",
+            target_id: "abc",
+          },
+        ]}
+      />
+    );
+
+    const links = screen.getAllByRole("link", { name: "Edit" });
+    expect(links).toHaveLength(3);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/leave-rules/7/edit"
+    );
+    expect(links[1]).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/employees/42"
+    );
+    expect(links[2]).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/calendar/financial-years/abc/edit"
+    );
+  });
+
+  it("shows no edit link for read-only targets", () => {
+    render(
+      <AuditEntriesTable
+        entries={[
+          {
+            ...baseEntry,
+            target_type: "application",
+            target_id: "app-1",
+          },
+          {
+            ...baseEntry,
+            id: 2,
+            target_type: "reassignment",
+            target_id: "5",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
   it("renders an empty state when there are no entries", () => {
     render(<AuditEntriesTable entries={[]} />);
 

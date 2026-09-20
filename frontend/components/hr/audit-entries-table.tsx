@@ -1,6 +1,9 @@
+import Link from "next/link";
+import { Pencil } from "lucide-react";
+
 import type { AuditEntry } from "@/lib/audit";
 import { TARGET_TYPE_LABELS } from "@/lib/audit";
-import { AuditActionPill, auditChangesText } from "./audit-meta";
+import { AuditActionPill, auditChangesText, auditEditHref } from "./audit-meta";
 
 export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) {
@@ -25,43 +28,60 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
             <th className="py-3 pr-4">Target</th>
             <th className="py-3 pr-4">Details</th>
             <th className="py-3">When</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
-            <tr
-              key={entry.id}
-              className="border-b border-border-default transition-colors hover:bg-surface-hover"
-            >
-              <td className="py-3 pr-4 text-text-primary">
-                <div className="font-medium">
-                  {entry.actor_name || `#${entry.actor}`}
-                </div>
-              </td>
-              <td className="py-3 pr-4">
-                <AuditActionPill action={entry.action} />
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                <div className="text-xs text-text-muted">
-                  {TARGET_TYPE_LABELS[entry.target_type] || entry.target_type}
-                </div>
-                <div className="font-medium text-text-primary">
-                  {entry.target_summary}
-                </div>
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {auditChangesText(entry)}
-              </td>
-              <td className="py-3 text-text-secondary">
-                <div className="whitespace-nowrap">
-                  {new Date(entry.created_at).toLocaleDateString()}
-                </div>
-                <div className="text-xs text-text-muted">
-                  {new Date(entry.created_at).toLocaleTimeString()}
-                </div>
-              </td>
-            </tr>
-          ))}
+          {entries.map((entry) => {
+            const editHref = auditEditHref(entry);
+            return (
+              <tr
+                key={entry.id}
+                className="border-b border-border-default transition-colors hover:bg-surface-hover"
+              >
+                <td className="py-3 pr-4 text-text-primary">
+                  <div className="font-medium">
+                    {entry.actor_name || `#${entry.actor}`}
+                  </div>
+                </td>
+                <td className="py-3 pr-4">
+                  <AuditActionPill action={entry.action} />
+                </td>
+                <td className="py-3 pr-4 text-text-secondary">
+                  <div className="text-xs text-text-muted">
+                    {TARGET_TYPE_LABELS[entry.target_type] || entry.target_type}
+                  </div>
+                  <div className="font-medium text-text-primary">
+                    {entry.target_summary}
+                  </div>
+                </td>
+                <td className="py-3 pr-4 text-text-secondary">
+                  {auditChangesText(entry)}
+                </td>
+                <td className="py-3 text-text-secondary">
+                  <div className="whitespace-nowrap">
+                    {new Date(entry.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="text-xs text-text-muted">
+                    {new Date(entry.created_at).toLocaleTimeString()}
+                  </div>
+                </td>
+                <td className="py-3 text-right">
+                  {editHref ? (
+                    <Link
+                      href={editHref}
+                      className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-button-secondary-hover hover:text-text-primary"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-text-muted">{"\u2014"}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

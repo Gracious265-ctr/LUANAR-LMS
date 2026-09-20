@@ -45,6 +45,30 @@ export function formatAuditValue(value: unknown): string {
   return String(value);
 }
 
+/** Edit-page route for a target the HR UI can change, or null when read-only. */
+export function auditEditHref(entry: AuditEntry): string | null {
+  switch (entry.target_type) {
+    case "workflow":
+      return `/dashboard/hr-admin/workflows/${entry.target_id}/edit`;
+    case "leavetype":
+      return `/dashboard/hr-admin/leave-types/${entry.target_id}/edit`;
+    case "leaverule":
+      return `/dashboard/hr-admin/leave-rules/${entry.target_id}/edit`;
+    case "entitlement":
+      return `/dashboard/hr-admin/entitlements/${entry.target_id}/edit`;
+    case "financialyear":
+      return `/dashboard/hr-admin/calendar/financial-years/${entry.target_id}/edit`;
+    case "publicholiday":
+      return `/dashboard/hr-admin/calendar/holidays/${entry.target_id}/edit`;
+    case "employee":
+      return `/dashboard/hr-admin/employees/${entry.target_id}`;
+    case "document-template":
+      return "/dashboard/hr-admin/leave-document-template";
+    default:
+      return null;
+  }
+}
+
 /** A short, human-readable summary of an entry's changed fields (or reason). */
 export function auditChangesText(entry: AuditEntry): string {
   if (!entry.detail) {
