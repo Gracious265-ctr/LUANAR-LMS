@@ -6,11 +6,15 @@ from rest_framework import viewsets
 
 from users.permissions import IsHRRole
 
-from .models import Delegation, Workflow
+from leave.models import LeaveApplication
+
+from .models import Delegation, Reassignment, Workflow
 from .permissions import IsApproverRoleOrHR
 from .serializers import (
     DelegationActionSerializer,
     DelegationSerializer,
+    PendingApplicationSerializer,
+    ReassignmentSerializer,
     WorkflowSerializer,
 )
 from .services import (
@@ -121,3 +125,37 @@ class DelegationViewSet(
             ).data,
             status=status.HTTP_200_OK,
         )
+
+
+class ReassignmentViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """HR-only emergency reassignment of pending applications (no delete)."""
+
+    serializer_class = ReassignmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        queryset = Reassignment.objects.select_related(
+            "application__employee", "from_approver", "to_approver", "decided_by"
+        )
+        application = self.request.query_params.get("application")
+        if application:
+            queryset = queryset.filter(application_id=application)
+        return queryset
+
+    @decorators.action(detail=False, methods=["get"])
+    def pending(self, request):
+        """The intervention queue: submitted applications awaiting approval."""
+        queryset = (
+            LeaveApplication.objects.filter(status=LeaveApplication.Status.SUBMITTED)
+            .select_related("employee", "current_approver")
+            .order_by("-submitted_at")
+        )
+        page = self.paginate_queryset(queryset)
+        payload = PendingApplicationSerializer(page, many=True)
+        return self.get_paginated_response(payload.data)

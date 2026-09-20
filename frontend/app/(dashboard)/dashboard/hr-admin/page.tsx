@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CalendarDays, CalendarRange, ClipboardList, FileText, Tags, UserCheck, Users, Workflow } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 
@@ -115,6 +115,19 @@ export default async function HRAdminPage() {
           </p>
         </Link>
         <Link
+          href="/dashboard/hr-admin/reassignments"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <ArrowLeftRight className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">Reassignments</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Intervene on pending leave applications and reassign them to a
+            replacement approver.
+          </p>
+        </Link>
+        <Link
           href="/dashboard/hr-admin/leave-document-template"
           className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
         >
@@ -129,12 +142,24 @@ export default async function HRAdminPage() {
             wording, fields, and signature areas.
           </p>
         </Link>
+        <Link
+          href="/dashboard/hr-admin/audit"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <History className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">Audit View</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Review finalized leave applications and the administrative audit
+            trail of system actions.
+          </p>
+        </Link>
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 text-sm text-text-muted shadow-subtle">
         Remaining document generation (rendering real approved applications)
-        and the emergency reassignment area land in later units that depend on
-        active leave applications.
+        lands in later units that depend on active leave applications.
       </div>
     </div>
   );

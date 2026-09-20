@@ -1,14 +1,18 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from audit.serializers import AuditedModelSerializer
+from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
-from .models import APPROVER_ROLE_CODES, Delegation, Workflow, WorkflowStage
+from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow, WorkflowStage
 from .services import (
+    ReassignmentError,
     StageSequenceError,
     is_approver_user,
     normalize_stage_sequence,
     open_request_exists,
+    reassign_application,
     validate_workflow_for_activation,
 )
 
@@ -33,8 +37,10 @@ class WorkflowStageSerializer(serializers.ModelSerializer):
         return value
 
 
-class WorkflowSerializer(serializers.ModelSerializer):
+class WorkflowSerializer(AuditedModelSerializer):
     """HR-facing serializer for approval workflows and their ordered stages."""
+
+    target_type = "workflow"
 
     stages = WorkflowStageSerializer(many=True)
     state = serializers.CharField(read_only=True)
@@ -123,18 +129,43 @@ class WorkflowSerializer(serializers.ModelSerializer):
             errors["detail"] = " ".join(details)
         raise serializers.ValidationError(errors)
 
+    def _audit_snapshot(self, instance: Workflow) -> dict:
+        return {
+            "name": instance.name,
+            "employee_category": instance.employee_category,
+            "department": instance.department,
+            "effective_from": instance.effective_from,
+            "is_active": instance.is_active,
+            "stages": list(
+                instance.stages.order_by("order").values_list(
+                    "approver_role", flat=True
+                )
+            ),
+        }
+
+    def _audit_target_summary(self, instance: Workflow) -> str:
+        scope = instance.employee_category or "All categories"
+        if instance.department:
+            scope += f" / {instance.department}"
+        return f"{instance.name} ({scope})"
+
     def create(self, validated_data: dict) -> Workflow:
         stages = validated_data.pop("stages", [])
         with transaction.atomic():
             workflow = Workflow.objects.create(**validated_data)
             self._replace_stages(workflow, stages)
+        self._audit_after_create(workflow)
         return workflow
 
     def update(self, instance, validated_data: dict) -> Workflow:
         stages = validated_data.pop("stages", [])
+        before = self._audit_snapshot(instance)
         with transaction.atomic():
-            instance = super().update(instance, validated_data)
+            # Bypass the automated audited update so the replacement stages are
+            # in place before the "after" snapshot is taken.
+            instance = serializers.ModelSerializer.update(self, instance, validated_data)
             self._replace_stages(instance, stages)
+        self._audit_after_update(instance, before)
         return instance
 
     def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:
@@ -262,3 +293,100 @@ class DelegationActionSerializer(serializers.Serializer):
 
     def validate_decision_reason(self, value: str) -> str:
         return (value or "").strip()
+
+
+class ReassignmentSerializer(serializers.ModelSerializer):
+    """HR-facing serializer for emergency reassignment records."""
+
+    application = serializers.PrimaryKeyRelatedField(
+        queryset=LeaveApplication.objects.all()
+    )
+    to_approver = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    reference_number = serializers.SerializerMethodField()
+    employee = serializers.SerializerMethodField()
+    employee_name = serializers.SerializerMethodField()
+    from_approver = serializers.PrimaryKeyRelatedField(read_only=True)
+    from_approver_name = serializers.SerializerMethodField()
+    to_approver_name = serializers.SerializerMethodField()
+    decided_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    decided_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Reassignment
+        fields = [
+            "id",
+            "application",
+            "reference_number",
+            "employee",
+            "employee_name",
+            "from_approver",
+            "from_approver_name",
+            "to_approver",
+            "to_approver_name",
+            "reason",
+            "decided_by",
+            "decided_by_name",
+            "created_at",
+        ]
+        read_only_fields = [
+            "created_at",
+        ]
+
+    def get_reference_number(self, obj: Reassignment) -> str:
+        return obj.application.reference_number or ""
+
+    def get_employee(self, obj: Reassignment) -> int:
+        return obj.application.employee_id
+
+    def get_employee_name(self, obj: Reassignment) -> str:
+        return obj.application.employee.get_full_name()
+
+    def get_from_approver_name(self, obj: Reassignment) -> str:
+        return obj.from_approver.get_full_name() if obj.from_approver else ""
+
+    def get_to_approver_name(self, obj: Reassignment) -> str:
+        return obj.to_approver.get_full_name()
+
+    def get_decided_by_name(self, obj: Reassignment) -> str:
+        return obj.decided_by.get_full_name()
+
+    def validate_reason(self, value: str) -> str:
+        return (value or "").strip()
+
+    def create(self, validated_data: dict) -> Reassignment:
+        request = self.context.get("request")
+        try:
+            return reassign_application(
+                application=validated_data["application"],
+                to_approver=validated_data["to_approver"],
+                actor=getattr(request, "user", None),
+                reason=validated_data.get("reason", ""),
+            )
+        except ReassignmentError as exc:
+            raise serializers.ValidationError({exc.field: [exc.message]})
+
+
+class PendingApplicationSerializer(serializers.Serializer):
+    """Read-only representation of one pending (submitted) leave application."""
+
+    def to_representation(self, instance: LeaveApplication) -> dict:
+        leave_type_name = ""
+        if instance.leave_type_id:
+            leave_type = LeaveType.objects.filter(pk=instance.leave_type_id).first()
+            if leave_type is not None:
+                leave_type_name = leave_type.name
+        current = instance.current_approver
+        return {
+            "id": instance.id,
+            "reference_number": instance.reference_number or "",
+            "employee": instance.employee_id,
+            "employee_name": instance.employee.get_full_name(),
+            "leave_type_name": leave_type_name,
+            "start_date": instance.start_date,
+            "end_date": instance.end_date,
+            "calculated_days": instance.calculated_days,
+            "reason": instance.reason,
+            "submitted_at": instance.submitted_at,
+            "current_approver": current.pk if current else None,
+            "current_approver_name": current.get_full_name() if current else "",
+        }

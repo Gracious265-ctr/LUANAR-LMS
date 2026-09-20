@@ -7,10 +7,13 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from audit.models import AuditEntry
+from audit.services import changed_fields, record_audit
+from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
 
-from .models import APPROVER_ROLE_CODES, Delegation, Workflow
+from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow
 
 
 class StageSequenceError(ValueError):
@@ -278,6 +281,40 @@ def require_decision_reason(decision_reason: object) -> str:
     return reason
 
 
+def _delegation_summary(delegation: Delegation) -> str:
+    approver = delegation.approver.get_full_name()
+    delegate = (
+        delegation.delegate.get_full_name()
+        if delegation.delegate_id
+        else "pending"
+    )
+    period = (
+        f"{delegation.starts_on.isoformat()} – "
+        f"{(delegation.ends_on.isoformat() if delegation.ends_on else 'open-ended')}"
+    )
+    return f"Delegation: {approver} → {delegate} ({period})"
+
+
+def _record_delegation_audit(
+    delegation: Delegation, *, action: str, reason: str, before: dict
+) -> None:
+    if delegation.decided_by is None:
+        return
+    after = {
+        "status": delegation.status,
+        "delegate_id": delegation.delegate_id,
+    }
+    record_audit(
+        actor=delegation.decided_by,
+        action=action,
+        target_type="delegation",
+        target_id=delegation.pk,
+        target_summary=_delegation_summary(delegation),
+        detail=changed_fields(before, after),
+        reason=reason,
+    )
+
+
 def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
     """Approve a requested delegation with a concrete delegate and reason."""
     if delegation.status != Delegation.Status.REQUESTED:
@@ -320,6 +357,12 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.APPROVED,
+            reason=reason,
+            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
+        )
     return delegation
 
 
@@ -343,6 +386,12 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "decided_at",
                 "updated_at",
             ]
+        )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.REJECTED,
+            reason=reason,
+            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
     return delegation
 
@@ -372,4 +421,101 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
+        _record_delegation_audit(
+            delegation,
+            action=AuditEntry.Action.CANCELLED,
+            reason=reason,
+            before={"status": Delegation.Status.APPROVED},
+        )
     return delegation
+
+
+class ReassignmentError(ValueError):
+    """Raised when a reassignment cannot be applied.
+
+    ``field`` is the API field the error belongs to (``"application"``,
+    ``"to_approver"``, ``"reason"``, or ``"detail"``).
+    """
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.message = message
+
+
+def require_reassignment_reason(reason: object) -> str:
+    """Trim and require an HR reassignment reason; raises ``ReassignmentError``."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise ReassignmentError(
+            "reason", "A reassignment reason is required."
+        )
+    return reason
+
+
+def reassign_application(
+    *,
+    application: LeaveApplication,
+    to_approver: User,
+    actor: User,
+    reason: object,
+) -> Reassignment:
+    """Reassign a pending application to a replacement approver.
+
+    Validates that the application is pending (``submitted``), the replacement
+    is an active user with an approver role, the replacement differs from the
+    current approver (when one is set) and from the applicant, and that a
+    reason is supplied. On success, records a :class:`Reassignment` history row
+    and atomically moves ``LeaveApplication.current_approver``.
+    """
+    if application.status != LeaveApplication.Status.SUBMITTED:
+        raise ReassignmentError(
+            "application",
+            "Only a pending (submitted) application can be reassigned.",
+        )
+    reason = require_reassignment_reason(reason)
+    if not is_approver_user(to_approver):
+        raise ReassignmentError(
+            "to_approver",
+            "Select an active user with an approver role as the replacement.",
+        )
+    if (
+        application.current_approver is not None
+        and to_approver.pk == application.current_approver.pk
+    ):
+        raise ReassignmentError(
+            "to_approver",
+            "The application is already assigned to this approver.",
+        )
+    if to_approver.pk == application.employee_id:
+        raise ReassignmentError(
+            "to_approver",
+            "A pending application cannot be assigned to its own applicant.",
+        )
+    with transaction.atomic():
+        from_approver = application.current_approver
+        reassignment = Reassignment.objects.create(
+            application=application,
+            from_approver=from_approver,
+            to_approver=to_approver,
+            reason=reason,
+            decided_by=actor,
+        )
+        application.current_approver = to_approver
+        application.save(update_fields=["current_approver", "updated_at"])
+        if actor is not None:
+            record_audit(
+                actor=actor,
+                action=AuditEntry.Action.REASSIGNED,
+                target_type="reassignment",
+                target_id=reassignment.pk,
+                target_summary=(
+                    f"Reassignment of {application.reference_number}"
+                ),
+                detail=changed_fields(
+                    {"current_approver_id": from_approver.pk if from_approver else None},
+                    {"current_approver_id": to_approver.pk},
+                ),
+                reason=reason,
+            )
+    return reassignment

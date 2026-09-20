@@ -5,7 +5,7 @@ from datetime import date
 from django.utils import timezone
 from django.utils.text import slugify
 
-from .models import FinancialYear, GradeEntitlement, LeaveRule, LeaveType, PublicHoliday
+from ..models import FinancialYear, GradeEntitlement, LeaveRule, LeaveType, PublicHoliday
 
 
 def normalize_grade(grade: str) -> str | None:

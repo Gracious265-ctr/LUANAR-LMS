@@ -1,3 +1,5 @@
+from audit.models import AuditEntry
+from audit.services import changed_fields, record_audit
 from rest_framework import permissions, response, status
 from rest_framework.views import APIView
 
@@ -5,6 +7,16 @@ from users.permissions import IsHRRole
 
 from .serializers import LeaveDocumentTemplateSerializer
 from .services import get_template
+
+_TEMPLATE_FIELDS = (
+    "title",
+    "header",
+    "intro",
+    "fields",
+    "closing",
+    "signature_areas",
+    "footer",
+)
 
 
 class LeaveDocumentTemplateView(APIView):
@@ -27,9 +39,19 @@ class LeaveDocumentTemplateView(APIView):
 
     def patch(self, request):
         template = get_template()
+        before = {field: getattr(template, field) for field in _TEMPLATE_FIELDS}
         serializer = LeaveDocumentTemplateSerializer(
             template, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        after = {field: getattr(template, field) for field in _TEMPLATE_FIELDS}
+        record_audit(
+            actor=request.user,
+            action=AuditEntry.Action.UPDATED,
+            target_type="document-template",
+            target_id=template.pk,
+            target_summary=template.title,
+            detail=changed_fields(before, after),
+        )
         return response.Response(serializer.data, status=status.HTTP_200_OK)

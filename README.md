@@ -206,8 +206,16 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/delegations/{id}/approve/` | HR approves (mandatory `decision_reason` and `delegate`; rejects period overlap with an approved delegation) |
 | POST | `/api/v1/delegations/{id}/reject/` | HR rejects with a mandatory `decision_reason` |
 | POST | `/api/v1/delegations/{id}/cancel/` | HR cancels a scheduled/active approved delegation with a mandatory `decision_reason` |
+| GET | `/api/v1/reassignments/pending/` | Intervention queue: submitted applications, newest first, with employee, leave type, dates/days, reference, and `current_approver` (HR-only) |
+| POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver` and records history (HR-only) |
+| GET | `/api/v1/reassignments/` | Reassignment history, paginated newest first; `application=<uuid>` filter (HR-only) |
+| GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
+| GET | `/api/v1/audit-entries/` | Administrative audit trail, paginated newest first; immutably records config changes, decisions, and submissions with the acting user. Filters: `action=`, `target_type=`, `target_id=`, `actor=` (HR-only) |
+| GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
+| GET | `/api/v1/finalized-leave/` | Finalized (submitted) leave applications, newest submission first, with employee, leave type, dates/days, reference, and current approver; `employee=` name/email search (HR-only) |
+| GET | `/api/v1/finalized-leave/{id}/` | One submitted application with its documents, reassignment history, and oldest-first audit trail (HR-only; 404 for draft ids) |
 
 ## Git Workflow
 

@@ -2,6 +2,9 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import serializers
 
+from audit.models import AuditEntry
+from audit.services import changed_fields, current_actor, record_audit
+
 from .models import EmployeeProfile
 
 User = get_user_model()
@@ -101,9 +104,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
             user.set_unusable_password()
             user.save()
 
-        return EmployeeProfile.objects.create(user=user, **validated_data)
+        instance = EmployeeProfile.objects.create(user=user, **validated_data)
+        self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
+        return instance
 
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
+        before = self._snapshot(instance)
         user_data = validated_data.pop("user", {})
         user = instance.user
 
@@ -121,4 +127,43 @@ class EmployeeSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
 
+        after = self._snapshot(instance)
+        self._audit(instance, action=AuditEntry.Action.UPDATED, before=before, after=after)
         return instance
+
+    def _snapshot(self, instance: EmployeeProfile) -> dict:
+        user = instance.user
+        return {
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "is_active": user.is_active,
+            "designation": instance.designation,
+            "department": instance.department,
+            "category": instance.category,
+            "grade": instance.grade,
+            "appointment_date": instance.appointment_date,
+        }
+
+    def _audit(
+        self,
+        instance: EmployeeProfile,
+        *,
+        action: str,
+        before: dict | None,
+        after: dict | None = None,
+    ) -> None:
+        actor = current_actor(self)
+        if actor is None:
+            return
+        detail = {"before": None, "after": after or self._snapshot(instance)}
+        if before is not None:
+            detail = changed_fields(before, after or self._snapshot(instance))
+        record_audit(
+            actor=actor,
+            action=action,
+            target_type="employee",
+            target_id=instance.pk,
+            target_summary=instance.user.get_full_name(),
+            detail=detail,
+        )

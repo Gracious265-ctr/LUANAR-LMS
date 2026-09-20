@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { memo, useCallback, useState } from "react";
 import {
+  ArrowLeftRight,
   Bell,
+  Calendar,
   CalendarDays,
   CalendarRange,
   ChevronDown,
   ChevronsRight,
   ClipboardList,
   FileText,
+  History,
   Home,
   LogOut,
   Settings,
@@ -58,11 +61,11 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const showDepartment = HOD_AND_ABOVE.includes(user.role);
   const showHR = user.role === HR_ROLE;
 
-  async function handleLogout() {
+  const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
-  }
+  }, [router]);
 
   return (
     <div className="flex h-screen">
@@ -86,7 +89,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   );
 }
 
-function Sidebar({
+const Sidebar = memo(function Sidebar({
   open,
   setOpen,
   currentPath,
@@ -106,7 +109,7 @@ function Sidebar({
   return (
     <nav
       className={cn(
-        "sticky top-0 h-screen shrink-0 border-r transition-all duration-300 ease-in-out",
+        "sticky top-0 h-screen shrink-0 border-r transition-[width] duration-200 ease-in-out",
         "border-border-default bg-surface-card shadow-sm p-2",
         open ? "w-64" : "w-16"
       )}
@@ -124,14 +127,14 @@ function Sidebar({
         <Option
           Icon={FileText}
           title="My Applications"
-          href="/dashboard/my-applications"
+          href="/dashboard/leave/drafts"
           currentPath={currentPath}
           open={open}
         />
         <Option
-          Icon={FileText}
+          Icon={Calendar}
           title="New Application"
-          href="/dashboard/new-application"
+          href="/dashboard/leave/new"
           currentPath={currentPath}
           open={open}
         />
@@ -212,9 +215,23 @@ function Sidebar({
               open={open}
             />
             <Option
+              Icon={ArrowLeftRight}
+              title="Reassignments"
+              href="/dashboard/hr-admin/reassignments"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
               Icon={FileText}
               title="Document Template"
               href="/dashboard/hr-admin/leave-document-template"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={History}
+              title="Audit View"
+              href="/dashboard/hr-admin/audit"
               currentPath={currentPath}
               open={open}
             />
@@ -240,9 +257,9 @@ function Sidebar({
       <ToggleClose open={open} setOpen={setOpen} />
     </nav>
   );
-}
+});
 
-function Option({
+const Option = memo(function Option({
   Icon,
   title,
   href,
@@ -261,7 +278,7 @@ function Option({
     <Link
       href={href}
       className={cn(
-        "relative flex h-11 w-full items-center rounded-md transition-all duration-200",
+        "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
         isSelected
           ? "bg-brand-primary-subtle text-brand-primary shadow-sm border-l-2 border-brand-primary"
           : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
@@ -283,9 +300,9 @@ function Option({
       )}
     </Link>
   );
-}
+});
 
-function TitleSection({ open, user }: { open: boolean; user: User }) {
+const TitleSection = memo(function TitleSection({ open, user }: { open: boolean; user: User }) {
   return (
     <div className="mb-6 border-b border-border-default pb-4">
       <div className="flex cursor-pointer items-center justify-between rounded-md p-2 transition-colors hover:bg-surface-hover">
@@ -309,15 +326,15 @@ function TitleSection({ open, user }: { open: boolean; user: User }) {
             </div>
           )}
         </div>
-        {open && (
-          <ChevronDown className="h-4 w-4 text-text-muted" />
-        )}
-      </div>
+{open && (
+        <ChevronDown className="h-4 w-4 text-text-muted" />
+      )}
+    </div>
     </div>
   );
-}
+});
 
-function ToggleClose({
+const ToggleClose = memo(function ToggleClose({
   open,
   setOpen,
 }: {
@@ -333,7 +350,7 @@ function ToggleClose({
         <div className="grid size-10 place-content-center">
           <ChevronsRight
             className={cn(
-              "h-4 w-4 transition-transform duration-300 text-text-muted",
+              "h-4 w-4 transition-transform duration-200 text-text-muted",
               open ? "rotate-180" : ""
             )}
           />
@@ -351,9 +368,9 @@ function ToggleClose({
       </div>
     </button>
   );
-}
+});
 
-function Header({
+const Header = memo(function Header({
   user,
   onLogout,
 }: {
@@ -395,4 +412,4 @@ function Header({
       </div>
     </header>
   );
-}
+});
