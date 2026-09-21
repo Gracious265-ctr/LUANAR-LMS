@@ -7,6 +7,7 @@ from users.permissions import IsHRRole
 
 from .models import AuditEntry
 from .serializers import AuditEntrySerializer, HRLeaveApplicationSerializer
+from .validation import positive_int
 
 
 class AuditEntryViewSet(
@@ -33,7 +34,7 @@ class AuditEntryViewSet(
             queryset = queryset.filter(target_id=target_id)
         actor = self.request.query_params.get("actor")
         if actor:
-            queryset = queryset.filter(actor_id=actor)
+            queryset = queryset.filter(actor_id=positive_int(actor, "actor"))
         return queryset
 
 

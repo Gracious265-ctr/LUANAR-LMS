@@ -235,6 +235,20 @@ class AuditEntryApiTests(TestCase):
         self.assertEqual([r["target_id"] for r in ids({"actor": employee.pk})], ["42"])
         self.assertEqual(ids({"target_id": "999"}), [])
 
+    def test_invalid_actor_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("abc", "-1", "4.5"):
+            response = self.client.get(self.list_url, {"actor": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"actor={bad}"
+            )
+
+    def test_valid_actor_filter_still_works(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.list_url, {"actor": self.hr_user.pk})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+
 
 class FinalizedLeaveApiTests(TestCase):
     """Organization-wide submitted-application reads with history roll-up."""

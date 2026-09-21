@@ -6,6 +6,7 @@ from rest_framework import viewsets
 
 from users.permissions import IsHRRole
 
+from audit.validation import uuid_value
 from leave.models import LeaveApplication
 
 from .models import Delegation, Reassignment, Workflow
@@ -145,7 +146,9 @@ class ReassignmentViewSet(
         )
         application = self.request.query_params.get("application")
         if application:
-            queryset = queryset.filter(application_id=application)
+            queryset = queryset.filter(
+                application_id=uuid_value(application, "application")
+            )
         return queryset
 
     @decorators.action(detail=False, methods=["get"])

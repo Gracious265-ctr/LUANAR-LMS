@@ -852,6 +852,14 @@ class LeaveRuleEndpointTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)  # type: ignore[index]
 
+    def test_invalid_leave_type_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("abc", "-1", "4.5"):
+            response = self.client.get(self.list_url, {"leave_type": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"leave_type={bad}"
+            )
+
     def test_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.delete(self.detail_url)
@@ -1214,6 +1222,14 @@ class PublicHolidayEndpointTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)  # type: ignore[index]
         self.assertEqual(response.data["results"][0]["name"], "New Year")  # type: ignore[index]
+
+    def test_invalid_year_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("abc", "thirty", "4.5"):
+            response = self.client.get(self.list_url, {"year": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"year={bad}"
+            )
 
     def test_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)

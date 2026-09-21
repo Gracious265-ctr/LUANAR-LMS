@@ -2051,6 +2051,14 @@ class ReassignmentEndpointTests(TestCase):
             response.json()["results"][0]["reason"], "App1 only"
         )
 
+    def test_invalid_application_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("not-a-uuid", "123", "zzz"):
+            response = self.client.get(self._create_url(), {"application": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"application={bad}"
+            )
+
     # --- Retrieve ---
 
     def test_retrieve(self):

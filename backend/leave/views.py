@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
+from audit.validation import positive_int
 
 from users.permissions import IsHRRole
 
@@ -129,7 +130,9 @@ class LeaveRuleViewSet(
         queryset = LeaveRule.objects.all()
         leave_type = self.request.query_params.get("leave_type")
         if leave_type:
-            queryset = queryset.filter(leave_type=leave_type)
+            queryset = queryset.filter(
+                leave_type=positive_int(leave_type, "leave_type")
+            )
         effective = self.request.query_params.get("effective")
         if effective == "current":
             queryset = queryset.filter(effective_from__lte=timezone.localdate())
@@ -172,7 +175,9 @@ class PublicHolidayViewSet(
         queryset = PublicHoliday.objects.all()
         year = self.request.query_params.get("year")
         if year:
-            queryset = queryset.filter(date__year=year)
+            queryset = queryset.filter(
+                date__year=positive_int(year, "year")
+            )
         return queryset
 
 
