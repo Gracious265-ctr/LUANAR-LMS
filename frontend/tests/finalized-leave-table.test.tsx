@@ -5,7 +5,7 @@ import { FinalizedLeaveTable } from "@/components/hr/finalized-leave-table";
 import type { FinalizedApplication } from "@/lib/audit";
 
 const app: FinalizedApplication = {
-  id: 10,
+  id: "10",
   reference_number: "LUANAR-2026-0001",
   employee: 8,
   employee_name: "Sam Staff",

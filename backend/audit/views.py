@@ -2,11 +2,15 @@ from django.db.models import Q
 from django.http import Http404
 from rest_framework import mixins, permissions, viewsets
 
-from leave.models import LeaveApplication
+from leave.models import LeaveApplication, LeaveType
 from users.permissions import IsHRRole
 
 from .models import AuditEntry
-from .serializers import AuditEntrySerializer, HRLeaveApplicationSerializer
+from .serializers import (
+    AuditEntrySerializer,
+    FinalizedApplicationListSerializer,
+    HRLeaveApplicationSerializer,
+)
 from .validation import positive_int
 
 
@@ -48,6 +52,19 @@ class FinalizedLeaveViewSet(
     serializer_class = HRLeaveApplicationSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "head", "options"]
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return HRLeaveApplicationSerializer
+        return FinalizedApplicationListSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == "list":
+            context["leave_type_names"] = dict(
+                LeaveType.objects.values_list("id", "name")
+            )
+        return context
 
     def get_queryset(self):
         queryset = LeaveApplication.objects.filter(

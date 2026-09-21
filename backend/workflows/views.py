@@ -7,7 +7,7 @@ from rest_framework import viewsets
 from users.permissions import IsHRRole
 
 from audit.validation import uuid_value
-from leave.models import LeaveApplication
+from leave.models import LeaveApplication, LeaveType
 
 from .models import Delegation, Reassignment, Workflow
 from .permissions import IsApproverRoleOrHR
@@ -160,5 +160,11 @@ class ReassignmentViewSet(
             .order_by("-submitted_at")
         )
         page = self.paginate_queryset(queryset)
-        payload = PendingApplicationSerializer(page, many=True)
-        return self.get_paginated_response(payload.data)
+        serializer = PendingApplicationSerializer(
+            page,
+            many=True,
+            context={"leave_type_names": dict(
+                LeaveType.objects.values_list("id", "name")
+            )},
+        )
+        return self.get_paginated_response(serializer.data)

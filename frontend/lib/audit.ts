@@ -18,7 +18,7 @@ export interface AuditEntry {
 }
 
 export interface FinalizedApplication {
-  id: number;
+  id: string;
   reference_number: string;
   employee: number;
   employee_name: string;

@@ -299,6 +299,22 @@ class FinalizedLeaveApiTests(TestCase):
         ids = [row["id"] for row in response.data["results"]]
         self.assertEqual(ids, [self.app.id, latest.id])
 
+    def test_list_rows_omit_history_rollup(self):
+        self.client.force_authenticate(user=self.hr_user)
+        row = self.client.get(self.list_url).data["results"][0]
+        self.assertNotIn("documents", row)
+        self.assertNotIn("reassignments", row)
+        self.assertNotIn("audit_entries", row)
+
+    def test_list_resolves_leave_type_name(self):
+        leave_type = LeaveType.objects.create(name="Annual leave", code="annual")
+        LeaveApplication.objects.filter(pk=self.app.pk).update(
+            leave_type_id=leave_type.pk
+        )
+        self.client.force_authenticate(user=self.hr_user)
+        row = self.client.get(self.list_url).data["results"][0]
+        self.assertEqual(row["leave_type_name"], "Annual leave")
+
     def test_employee_search_icontains(self):
         self.client.force_authenticate(user=self.hr_user)
         make_submitted_application(self.other_employee)

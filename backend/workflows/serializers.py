@@ -372,9 +372,15 @@ class PendingApplicationSerializer(serializers.Serializer):
     def to_representation(self, instance: LeaveApplication) -> dict:
         leave_type_name = ""
         if instance.leave_type_id:
-            leave_type = LeaveType.objects.filter(pk=instance.leave_type_id).first()
-            if leave_type is not None:
-                leave_type_name = leave_type.name
+            names = self.context.get("leave_type_names")
+            if names is not None:
+                leave_type_name = names.get(instance.leave_type_id, "")
+            else:
+                leave_type = LeaveType.objects.filter(
+                    pk=instance.leave_type_id
+                ).first()
+                if leave_type is not None:
+                    leave_type_name = leave_type.name
         current = instance.current_approver
         return {
             "id": instance.id,

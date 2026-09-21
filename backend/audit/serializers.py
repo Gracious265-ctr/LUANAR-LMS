@@ -100,6 +100,23 @@ class AuditEntrySerializer(serializers.ModelSerializer):
         return obj.actor.get_full_name()
 
 
+class FinalizedApplicationListSerializer(serializers.Serializer):
+    """Light list representation of finalized applications.
+
+    Deliberately excludes the history roll-up (documents/reassignments/audit
+    entries); only the row shape is serialized. Accepts a ``leave_type_names``
+    mapping in the serializer context so the whole page resolves leave-type
+    names in one query instead of one per row.
+    """
+
+    def to_representation(self, instance) -> dict:
+        from workflows.serializers import PendingApplicationSerializer
+
+        return PendingApplicationSerializer(
+            instance=instance, context=self.context
+        ).data
+
+
 class HRLeaveApplicationSerializer(serializers.Serializer):
     """HR read of one submitted application with its history roll-up.
 
