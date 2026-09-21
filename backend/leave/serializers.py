@@ -19,6 +19,7 @@ from .services import (
     normalize_grade,
     normalize_leave_code,
 )
+from .services.storage import signed_document_url
 
 
 class GradeEntitlementSerializer(AuditedModelSerializer):
@@ -295,6 +296,8 @@ class PublicHolidaySerializer(AuditedModelSerializer):
 
 
 class SupportingDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = SupportingDocument
         fields = [
@@ -307,6 +310,12 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
             "uploaded_at",
         ]
         read_only_fields = fields
+
+    def get_file_url(self, obj) -> str:
+        try:
+            return signed_document_url(obj.file_path)
+        except ValueError:
+            return obj.file_url
 
 
 class LeaveApplicationSerializer(serializers.ModelSerializer):

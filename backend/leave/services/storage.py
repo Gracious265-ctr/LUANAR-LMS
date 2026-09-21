@@ -24,6 +24,20 @@ def upload_document(file, application_id: str) -> dict:
     return {"path": path, "url": result["signedURL"]}
 
 
+def signed_document_url(file_path: str) -> str:
+    """A freshly generated signed URL for a stored document path.
+
+    Signed URLs expire after ``SUPABASE_SIGNED_URL_EXPIRY`` seconds, so reads
+    re-sign from the stored ``file_path`` rather than trusting a stale URL
+    persisted at upload time.
+    """
+    client = get_supabase_client()
+    result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+        file_path, settings.SUPABASE_SIGNED_URL_EXPIRY
+    )
+    return result["signedURL"]
+
+
 def delete_document(file_path: str) -> None:
     client = get_supabase_client()
     client.storage.from_(settings.SUPABASE_BUCKET).remove([file_path])

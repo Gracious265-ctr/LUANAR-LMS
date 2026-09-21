@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
 from django.core.management import call_command
@@ -35,6 +36,7 @@ from .services import (
     resolve_leave_rule,
 )
 from .services.working_days import calculate_working_days
+from .serializers import LeaveApplicationSerializer, SupportingDocumentSerializer
 
 SEED_PASSWORD = "testpass123"
 TODAY = timezone.localdate()
@@ -1593,3 +1595,68 @@ class UnauthenticatedAccessTest(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class SupportingDocumentSerializationTest(TestCase):
+    """file_url is re-signed from file_path at read time, never the stored URL."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser", email="test@luanar.mw", password=SEED_PASSWORD
+        )
+        self.app = LeaveApplication.objects.create(employee=self.user)
+        self.doc = SupportingDocument.objects.create(
+            application=self.app,
+            file_path="leave-documents/abcd/notes.pdf",
+            file_url="stale://signed-url",
+            file_name="notes.pdf",
+            file_size=1024,
+            content_type="application/pdf",
+        )
+
+    def test_file_url_is_re_signed_from_file_path(self):
+        with mock.patch(
+            "leave.serializers.signed_document_url",
+            return_value="fresh://signed-url",
+        ) as signed:
+            data = SupportingDocumentSerializer(self.doc).data
+        signed.assert_called_once_with("leave-documents/abcd/notes.pdf")
+        self.assertEqual(data["file_url"], "fresh://signed-url")
+
+    def test_serialization_falls_back_to_stored_url_when_storage_unconfigured(self):
+        with mock.patch(
+            "leave.serializers.signed_document_url",
+            side_effect=ValueError("Supabase credentials are not configured."),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertEqual(data["file_url"], "stale://signed-url")
+
+    def test_fresh_signature_is_derived_from_the_path(self):
+        class _FakeBucket:
+            def create_signed_url(self, path, expiry):
+                return {"signedURL": f"https://signed/{path}?exp={expiry}"}
+
+        class _FakeBucketClient:
+            def from_(self, bucket):
+                return _FakeBucket()
+
+        class _FakeClient:
+            def __init__(self):
+                self.storage = _FakeBucketClient()
+
+        with mock.patch(
+            "leave.services.storage.get_supabase_client",
+            return_value=_FakeClient(),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertIn(
+            "https://signed/leave-documents/abcd/notes.pdf", data["file_url"]
+        )
+
+    def test_stored_url_is_never_used_for_serialization(self):
+        with mock.patch(
+            "leave.serializers.signed_document_url",
+            return_value="fresh://signed-url",
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertNotIn("stale://signed-url", data["file_url"])
