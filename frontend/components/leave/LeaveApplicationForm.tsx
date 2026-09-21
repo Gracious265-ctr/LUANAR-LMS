@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { createLeaveApplication } from "@/lib/leave-api";
@@ -30,6 +31,9 @@ export function LeaveApplicationForm({
   >([]);
   const [workingDays, setWorkingDays] = useState<number | null>(null);
   const [daysLoading, setDaysLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(
     () => !(mode === "edit" && applicationId)
   );
@@ -58,15 +62,23 @@ export function LeaveApplicationForm({
         });
         if (res.ok) {
           const data = await res.json();
+          if (data.status === "submitted") {
+            setSubmitted(true);
+            return;
+          }
           setLeaveTypeId(data.leave_type_id);
           setStartDate(data.start_date || "");
           setEndDate(data.end_date || "");
           setReason(data.reason || "");
           setDocuments(data.documents || []);
           setWorkingDays(data.calculated_days);
+        } else {
+          setLoadError("Could not load this draft. It may have been removed.");
         }
       } catch {
-        // Error handled silently
+        setLoadError(
+          "Could not load this draft. Check your connection and try again."
+        );
       } finally {
         setInitialLoaded(true);
       }
@@ -100,8 +112,12 @@ export function LeaveApplicationForm({
     try {
       const app = await createLeaveApplication(patch);
       setCurrentId(app.id);
+      setCreateError(null);
       return app.id;
     } catch {
+      setCreateError(
+        "Could not start your application. Check your connection and try again."
+      );
       return null;
     }
   }, [currentId]);
@@ -130,8 +146,46 @@ export function LeaveApplicationForm({
     );
   }
 
+  if (submitted) {
+    return (
+      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+        <div className="text-lg font-semibold text-text-primary mb-2">
+          Application Already Submitted
+        </div>
+        <p className="text-sm text-text-secondary mb-6">
+          This leave application has been submitted and can no longer be edited.
+          View its current details in your applications list.
+        </p>
+        <Link
+          href="/dashboard/leave/drafts"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
+        >
+          Back to Applications
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 text-sm text-status-rejected"
+        >
+          {loadError}
+        </div>
+      )}
+
+      {createError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 text-sm text-status-rejected"
+        >
+          {createError}
+        </div>
+      )}
+
       <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Leave Details

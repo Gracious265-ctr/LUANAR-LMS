@@ -16,17 +16,19 @@ interface DraftCardProps {
 export function DraftCard({ application, leaveTypeName, onDelete }: DraftCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleDelete = async () => {
     setDeleting(true);
+    setError(null);
     try {
       await deleteLeaveApplication(application.id);
       onDelete(application.id);
     } catch {
-      // Error handled silently
+      setError("Could not delete this draft. Please try again.");
+      setConfirming(false);
     } finally {
       setDeleting(false);
-      setConfirming(false);
     }
   };
 
@@ -70,6 +72,15 @@ export function DraftCard({ application, leaveTypeName, onDelete }: DraftCardPro
       {application.reason && (
         <p className="text-sm text-text-secondary mb-4 line-clamp-2">
           {application.reason}
+        </p>
+      )}
+
+      {error && (
+        <p
+          role="alert"
+          className="text-xs text-status-rejected mt-2 mb-3"
+        >
+          {error}
         </p>
       )}
 

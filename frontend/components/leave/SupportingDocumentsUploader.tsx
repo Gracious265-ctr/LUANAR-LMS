@@ -23,6 +23,7 @@ export function SupportingDocumentsUploader({
   onEnsureDraft,
 }: SupportingDocumentsUploaderProps) {
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -31,15 +32,25 @@ export function SupportingDocumentsUploader({
       if (!id && onEnsureDraft) {
         id = await onEnsureDraft();
       }
-      if (!id) return;
+      if (!id) {
+        setError("Could not create a draft to attach the document. Please try again.");
+        return;
+      }
       setUploading(true);
+      setError(null);
       try {
+        let updated = [...documents];
         for (const file of acceptedFiles) {
           const doc = await uploadDocument(id, file);
-          onDocumentsChange([...documents, doc]);
+          updated = [...updated, doc];
         }
-      } catch {
-        // Error handled silently for now
+        onDocumentsChange(updated);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Upload failed. Check the file and try again."
+        );
       } finally {
         setUploading(false);
       }
@@ -55,11 +66,12 @@ export function SupportingDocumentsUploader({
   const handleRemove = useCallback(
     async (docId: string) => {
       if (!applicationId) return;
+      setError(null);
       try {
         await deleteDocument(applicationId, docId);
         onDocumentsChange(documents.filter((d) => d.id !== docId));
       } catch {
-        // Error handled silently
+        setError("Could not remove this document. Please try again.");
       }
     },
     [applicationId, documents, onDocumentsChange]
@@ -130,6 +142,12 @@ export function SupportingDocumentsUploader({
             </div>
           ))}
         </div>
+      )}
+
+      {error && !disabled && (
+        <p role="alert" className="text-xs text-status-rejected mt-2">
+          {error}
+        </p>
       )}
     </div>
   );
