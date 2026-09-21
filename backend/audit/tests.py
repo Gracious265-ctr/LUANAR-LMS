@@ -800,3 +800,25 @@ class AuditedModelSerializerAtomicityTests(TestCase):
                 serializer.save()
         leave_type.refresh_from_db()
         self.assertEqual(leave_type.name, "Annual leave")
+
+
+class AuditEntryIntegrityTests(TestCase):
+    """The append-only log protects its actor rows from deletion."""
+
+    def test_actor_deletion_is_protected(self):
+        from django.db.models.deletion import ProtectedError
+
+        actor = make_user(User.Role.HR, "protect-log@audit.test")
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type="leavetype",
+            target_id="1",
+            target_summary="Annual leave",
+        )
+        with self.assertRaises(ProtectedError):
+            actor.delete()
+        self.assertTrue(
+            User.objects.filter(email="protect-log@audit.test").exists()
+        )
+        self.assertEqual(AuditEntry.objects.count(), 1)

@@ -2212,3 +2212,50 @@ class WorkflowSerializerAtomicityTests(TestCase):
         self.assertEqual(
             list(workflow.stages.values_list("approver_role", flat=True)), ["dean"]
         )
+
+
+class SpineIntegrityTests(TestCase):
+    """Delegation and reassignment history rows are protected, not dropped."""
+
+    def setUp(self):
+        self.hr = make_active_user(User.Role.HR, "hr-spine@test.luanar")
+        self.dean = make_active_user(User.Role.DEAN, "dean-spine@test.luanar")
+        self.hod = make_active_user(User.Role.HOD, "hod-spine@test.luanar")
+        self.employee = make_active_user(
+            User.Role.EMPLOYEE, "emp-spine@test.luanar"
+        )
+        self.app = make_application(self.employee, ref="LUANAR-2026-SPINE")
+
+    def test_approver_with_delegation_cannot_be_deleted(self):
+        from django.db.models.deletion import ProtectedError
+
+        make_delegation(self.dean, timezone.localdate())
+        with self.assertRaises(ProtectedError):
+            self.dean.delete()
+        self.assertTrue(User.objects.filter(pk=self.dean.pk).exists())
+
+    def test_replaced_approver_in_reassignment_cannot_be_deleted(self):
+        from django.db.models.deletion import ProtectedError
+
+        Reassignment.objects.create(
+            application=self.app,
+            from_approver=self.dean,
+            to_approver=self.hod,
+            reason="Coverage",
+            decided_by=self.hr,
+        )
+        with self.assertRaises(ProtectedError):
+            self.dean.delete()
+
+    def test_application_with_reassignment_cannot_be_deleted(self):
+        from django.db.models.deletion import ProtectedError
+
+        Reassignment.objects.create(
+            application=self.app,
+            to_approver=self.hod,
+            reason="Coverage",
+            decided_by=self.hr,
+        )
+        with self.assertRaises(ProtectedError):
+            self.app.delete()
+        self.assertTrue(LeaveApplication.objects.filter(pk=self.app.pk).exists())

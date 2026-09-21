@@ -104,13 +104,13 @@ class Delegation(models.Model):
 
     approver = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="delegations_as_approver",
         help_text="The approver whose pending decisions are delegated.",
     )
     delegate = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="delegations_as_delegate",
         null=True,
         blank=True,
@@ -128,7 +128,7 @@ class Delegation(models.Model):
     )
     requested_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="delegations_requested",
         help_text="Who submitted the request (the approver or HR on their behalf).",
     )
@@ -143,7 +143,7 @@ class Delegation(models.Model):
     )
     decided_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="delegations_decided",
         null=True,
         blank=True,
@@ -197,13 +197,13 @@ class Reassignment(models.Model):
 
     application = models.ForeignKey(
         "leave.LeaveApplication",
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="reassignments",
         help_text="The pending leave application being reassigned.",
     )
     from_approver = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="reassignments_from",
         null=True,
         blank=True,
@@ -211,7 +211,7 @@ class Reassignment(models.Model):
     )
     to_approver = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="reassignments_to",
         help_text="The replacement approver who inherits the pending application.",
     )
@@ -220,7 +220,7 @@ class Reassignment(models.Model):
     )
     decided_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="reassignments_decided",
         help_text="The HR user who performed the reassignment.",
     )
