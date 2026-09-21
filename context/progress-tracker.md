@@ -4,17 +4,20 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
 - Unit 9 — HR Emergency Reassignment (COMPLETE)
 
 ## Current Goal
 
-- Both independent tracks (HR: Units 2–10; Employee+Approver: Unit 13) are merged
-  onto `development`, and the HR track's next build (Unit 9, unblocked once Unit
-  13 delivered application rows) is complete. **Unit 11 — Finalized Leave +
-  Audit View — is the HR track's next build** and continues to depend on the
-  applications Unit 13 provides.
+- **Unit 14 — Leave Validation and Submission** is the Employee + Approver
+  track's next build: turn a Unit 13 draft into a `submitted` application
+  through a single backend-authoritative validation pipeline (working days,
+  notice, duration, eligibility, financial year, balance, overlap, documents)
+  issuing a unique `LV-{financial-year-label}-{6-digit}` reference, with review
+  and confirmation screens. It depends only on the provider interface and the
+  LeaveApplication model, so it does not wait on the HR-track merge.
 
 ## Completed
 
@@ -247,19 +250,43 @@ Update this file after every meaningful implementation change.
   sub-menu retained; links point at the real `/dashboard/leave/*` routes;
   `Calendar` icon added
 
-## In Progress
+## Completed (Unit 14)
 
-- None.
+- **Backend.** `providers/` package (base dataclasses + `RulesProvider`
+  protocol + `FixtureRulesProvider` placeholder, `get_provider()`/
+  `get_today()`), `validation/` package (`types.py`, `working_days.py`,
+  `pipeline.py` with the ordered `CHECK_ORDER`, 10 validators incl.
+  `preconditions`), models/migration `0006` (LeaveApplication
+  `working_days`/`calendar_days`/`financial_year_label`/`rules_snapshot`,
+  ReferenceSequence reshaped to `financial_year_label`/`last_value`,
+  `0001` audit app/`AuditEvent`), services (`submission`, `references`,
+  `workflow_gate` stub), `leave_application_submitted` signal + audit recording,
+  `validate/` and `submit/` endpoints (`views/validation.py`, explicit routes).
+  `manage.py check` and `makemigrations --check` clean.
+- **Backend tests.** `leave/tests.py` → `leave/tests/` package (`legacy.py`
+  kept, 4 superseded submit tests removed) + `stubs.py` (explicit-data
+  `StubRulesProvider`, fixed `today=2026-09-21`) + 6 new suites
+  (`test_working_days`, `test_validators`, `test_pipeline`, `test_references`,
+  `test_submission`, `test_api` incl. a `TransactionTestCase` concurrency race).
+  `Ran 142 tests ... OK` for `leave.tests`.
+- **Frontend.** `lib/leave-validation.ts` (error-code union + `SubmitError` +
+  `validateLeave`/`submitApplication`), `/api/leave/validate/` proxy,
+  `useLeaveValidation` (400ms debounce, AbortController), review + submitted
+  screens (`ReviewSummaryClient`, `SubmittedClient`), `validation-panel`,
+  `balance-card`, `leave-review-summary`, `submission-confirmation`,
+  `LeaveApplicationForm` inline validation (working-days preview +
+  per-field errors), submit outcomes per spec (200/422-focus/409/network).
+  `npm test` 28 files / 139 tests green, `tsc --noEmit`, `npm run lint` and
+  `npm run build` all pass.
+- **Docs.** `backend/docs/leave-validation.md` (pipeline order + error codes),
+  `backend/docs/leave-rules-provider-contract.md` (Unit 20 handoff mapping).
 
 ## Next Up
 
-- **HR track (this developer):** Unit 11 — Finalized Leave + Audit View (depends
-  on the submitted applications Unit 13 delivers; Unit 9's reassignment spine
-  and Unit 21's routing build on from here).
-- **Employee + Approver track:** next application-facing unit per the shared
-  build plan; Units 4/5 (Leave Types API, Calendar/Rules API) were listed as
-  deferred in the Unit 13 spec but are **already implemented** by the HR track
-  and integrated on `development`.
+- **After Unit 14:** the workflow-routing track builds on the `submitted`
+  state this unit produces; the HR track's Unit 11 (Finalized Leave + Audit
+  View) and Unit 21 (routing, which consumes the `workflow_gate` stub and the
+  `leave_application_submitted` signal).
 
 ## Open Questions
 

@@ -174,6 +174,12 @@ class LeaveApplication(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
 
+    # Authoritative, server-calculated values written once at submission (Unit 14).
+    working_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    financial_year_label = models.CharField(max_length=16, null=True, blank=True)
+    rules_snapshot = models.JSONField(null=True, blank=True)
+
     class Meta:
         ordering = ["-updated_at"]
 
@@ -204,8 +210,15 @@ class SupportingDocument(models.Model):
 
 
 class ReferenceSequence(models.Model):
-    year = models.PositiveIntegerField(unique=True)
-    last_number = models.PositiveIntegerField(default=0)
+    """Per-financial-year reference counter (Unit 14, decision D8).
+
+    Each financial year has its own independent, never-reused sequence; the
+    ``reference_number`` unique constraint on ``LeaveApplication`` is the final
+    safety net against a collision.
+    """
+
+    financial_year_label = models.CharField(max_length=16, unique=True)
+    last_value = models.PositiveIntegerField(default=0)
 
     def __str__(self) -> str:
-        return f"RefSeq({self.year}: {self.last_number})"
+        return f"RefSeq({self.financial_year_label}: {self.last_value})"

@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from users.models import User
 
-from .admin import (
+from ..admin import (
     FinancialYearAdmin,
     FinancialYearAdminForm,
     GradeEntitlementAdmin,
@@ -17,24 +17,23 @@ from .admin import (
     PublicHolidayAdmin,
     PublicHolidayAdminForm,
 )
-from .models import (
+from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
     LeaveRule,
     LeaveType,
     PublicHoliday,
-    ReferenceSequence,
     SupportingDocument,
 )
-from .services import (
+from ..services import (
     active_financial_year,
     financial_year_for_date,
     public_holidays_between,
     resolve_grade_entitlement,
     resolve_leave_rule,
 )
-from .services.working_days import calculate_working_days
+from ..services.working_days import calculate_working_days
 
 SEED_PASSWORD = "testpass123"
 TODAY = timezone.localdate()
@@ -1461,75 +1460,6 @@ class LeaveApplicationAPITest(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_submit_draft(self):
-        app = LeaveApplication.objects.create(
-            employee=self.user,
-            leave_type_id=1,
-            start_date="2026-09-14",
-            end_date="2026-09-18",
-            reason="Family matters",
-        )
-        response = self.client.post(
-            f"/api/v1/leave-applications/{app.id}/submit/",
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("reference_number", response.data)
-        self.assertTrue(response.data["reference_number"].startswith("LUANAR-2026-"))
-        app.refresh_from_db()
-        self.assertEqual(app.status, LeaveApplication.Status.SUBMITTED)
-        self.assertIsNotNone(app.submitted_at)
-
-    def test_submit_with_missing_fields(self):
-        app = LeaveApplication.objects.create(
-            employee=self.user,
-            leave_type_id=1,
-            start_date="2026-09-14",
-            end_date="2026-09-18",
-            # reason is missing
-        )
-        response = self.client.post(
-            f"/api/v1/leave-applications/{app.id}/submit/",
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("reason", response.data["detail"])
-
-    def test_submit_already_submitted(self):
-        app = LeaveApplication.objects.create(
-            employee=self.user,
-            leave_type_id=1,
-            start_date="2026-09-14",
-            end_date="2026-09-18",
-            reason="Family matters",
-            status=LeaveApplication.Status.SUBMITTED,
-            reference_number="LUANAR-2026-00001",
-        )
-        response = self.client.post(
-            f"/api/v1/leave-applications/{app.id}/submit/",
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_reference_numbers_are_sequential(self):
-        for i in range(3):
-            app = LeaveApplication.objects.create(
-                employee=self.user,
-                leave_type_id=1,
-                start_date="2026-09-14",
-                end_date="2026-09-18",
-                reason=f"Reason {i}",
-            )
-            self.client.post(
-                f"/api/v1/leave-applications/{app.id}/submit/",
-                format="json",
-            )
-        apps = LeaveApplication.objects.filter(
-            status=LeaveApplication.Status.SUBMITTED
-        ).order_by("submitted_at")
-        refs = [a.reference_number for a in apps]
-        self.assertEqual(len(set(refs)), 3)
 
     def test_bogus_calculated_days_is_ignored(self):
         response = self.client.post(

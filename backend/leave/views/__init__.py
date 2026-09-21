@@ -1,8 +1,6 @@
 import logging
 from datetime import date, datetime
 
-from django.db import transaction
-from django.db.models import F
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -12,18 +10,17 @@ from rest_framework.response import Response
 
 from users.permissions import IsHRRole
 
-from .models import (
+from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
     LeaveRule,
     LeaveType,
     PublicHoliday,
-    ReferenceSequence,
     SupportingDocument,
 )
-from .permissions import IsOwner
-from .serializers import (
+from ..permissions import IsOwner
+from ..serializers import (
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
@@ -32,9 +29,9 @@ from .serializers import (
     PublicHolidaySerializer,
     SupportingDocumentSerializer,
 )
-from .services import normalize_grade, resolve_grade_entitlement
-from .services.storage import delete_document, upload_document
-from .services.working_days import calculate_working_days
+from ..services import normalize_grade, resolve_grade_entitlement
+from ..services.storage import delete_document, upload_document
+from ..services.working_days import calculate_working_days
 
 logger = logging.getLogger(__name__)
 
@@ -242,65 +239,6 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
         days = calculate_working_days(start, end)
         return Response({"days": days})
-
-    @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, pk=None):
-        instance = self.get_object()
-        if instance.status == LeaveApplication.Status.SUBMITTED:
-            return Response(
-                {"detail": "Application has already been submitted."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        missing_fields = []
-        if not instance.leave_type_id:
-            missing_fields.append("leave_type_id")
-        if not instance.start_date:
-            missing_fields.append("start_date")
-        if not instance.end_date:
-            missing_fields.append("end_date")
-        if not instance.reason:
-            missing_fields.append("reason")
-        if missing_fields:
-            return Response(
-                {
-                    "detail": "The following fields are required for submission: "
-                    + ", ".join(missing_fields)
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        with transaction.atomic():
-            year = timezone.now().year
-            seq, _created = ReferenceSequence.objects.select_for_update().get_or_create(
-                year=year, defaults={"last_number": 0}
-            )
-            seq.last_number = F("last_number") + 1
-            seq.save(update_fields=["last_number"])
-            seq.refresh_from_db()
-            reference_number = f"LUANAR-{year}-{seq.last_number:05d}"
-
-            instance.reference_number = reference_number
-            instance.status = LeaveApplication.Status.SUBMITTED
-            instance.submitted_at = timezone.now()
-            if instance.start_date and instance.end_date:
-                instance.calculated_days = calculate_working_days(
-                    instance.start_date, instance.end_date
-                )
-            instance.save(
-                update_fields=[
-                    "reference_number",
-                    "status",
-                    "submitted_at",
-                    "calculated_days",
-                ]
-            )
-
-        return Response(
-            {
-                "detail": "Application submitted successfully.",
-                "reference_number": reference_number,
-            }
-        )
 
 
 class SupportingDocumentViewSet(viewsets.ModelViewSet):

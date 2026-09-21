@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from .models import (
+from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
@@ -11,7 +11,7 @@ from .models import (
     PublicHoliday,
     SupportingDocument,
 )
-from .services import (
+from ..services import (
     find_overlapping_financial_year,
     find_overlapping_rule,
     normalize_grade,
@@ -295,6 +295,9 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
             "calculated_days",
+            "working_days",
+            "calendar_days",
+            "financial_year_label",
             "reason",
             "status",
             "reference_number",
@@ -306,6 +309,9 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "calculated_days",
+            "working_days",
+            "calendar_days",
+            "financial_year_label",
             "status",
             "reference_number",
             "employee",
