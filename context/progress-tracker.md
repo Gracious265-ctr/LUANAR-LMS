@@ -309,6 +309,56 @@ Update this file after every meaningful implementation change.
   deferred in the Unit 13 spec but are **already implemented** by the HR track
   and integrated on `development`.
 
+## Hardening pass — feature/hr-track review (2026-09-21, complete)
+
+A review-and-fix sweep of the merged HR + employee tracks (`feature/hr-track`,
+7 commits) addressed the flagged findings before returning to feature work:
+
+1. **Backend audit endpoint centralization** (`db45686`): the S3-style audit
+   sub-endpoints (`/audits/`, `/documents/`, `/users/`) under the leave/
+   workflows routers were moved into `audit/urls.py` as a single `AuditEntryViewSet`
+   router, now the only definition; the old stray routes were dropped.
+   `backend/audit/migrations/0003_alter_auditentry_target_type.py` verifies the
+   enum change is metadata-only. Documents-suite seeded references were updated.
+2. **Silent-errors + submitted-app guard** (`8b77d1b`): `DraftCard` surfaces
+   delete errors; `SupportingDocumentsUploader` surfaces upload/removal errors
+   (incl. the no-draft-created case); `LeaveApplicationForm` surfaces load/create
+   errors and renders a read-only "Application Already Submitted" state linking to
+   the review page instead of an editable form.
+3. **Accessibility** (`c22f0bc`): proper `htmlFor`/`id` on LeaveTypeSelect,
+   DateRangeFields, and the leave reason; `aria-label`s on icon-only buttons
+   (delete draft, remove document, sidebar toggle, notifications bell).
+4. **Tooling** (`c142211`): added `tsconfig.test.json` + `npm run typecheck:test`
+   (caught 2 real type errors in test fixtures); replaced the `as readonly string[]`
+   cast in `delegations-client.ts` with an `APPROVER_ROLE_CODE_SET: ReadonlySet<string>`;
+   fixed the Tailwind v4 `components.json` `"config"` ref; setup.ts imports
+   `@testing-library/jest-dom/vitest`.
+5. **Next.js middleware migration** (`7d5687e`): `frontend/middleware.ts` was
+   renamed (git mv) to `frontend/proxy.ts` and `middleware` → `proxy`; build
+   confirms Next 16.3.5 recognizes `ƒ Proxy (Middleware)`.
+6. **DECISION A — centralized apiFetch** (`6259ada`): all ~21 HR/leave route
+   handlers previously forwarded the 15-minute access token unsupported (session
+   death on expiry despite a valid 1-day refresh cookie). New
+   `app/api/_lib/api-fetch.ts` reads cookies, refreshes up front when only the
+   refresh cookie exists, forwards to Django, and on a 401 refreshes once and
+   retries, re-setting the renewed `access_token` cookie on the returned
+   `NextResponse`; `app/api/leave/_lib/proxy.ts` delegates to it. Added
+   `tests/api-fetch.test.ts` (forward, 401 → refresh+retry+set-cookie, refresh
+   failure → 401, no-token → 401, 204, refresh-up-front paths).
+7. **DECISION B — employee leave-type catalog** (`f37cd38`): removed the
+   hard-coded `getLeaveTypes()` mock whose paternity (14) / compassionate (7)
+   contradicted the seeded rules (10 / 5). New read-only
+   `GET /api/v1/employee/leave-types/` (`EmployeeLeaveTypeViewSet`, any
+   authenticated role, unpaginated) serializes each LeaveType with
+   `max_duration_days` / `requires_supporting_document` resolved from the
+   currently effective `LeaveRule` (`resolve_leave_rule`). Frontend proxies via
+   `app/api/leave/leave-types/` and maps snake_case → the `LeaveType` shape.
+
+Verification for the whole pass: backend `leave` (161), `workflows` +
+`users` + `documents` (191) tests all OK; frontend 155 tests pass, `tsc
+--noEmit` + `typecheck:test` clean, eslint clean, `npm run build` succeeds.
+No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
+
 ## Open Questions
 
 - None yet.
