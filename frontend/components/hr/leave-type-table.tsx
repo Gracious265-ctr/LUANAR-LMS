@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
+import { EditActionLink } from "./edit-action-link";
 
 export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
   if (leaveTypes.length === 0) {
@@ -22,7 +23,8 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
         <thead>
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Name</th>
-            <th className="py-3">Code</th>
+            <th className="py-3 pr-4">Code</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -39,7 +41,12 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
                   {leaveType.name}
                 </Link>
               </td>
-              <td className="py-3 text-text-secondary">{leaveType.code}</td>
+              <td className="py-3 pr-4 text-text-secondary">{leaveType.code}</td>
+              <td className="py-3 text-right">
+                <EditActionLink
+                  href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

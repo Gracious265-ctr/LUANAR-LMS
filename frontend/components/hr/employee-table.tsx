@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { Employee } from "@/lib/employees";
+import { EditActionLink } from "./edit-action-link";
 
 const CATEGORY_LABELS: Record<Employee["category"], string> = {
   academic: "Academic",
@@ -28,7 +29,8 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
             <th className="py-3 pr-4">Designation</th>
             <th className="py-3 pr-4">Category</th>
             <th className="py-3 pr-4">Grade</th>
-            <th className="py-3">Status</th>
+            <th className="py-3 pr-4">Status</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -56,7 +58,7 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
                 {CATEGORY_LABELS[employee.category] || employee.category}
               </td>
               <td className="py-3 pr-4 text-text-secondary">{employee.grade || "—"}</td>
-              <td className="py-3">
+              <td className="py-3 pr-4">
                 <span
                   className={
                     employee.is_active
@@ -66,6 +68,11 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
                 >
                   {employee.is_active ? "Active" : "Inactive"}
                 </span>
+              </td>
+              <td className="py-3 text-right">
+                <EditActionLink
+                  href={`/dashboard/hr-admin/employees/${employee.id}`}
+                />
               </td>
             </tr>
           ))}

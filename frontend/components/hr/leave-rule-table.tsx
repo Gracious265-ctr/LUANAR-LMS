@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { LeaveRule } from "@/lib/leave-rules";
 import { leaveRuleStatus } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
+import { EditActionLink } from "./edit-action-link";
 
 export function LeaveRuleTable({
   rules,
@@ -36,7 +37,8 @@ export function LeaveRuleTable({
             <th className="py-3 pr-4">Document</th>
             <th className="py-3 pr-4">Annual</th>
             <th className="py-3 pr-4">Effective from</th>
-            <th className="py-3">Status</th>
+            <th className="py-3 pr-4">Status</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -80,6 +82,11 @@ export function LeaveRuleTable({
                   >
                     {current ? "Current" : "Scheduled"}
                   </span>
+                </td>
+                <td className="py-3 text-right">
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
+                  />
                 </td>
               </tr>
             );

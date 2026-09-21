@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { FinancialYear } from "@/lib/financial-years";
 import { currentDateIso } from "@/lib/utils";
+import { EditActionLink } from "./edit-action-link";
 
 export function FinancialYearTable({
   years,
@@ -31,7 +32,8 @@ export function FinancialYearTable({
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Start</th>
             <th className="py-3 pr-4">End</th>
-            <th className="py-3">Status</th>
+            <th className="py-3 pr-4">Status</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -74,6 +76,11 @@ export function FinancialYearTable({
                         ? "Upcoming"
                         : "Past"}
                   </span>
+                </td>
+                <td className="py-3 text-right">
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
+                  />
                 </td>
               </tr>
             );

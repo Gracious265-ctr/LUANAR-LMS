@@ -1,9 +1,7 @@
-import Link from "next/link";
-import { Pencil } from "lucide-react";
-
 import type { AuditEntry } from "@/lib/audit";
 import { TARGET_TYPE_LABELS } from "@/lib/audit";
 import { AuditActionPill, auditChangesText, auditEditHref } from "./audit-meta";
+import { EditActionLink } from "./edit-action-link";
 
 export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
   if (entries.length === 0) {
@@ -68,13 +66,7 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
                 </td>
                 <td className="py-3 text-right">
                   {editHref ? (
-                    <Link
-                      href={editHref}
-                      className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-button-secondary-hover hover:text-text-primary"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </Link>
+                    <EditActionLink href={editHref} />
                   ) : (
                     <span className="text-xs text-text-muted">{"\u2014"}</span>
                   )}

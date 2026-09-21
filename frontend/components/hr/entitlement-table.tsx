@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { currentDateIso } from "@/lib/utils";
+import { EditActionLink } from "./edit-action-link";
 
 function isCurrentlyEffective(rule: Entitlement, today: string): boolean {
   return rule.effective_from <= today;
@@ -35,7 +36,8 @@ export function EntitlementTable({
             <th className="py-3 pr-4">Grade range</th>
             <th className="py-3 pr-4">Annual days</th>
             <th className="py-3 pr-4">Effective from</th>
-            <th className="py-3">Status</th>
+            <th className="py-3 pr-4">Status</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -68,6 +70,11 @@ export function EntitlementTable({
                   >
                     {current ? "Current" : "Scheduled"}
                   </span>
+                </td>
+                <td className="py-3 text-right">
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                  />
                 </td>
               </tr>
             );

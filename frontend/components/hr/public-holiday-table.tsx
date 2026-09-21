@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { PublicHoliday } from "@/lib/financial-years";
+import { EditActionLink } from "./edit-action-link";
 
 export function PublicHolidayTable({
   holidays,
@@ -27,6 +28,7 @@ export function PublicHolidayTable({
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Name</th>
             <th className="py-3 pr-4">Date</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -44,6 +46,11 @@ export function PublicHolidayTable({
                 </Link>
               </td>
               <td className="py-3 pr-4 text-text-secondary">{holiday.date}</td>
+              <td className="py-3 text-right">
+                <EditActionLink
+                  href={`/dashboard/hr-admin/calendar/holidays/${holiday.id}/edit`}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

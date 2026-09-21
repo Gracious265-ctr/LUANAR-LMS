@@ -8,6 +8,8 @@ import {
   workflowStateLabel,
 } from "@/lib/workflows";
 
+import { EditActionLink } from "./edit-action-link";
+
 function scopeLabel(workflow: Workflow): string {
   const category = workflowCategoryLabel(workflow.employee_category);
   return workflow.department
@@ -39,7 +41,8 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
             <th className="py-3 pr-4">Scope</th>
             <th className="py-3 pr-4">Effective from</th>
             <th className="py-3 pr-4">State</th>
-            <th className="py-3">Approval sequence</th>
+            <th className="py-3 pr-4">Approval sequence</th>
+            <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -69,10 +72,15 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
                   {workflowStateLabel(workflow.state)}
                 </span>
               </td>
-              <td className="py-3 text-text-secondary">
+              <td className="py-3 pr-4 text-text-secondary">
                 {workflow.stages
                   .map((stage) => approverRoleLabel(stage.approver_role))
                   .join(" → ")}
+              </td>
+              <td className="py-3 text-right">
+                <EditActionLink
+                  href={`/dashboard/hr-admin/workflows/${workflow.id}/edit`}
+                />
               </td>
             </tr>
           ))}
