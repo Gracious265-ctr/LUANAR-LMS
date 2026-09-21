@@ -14,7 +14,6 @@ import {
   History,
   Home,
   LogOut,
-  Settings,
   ShieldCheck,
   Tags,
   UserCheck,
@@ -116,7 +115,7 @@ const Sidebar = memo(function Sidebar({
     >
       <TitleSection open={open} user={user} />
 
-      <div className="space-y-1 mb-8">
+      <div className="space-y-1 overflow-y-auto pb-16 pr-0.5">
         <Option
           Icon={Home}
           title="Dashboard"
@@ -238,21 +237,6 @@ const Sidebar = memo(function Sidebar({
           </>
         )}
       </div>
-
-      {open && (
-        <div className="border-t border-border-default pt-4 space-y-1">
-          <div className="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">
-            Account
-          </div>
-          <Option
-            Icon={Settings}
-            title="Settings"
-            href="/dashboard/settings"
-            currentPath={currentPath}
-            open={open}
-          />
-        </div>
-      )}
 
       <ToggleClose open={open} setOpen={setOpen} />
     </nav>

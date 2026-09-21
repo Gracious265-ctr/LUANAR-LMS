@@ -17,6 +17,13 @@ const mockApproverUser = {
   full_name: "Test Supervisor",
 };
 
+const mockHRUser = {
+  id: 3,
+  email: "hr@test.luanar",
+  role: "hr",
+  full_name: "Test HR",
+};
+
 describe("DashboardShell", () => {
   it("renders the user's name and role", () => {
     render(
@@ -39,7 +46,8 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("My Applications")).toBeInTheDocument();
     expect(screen.getByText("New Application")).toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account")).not.toBeInTheDocument();
   });
 
   it("does not show Approvals for employee role", () => {
@@ -60,6 +68,17 @@ describe("DashboardShell", () => {
     );
 
     expect(screen.getByText("Approvals")).toBeInTheDocument();
+  });
+
+  it("shows the Audit View item for HR role", () => {
+    render(
+      <DashboardShell user={mockHRUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    const link = screen.getByRole("link", { name: "Audit View" });
+    expect(link).toHaveAttribute("href", "/dashboard/hr-admin/audit");
   });
 
   it("renders a sign-out control", () => {
