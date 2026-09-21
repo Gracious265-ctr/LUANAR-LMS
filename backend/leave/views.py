@@ -284,6 +284,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
+            instance = LeaveApplication.objects.select_for_update().get(pk=instance.pk)
+            if instance.status == LeaveApplication.Status.SUBMITTED:
+                raise ValidationError("Application has already been submitted.")
+
             year = timezone.now().year
             seq, _created = ReferenceSequence.objects.select_for_update().get_or_create(
                 year=year, defaults={"last_number": 0}

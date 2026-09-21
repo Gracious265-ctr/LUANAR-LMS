@@ -342,6 +342,11 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             f"{(conflict.ends_on or 'open-ended')}).",
         )
     with transaction.atomic():
+        delegation = Delegation.objects.select_for_update().get(pk=delegation.pk)
+        if delegation.status != Delegation.Status.REQUESTED:
+            raise DelegationActionError(
+                "detail", "Only a requested delegation can be approved."
+            )
         delegation.delegate = delegate
         delegation.status = Delegation.Status.APPROVED
         delegation.decision_reason = reason
@@ -493,6 +498,14 @@ def reassign_application(
             "A pending application cannot be assigned to its own applicant.",
         )
     with transaction.atomic():
+        application = LeaveApplication.objects.select_for_update().get(
+            pk=application.pk
+        )
+        if application.status != LeaveApplication.Status.SUBMITTED:
+            raise ReassignmentError(
+                "application",
+                "Only a pending (submitted) application can be reassigned.",
+            )
         from_approver = application.current_approver
         reassignment = Reassignment.objects.create(
             application=application,

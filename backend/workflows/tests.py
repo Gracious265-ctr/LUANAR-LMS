@@ -1023,6 +1023,21 @@ class DelegationServiceTests(TestCase):
         self.assertEqual(delegation.decision_reason, "Approved")
         self.assertIsNotNone(delegation.decided_at)
 
+    def test_approve_stale_requested_instance_is_rechecked_under_lock(self):
+        delegation = make_delegation(self.dean, self.today)
+        stale = Delegation.objects.get(pk=delegation.pk)
+        delegation.status = Delegation.Status.APPROVED
+        delegation.delegate = self.hod
+        delegation.save(update_fields=["status", "delegate"])
+        with self.assertRaises(DelegationActionError) as ctx:
+            approve_delegation(
+                stale, self.hr, {"delegate": self.hod, "decision_reason": "Too late"}
+            )
+        self.assertEqual(ctx.exception.field, "detail")
+        refresh = Delegation.objects.get(pk=delegation.pk)
+        self.assertEqual(refresh.status, Delegation.Status.APPROVED)
+        self.assertEqual(refresh.decided_by_id, None)
+
     def test_approve_delegation_requires_reason_and_delegate(self):
         delegation = make_delegation(self.dean, self.today)
         with self.assertRaises(DelegationActionError) as ctx:
@@ -1587,6 +1602,23 @@ class ReassignmentServiceTests(TestCase):
         app.refresh_from_db()
         self.assertEqual(second.from_approver_id, self.hod.pk)
         self.assertEqual(app.current_approver_id, self.dean.pk)
+
+    def test_request_stale_submitted_instance_is_rechecked_under_lock(self):
+        app = self._submitted_app()
+        stale = LeaveApplication.objects.get(pk=app.pk)
+        app.status = LeaveApplication.Status.DRAFT
+        app.save(update_fields=["status"])
+        with self.assertRaises(ReassignmentError) as ctx:
+            reassign_application(
+                application=stale,
+                to_approver=self.dean,
+                actor=self.hr,
+                reason="Too late",
+            )
+        self.assertEqual(ctx.exception.field, "application")
+        refresh = LeaveApplication.objects.get(pk=app.pk)
+        self.assertEqual(refresh.current_approver_id, None)
+        self.assertFalse(Reassignment.objects.filter(application=app).exists())
 
     def test_reason_is_trimmed(self):
         app = self._submitted_app()
