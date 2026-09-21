@@ -115,7 +115,7 @@ class DelegationViewSet(
         payload = DelegationActionSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         try:
-            service(delegation, request.user, payload.validated_data)
+            delegation = service(delegation, request.user, payload.validated_data)
         except DelegationActionError as exc:
             raise drf_serializers.ValidationError(
                 {exc.field: [exc.message]}
