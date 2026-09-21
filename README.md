@@ -147,6 +147,17 @@ cd backend
 uv run manage.py test
 ```
 
+`manage.py test` automatically loads `config.settings.test`, which swaps the
+password hasher for a fast one so the suite does not spend most of its time
+hashing fixture passwords. Pass `--settings=config.settings.development` to run
+against the regular settings instead. Reuse the test database between runs and
+split work across workers when iterating:
+
+```bash
+uv run manage.py test --keepdb
+uv run manage.py test --parallel auto
+```
+
 If the test runner fails with `permission denied to create database`, the
 database role needs the `CREATEDB` privilege (Django creates a temporary test
 database):
