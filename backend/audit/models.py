@@ -21,6 +21,22 @@ class AuditEntry(models.Model):
         REASSIGNED = "reassigned", "Reassigned"
         SUBMITTED = "submitted", "Submitted"
 
+    class TargetType(models.TextChoices):
+        """The authoritative set of audit ``target_type`` codes."""
+
+        RECORD = "record", "Record"
+        ENTITLEMENT = "entitlement", "Entitlement"
+        LEAVE_TYPE = "leavetype", "Leave type"
+        LEAVE_RULE = "leaverule", "Leave rule"
+        FINANCIAL_YEAR = "financialyear", "Financial year"
+        PUBLIC_HOLIDAY = "publicholiday", "Public holiday"
+        WORKFLOW = "workflow", "Workflow"
+        EMPLOYEE = "employee", "Employee"
+        APPLICATION = "application", "Application"
+        DELEGATION = "delegation", "Delegation"
+        REASSIGNMENT = "reassignment", "Reassignment"
+        DOCUMENT_TEMPLATE = "document-template", "Document template"
+
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -30,6 +46,7 @@ class AuditEntry(models.Model):
     action = models.CharField(max_length=20, choices=Action.choices)
     target_type = models.CharField(
         max_length=32,
+        choices=TargetType.choices,
         help_text="The type of record changed, e.g. entitlement or application.",
     )
     target_id = models.CharField(

@@ -316,7 +316,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             record_audit(
                 actor=request.user,
                 action=AuditEntry.Action.SUBMITTED,
-                target_type="application",
+                target_type=AuditEntry.TargetType.APPLICATION,
                 target_id=instance.pk,
                 target_summary=reference_number,
                 detail=changed_fields(

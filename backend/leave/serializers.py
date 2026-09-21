@@ -2,6 +2,7 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 
 from .models import (
@@ -25,17 +26,12 @@ from .services.storage import signed_document_url
 class GradeEntitlementSerializer(AuditedModelSerializer):
     """HR-facing serializer for grade/entitlement rules."""
 
-    target_type = "entitlement"
+    target_type = AuditEntry.TargetType.ENTITLEMENT
     audit_fields = ["grade_start", "grade_end", "days", "effective_from"]
 
     class Meta:
         model = GradeEntitlement
         fields = ["id", "grade_start", "grade_end", "days", "effective_from"]
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
 
     def validate(self, attrs: dict) -> dict:
         grade_start = normalize_grade(self._value(attrs, "grade_start"))
@@ -88,17 +84,12 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
 class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
 
-    target_type = "leavetype"
+    target_type = AuditEntry.TargetType.LEAVE_TYPE
     audit_fields = ["name", "code"]
 
     class Meta:
         model = LeaveType
         fields = ["id", "name", "code"]
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
 
     def validate(self, attrs: dict) -> dict:
         name = self._value(attrs, "name")
@@ -134,7 +125,7 @@ class LeaveTypeSerializer(AuditedModelSerializer):
 class LeaveRuleSerializer(AuditedModelSerializer):
     """HR-facing serializer for effective-dated leave rules."""
 
-    target_type = "leaverule"
+    target_type = AuditEntry.TargetType.LEAVE_RULE
     audit_fields = [
         "leave_type_id",
         "max_duration_days",
@@ -186,17 +177,12 @@ class LeaveRuleSerializer(AuditedModelSerializer):
 class FinancialYearSerializer(AuditedModelSerializer):
     """HR-facing serializer for configured financial-year periods."""
 
-    target_type = "financialyear"
+    target_type = AuditEntry.TargetType.FINANCIAL_YEAR
     audit_fields = ["start_date", "end_date", "is_active"]
 
     class Meta:
         model = FinancialYear
         fields = ["id", "start_date", "end_date", "is_active"]
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
 
     def validate(self, attrs: dict) -> dict:
         start_date = self._value(attrs, "start_date")
@@ -261,17 +247,12 @@ class FinancialYearSerializer(AuditedModelSerializer):
 class PublicHolidaySerializer(AuditedModelSerializer):
     """HR-facing serializer for configured public-holiday dates."""
 
-    target_type = "publicholiday"
+    target_type = AuditEntry.TargetType.PUBLIC_HOLIDAY
     audit_fields = ["name", "date"]
 
     class Meta:
         model = PublicHoliday
         fields = ["id", "name", "date"]
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
 
     def validate(self, attrs: dict) -> dict:
         name = self._value(attrs, "name")

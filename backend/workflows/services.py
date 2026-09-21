@@ -307,7 +307,7 @@ def _record_delegation_audit(
     record_audit(
         actor=delegation.decided_by,
         action=action,
-        target_type="delegation",
+        target_type=AuditEntry.TargetType.DELEGATION,
         target_id=delegation.pk,
         target_summary=_delegation_summary(delegation),
         detail=changed_fields(before, after),
@@ -520,7 +520,7 @@ def reassign_application(
             record_audit(
                 actor=actor,
                 action=AuditEntry.Action.REASSIGNED,
-                target_type="reassignment",
+                target_type=AuditEntry.TargetType.REASSIGNMENT,
                 target_id=reassignment.pk,
                 target_summary=(
                     f"Reassignment of {application.reference_number}"

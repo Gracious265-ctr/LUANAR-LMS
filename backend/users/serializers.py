@@ -170,7 +170,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         record_audit(
             actor=actor,
             action=action,
-            target_type="employee",
+            target_type=AuditEntry.TargetType.EMPLOYEE,
             target_id=instance.pk,
             target_summary=instance.user.get_full_name(),
             detail=detail,

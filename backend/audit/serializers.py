@@ -17,8 +17,18 @@ class AuditedModelSerializer(serializers.ModelSerializer):
     ``_audit_after_create`` / ``_audit_after_update`` hooks directly.
     """
 
-    target_type = "record"
+    target_type = AuditEntry.TargetType.RECORD
     audit_fields: list[str] = []
+
+    def _value(self, attrs: dict, field: str):
+        """The submitted value for ``field``, falling back to the instance value.
+
+        Required so PATCH validates against the fully-merged state of a
+        partial update rather than treating absent keys as missing fields.
+        """
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, None)
 
     # -- Auditing -----------------------------------------------------------
 
@@ -145,7 +155,8 @@ class HRLeaveApplicationSerializer(serializers.Serializer):
         ).data
         data["audit_entries"] = AuditEntrySerializer(
             AuditEntry.objects.filter(
-                target_type="application", target_id=str(instance.pk)
+                target_type=AuditEntry.TargetType.APPLICATION,
+                target_id=str(instance.pk),
             ).order_by("created_at"),
             many=True,
         ).data

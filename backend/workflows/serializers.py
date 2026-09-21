@@ -1,6 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
@@ -40,7 +41,7 @@ class WorkflowStageSerializer(serializers.ModelSerializer):
 class WorkflowSerializer(AuditedModelSerializer):
     """HR-facing serializer for approval workflows and their ordered stages."""
 
-    target_type = "workflow"
+    target_type = AuditEntry.TargetType.WORKFLOW
 
     stages = WorkflowStageSerializer(many=True)
     state = serializers.CharField(read_only=True)
@@ -57,11 +58,6 @@ class WorkflowSerializer(AuditedModelSerializer):
             "state",
             "stages",
         ]
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
 
     def _effective_is_active(self, attrs: dict) -> bool:
         if "is_active" in attrs:

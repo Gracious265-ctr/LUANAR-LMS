@@ -63,6 +63,15 @@ def make_submitted_application(employee, *, approver=None) -> LeaveApplication:
 class AuditEntryModelTests(TestCase):
     """AuditEntry shape, ordering, and JSON-safe detail storage."""
 
+    def test_target_type_codes_are_registered_choices(self):
+        used = {
+            cls.target_type
+            for cls in AuditedModelSerializer.__subclasses__()
+            if cls.__dict__.get("target_type") is not None
+        }
+        missing = used - set(AuditEntry.TargetType.values)
+        self.assertEqual(missing, set())
+
     def test_str_reports_action_and_target(self):
         actor = make_hr()
         entry = record_audit(

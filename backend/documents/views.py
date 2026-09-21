@@ -49,7 +49,7 @@ class LeaveDocumentTemplateView(APIView):
         record_audit(
             actor=request.user,
             action=AuditEntry.Action.UPDATED,
-            target_type="document-template",
+            target_type=AuditEntry.TargetType.DOCUMENT_TEMPLATE,
             target_id=template.pk,
             target_summary=template.title,
             detail=changed_fields(before, after),
