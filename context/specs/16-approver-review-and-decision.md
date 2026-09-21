@@ -1,5 +1,7 @@
 # Unit 16 — Approver Review and Decision
 
+read `context/AGENTS.md` before starting.
+
 ## Goal
 
 Give each approver (Supervisor, HOD, Dean, Registrar, DVC) a dashboard where they see only the applications currently assigned to them, review everything their role is permitted to see (application, employee info, balance, leave history, documents, earlier decisions), and record exactly one decision — **Approve**, **Reject**, or **Return for Correction** — enforced by the backend with sequential stages, a mandatory comment for Reject/Return, and an optional comment for Approve.
