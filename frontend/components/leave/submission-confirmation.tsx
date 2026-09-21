@@ -119,6 +119,12 @@ export function SubmissionConfirmation({
           View my applications
         </Link>
         <Link
+          href={`/applications/${application.id}`}
+          className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
+        >
+          Track this application
+        </Link>
+        <Link
           href="/dashboard"
           className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
         >

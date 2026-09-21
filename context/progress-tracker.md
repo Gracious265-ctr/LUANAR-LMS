@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
@@ -11,13 +12,54 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 14 — Leave Validation and Submission** is the Employee + Approver
-  track's next build: turn a Unit 13 draft into a `submitted` application
-  through a single backend-authoritative validation pipeline (working days,
-  notice, duration, eligibility, financial year, balance, overlap, documents)
-  issuing a unique `LV-{financial-year-label}-{6-digit}` reference, with review
-  and confirmation screens. It depends only on the provider interface and the
-  LeaveApplication model, so it does not wait on the HR-track merge.
+- **Unit 16 — Approver Review and Decision** is the Employee + Approver
+  track's next build: an approver queue of pending applications plus a
+  review/decision endpoint and screen where the approver approves, rejects,
+  or returns the application for correction. It reuses the Unit 15 status
+  enum, tracker component, and stage/decision contract, and depends on the
+  workflow-routing spine (`current_approver`) rather than a separate provider.
+
+## Completed (Unit 15)
+
+- **Backend.** New `leave/tracking/` package: Django-free contract dataclasses
+  in `contracts.py` (`WorkflowTracking`, `TrackedStage`, `TrackedEvent`,
+  `TrackedApprover`, `TrackedOutcome`, `ResubmissionInfo`), `provider.py`
+  (ABC `TrackingProvider` + `get_tracking_provider()` dotted-path factory,
+  driven by the `LEAVE_TRACKING_PROVIDER` setting), and `fixture_provider.py`
+  (loads `tracking/fixtures/assignments.json` + `scenarios/*.json`; unknown
+  references fall back to `pending_first_stage`; no DB access). `services.py`
+  exposes `get_application_tracking(user, application_id)` — owner-only,
+  returns 404 for foreign/unknown applications (never 403) and 409
+  `application_not_submitted` for drafts — backed by read-only serializers and
+  `ApplicationTrackingView` at `GET /api/v1/leave-applications/{id}/tracking/`
+  (GET only; `+00:00` timestamps normalized to `Z`). Wired into
+  `leave/urls.py`. `seed_tracking_scenarios` command (DEBUG-only guard,
+  idempotent, fast-forwards `ReferenceSequence` to allocate
+  `LV-2026-27-900001`..`900008` and rewrites `assignments.json`).
+- **Backend tests.** 4 suites / 28 tests (`test_tracking_api`, `_scenarios`,
+  `_provider`, `_seed`): owner 200 with full payload + `assertNumQueries(1)`,
+  non-owner/HR/supervisor 404, anonymous 401, draft 409, non-GET 405, all 8
+  scenarios + fallback + delegate + `can_resubmit` rules, setting-driven
+  provider swap, seed idempotency and sequence forward. Full `leave.tests`
+  suite green and `manage.py check` clean.
+- **Frontend.** Route `app/(dashboard)/applications/[id]/page.tsx` + proxy
+  `app/api/leave/leave-applications/[id]/tracking/route.ts`;
+  `lib/tracking/` (`types.ts`, `service.ts` returning ok/not_found/
+  not_submitted/error results, `format.ts` — `en-GB` + `Africa/Blantyre`,
+  `labels.ts` the sole enum→icon/color/copy map, so no component hardcodes a
+  role or stage count); `components/tracking/` (`TrackingView` +
+  header/badge/status card/stepper/stage item/outcome panel/resubmission
+  note/timeline/skeleton/error) with `__fixtures__/*.json` mirroring the
+  backend scenarios. "Track this application" link added to the submission
+  confirmation. Responsive layout: mobile attention-then-stepper, desktop
+  stepper 2/3 + attention 1/3; light-only theme using existing tokens; exactly
+  one `aria-current="step"`; unknown event types render "Workflow update".
+- **Frontend tests.** 3 suites / 41 tests (`tracking-view`, `tracking-format`,
+  `tracking-service`). `npm test`: 31 files / 180 tests green; `tsc --noEmit`,
+  `npm run lint`, and `npm run build` all clean.
+- **Reconciliation.** The Unit 13 drafts list renders draft rows only (no
+  submitted rows exist), so the in-app entry point to the tracker is the
+  submission-confirmation link, not the drafts list.
 
 ## Completed
 
@@ -283,10 +325,11 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **After Unit 14:** the workflow-routing track builds on the `submitted`
-  state this unit produces; the HR track's Unit 11 (Finalized Leave + Audit
-  View) and Unit 21 (routing, which consumes the `workflow_gate` stub and the
-  `leave_application_submitted` signal).
+- **Unit 16 — Approver Review and Decision:** pending-queue + review/decision
+  endpoint and screen for approvers, reusing the Unit 15 status enum/badges,
+  tracker component, and stage/decision contract; the Unit 15 endpoint and
+  payload are extended additively by Unit 17 (rejection/correction/resubmission)
+  and Unit 18 (cancellation) per their specs.
 
 ## Open Questions
 
@@ -318,6 +361,20 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Unit 15 complete (2026-09-21):** read-only, owner-only tracking endpoint +
+  `/applications/[id]` page behind a swappable fixture provider (contracts live
+  in the Django-free `contracts.py`; `LEAVE_TRACKING_PROVIDER` setting drives
+  `get_tracking_provider()`). Decisions recorded: 404 not 403 for anyone who
+  isn't the owner; drafts 409 `application_not_submitted`; resubmission retains
+  the reference number; unknown event types render "Workflow update" rather than
+  breaking; delegated reviews show "Acting for X". Reconciliation: the Unit 13
+  drafts list shows drafts only, so the submission-confirmation "Track this
+  application" link is the in-app entry point — no tracker link on the drafts
+  list. Fixed during verification: frontend `tsc` caught a missing
+  `TrackingStage` import in `labels.ts` and over-broad union narrowing in
+  `TrackingView` (error/non-owner branches); testing-library string matchers
+  can't see text inside nested `<strong>`/`<time>`, so those assertions use a
+  normalized-textContent matcher.
 - **Unit 9 complete (2026-09-18):** HR Emergency Reassignment landed. Big
   decisions recorded: `pending` = `submitted`; the `current_approver` spine +
   `Reassignment` history (cross-track — the nullable FK merges after the Unit 13

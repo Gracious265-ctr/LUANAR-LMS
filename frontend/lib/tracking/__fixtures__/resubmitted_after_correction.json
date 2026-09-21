@@ -1,0 +1,152 @@
+{
+  "application": {
+    "id": "app-resubmitted-correction",
+    "reference_number": "LV-2026-27-900007",
+    "leave_type": {
+      "id": 3,
+      "name": "Paternity Leave"
+    },
+    "start_date": "2026-11-16",
+    "end_date": "2026-11-20",
+    "working_days": 5,
+    "submitted_at": "2026-10-12T07:15:03Z"
+  },
+  "status": "pending",
+  "approved_at": null,
+  "current_stage": {
+    "order": 3,
+    "role": "registrar",
+    "role_label": "Registrar",
+    "approver_name": "Dr. Joyce Phiri",
+    "is_delegate": false,
+    "on_behalf_of": null,
+    "assigned_at": "2026-10-19T09:00:00Z"
+  },
+  "stages": [
+    {
+      "order": 1,
+      "role": "supervisor",
+      "role_label": "Supervisor",
+      "state": "approved",
+      "approver": {
+        "name": "Mr. Chikondi Banda",
+        "designation": "Senior Technician",
+        "is_delegate": false,
+        "on_behalf_of": null
+      },
+      "assigned_at": "2026-10-12T08:32:11Z",
+      "decided_at": "2026-10-14T07:15:03Z",
+      "comment": "Verified. Forwarded."
+    },
+    {
+      "order": 2,
+      "role": "hod",
+      "role_label": "HOD",
+      "state": "approved",
+      "approver": {
+        "name": "Dr. Grace Mwale",
+        "designation": "Head of Department",
+        "is_delegate": false,
+        "on_behalf_of": null
+      },
+      "assigned_at": "2026-10-14T09:00:00Z",
+      "decided_at": "2026-10-15T14:22:19Z",
+      "comment": "Approved."
+    },
+    {
+      "order": 3,
+      "role": "registrar",
+      "role_label": "Registrar",
+      "state": "awaiting",
+      "approver": {
+        "name": "Dr. Joyce Phiri",
+        "designation": "University Registrar",
+        "is_delegate": false,
+        "on_behalf_of": null
+      },
+      "assigned_at": "2026-10-19T09:00:00Z",
+      "decided_at": null,
+      "comment": null
+    },
+    {
+      "order": 4,
+      "role": "dvc",
+      "role_label": "DVC",
+      "state": "upcoming",
+      "approver": null,
+      "assigned_at": null,
+      "decided_at": null,
+      "comment": null
+    }
+  ],
+  "events": [
+    {
+      "id": "evt-resubmitted_after_correction-resubmitted",
+      "type": "resubmitted",
+      "occurred_at": "2026-10-19T09:00:00Z",
+      "stage_order": null,
+      "actor": {
+        "name": "Test Employee",
+        "role_label": "Employee"
+      },
+      "comment": null,
+      "resubmission_number": 1
+    },
+    {
+      "id": "evt-resubmitted_after_correction-corrected",
+      "type": "correction_requested",
+      "occurred_at": "2026-10-17T10:00:00Z",
+      "stage_order": 3,
+      "actor": {
+        "name": "Dr. Joyce Phiri",
+        "role_label": "Registrar"
+      },
+      "comment": "Supporting documents must be uploaded before approval.",
+      "resubmission_number": null
+    },
+    {
+      "id": "evt-resubmitted_after_correction-approved-2",
+      "type": "approved",
+      "occurred_at": "2026-10-15T14:22:19Z",
+      "stage_order": 2,
+      "actor": {
+        "name": "Dr. Grace Mwale",
+        "role_label": "HOD"
+      },
+      "comment": "Approved.",
+      "resubmission_number": null
+    },
+    {
+      "id": "evt-resubmitted_after_correction-approved-1",
+      "type": "approved",
+      "occurred_at": "2026-10-14T07:15:03Z",
+      "stage_order": 1,
+      "actor": {
+        "name": "Mr. Chikondi Banda",
+        "role_label": "Supervisor"
+      },
+      "comment": "Verified. Forwarded.",
+      "resubmission_number": null
+    },
+    {
+      "id": "evt-resubmitted_after_correction-submitted",
+      "type": "submitted",
+      "occurred_at": "2026-10-12T07:15:03Z",
+      "stage_order": null,
+      "actor": {
+        "name": "Test Employee",
+        "role_label": "Employee"
+      },
+      "comment": null,
+      "resubmission_number": null
+    }
+  ],
+  "rejection": null,
+  "correction": null,
+  "resubmission": {
+    "count": 1,
+    "last_resubmitted_at": "2026-10-19T09:00:00Z",
+    "can_resubmit": false,
+    "returns_to_stage": null
+  }
+}

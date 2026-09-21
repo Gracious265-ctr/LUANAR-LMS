@@ -212,6 +212,7 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
+| GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
 
 ## Git Workflow
 
