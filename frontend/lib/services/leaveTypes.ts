@@ -5,12 +5,30 @@ export interface LeaveType {
   maxDurationDays: number | null;
 }
 
+interface LeaveTypeOptionsResponse {
+  id: number;
+  name: string;
+  code: string;
+  max_duration_days: number | null;
+  requires_supporting_document: boolean;
+}
+
 export async function getLeaveTypes(): Promise<LeaveType[]> {
-  // TODO(unit-4): replace with fetch('/api/leave-types/')
-  return [
-    { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: null },
-    { id: 2, name: "Maternity Leave", requiresDocuments: true, maxDurationDays: 90 },
-    { id: 3, name: "Paternity Leave", requiresDocuments: true, maxDurationDays: 14 },
-    { id: 4, name: "Compassionate Leave", requiresDocuments: true, maxDurationDays: 7 },
-  ];
+  const res = await fetch("/api/leave/leave-types/");
+  if (!res.ok) {
+    throw new Error("Failed to load leave types");
+  }
+
+  const data = (await res.json()) as LeaveTypeOptionsResponse[];
+
+  if (!Array.isArray(data)) {
+    throw new Error("Failed to load leave types");
+  }
+
+  return data.map((t) => ({
+    id: t.id,
+    name: t.name,
+    requiresDocuments: t.requires_supporting_document,
+    maxDurationDays: t.max_duration_days,
+  }));
 }

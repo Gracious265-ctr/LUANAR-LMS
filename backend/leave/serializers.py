@@ -19,6 +19,7 @@ from .services import (
     find_overlapping_rule,
     normalize_grade,
     normalize_leave_code,
+    resolve_leave_rule,
 )
 from .services.storage import signed_document_url
 
@@ -120,6 +121,30 @@ class LeaveTypeSerializer(AuditedModelSerializer):
             )
 
         return attrs
+
+
+class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
+    """Read-only, employee-facing view of leave types.
+
+    Resolves ``max_duration_days`` and ``requires_supporting_document`` from
+    the currently effective ``LeaveRule`` so employees see the live policy
+    instead of a hard-coded list.
+    """
+
+    max_duration_days = serializers.SerializerMethodField()
+    requires_supporting_document = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LeaveType
+        fields = ["id", "name", "code", "max_duration_days", "requires_supporting_document"]
+
+    def get_max_duration_days(self, obj: LeaveType):
+        rule = resolve_leave_rule(obj)
+        return rule.max_duration_days if rule else None
+
+    def get_requires_supporting_document(self, obj: LeaveType):
+        rule = resolve_leave_rule(obj)
+        return rule.requires_supporting_document if rule else False
 
 
 class LeaveRuleSerializer(AuditedModelSerializer):

@@ -639,6 +639,77 @@ class LeaveTypeEndpointTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
+class EmployeeLeaveTypeOptionsTests(TestCase):
+    """Read-only employee-facing leave-type catalog with live rule policy."""
+
+    def setUp(self):
+        self.client = APIClient()  # type: ignore[assignment]
+        self.employee_user = User.objects.create_user(
+            username="employee@test.luanar",
+            email="employee@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="Employee",
+            role=User.Role.EMPLOYEE,
+        )
+        self.hr_user = User.objects.create_user(
+            username="hr@test.luanar",
+            email="hr@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="HR",
+            role=User.Role.HR,
+        )
+
+        self.annual = LeaveType.objects.create(name="Annual leave", code="annual")
+        self.paternity = LeaveType.objects.create(name="Paternity leave", code="paternity")
+
+        self.effective_rule = LeaveRule.objects.create(
+            leave_type=self.paternity,
+            max_duration_days=10,
+            requires_supporting_document=True,
+            effective_from=TODAY - timedelta(days=1),
+        )
+        self.upcoming_rule = LeaveRule.objects.create(
+            leave_type=self.annual,
+            max_duration_days=99,
+            requires_supporting_document=False,
+            effective_from=TODAY + timedelta(days=1),
+        )
+
+        self.url = "/api/v1/employee/leave-types/"
+
+    def test_requires_authentication(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_employee_can_list_options_unpaginated(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data, list)  # type: ignore[arg-type]
+        by_code = {item["code"]: item for item in response.data}  # type: ignore[union-attr]
+
+        paternity = by_code["paternity"]
+        self.assertEqual(paternity["max_duration_days"], 10)
+        self.assertTrue(paternity["requires_supporting_document"])
+
+    def test_future_rule_is_not_considered_current(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        by_code = {item["code"]: item for item in response.data}  # type: ignore[union-attr]
+
+        annual = by_code["annual"]
+        self.assertIsNone(annual["max_duration_days"])
+        self.assertFalse(annual["requires_supporting_document"])
+
+    def test_hr_can_read_the_same_catalog(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
 class LeaveRuleEndpointTests(TestCase):
     """HR-only CRUD, filtering, and effective-dated behavior for leave rules."""
 

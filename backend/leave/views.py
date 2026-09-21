@@ -29,6 +29,7 @@ from .models import (
 )
 from .permissions import IsOwner
 from .serializers import (
+    EmployeeLeaveTypeSerializer,
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
@@ -108,6 +109,27 @@ class LeaveTypeViewSet(
     serializer_class = LeaveTypeSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        return LeaveType.objects.all()
+
+
+class EmployeeLeaveTypeViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Employee-facing, read-only catalog of leave types.
+
+    Serializes each type with its currently effective rule's
+    ``max_duration_days`` and ``requires_supporting_document`` so the leave
+    application form reflects live policy rather than hard-coded values.
+    """
+
+    serializer_class = EmployeeLeaveTypeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+    http_method_names = ["get", "head", "options"]
 
     def get_queryset(self):
         return LeaveType.objects.all()

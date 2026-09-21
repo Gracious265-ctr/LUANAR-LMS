@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from .views import (
+    EmployeeLeaveTypeViewSet,
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
@@ -32,9 +33,16 @@ supporting_doc_detail = SupportingDocumentViewSet.as_view(
     {"get": "retrieve", "delete": "destroy"}
 )
 
+employee_leave_types = EmployeeLeaveTypeViewSet.as_view({"get": "list"})
+
 urlpatterns = [
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
+    path(
+        "employee/leave-types/",
+        employee_leave_types,
+        name="employee-leave-type-options",
+    ),
     path(
         "leave-applications/<uuid:application_pk>/documents/",
         supporting_doc_list,
