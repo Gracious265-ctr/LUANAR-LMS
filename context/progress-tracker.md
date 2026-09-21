@@ -31,7 +31,7 @@ Update this file after every meaningful implementation change.
     `created_at`; `Meta.ordering = ["-created_at"]`; index
     `auditentry_target_idx` on `(target_type, target_id)`); migration
     `0001_initial` created and applied
-  - `audit/services.py`: `record_audit` (farmer-safe `current_actor`, `_jsonable`
+  - `audit/services.py`: `record_audit` (None-safe `current_actor`, `_jsonable`
     normalization — PostgreSQL/psycopg3 can't serialize nested `date`/`UUID` so
     dates→isoformat and UUID→str recursively), `changed_fields` building
     `{"before","after"}` of only-changed fields (before null on create)
@@ -97,9 +97,9 @@ Update this file after every meaningful implementation change.
     (HR-only list/create/retrieve + `pending/` action queueing submitted apps
     newest-first, `?application=` filter), SimpleRouter basename `reassignment`
   - Django admin: `ReassignmentAdmin` view-only inspector
-  - Backend: 265 → 299 tests (34 new) passing via `uv run manage.py test
-    workflows` (131) then `--noinput`; `manage.py check` clean; migrations
-    applied
+  - Backend: `workflows` suite 131 tests (97 existing + 34 new) passing via
+    `uv run manage.py test workflows`, then the full suite via `--noinput`;
+    `manage.py check` clean; migrations applied
   - Frontend: `lib/reassignments.ts` + `lib/reassignments-client.ts` split,
     proxy handlers `app/api/hr/reassignments/route.ts` + `pending/route.ts`,
     `PendingApplicationsTable` / `ReassignmentTable` / `ReassignmentForm`,
@@ -348,7 +348,9 @@ Update this file after every meaningful implementation change.
   `_jsonable` normalizer in `audit/services.py` fixes it. Cross-suite backend
   runs combined exceed the 10-minute tool timeout, so the full suite must be
   split per-app in the background (users+documents ~84s/50, leave ~250s/146,
-  workflows ~427s/131, audit ~81s/34). Frontend: 136 tests, lint, and build
+  workflows ~427s/131, audit ~81s/34). (Superseded 2026-09-21: `config.settings.test`
+  now swaps in a fast password hasher, so `uv run manage.py test` runs the full
+  389-test suite in ~7s — no per-app splitting needed.) Frontend: 136 tests, lint, and build
   clean. Not yet committed — commit the feature work on `feature/hr-unit-11`
   and merge to `development` when the other developer's track is ready.
 - **Unit 9 complete (2026-09-18):** HR Emergency Reassignment landed. Big

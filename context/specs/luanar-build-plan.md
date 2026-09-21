@@ -35,8 +35,8 @@ Both developers may work on different tracks simultaneously. They must agree on 
 | Database | PostgreSQL | Structured application data |
 | Authentication | Django authentication → LUANAR institutional authentication | Development authentication with future institutional integration |
 | File Storage | Supabase Storage → LUANAR storage | Supporting documents and generated leave documents |
-| Cache / Queue | Redis | Caching and Celery message broker |
-| Background Processing | Celery | Asynchronous email, document generation, and other long-running work |
+| Cache / Queue | Django local-memory cache (dev) / PostgreSQL-backed queue | Temporary caching; production cache technology remains TBD |
+| Background Processing | Django-Q2 (ORM broker on PostgreSQL) | Asynchronous email, document generation, and other long-running work; no Redis dependency |
 | Email | Google SMTP → LUANAR institutional SMTP | Transactional application notifications |
 | Public Holidays | Google Calendar API | Public-holiday calendar data |
 | PDF Generation | ReportLab | Official approved leave PDF generation |
@@ -50,7 +50,7 @@ Both developers may work on different tracks simultaneously. They must agree on 
 - Keep file storage behind a storage service/abstraction so it can be replaced by LUANAR infrastructure later.
 - Do not use Supabase as the application's primary database or business backend.
 - Keep PostgreSQL as the authoritative system database.
-- Use Redis only for temporary/cache/queue concerns, never as the authoritative source of application data.
+- Use PostgreSQL as the queue broker (Django-Q2 ORM broker) and never as a substitute for the authoritative data model; no Redis dependency is introduced.
 
 ---
 
@@ -73,8 +73,7 @@ Establish the minimum shared foundation required by both developers:
 - Lucide React.
 - Basic project structure.
 - Development authentication mechanism.
-- Redis.
-- Celery foundation.
+- Django-Q2 foundation (PostgreSQL ORM broker).
 - Test infrastructure.
 - Shared API conventions.
 - Git collaboration conventions.
@@ -761,7 +760,7 @@ A real leave application triggers the appropriate email notifications.
 
 - Units 14–18.
 - HR Units 8–9.
-- Redis/Celery from Unit 1.
+- Django-Q2 (PostgreSQL ORM broker) from Unit 1.
 
 ---
 

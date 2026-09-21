@@ -281,11 +281,12 @@ At minimum, evaluate whether the following documents require updates:
 
 ```text
 project-overview.md
-requirements.md
-business-rules.md
+context/specs/*-spec.md
 architecture.md
+ui-context.md
 code-standards.md
 ai-workflow-rules.md
+progress-tracker.md
 ````
 
 Update only the documents affected by the current change.
@@ -375,8 +376,8 @@ Before moving to the next implementation unit, verify all applicable items below
 ### Documentation
 
 * [ ] `architecture.md` was checked for affected architectural decisions.
-* [ ] `requirements.md` was checked for affected requirements.
-* [ ] `business-rules.md` was checked for affected rules.
+* [ ] `project-overview.md` / the unit spec was checked for affected requirements.
+* [ ] `architecture.md` and the unit spec were checked for affected business rules.
 * [ ] Other relevant source-of-truth documentation was updated.
 * [ ] Documentation accurately reflects the implemented behavior.
 
