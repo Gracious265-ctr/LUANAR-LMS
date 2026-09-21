@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from django.db import transaction
 from django.db.models import F
+from django.http import Http404
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -36,7 +37,12 @@ from .serializers import (
     SupportingDocumentSerializer,
 )
 from .services import normalize_grade, resolve_grade_entitlement
-from .services.storage import delete_document, upload_document
+from .services.storage import (
+    MAX_DOCUMENT_SIZE,
+    delete_document,
+    is_allowed_document_content_type,
+    upload_document,
+)
 from .services.working_days import calculate_working_days
 
 logger = logging.getLogger(__name__)
@@ -330,15 +336,25 @@ class SupportingDocumentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        application = LeaveApplication.objects.get(
+        application = LeaveApplication.objects.filter(
             id=self.kwargs["application_pk"], employee=self.request.user
-        )
+        ).first()
+        if application is None:
+            raise Http404("Leave application not found.")
         if application.status != LeaveApplication.Status.DRAFT:
             raise ValidationError("Cannot upload documents to a submitted application.")
 
         file = self.request.FILES.get("file")
         if not file:
             raise ValidationError("No file provided.")
+        if file.size > MAX_DOCUMENT_SIZE:
+            raise ValidationError(
+                f"Files may not exceed {MAX_DOCUMENT_SIZE // (1024 * 1024)} MB."
+            )
+
+        content_type = file.content_type or "application/octet-stream"
+        if not is_allowed_document_content_type(content_type):
+            raise ValidationError("File type is not allowed.")
 
         result = upload_document(file, str(application.id))
         serializer.save(
@@ -347,7 +363,7 @@ class SupportingDocumentViewSet(viewsets.ModelViewSet):
             file_url=result["url"],
             file_name=file.name,
             file_size=file.size,
-            content_type=file.content_type or "application/octet-stream",
+            content_type=content_type,
         )
 
     def perform_destroy(self, instance):

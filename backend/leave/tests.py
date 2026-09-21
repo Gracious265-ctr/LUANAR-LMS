@@ -36,6 +36,7 @@ from .services import (
     resolve_leave_rule,
 )
 from .services.working_days import calculate_working_days
+from .services.storage import upload_document
 from .serializers import LeaveApplicationSerializer, SupportingDocumentSerializer
 
 SEED_PASSWORD = "testpass123"
@@ -1580,6 +1581,61 @@ class SupportingDocumentAPITest(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_upload_to_unknown_application_returns_404(self):
+        from uuid import uuid4
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
+        response = self.client.post(
+            f"/api/v1/leave-applications/{uuid4()}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_upload_to_foreign_application_returns_404(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        other = User.objects.create_user(
+            username="other", email="other@luanar.mw", password="testpass123"
+        )
+        foreign = LeaveApplication.objects.create(employee=other, leave_type_id=1)
+        file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
+        response = self.client.post(
+            f"/api/v1/leave-applications/{foreign.id}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_upload_over_size_limit_returns_400(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        with mock.patch("leave.views.MAX_DOCUMENT_SIZE", 100):
+            file = SimpleUploadedFile(
+                "big.pdf", b"x" * 101, content_type="application/pdf"
+            )
+            response = self.client.post(
+                f"/api/v1/leave-applications/{self.app.id}/documents/",
+                {"file": file},
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_with_unsupported_content_type_returns_400(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "payload.exe", b"MZ", content_type="application/x-msdownload"
+        )
+        response = self.client.post(
+            f"/api/v1/leave-applications/{self.app.id}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class UnauthenticatedAccessTest(TestCase):
     def test_unauthenticated_list(self):
@@ -1660,3 +1716,49 @@ class SupportingDocumentSerializationTest(TestCase):
         ):
             data = SupportingDocumentSerializer(self.doc).data
         self.assertNotIn("stale://signed-url", data["file_url"])
+
+
+class DocumentStorageTest(TestCase):
+    """Uploaded document keys are sanitized and collision-safe."""
+
+    def test_upload_uses_sanitized_collision_safe_key(self):
+        captured = {}
+
+        class _FakeBucket:
+            def upload(self, path, data, opts):
+                captured["path"] = path
+
+            def create_signed_url(self, path, expiry):
+                return {"signedURL": f"https://signed/{path}"}
+
+        class _FakeBucketClient:
+            def from_(self, bucket):
+                return _FakeBucket()
+
+        class _FakeClient:
+            def __init__(self):
+                self.storage = _FakeBucketClient()
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from uuid import uuid4
+
+        app_id = str(uuid4())
+        with mock.patch(
+            "leave.services.storage.get_supabase_client",
+            return_value=_FakeClient(),
+        ):
+            file = SimpleUploadedFile(
+                "../../Budget Plan (2).pdf", b"%PDF", content_type="application/pdf"
+            )
+            result = upload_document(file, app_id)
+
+        path = captured["path"]
+        self.assertTrue(path.startswith(f"leave-documents/{app_id}/"))
+        name = path.replace(f"leave-documents/{app_id}/", "")
+        self.assertNotIn("/", name)
+        self.assertNotIn("..", name)
+        token, _, base = name.partition("-")
+        self.assertEqual(len(token), 32)
+        self.assertEqual(base, "Budget_Plan__2_.pdf")
+        self.assertEqual(result["path"], path)
+        self.assertEqual(result["url"], f"https://signed/{path}")
