@@ -95,10 +95,10 @@ export function LeaveApplicationForm({
 
   const displayedWorkingDays = startDate && endDate ? workingDays : null;
 
-  const ensureDraftCreated = useCallback(async () => {
+  const ensureDraftCreated = useCallback(async (patch: Record<string, unknown> = {}) => {
     if (currentId) return currentId;
     try {
-      const app = await createLeaveApplication({});
+      const app = await createLeaveApplication(patch);
       setCurrentId(app.id);
       return app.id;
     } catch {
@@ -114,7 +114,7 @@ export function LeaveApplicationForm({
       if (field === "reason") setReason(value as string);
 
       if (!currentId) {
-        await ensureDraftCreated();
+        await ensureDraftCreated({ [field]: value ?? "" });
       }
     },
     [currentId, ensureDraftCreated]

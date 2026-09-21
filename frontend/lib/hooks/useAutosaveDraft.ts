@@ -15,6 +15,7 @@ export function useAutosaveDraft(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
   const isInitialRef = useRef(true);
+  const startedWithIdRef = useRef(Boolean(applicationId));
 
   const save = useCallback(
     async (patchData: Record<string, unknown>) => {
@@ -35,11 +36,12 @@ export function useAutosaveDraft(
 
     const serialized = JSON.stringify(data);
     if (serialized === lastSavedRef.current) return;
-    if (isInitialRef.current) {
+    if (isInitialRef.current && startedWithIdRef.current) {
       isInitialRef.current = false;
       lastSavedRef.current = serialized;
       return;
     }
+    isInitialRef.current = false;
 
     if (timerRef.current) {
       clearTimeout(timerRef.current);
