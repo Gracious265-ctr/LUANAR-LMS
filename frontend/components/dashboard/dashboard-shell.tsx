@@ -108,14 +108,14 @@ const Sidebar = memo(function Sidebar({
   return (
     <nav
       className={cn(
-        "sticky top-0 h-screen shrink-0 border-r transition-[width] duration-200 ease-in-out",
+        "sticky top-0 flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ease-in-out",
         "border-border-default bg-surface-card shadow-sm p-2",
         open ? "w-64" : "w-16"
       )}
     >
       <TitleSection open={open} user={user} />
 
-      <div className="space-y-1 overflow-y-auto pb-16 pr-0.5">
+      <div className="flex-1 space-y-1 overflow-y-auto pb-20 pr-0.5">
         <Option
           Icon={Home}
           title="Dashboard"
@@ -288,7 +288,7 @@ const Option = memo(function Option({
 
 const TitleSection = memo(function TitleSection({ open, user }: { open: boolean; user: User }) {
   return (
-    <div className="mb-6 border-b border-border-default pb-4">
+    <div className="mb-6 shrink-0 border-b border-border-default pb-4">
       <div className="flex cursor-pointer items-center justify-between rounded-md p-2 transition-colors hover:bg-surface-hover">
         <div className="flex items-center gap-3">
           <div className="grid size-10 shrink-0 place-content-center rounded-lg bg-brand-primary text-brand-primary-foreground font-bold text-sm shadow-sm">
