@@ -43,11 +43,13 @@ export function delegationStateBadgeClass(state: DelegationState): string {
   }
 }
 
+export const APPROVER_ROLE_CODE_SET: ReadonlySet<string> = new Set(
+  APPROVER_ROLE_CODES
+);
+
 export function approverRolePeople(employees: Employee[]): Employee[] {
   return employees.filter(
-    (employee) =>
-      employee.is_active &&
-      (APPROVER_ROLE_CODES as readonly string[]).includes(employee.role)
+    (employee) => employee.is_active && APPROVER_ROLE_CODE_SET.has(employee.role)
   );
 }
 

@@ -22,7 +22,7 @@ const reassignment: Reassignment = {
 };
 
 const application: ApplicationDetail = {
-  id: 10,
+  id: "10",
   reference_number: "LUANAR-2026-0001",
   employee: 8,
   employee_name: "Sam Staff",

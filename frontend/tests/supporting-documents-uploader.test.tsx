@@ -4,28 +4,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SupportingDocumentsUploader } from "@/components/leave/SupportingDocumentsUploader";
 import type { SupportingDocument } from "@/lib/leave-api";
 
+const dropzoneMock = vi.hoisted(() => ({
+  onDrop: null as ((files: File[]) => void) | null,
+}));
+
 vi.mock("@/lib/leave-api", () => ({
   uploadDocument: vi.fn(),
   deleteDocument: vi.fn(),
 }));
 
-vi.mock("react-dropzone", () => {
-  let capturedOnDrop: ((files: File[]) => void) | null = null;
-  return {
-    useDropzone: vi.fn(({ onDrop }: { onDrop: (files: File[]) => void }) => {
-      capturedOnDrop = onDrop;
-      return {
-        getRootProps: () => ({}),
-        getInputProps: () => ({}),
-        isDragActive: false,
-      };
-    }),
-    __getOnDrop: () => capturedOnDrop,
-  };
-});
+vi.mock("react-dropzone", () => ({
+  useDropzone: vi.fn(({ onDrop }: { onDrop: (files: File[]) => void }) => {
+    dropzoneMock.onDrop = onDrop;
+    return {
+      getRootProps: () => ({}),
+      getInputProps: () => ({}),
+      isDragActive: false,
+    };
+  }),
+}));
 
 import { uploadDocument, deleteDocument } from "@/lib/leave-api";
-import { __getOnDrop } from "react-dropzone";
 
 const doc: SupportingDocument = {
   id: "doc-1",
@@ -38,9 +37,8 @@ const doc: SupportingDocument = {
 };
 
 function dropFiles() {
-  const onDrop = __getOnDrop();
-  if (!onDrop) throw new Error("dropzone onDrop not captured");
-  onDrop([new File(["data"], "letter.pdf", { type: "application/pdf" })]);
+  if (!dropzoneMock.onDrop) throw new Error("dropzone onDrop not captured");
+  dropzoneMock.onDrop([new File(["data"], "letter.pdf", { type: "application/pdf" })]);
 }
 
 describe("SupportingDocumentsUploader", () => {
