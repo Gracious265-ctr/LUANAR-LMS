@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 
 from audit.models import AuditEntry
@@ -64,14 +65,16 @@ class AuditedModelSerializer(serializers.ModelSerializer):
     # -- Default create/update ---------------------------------------------
 
     def create(self, validated_data: dict):
-        instance = super().create(validated_data)
-        self._audit_after_create(instance)
+        with transaction.atomic():
+            instance = super().create(validated_data)
+            self._audit_after_create(instance)
         return instance
 
     def update(self, instance, validated_data: dict):
         before = self._audit_snapshot(instance)
-        instance = super().update(instance, validated_data)
-        self._audit_after_update(instance, before)
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            self._audit_after_update(instance, before)
         return instance
 
 

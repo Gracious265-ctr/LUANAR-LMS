@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, timedelta
+from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
 from django.test import RequestFactory, TestCase
@@ -24,6 +25,7 @@ from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
 
 from .admin import AuditEntryAdmin
 from .models import AuditEntry
+from .serializers import AuditedModelSerializer
 from .services import changed_fields, record_audit
 
 SEED_PASSWORD = "testpass123"
@@ -748,3 +750,53 @@ class AuditEntryAdminTests(TestCase):
         admin = AuditEntryAdmin(AuditEntry, self.site)
         response = admin.changeform_view(request, object_id=str(entry.pk))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+class AuditedModelSerializerAtomicityTests(TestCase):
+    """A failed audit write rolls back the audited create/update."""
+
+    def setUp(self):
+        self.actor = make_hr()
+
+    def _serializer_class(self):
+        class _AuditedLeaveTypeSerializer(AuditedModelSerializer):
+            target_type = "leavetype"
+            audit_fields = ["name", "code"]
+
+            class Meta:
+                model = LeaveType
+                fields = ["id", "name", "code"]
+
+        return _AuditedLeaveTypeSerializer
+
+    def _serializer(self, *args, **kwargs):
+        from rest_framework.test import APIRequestFactory
+
+        request = APIRequestFactory().post("/")
+        request.user = self.actor
+        return self._serializer_class()(*args, context={"request": request}, **kwargs)
+
+    def test_create_rolls_back_when_audit_fails(self):
+        serializer = self._serializer(
+            data={"name": "Study leave", "code": "study"}
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        self.assertFalse(LeaveType.objects.filter(code="study").exists())
+
+    def test_update_rolls_back_when_audit_fails(self):
+        leave_type = LeaveType.objects.create(name="Annual leave", code="annual")
+        serializer = self._serializer(
+            leave_type, data={"name": "Renamed leave", "code": "annual"}
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        leave_type.refresh_from_db()
+        self.assertEqual(leave_type.name, "Annual leave")

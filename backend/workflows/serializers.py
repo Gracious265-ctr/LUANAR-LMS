@@ -154,7 +154,7 @@ class WorkflowSerializer(AuditedModelSerializer):
         with transaction.atomic():
             workflow = Workflow.objects.create(**validated_data)
             self._replace_stages(workflow, stages)
-        self._audit_after_create(workflow)
+            self._audit_after_create(workflow)
         return workflow
 
     def update(self, instance, validated_data: dict) -> Workflow:
@@ -165,7 +165,7 @@ class WorkflowSerializer(AuditedModelSerializer):
             # in place before the "after" snapshot is taken.
             instance = serializers.ModelSerializer.update(self, instance, validated_data)
             self._replace_stages(instance, stages)
-        self._audit_after_update(instance, before)
+            self._audit_after_update(instance, before)
         return instance
 
     def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:

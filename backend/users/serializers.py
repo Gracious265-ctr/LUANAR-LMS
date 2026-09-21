@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 
@@ -88,24 +89,25 @@ class EmployeeSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop("user", {})
         email = user_data["email"]
 
-        user = User.objects.filter(
-            Q(email__iexact=email) | Q(username__iexact=email)
-        ).first()
+        with transaction.atomic():
+            user = User.objects.filter(
+                Q(email__iexact=email) | Q(username__iexact=email)
+            ).first()
 
-        if user is None:
-            user = User(
-                username=email,
-                email=email,
-                first_name=user_data.get("first_name", ""),
-                last_name=user_data.get("last_name", ""),
-                role=User.Role.EMPLOYEE,
-                is_active=user_data.get("is_active", True),
-            )
-            user.set_unusable_password()
-            user.save()
+            if user is None:
+                user = User(
+                    username=email,
+                    email=email,
+                    first_name=user_data.get("first_name", ""),
+                    last_name=user_data.get("last_name", ""),
+                    role=User.Role.EMPLOYEE,
+                    is_active=user_data.get("is_active", True),
+                )
+                user.set_unusable_password()
+                user.save()
 
-        instance = EmployeeProfile.objects.create(user=user, **validated_data)
-        self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
+            instance = EmployeeProfile.objects.create(user=user, **validated_data)
+            self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
         return instance
 
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
@@ -113,22 +115,28 @@ class EmployeeSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop("user", {})
         user = instance.user
 
-        if "email" in user_data:
-            user.email = user_data["email"]
-            user.username = user_data["email"]
+        with transaction.atomic():
+            if "email" in user_data:
+                user.email = user_data["email"]
+                user.username = user_data["email"]
 
-        for field in ("first_name", "last_name", "is_active"):
-            if field in user_data:
-                setattr(user, field, user_data[field])
+            for field in ("first_name", "last_name", "is_active"):
+                if field in user_data:
+                    setattr(user, field, user_data[field])
 
-        user.save()
+            user.save()
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
 
-        after = self._snapshot(instance)
-        self._audit(instance, action=AuditEntry.Action.UPDATED, before=before, after=after)
+            after = self._snapshot(instance)
+            self._audit(
+                instance,
+                action=AuditEntry.Action.UPDATED,
+                before=before,
+                after=after,
+            )
         return instance
 
     def _snapshot(self, instance: EmployeeProfile) -> dict:

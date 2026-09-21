@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
 from django.core.exceptions import ValidationError
@@ -2110,3 +2111,72 @@ class ReassignmentAdminTests(TestCase):
         )
         admin = ReassignmentAdmin(Reassignment, self.site)
         self.assertEqual(admin.employee_name(reassignment), employee.get_full_name())
+
+class WorkflowSerializerAtomicityTests(TestCase):
+    """A failed audit write rolls back the workflow and its stages."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+
+        hr = User.objects.create_user(
+            username="wf-atomic@test.luanar",
+            email="wf-atomic@test.luanar",
+            password=SEED_PASSWORD,
+            role=User.Role.HR,
+        )
+        request = APIRequestFactory().post("/")
+        request.user = hr
+        self.context = {"request": request}
+        self.payload = {
+            "name": "Atomic rollback flow",
+            "employee_category": "academic",
+            "department": "Faculty of Science",
+            "stages": [
+                {"order": 1, "approver_role": "hod"},
+                {"order": 2, "approver_role": "dean"},
+            ],
+        }
+
+    def _serializer(self, *args, **kwargs):
+        from .serializers import WorkflowSerializer
+
+        return WorkflowSerializer(*args, context=self.context, **kwargs)
+
+    def test_create_rolls_back_workflow_and_stages_when_audit_fails(self):
+        serializer = self._serializer(data=self.payload)
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        self.assertFalse(Workflow.objects.filter(name="Atomic rollback flow").exists())
+        self.assertEqual(
+            WorkflowStage.objects.filter(workflow__name="Atomic rollback flow").count(),
+            0,
+        )
+
+    def test_update_rolls_back_when_audit_fails(self):
+        workflow = Workflow.objects.create(
+            name="Existing flow",
+            employee_category="academic",
+            department="Faculty of Science",
+        )
+        WorkflowStage.objects.create(
+            workflow=workflow, order=1, approver_role="dean"
+        )
+        serializer = self._serializer(
+            workflow,
+            data={**self.payload, "name": "Existing flow"},
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        workflow.refresh_from_db()
+        self.assertEqual(workflow.department, "Faculty of Science")
+        self.assertEqual(
+            list(workflow.stages.values_list("approver_role", flat=True)), ["dean"]
+        )

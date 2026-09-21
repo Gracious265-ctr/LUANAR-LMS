@@ -329,3 +329,68 @@ class EmployeeEndpointTests(TestCase):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.delete(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class EmployeeSerializerAtomicityTests(TestCase):
+    """A failed audit write rolls back employee create and update."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+
+        self.hr = User.objects.create_user(
+            username="hr-atomic@test.luanar",
+            email="hr-atomic@test.luanar",
+            password="testpass123",
+            role=User.Role.HR,
+        )
+        self.request = APIRequestFactory().post("/")
+        self.request.user = self.hr
+
+    def _serializer(self, *args, **kwargs):
+        from unittest import mock
+
+        from .serializers import EmployeeSerializer
+
+        return EmployeeSerializer(*args, context={"request": self.request}, **kwargs)
+
+    def test_create_rolls_back_user_and_profile_when_audit_fails(self):
+        from unittest import mock
+
+        serializer = self._serializer(
+            data={
+                "email": "rollback-create@test.luanar",
+                "first_name": "Roll",
+                "last_name": "Back",
+                "designation": "Lecturer",
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "users.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        self.assertFalse(
+            User.objects.filter(email="rollback-create@test.luanar").exists()
+        )
+
+    def test_update_rolls_back_profile_when_audit_fails(self):
+        from unittest import mock
+
+        profile = EmployeeProfile.objects.create(
+            user=self.hr,
+            designation="Lecturer",
+            department="Computer Science",
+        )
+        serializer = self._serializer(
+            profile,
+            data={"email": self.hr.email, "designation": "Senior Lecturer"},
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "users.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        profile.refresh_from_db()
+        self.assertEqual(profile.designation, "Lecturer")
