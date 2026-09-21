@@ -80,7 +80,7 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove document letter.pdf" }));
 
     expect(
       await screen.findByText(/could not remove this document/i)

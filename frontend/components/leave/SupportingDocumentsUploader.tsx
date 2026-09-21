@@ -133,6 +133,7 @@ export function SupportingDocumentsUploader({
               {!disabled && (
                 <button
                   type="button"
+                  aria-label={`Remove document ${doc.file_name}`}
                   onClick={() => handleRemove(doc.id)}
                   className="shrink-0 p-1 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
                 >

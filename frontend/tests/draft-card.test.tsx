@@ -31,6 +31,10 @@ describe("DraftCard", () => {
     vi.mocked(deleteLeaveApplication).mockResolvedValue(undefined);
   });
 
+  function openDeleteConfirm() {
+    fireEvent.click(screen.getByRole("button", { name: "Delete draft" }));
+  }
+
   it("surfaces an error when deleting a draft fails", async () => {
     vi.mocked(deleteLeaveApplication).mockRejectedValueOnce(new Error("boom"));
     const onDelete = vi.fn();
@@ -43,7 +47,7 @@ describe("DraftCard", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "" }));
+    openDeleteConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     expect(
@@ -63,7 +67,7 @@ describe("DraftCard", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "" }));
+    openDeleteConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
     await vi.waitFor(() => expect(onDelete).toHaveBeenCalledWith("draft-1"));

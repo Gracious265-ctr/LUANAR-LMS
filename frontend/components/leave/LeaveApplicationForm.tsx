@@ -203,10 +203,14 @@ export function LeaveApplicationForm({
           />
           <WorkingDaysPreview days={displayedWorkingDays} loading={daysLoading} />
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">
+            <label
+              htmlFor="leave-reason"
+              className="block text-sm font-medium text-text-secondary mb-1.5"
+            >
               Reason
             </label>
             <textarea
+              id="leave-reason"
               value={reason}
               onChange={(e) => handleFieldChange("reason", e.target.value)}
               rows={3}

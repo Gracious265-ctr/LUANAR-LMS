@@ -23,10 +23,14 @@ export function LeaveTypeSelect({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-text-secondary mb-1.5">
+      <label
+        htmlFor="leave-type"
+        className="block text-sm font-medium text-text-secondary mb-1.5"
+      >
         Leave Type
       </label>
       <select
+        id="leave-type"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
         disabled={disabled}

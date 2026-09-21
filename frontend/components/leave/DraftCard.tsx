@@ -130,6 +130,8 @@ export function DraftCard({ application, leaveTypeName, onDelete }: DraftCardPro
           </div>
         ) : (
           <button
+            type="button"
+            aria-label="Delete draft"
             onClick={() => setConfirming(true)}
             className="ml-auto p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
           >

@@ -328,6 +328,7 @@ const ToggleClose = memo(function ToggleClose({
   return (
     <button
       onClick={() => setOpen(!open)}
+      aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
       className="absolute bottom-0 left-0 right-0 border-t border-border-default transition-colors hover:bg-surface-hover"
     >
       <div className="flex items-center p-3">
@@ -368,7 +369,10 @@ const Header = memo(function Header({
         <p className="text-sm text-text-secondary">Welcome back, {user.full_name}</p>
       </div>
       <div className="flex items-center gap-4">
-        <button className="relative p-2 rounded-lg bg-surface-card border border-border-default text-text-secondary hover:text-text-primary transition-colors">
+        <button
+          aria-label="Notifications"
+          className="relative p-2 rounded-lg bg-surface-card border border-border-default text-text-secondary hover:text-text-primary transition-colors"
+        >
           <Bell className="h-5 w-5" />
           <span className="absolute -top-1 -right-1 h-3 w-3 bg-status-rejected rounded-full" />
         </button>
