@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { createLeaveApplication } from "@/lib/leave-api";
 import { useAutosaveDraft } from "@/lib/hooks/useAutosaveDraft";
-import { previewWorkingDays } from "@/lib/services/calendarRules";
+import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveTypeSelect } from "./LeaveTypeSelect";
 import { DateRangeFields } from "./DateRangeFields";
 import { WorkingDaysPreview } from "./WorkingDaysPreview";
@@ -29,9 +29,7 @@ export function LeaveApplicationForm({
   const [documents, setDocuments] = useState<
     { id: string; file_name: string; file_size: number; file_path: string; file_url: string; content_type: string; uploaded_at: string }[]
   >([]);
-  const [workingDays, setWorkingDays] = useState<number | null>(null);
-  const [daysLoading, setDaysLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(
@@ -71,7 +69,6 @@ export function LeaveApplicationForm({
           setEndDate(data.end_date || "");
           setReason(data.reason || "");
           setDocuments(data.documents || []);
-          setWorkingDays(data.calculated_days);
         } else {
           setLoadError("Could not load this draft. It may have been removed.");
         }
@@ -86,26 +83,27 @@ export function LeaveApplicationForm({
     fetchApp();
   }, [mode, applicationId]);
 
-  useEffect(() => {
-    if (!startDate || !endDate) return;
-    let cancelled = false;
-    previewWorkingDays(startDate, endDate)
-      .then((res) => {
-        if (cancelled) return;
-        setWorkingDays(res.days);
-        setDaysLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setWorkingDays(null);
-        setDaysLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [startDate, endDate]);
+  const validation = useLeaveValidation(
+    {
+      leave_type_id: leaveTypeId,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      draft_id: currentId,
+    },
+    { enabled: Boolean(startDate && endDate) }
+  );
 
-  const displayedWorkingDays = startDate && endDate ? workingDays : null;
+  const errorFor = (field: string): string | null =>
+    (validation.result?.errors ?? []).find((issue) => issue.field === field)
+      ?.message ?? null;
+
+  const startError = errorFor("start_date");
+  const endError = errorFor("end_date");
+  const leaveTypeError = errorFor("leave_type");
+  const reasonError = errorFor("reason");
+  const topIssues = (validation.result?.errors ?? []).filter((issue) =>
+    ["documents", "—"].includes(issue.field)
+  );
 
   const ensureDraftCreated = useCallback(async (patch: Record<string, unknown> = {}) => {
     if (currentId) return currentId;
@@ -191,6 +189,9 @@ export function LeaveApplicationForm({
           Leave Details
         </h3>
         <div className="space-y-4">
+          {leaveTypeError && (
+            <FieldError message={leaveTypeError} id="leave-type-error" />
+          )}
           <LeaveTypeSelect
             value={leaveTypeId}
             onChange={(v) => handleFieldChange("leave_type_id", v)}
@@ -201,7 +202,14 @@ export function LeaveApplicationForm({
             onStartChange={(v) => handleFieldChange("start_date", v)}
             onEndChange={(v) => handleFieldChange("end_date", v)}
           />
-          <WorkingDaysPreview days={displayedWorkingDays} loading={daysLoading} />
+          {startError && <FieldError message={startError} id="start-date-error" />}
+          {endError && <FieldError message={endError} id="end-date-error" />}
+          <WorkingDaysPreview
+            days={
+              startDate && endDate ? (validation.result?.working_days ?? null) : null
+            }
+            loading={Boolean(startDate && endDate) && validation.isLoading}
+          />
           <div>
             <label
               htmlFor="leave-reason"
@@ -214,10 +222,21 @@ export function LeaveApplicationForm({
               value={reason}
               onChange={(e) => handleFieldChange("reason", e.target.value)}
               rows={3}
+              aria-describedby={reasonError ? "reason-error" : undefined}
               placeholder="Provide a reason for your leave application..."
               className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-1 focus:ring-input-ring-focus resize-none"
             />
+            {reasonError && <FieldError message={reasonError} id="reason-error" />}
           </div>
+          {topIssues.length > 0 && (
+            <div role="alert" className="rounded-lg border border-border-error bg-status-rejected-subtle p-3">
+              {topIssues.map((issue) => (
+                <p key={issue.code} className="text-sm text-status-rejected">
+                  {issue.message}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -254,5 +273,13 @@ export function LeaveApplicationForm({
         </button>
       </div>
     </div>
+  );
+}
+
+function FieldError({ message, id }: { message: string; id: string }) {
+  return (
+    <p id={id} role="alert" className="text-sm text-status-rejected">
+      {message}
+    </p>
   );
 }

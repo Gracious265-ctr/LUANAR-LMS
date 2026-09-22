@@ -227,6 +227,7 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
 | GET | `/api/v1/finalized-leave/` | Finalized (submitted) leave applications, newest submission first, with employee, leave type, dates/days, reference, and current approver; `employee=` name/email search (HR-only) |
 | GET | `/api/v1/finalized-leave/{id}/` | One submitted application with its documents, reassignment history, and oldest-first audit trail (HR-only; 404 for draft ids) |
+| GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
 
 ## Git Workflow
 

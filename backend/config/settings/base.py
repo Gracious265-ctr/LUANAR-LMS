@@ -93,6 +93,18 @@ TIME_ZONE = "Africa/Blantyre"
 USE_I18N = True
 USE_TZ = True
 
+# Leave validation (Unit 14). The rules provider is the single source of
+# leave-type rules, employees, financial years, public holidays and balances;
+# swap in the real HR-track provider later via this setting (see
+# docs/leave-rules-provider-contract.md for the Unit 20 handoff).
+LEAVE_RULES_PROVIDER = "leave.providers.fixture.FixtureRulesProvider"
+LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
+
+# Leave application tracking (Unit 15). The tracking provider supplies the
+# read-only workflow payload; the fixture provider is replaced by the real
+# workflow-backed provider in Unit 20 (see docs/leave-rules-provider-contract.md).
+LEAVE_TRACKING_PROVIDER = "leave.tracking.fixture_provider.FixtureTrackingProvider"
+
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -51,7 +51,16 @@ describe("LeaveApplicationForm", () => {
   });
 
   it("surfaces a load error when the application cannot be fetched", async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 404 }));
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/leave/leave-types/")) {
+        return new Response("[]", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
 
     render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
 

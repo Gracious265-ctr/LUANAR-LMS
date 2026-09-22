@@ -22,7 +22,7 @@ export function WorkingDaysPreview({ days, loading }: WorkingDaysPreviewProps) {
         </div>
       )}
       <p className="text-xs text-text-muted mt-1">
-        Excludes weekends (Sat/Sun)
+        Excludes weekends and public holidays
       </p>
     </div>
   );

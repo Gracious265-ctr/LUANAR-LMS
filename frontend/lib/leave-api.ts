@@ -20,6 +20,9 @@ export interface LeaveApplication {
   created_at: string;
   updated_at: string;
   submitted_at: string | null;
+  working_days: number | null;
+  calendar_days: number | null;
+  financial_year_label: string | null;
   documents: SupportingDocument[];
 }
 
@@ -85,21 +88,6 @@ export async function deleteLeaveApplication(id: string): Promise<void> {
     credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to delete application");
-}
-
-export async function submitLeaveApplication(
-  id: string
-): Promise<{ detail: string; reference_number: string }> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/submit/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to submit" }));
-    throw new Error(error.detail || "Failed to submit application");
-  }
-  return res.json();
 }
 
 export async function uploadDocument(

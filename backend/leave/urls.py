@@ -11,6 +11,7 @@ from .views import (
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
+from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
 app_name = "leave"
 
@@ -36,6 +37,17 @@ supporting_doc_detail = SupportingDocumentViewSet.as_view(
 employee_leave_types = EmployeeLeaveTypeViewSet.as_view({"get": "list"})
 
 urlpatterns = [
+    path(
+        "leave/validate/",
+        LeaveValidateView.as_view(),
+        name="leave-validate",
+    ),
+    path(
+        "leave-applications/<uuid:pk>/submit/",
+        LeaveApplicationSubmitView.as_view(),
+        name="leave-application-submit",
+    ),
+    path("", include("leave.tracking.urls")),
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
     path(

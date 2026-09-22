@@ -23,6 +23,8 @@ from users.models import User
 
 from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
 
+from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
+
 from .admin import AuditEntryAdmin
 from .models import AuditEntry
 from .serializers import AuditedModelSerializer
@@ -381,10 +383,11 @@ class FinalizedLeaveApiTests(TestCase):
         self.assertEqual(payload["audit_entries"][0]["id"], submitted.pk)
 
 
-class AuditWiringTests(TestCase):
+class AuditWiringTests(StubProviderMixin, TestCase):
     """Each audited action produces the expected audit entry."""
 
     def setUp(self):
+        self.stub = self.use_stub()
         self.client = APIClient()
         self.hr_user = make_hr()
         self.client.force_authenticate(user=self.hr_user)
@@ -714,12 +717,13 @@ class AuditWiringTests(TestCase):
 
     def test_submit_is_audited_with_reference_number(self):
         employee = make_user(User.Role.EMPLOYEE, "emp-submit@audit.test")
+        self.stub.register_employee(employee)
         self.client.force_authenticate(user=employee)
         app = LeaveApplication.objects.create(
             employee=employee,
-            leave_type_id=LeaveType.objects.create(name="Annual", code="annual").pk,
-            start_date=date(2026, 10, 1),
-            end_date=date(2026, 10, 5),
+            leave_type_id=1,
+            start_date=EARLIEST_ANNUAL_START,
+            end_date=date(2026, 10, 2),
             reason="Family visit",
         )
         response = self.client.post(f"/api/v1/leave-applications/{app.id}/submit/")

@@ -5,6 +5,8 @@ Update this file after every meaningful implementation change.
 ## Current Phase
 
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
+- Unit 15 — Employee Application Tracking (COMPLETE)
+- Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
 - Unit 9 — HR Emergency Reassignment (COMPLETE)
@@ -14,6 +16,54 @@ Update this file after every meaningful implementation change.
 - Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are merged
   onto `development`, and the HR track's next build **Unit 11 — Finalized Leave +
   Audit View** is complete (depends on the submitted applications Unit 13 provides).
+- **Unit 16 — Approver Review and Decision** is the Employee + Approver
+  track's next build: an approver queue of pending applications plus a
+  review/decision endpoint and screen where the approver approves, rejects,
+  or returns the application for correction. It reuses the Unit 15 status
+  enum, tracker component, and stage/decision contract, and depends on the
+  workflow-routing spine (`current_approver`) rather than a separate provider.
+
+## Completed (Unit 15)
+
+- **Backend.** New `leave/tracking/` package: Django-free contract dataclasses
+  in `contracts.py` (`WorkflowTracking`, `TrackedStage`, `TrackedEvent`,
+  `TrackedApprover`, `TrackedOutcome`, `ResubmissionInfo`), `provider.py`
+  (ABC `TrackingProvider` + `get_tracking_provider()` dotted-path factory,
+  driven by the `LEAVE_TRACKING_PROVIDER` setting), and `fixture_provider.py`
+  (loads `tracking/fixtures/assignments.json` + `scenarios/*.json`; unknown
+  references fall back to `pending_first_stage`; no DB access). `services.py`
+  exposes `get_application_tracking(user, application_id)` — owner-only,
+  returns 404 for foreign/unknown applications (never 403) and 409
+  `application_not_submitted` for drafts — backed by read-only serializers and
+  `ApplicationTrackingView` at `GET /api/v1/leave-applications/{id}/tracking/`
+  (GET only; `+00:00` timestamps normalized to `Z`). Wired into
+  `leave/urls.py`. `seed_tracking_scenarios` command (DEBUG-only guard,
+  idempotent, fast-forwards `ReferenceSequence` to allocate
+  `LV-2026-27-900001`..`900008` and rewrites `assignments.json`).
+- **Backend tests.** 4 suites / 28 tests (`test_tracking_api`, `_scenarios`,
+  `_provider`, `_seed`): owner 200 with full payload + `assertNumQueries(1)`,
+  non-owner/HR/supervisor 404, anonymous 401, draft 409, non-GET 405, all 8
+  scenarios + fallback + delegate + `can_resubmit` rules, setting-driven
+  provider swap, seed idempotency and sequence forward. Full `leave.tests`
+  suite green and `manage.py check` clean.
+- **Frontend.** Route `app/(dashboard)/applications/[id]/page.tsx` + proxy
+  `app/api/leave/leave-applications/[id]/tracking/route.ts`;
+  `lib/tracking/` (`types.ts`, `service.ts` returning ok/not_found/
+  not_submitted/error results, `format.ts` — `en-GB` + `Africa/Blantyre`,
+  `labels.ts` the sole enum→icon/color/copy map, so no component hardcodes a
+  role or stage count); `components/tracking/` (`TrackingView` +
+  header/badge/status card/stepper/stage item/outcome panel/resubmission
+  note/timeline/skeleton/error) with `__fixtures__/*.json` mirroring the
+  backend scenarios. "Track this application" link added to the submission
+  confirmation. Responsive layout: mobile attention-then-stepper, desktop
+  stepper 2/3 + attention 1/3; light-only theme using existing tokens; exactly
+  one `aria-current="step"`; unknown event types render "Workflow update".
+- **Frontend tests.** 3 suites / 41 tests (`tracking-view`, `tracking-format`,
+  `tracking-service`). `npm test`: 31 files / 180 tests green; `tsc --noEmit`,
+  `npm run lint`, and `npm run build` all clean.
+- **Reconciliation.** The Unit 13 drafts list renders draft rows only (no
+  submitted rows exist), so the in-app entry point to the tracker is the
+  submission-confirmation link, not the drafts list.
 
 ## Completed
 
@@ -295,19 +345,50 @@ Update this file after every meaningful implementation change.
   sub-menu retained; links point at the real `/dashboard/leave/*` routes;
   `Calendar` icon added
 
-## In Progress
+## Completed (Unit 14)
 
-- None.
+- **Backend.** `providers/` package (base dataclasses + `RulesProvider`
+  protocol + `FixtureRulesProvider` placeholder, `get_provider()`/
+  `get_today()`), `validation/` package (`types.py`, `working_days.py`,
+  `pipeline.py` with the ordered `CHECK_ORDER`, 10 validators incl.
+  `preconditions`), models/migration `0006` (LeaveApplication
+  `working_days`/`calendar_days`/`financial_year_label`/`rules_snapshot`,
+  ReferenceSequence reshaped to `financial_year_label`/`last_value`,
+  `0001` audit app/`AuditEvent`), services (`submission`, `references`,
+  `workflow_gate` stub), `leave_application_submitted` signal + audit recording,
+  `validate/` and `submit/` endpoints (`views/validation.py`, explicit routes).
+  `manage.py check` and `makemigrations --check` clean.
+- **Backend tests.** `leave/tests.py` → `leave/tests/` package (`legacy.py`
+  kept, 4 superseded submit tests removed) + `stubs.py` (explicit-data
+  `StubRulesProvider`, fixed `today=2026-09-21`) + 6 new suites
+  (`test_working_days`, `test_validators`, `test_pipeline`, `test_references`,
+  `test_submission`, `test_api` incl. a `TransactionTestCase` concurrency race).
+  `Ran 142 tests ... OK` for `leave.tests`.
+- **Frontend.** `lib/leave-validation.ts` (error-code union + `SubmitError` +
+  `validateLeave`/`submitApplication`), `/api/leave/validate/` proxy,
+  `useLeaveValidation` (400ms debounce, AbortController), review + submitted
+  screens (`ReviewSummaryClient`, `SubmittedClient`), `validation-panel`,
+  `balance-card`, `leave-review-summary`, `submission-confirmation`,
+  `LeaveApplicationForm` inline validation (working-days preview +
+  per-field errors), submit outcomes per spec (200/422-focus/409/network).
+  `npm test` 28 files / 139 tests green, `tsc --noEmit`, `npm run lint` and
+  `npm run build` all pass.
+- **Docs.** `backend/docs/leave-validation.md` (pipeline order + error codes),
+  `backend/docs/leave-rules-provider-contract.md` (Unit 20 handoff mapping).
 
 ## Next Up
 
+- **Unit 16 — Approver Review and Decision:** pending-queue + review/decision
+  endpoint and screen for approvers, reusing the Unit 15 status enum/badges,
+  tracker component, and stage/decision contract; the Unit 15 endpoint and
+  payload are extended additively by Unit 17 (rejection/correction/resubmission)
+  and Unit 18 (cancellation) per their specs.
 - **HR track (this developer):** Unit 16+ build on the audit spine (approval/
   cancel/correction events and application-scoped history), then Unit 21 routing
   which consumes the `current_approver` spine and `active_delegation_for`.
-- **Employee + Approver track:** next application-facing unit per the shared
-  build plan; Units 4/5 (Leave Types API, Calendar/Rules API) were listed as
-  deferred in the Unit 13 spec but are **already implemented** by the HR track
-  and integrated on `development`.
+- **Employee + Approver track:** Units 4/5 (Leave Types API, Calendar/Rules API)
+  were listed as deferred in the Unit 13 spec but are **already implemented** by
+  the HR track and integrated on this merged branch.
 
 ## Hardening pass — feature/hr-track review (2026-09-21, complete)
 
@@ -403,6 +484,20 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   389-test suite in ~7s — no per-app splitting needed.) Frontend: 136 tests, lint, and build
   clean. Not yet committed — commit the feature work on `feature/hr-unit-11`
   and merge to `development` when the other developer's track is ready.
+- **Unit 15 complete (2026-09-21):** read-only, owner-only tracking endpoint +
+  `/applications/[id]` page behind a swappable fixture provider (contracts live
+  in the Django-free `contracts.py`; `LEAVE_TRACKING_PROVIDER` setting drives
+  `get_tracking_provider()`). Decisions recorded: 404 not 403 for anyone who
+  isn't the owner; drafts 409 `application_not_submitted`; resubmission retains
+  the reference number; unknown event types render "Workflow update" rather than
+  breaking; delegated reviews show "Acting for X". Reconciliation: the Unit 13
+  drafts list shows drafts only, so the submission-confirmation "Track this
+  application" link is the in-app entry point — no tracker link on the drafts
+  list. Fixed during verification: frontend `tsc` caught a missing
+  `TrackingStage` import in `labels.ts` and over-broad union narrowing in
+  `TrackingView` (error/non-owner branches); testing-library string matchers
+  can't see text inside nested `<strong>`/`<time>`, so those assertions use a
+  normalized-textContent matcher.
 - **Unit 9 complete (2026-09-18):** HR Emergency Reassignment landed. Big
   decisions recorded: `pending` = `submitted`; the `current_approver` spine +
   `Reassignment` history (cross-track — the nullable FK merges after the Unit 13
