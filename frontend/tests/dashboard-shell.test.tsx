@@ -1,7 +1,12 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { fetchCapabilities } from "@/lib/approvals/service";
+
+vi.mock("@/lib/approvals/service", () => ({
+  fetchCapabilities: vi.fn(),
+}));
 
 const mockUser = {
   id: 1,
@@ -17,24 +22,32 @@ const mockApproverUser = {
   full_name: "Test Supervisor",
 };
 
+const employeeCapabilities = { is_approver: false, pending_count: 0 };
+const approverCapabilities = { is_approver: true, pending_count: 3 };
+
+function renderShell(user: typeof mockUser) {
+  return render(
+    <DashboardShell user={user}>
+      <div>Test content</div>
+    </DashboardShell>
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(fetchCapabilities).mockResolvedValue(employeeCapabilities);
+});
+
 describe("DashboardShell", () => {
   it("renders the user's name and role", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(screen.getAllByText("Test Employee").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Employee").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Dashboard nav item for all roles", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("My Applications")).toBeInTheDocument();
@@ -42,42 +55,34 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("does not show Approvals for employee role", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+  it("does not show Approvals when the user is not an approver", async () => {
+    vi.mocked(fetchCapabilities).mockResolvedValue(employeeCapabilities);
+    renderShell(mockUser);
 
-    expect(screen.queryByText("Approvals")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchCapabilities).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole("link", { name: /approvals/i })).not.toBeInTheDocument();
   });
 
-  it("shows Approvals for supervisor role", () => {
-    render(
-      <DashboardShell user={mockApproverUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+  it("shows Approvals with the pending count for a role with capacity", async () => {
+    vi.mocked(fetchCapabilities).mockResolvedValue(approverCapabilities);
+    renderShell(mockApproverUser);
 
+    const navItem = await screen.findByRole("link", { name: /approvals/i });
+    expect(navItem).toBeInTheDocument();
     expect(screen.getByText("Approvals")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
   it("renders a sign-out control", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
   it("does not render a theme toggle", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(
       screen.queryByRole("button", { name: /theme|dark mode/i })

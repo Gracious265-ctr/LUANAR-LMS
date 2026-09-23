@@ -16,6 +16,7 @@ from leave.providers.base import (
     EmployeeInfo,
     EligibilityRule,
     FinancialYear,
+    LeaveBalance,
     LeaveTypeRules,
 )
 
@@ -38,6 +39,22 @@ def make_user(username="employee@test.luanar", **kwargs):
         password="testpass123",
         **kwargs,
     )
+
+
+def make_approver_chain(
+    roles=("supervisor", "hod", "dean", "registrar", "dvc"),
+) -> dict[str, object]:
+    """Create the active, seeded approver users the fixture workflow provider
+    resolves stages to (Unit 16).
+
+    Submission now routes applications through ``FixtureWorkflowProvider``,
+    which binds each stage to the first active ``User`` holding that role, so
+    Unit 14 submit tests must seed these users. Returns ``{role: user}``.
+    """
+    users = {}
+    for role in roles:
+        users[role] = make_user(username=f"{role}@test.luanar", role=role)
+    return users
 
 
 def _leave_types():
@@ -171,6 +188,13 @@ class StubRulesProvider:
     def get_available_balance(self, employee_id: int, financial_year_label: str):
         return self.balances.get(
             (employee_id, financial_year_label), self.default_balance
+        )
+
+    def get_leave_balance(self, employee_id: int, financial_year_label: str):
+        return LeaveBalance(
+            entitlement=int(self.default_balance),
+            used=0,
+            available=int(self.default_balance),
         )
 
 

@@ -1,0 +1,81 @@
+{
+  "id": "aa1",
+  "reference": "LEA-2026-0041",
+  "status": "pending",
+  "submission_cycle": 1,
+  "application": {
+    "leave_type": "Annual Leave",
+    "start_date": "2026-11-02",
+    "end_date": "2026-11-06",
+    "working_days": 5,
+    "reason": "Family visit.",
+    "submitted_at": "2026-09-22T08:15:03Z"
+  },
+  "employee": {
+    "full_name": "Miriam Banda",
+    "staff_id": "MIR001",
+    "designation": "Lecturer",
+    "department": "Computer Science",
+    "faculty": "Computer Science",
+    "grade": "LU-L14",
+    "date_of_appointment": "2015-01-12"
+  },
+  "balance": {
+    "entitlement": 30,
+    "used": 10,
+    "available": 20
+  },
+  "leave_history": {
+    "available": true,
+    "scope": "current_financial_year",
+    "items": [
+      {
+        "leave_type": "Annual Leave",
+        "start_date": "2026-03-02",
+        "end_date": "2026-03-06",
+        "working_days": 5,
+        "status": "approved"
+      }
+    ]
+  },
+  "documents": [
+    {
+      "id": "d1",
+      "name": "supporting-document.pdf",
+      "size_bytes": 2048,
+      "uploaded_at": "2026-09-22T08:14:00Z"
+    }
+  ],
+  "stages": [
+    {
+      "order": 1,
+      "role_label": "Supervisor",
+      "status": "approved",
+      "approver_name": "Ana Phiri",
+      "decided_at": "2026-09-22T08:30:00Z",
+      "comment": "",
+      "action": "approve"
+    },
+    {
+      "order": 2,
+      "role_label": "Head of Department",
+      "status": "pending",
+      "approver_name": "",
+      "decided_at": null,
+      "comment": "",
+      "action": null
+    }
+  ],
+  "current_stage": {
+    "order": 2,
+    "role_label": "Head of Department",
+    "version": 3,
+    "is_final": false,
+    "next_role_label": "Dean"
+  },
+  "permissions": {
+    "can_decide": true,
+    "reason": null
+  },
+  "my_stage_role_label": "Head of Department"
+}

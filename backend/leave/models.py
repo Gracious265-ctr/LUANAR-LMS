@@ -134,6 +134,10 @@ class LeaveApplication(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUIRED = "correction_required", "Correction Required"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     employee = models.ForeignKey(
@@ -169,6 +173,19 @@ class LeaveApplication(models.Model):
         blank=True,
         related_name="applications_assigned",
     )
+
+    # Unit 16 workflow spine. ``current_stage`` is the live ApprovalStage the
+    # application sits on (null until the workflow is assigned at submission);
+    # ``submission_cycle`` counts submissions and is copied onto decisions so a
+    # future resubmission unit can group them (incremented there, not here).
+    current_stage = models.ForeignKey(
+        "workflows.ApplicationStage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    submission_cycle = models.PositiveIntegerField(default=1)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -82,6 +82,24 @@ for the given financial year. Used only by the `balance` check, which fires
   financial year (Unit 5). The fixture implements this as entitlement with no
   deductions.
 
+```python
+def get_leave_balance(self, employee_id: int, financial_year_label: str) -> LeaveBalance
+```
+
+Read-only annual-leave balances for approvers (Unit 16): `LeaveBalance`
+`{entitlement, used, available}`. The approvals review payload renders this
+block; no approver action ever mutates it. Must return zeros for employees
+without an entitlement. The fixture implements it as entitlement-only; the stub
+returns the current default balance. Implementations raise
+`leave.providers.base.LeaveBalanceUnavailableError` when the balance cannot be
+resolved at all (as opposed to a legitimately zero balance) — the approvals
+API renders that case as an explicit unknown (`null` fields), while any other
+exception is treated as a bug and propagates.
+
+- **Real models:** the entitlement + leave-day ledger for the employee and
+  financial year (Unit 5), same values as `get_available_balance` split into
+  `entitlement`, `used` and `available`.
+
 ## Seeing it in action
 
 `StubRulesProvider` (`leave/tests/stubs.py`) is a reference implementation with

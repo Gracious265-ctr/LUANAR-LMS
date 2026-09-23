@@ -12,6 +12,7 @@ from leave.models import LeaveApplication
 from .stubs import (
     EARLIEST_ANNUAL_START,
     StubProviderMixin,
+    make_approver_chain,
     make_user,
 )
 
@@ -115,6 +116,7 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         self.client = APIClient()
         self.user = make_user()
         self.stub.register_employee(self.user)
+        make_approver_chain()
         self.client.force_authenticate(user=self.user)
 
     def draft(self, **kwargs):
@@ -144,7 +146,7 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         body = response.data
         self.assertEqual(body["id"], str(app.id))
         self.assertEqual(body["reference_number"], "LV-2026-27-000001")
-        self.assertEqual(body["status"], "submitted")
+        self.assertEqual(body["status"], "pending")
         self.assertIsNotNone(body["submitted_at"])
         self.assertEqual(body["working_days"], 5)
         self.assertEqual(body["calendar_days"], 5)
@@ -172,8 +174,20 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         response = self.client.post(self.url(app.id), format="json")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_non_draft_application_is_409(self):
-        app = self.draft(status="pending")
+    def test_pending_application_is_409_already_submitted(self):
+        app = self.draft(
+            status=LeaveApplication.Status.PENDING,
+            reference_number="LV-2026-27-000122",
+        )
+        response = self.client.post(self.url(app.id), format="json")
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "ALREADY_SUBMITTED")
+        self.assertEqual(
+            response.data["reference_number"], "LV-2026-27-000122"
+        )
+
+    def test_other_non_draft_application_is_409(self):
+        app = self.draft(status=LeaveApplication.Status.REJECTED)
         response = self.client.post(self.url(app.id), format="json")
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data["code"], "APPLICATION_NOT_SUBMITTABLE")

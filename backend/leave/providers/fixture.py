@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from . import fixture_data as data
-from .base import EmployeeInfo
+from .base import EmployeeInfo, LeaveBalance
 
 
 def _entitlement_days(grade: str) -> int:
@@ -88,3 +88,28 @@ class FixtureRulesProvider:
     def get_available_balance(self, employee_id: int, financial_year_label: str):
         grade = self._grades.get(employee_id, "")
         return Decimal(_entitlement_days(grade))
+
+    def get_leave_balance(self, employee_id: int, financial_year_label: str):
+        grade = self._grade_for(employee_id)
+        entitlement = _entitlement_days(grade)
+        return LeaveBalance(
+            entitlement=entitlement, used=0, available=entitlement
+        )
+
+    def _grade_for(self, employee_id: int) -> str:
+        """Resolve an employee's current grade without per-instance caching.
+
+        The approvals detail payload (Unit 16) asks for the live balance of any
+        employee, on a fresh provider instance, so it cannot rely on the
+        ``_grades`` cache primed by a prior ``get_employee_for_user`` call.
+        """
+        from users.models import User
+
+        user = User.objects.filter(id=employee_id).first()
+        if user is None:
+            return ""
+        profile = getattr(user, "employee_profile", None)
+        if profile is not None and profile.grade:
+            return profile.grade.strip().upper()
+        row = data.EMPLOYEES.get(user.username)
+        return row["grade"] if row else ""

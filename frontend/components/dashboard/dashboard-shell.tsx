@@ -14,7 +14,6 @@ import {
   Home,
   LogOut,
   Settings,
-  ShieldCheck,
   Tags,
   UserCheck,
   Users,
@@ -24,6 +23,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+
+import { CapabilitiesProvider } from "@/lib/approvals/capabilities-context";
+import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 
 interface User {
   id: number;
@@ -47,7 +49,6 @@ const ROLE_LABELS: Record<string, string> = {
   hr: "Human Resources",
 };
 
-const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 const HOD_AND_ABOVE = ["hod", "dean", "registrar", "dvc"];
 const HR_ROLE = "hr";
 
@@ -56,7 +57,6 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const showApprovals = APPROVER_ROLES.includes(user.role);
   const showDepartment = HOD_AND_ABOVE.includes(user.role);
   const showHR = user.role === HR_ROLE;
 
@@ -67,24 +67,25 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   }, [router]);
 
   return (
-    <div className="flex h-screen">
-      <div className="flex w-full bg-surface-page text-text-primary">
-        <Sidebar
-          open={sidebarOpen}
-          setOpen={setSidebarOpen}
-          currentPath={pathname}
-          user={user}
-          showApprovals={showApprovals}
-          showDepartment={showDepartment}
-          showHR={showHR}
-        />
+    <CapabilitiesProvider>
+      <div className="flex h-screen">
+        <div className="flex w-full bg-surface-page text-text-primary">
+          <Sidebar
+            open={sidebarOpen}
+            setOpen={setSidebarOpen}
+            currentPath={pathname}
+            user={user}
+            showDepartment={showDepartment}
+            showHR={showHR}
+          />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header user={user} onLogout={handleLogout} />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header user={user} onLogout={handleLogout} />
+            <main className="flex-1 overflow-auto p-6">{children}</main>
+          </div>
         </div>
       </div>
-    </div>
+    </CapabilitiesProvider>
   );
 }
 
@@ -93,7 +94,6 @@ const Sidebar = memo(function Sidebar({
   setOpen,
   currentPath,
   user,
-  showApprovals,
   showDepartment,
   showHR,
 }: {
@@ -101,7 +101,6 @@ const Sidebar = memo(function Sidebar({
   setOpen: (v: boolean) => void;
   currentPath: string;
   user: User;
-  showApprovals: boolean;
   showDepartment: boolean;
   showHR: boolean;
 }) {
@@ -137,15 +136,7 @@ const Sidebar = memo(function Sidebar({
           currentPath={currentPath}
           open={open}
         />
-        {showApprovals && (
-          <Option
-            Icon={ShieldCheck}
-            title="Approvals"
-            href="/dashboard/approvals"
-            currentPath={currentPath}
-            open={open}
-          />
-        )}
+        <ApprovalsNavItem open={open} currentPath={currentPath} />
         {showDepartment && (
           <Option
             Icon={Users}

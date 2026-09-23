@@ -1,0 +1,23 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "aa1",
+      "reference": "LEA-2026-0041",
+      "employee_name": "Miriam Banda",
+      "department": "Computer Science",
+      "leave_type": "Annual Leave",
+      "start_date": "2026-11-02",
+      "end_date": "2026-11-06",
+      "working_days": 5,
+      "submitted_at": "2026-09-22T08:15:03Z",
+      "status": "pending",
+      "my_decision": {
+        "action": "approve",
+        "decided_at": "2026-09-22T10:00:00Z"
+      }
+    }
+  ]
+}

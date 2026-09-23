@@ -51,7 +51,6 @@ def submit_application(*, user, application_id):
     from ..signals import leave_application_submitted
     from ..validation.pipeline import run_validation
     from .references import next_reference
-    from .workflow_gate import check_workflow_ready
 
     with transaction.atomic():
         provider = get_provider()
@@ -65,7 +64,10 @@ def submit_application(*, user, application_id):
         if app is None:
             raise ApplicationNotFoundError()
 
-        if app.status == LeaveApplication.Status.SUBMITTED:
+        if app.status in (
+            LeaveApplication.Status.SUBMITTED,
+            LeaveApplication.Status.PENDING,
+        ):
             raise AlreadySubmittedError(app.reference_number)
         if app.status != LeaveApplication.Status.DRAFT:
             raise ApplicationNotSubmittableError()
@@ -81,9 +83,6 @@ def submit_application(*, user, application_id):
         )
         if not result.valid:
             raise ValidationFailedError(result.errors)
-
-        if not check_workflow_ready(app):
-            raise ApplicationNotSubmittableError()
 
         snapshot = build_rules_snapshot(result.context)
 
@@ -119,6 +118,14 @@ def submit_application(*, user, application_id):
                 "working_days": app.working_days,
             },
         )
+
+        # Unit 16: route the submitted application through its workflow inside
+        # the same transaction (invariants 12.3 and 12.7). This snapshots the
+        # ApplicationStage rows and moves the status to ``pending``; a missing
+        # or invalid workflow makes the whole submission fail cleanly.
+        from workflows.assignment import assign_workflow
+
+        assign_workflow(app, actor=user)
 
         transaction.on_commit(
             lambda: leave_application_submitted.send(

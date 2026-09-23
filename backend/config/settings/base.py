@@ -105,6 +105,11 @@ LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "appro
 # workflow-backed provider in Unit 20 (see docs/leave-rules-provider-contract.md).
 LEAVE_TRACKING_PROVIDER = "leave.tracking.fixture_provider.FixtureTrackingProvider"
 
+# Approval workflow provider (Unit 16). Swappable so the real Unit 6 workflow
+# backend can drop in at Unit 20 without touching the decision service (see
+# docs/leave-rules-provider-contract.md for the handoff pattern).
+WORKFLOW_PROVIDER = "workflows.fixture_provider.FixtureWorkflowProvider"
+
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -39,13 +39,17 @@ def get_application_tracking(user, application_id) -> TrackingPayload:
     Raises ``ApplicationNotFoundError`` (404) when the application is missing or
     belongs to another employee, and ``ApplicationNotSubmittedError`` (409)
     when it is still a draft. Never raises a 403.
+
+    Since Unit 16, submitted applications route into ``pending`` (and later
+    ``approved``/``rejected``/``correction_required``) statuses, so every
+    non-draft status is trackable.
     """
     application = LeaveApplication.objects.filter(
         id=application_id, employee=user
     ).first()
     if application is None:
         raise ApplicationNotFoundError()
-    if application.status != LeaveApplication.Status.SUBMITTED:
+    if application.status == LeaveApplication.Status.DRAFT:
         raise ApplicationNotSubmittedError()
 
     workflow = get_tracking_provider().get_workflow_tracking(application)

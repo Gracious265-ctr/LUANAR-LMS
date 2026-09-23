@@ -5,11 +5,173 @@ from users.models import EmployeeProfile, User
 
 APPROVER_ROLE_CODES = ("supervisor", "hod", "dean", "registrar", "dvc", "hr")
 
+STAGE_ROLE_CODES = ("supervisor", "hod", "dean", "registrar", "dvc")
+
+STAGE_ROLE_CHOICES = [
+    (code, label)
+    for code, label in User.Role.choices
+    if code in STAGE_ROLE_CODES
+]
+
 APPROVER_ROLE_CHOICES = [
     (code, label)
     for code, label in User.Role.choices
     if code in APPROVER_ROLE_CODES
 ]
+
+
+class ImmutableDecisionError(Exception):
+    """Raised when code tries to modify or delete an approval decision.
+
+    ``ApprovalDecision`` rows are append-only (Unit 16): no update or delete
+    through the ORM, admin, or API.
+    """
+
+
+class ApplicationStage(models.Model):
+    """One approval stage of one submitted application (Unit 16).
+
+    This row **is** the workflow snapshot (invariant 12.5): the role, its
+    display label and the assigned approver are copied here at assignment time
+    so later workflow configuration changes never alter an existing
+    application. ``version`` is bumped on every change and is the optimistic
+    concurrency token for decisions.
+    """
+
+    class Status(models.TextChoices):
+        WAITING = "waiting", "Waiting"
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUESTED = "correction_requested", "Correction requested"
+
+    application = models.ForeignKey(
+        "leave.LeaveApplication",
+        on_delete=models.CASCADE,
+        related_name="stages",
+    )
+    stage_order = models.PositiveIntegerField()
+    role = models.CharField(max_length=20, choices=STAGE_ROLE_CHOICES)
+    role_label = models.CharField(max_length=100)
+    assigned_approver = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="application_stages",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.WAITING,
+    )
+    is_final = models.BooleanField(default=False)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ["stage_order"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stage_order__gte=1),
+                name="applicationstage_stage_order_gte_1",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "stage_order"],
+                name="applicationstage_application_stage_order_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["application"],
+                condition=models.Q(status="pending"),
+                name="applicationstage_one_pending_per_application",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.application_id} stage {self.stage_order} ({self.role})"
+
+
+class ImmutableDecisionQuerySet(models.QuerySet):
+    """QuerySet where bulk writes on the append-only table are impossible."""
+
+    def update(self, *args, **kwargs):
+        raise ImmutableDecisionError("Approval decisions are immutable.")
+
+    def delete(self):
+        raise ImmutableDecisionError("Approval decisions are immutable.")
+
+
+class ApprovalDecisionManager(models.Manager):
+    """Manager that makes bulk writes on an append-only table impossible."""
+
+    def get_queryset(self):
+        return ImmutableDecisionQuerySet(self.model, using=self._db)
+
+    def update(self, *args, **kwargs):
+        raise ImmutableDecisionError("Approval decisions are immutable.")
+
+    def delete(self):
+        raise ImmutableDecisionError("Approval decisions are immutable.")
+
+
+class ApprovalDecision(models.Model):
+    """An immutable, append-only approval decision (Unit 16).
+
+    Created by the decision service; never updated or deleted through the ORM,
+    admin, or API. Action, approver name and role label are snapshots taken at
+    decision time; ``submission_cycle`` is copied from the application so a
+    resubmission unit can group history by cycle.
+    """
+
+    class Action(models.TextChoices):
+        APPROVE = "approve", "Approve"
+        REJECT = "reject", "Reject"
+        RETURN_FOR_CORRECTION = "return_for_correction", "Return for correction"
+
+    application = models.ForeignKey(
+        "leave.LeaveApplication",
+        on_delete=models.CASCADE,
+        related_name="approval_decisions",
+    )
+    stage = models.ForeignKey(
+        ApplicationStage,
+        on_delete=models.CASCADE,
+        related_name="decisions",
+    )
+    approver = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="approval_decisions",
+    )
+    approver_name = models.CharField(max_length=200)
+    role_label = models.CharField(max_length=100)
+    action = models.CharField(max_length=40, choices=Action.choices)
+    comment = models.TextField(blank=True, default="")
+    submission_cycle = models.PositiveIntegerField(default=1)
+    decided_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ApprovalDecisionManager()
+
+    class Meta:
+        ordering = ["decided_at"]
+        indexes = [
+            models.Index(fields=["approver", "decided_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(action="approve")
+                | models.Q(comment__gt=""),
+                name="approvaldecision_comment_required_unless_approve",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ImmutableDecisionError("Approval decisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ImmutableDecisionError("Approval decisions are immutable.")
+
+    def __str__(self) -> str:
+        return f"{self.action} by {self.approver_name} on {self.application_id}"
 
 
 class Workflow(models.Model):

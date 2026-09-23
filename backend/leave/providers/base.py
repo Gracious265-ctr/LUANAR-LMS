@@ -67,6 +67,30 @@ class FinancialYear:
     end: date
 
 
+@dataclass(frozen=True)
+class LeaveBalance:
+    """Annual-leave balance displayed to approvers (Unit 16).
+
+    ``entitlement`` is the employee's annual entitlement, ``used`` their
+    already-deducted days, and ``available`` the difference. Purely read-only
+    for approvers; no balance is ever modified through the approvals API.
+    """
+
+    entitlement: int
+    used: int
+    available: int
+
+
+class LeaveBalanceUnavailableError(Exception):
+    """The provider could not resolve a balance for the employee/year.
+
+    Raised by ``get_leave_balance`` implementations when the underlying data
+    (entitlement/ledger lookup) cannot be read at all — distinct from a
+    legitimately zero balance, which is returned as a :class:`LeaveBalance`.
+    The approvals review payload renders this case as an unknown balance.
+    """
+
+
 class RulesProvider(Protocol):
     """The interface validation and submission depend on.
 
@@ -88,3 +112,7 @@ class RulesProvider(Protocol):
     def get_available_balance(
         self, employee_id: int, financial_year_label: str
     ) -> Decimal: ...
+
+    def get_leave_balance(
+        self, employee_id: int, financial_year_label: str
+    ) -> LeaveBalance: ...
