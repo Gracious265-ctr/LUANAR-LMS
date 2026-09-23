@@ -89,13 +89,36 @@ export interface CurrentStage {
   assigned_at: string;
 }
 
+export interface TrackingDecision {
+  cycle: number;
+  stage_order: number;
+  role_label: string;
+  approver_name: string;
+  action: DecisionAction;
+  comment: string;
+  decided_at: string;
+}
+
+export type DecisionAction =
+  | "approve"
+  | "reject"
+  | "return_for_correction";
+
+export interface TrackingResubmissionEntry {
+  cycle: number;
+  resubmitted_at: string;
+}
+
 export interface TrackingResponse {
   application: ApplicationSummary;
   status: TrackingStatus;
   approved_at: string | null;
+  submission_cycle: number;
   current_stage: CurrentStage | null;
   stages: TrackingStage[];
   events: TrackingEvent[];
+  decisions: TrackingDecision[];
+  resubmissions: TrackingResubmissionEntry[];
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;

@@ -1,12 +1,15 @@
-"""Seed fixture approval data for Unit 16 (idempotent dev/demo command).
+"""Seed fixture approval data for Units 16-17 (idempotent dev/demo command).
 
 Reuses the seeded ``@test.luanar`` users (creating per-approver-role ones when
 missing) and builds pending/rejected/correction-required/fully-approved
 applications through the real Unit 14 submit service and Unit 16 decide service,
-so every stage/decision row is consistent with production code. One application
-demos the "requested exceeds available balance" read-only note and one carries a
-supporting document (real storage when Supabase env vars are present, otherwise
-metadata only).
+so every stage/decision row is consistent with production code. Unit 17
+scenarios additionally exercise the real resubmission services (in-place edit
+keeping the terminal status, resubmission back to the same approver, and
+replaced/added documents) so the demo data mirrors production behaviour. One
+application demos the "requested exceeds available balance" read-only note and
+one carries a supporting document (real storage when Supabase env vars are
+present, otherwise metadata only).
 
 Idempotent: an application that already carries one of the reserved reference
 numbers is left untouched; approver/employee users are found-or-created.
@@ -43,12 +46,16 @@ APPROVER_DEFS = [
 
 # (scenario key, employee username, leave type name, start, end, advance)
 # ``advance`` is None (leave pending), "role1,role2" (approve through those
-# roles), "reject@role", or "return@role".
+# roles), "reject@role", "return@role", or any of those suffixed with ",edit"
+# (the employee then edits the content in place, keeping the terminal status)
+# or ",resubmit" (the employee edits and resubmits back to the same approver).
 #
 # ``exceeds_available_balance`` runs first so the employee's working-day
 # balance is untouched at submit (22 requested days <= grade-B 24-day balance),
 # then the grade is downgraded so the review payload shows a read-only
-# "requested > available" note.
+# "requested > available" note. The Unit 17 scenarios run against
+# ``academic@test.luanar`` (first stage: supervisor) on non-overlapping 2027
+# windows so the resubmit full-pipeline re-validation passes.
 SCENARIOS = [
     ("exceeds_available_balance", "employee@test.luanar", "Annual", "2027-01-04", "2027-02-02", None),
     ("pending_at_hod", "employee@test.luanar", "Annual", "2026-11-02", "2026-11-06", None),
@@ -60,14 +67,21 @@ SCENARIOS = [
     ("correction_required_at_hod", "employee@test.luanar", "Annual", "2026-12-14", "2026-12-18", "return@hod"),
     ("fully_approved", "employee@test.luanar", "Annual", "2026-12-21", "2026-12-25", "hod,dean,registrar,dvc"),
     ("with_document", "employee@test.luanar", "Compassionate", "2026-12-28", "2026-12-29", "hod"),
+    ("rejected_then_edited", "academic@test.luanar", "Annual", "2027-02-08", "2027-02-12", "reject@supervisor,edit"),
+    ("resubmitted_after_rejection", "academic@test.luanar", "Annual", "2027-02-15", "2027-02-19", "reject@supervisor,resubmit"),
+    ("correction_then_edited", "academic@test.luanar", "Annual", "2027-02-22", "2027-02-26", "return@supervisor,edit"),
+    ("returned_then_resubmitted", "academic@test.luanar", "Annual", "2027-03-01", "2027-03-05", "return@supervisor,resubmit"),
+    ("rejected_with_replaced_document", "academic@test.luanar", "Compassionate", "2027-03-08", "2027-03-12", "reject@supervisor"),
 ]
 
 DOCUMENT_NAME = "return-to-work-certificate.pdf"
+REPLACEMENT_DOCUMENT_NAME = "updated-return-to-work-certificate.pdf"
+ADDITIONAL_DOCUMENT_NAME = "hospital-note.pdf"
 
 
 class Command(BaseCommand):
     help = (
-        "Seed Unit 16 approval scenarios (references LV-2026-27-910001..). "
+        "Seed Unit 16/17 approval scenarios (references LV-2026-27-910001..). "
         "Idempotent; requires no special flags."
     )
 
@@ -185,11 +199,14 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(f"Created {key}: {ref} ({leave_name.lower()} leave)")
         )
-        self._advance(app, key, advance)
+        self._advance(app, key, advance, employee)
         if key == "exceeds_available_balance":
             self._downgrade_to_exceed_balance(employee)
         if key == "with_document":
             self._attach_document(app, ref)
+        if key == "rejected_with_replaced_document":
+            self._attach_document(app, ref)
+            self._replace_and_add_documents(app)
         return ref
 
     def _submit(self, employee, leave_name, start, end):
@@ -228,19 +245,84 @@ class Command(BaseCommand):
         leave_type = LeaveType.objects.filter(name__icontains=leave_name).first()
         return leave_type.id if leave_type else None
 
-    def _advance(self, app, key, advance):
+    def _advance(self, app, key, advance, employee):
         if not advance:
             return
-        if advance.startswith("reject@"):
-            role = advance.split("@")[1]
+        edit_after = advance.endswith(",edit") or advance.endswith(",resubmit")
+        resubmit_after = advance.endswith(",resubmit")
+        action_part = advance.replace(",edit", "").replace(",resubmit", "")
+        if action_part.startswith("reject@"):
+            role = action_part.split("@")[1]
             self._decide(app, self.approvers[role], "reject", "Insufficient staffing in the period.")
-            return
-        if advance.startswith("return@"):
-            role = advance.split("@")[1]
+        elif action_part.startswith("return@"):
+            role = action_part.split("@")[1]
             self._decide(app, self.approvers[role], "return_for_correction", "Please correct the reason.")
+        else:
+            for role in action_part.split(","):
+                self._decide(app, self.approvers[role], "approve", "Approved.")
+        if edit_after:
+            self._edit_in_place(app, employee)
+        if resubmit_after:
+            self._resubmit_in_place(app, employee)
+
+    def _edit_in_place(self, app, employee):
+        from leave.services.resubmission import save_changes
+
+        app.refresh_from_db()
+        save_changes(
+            application_id=app.id,
+            actor=employee,
+            leave_type_id=app.leave_type_id,
+            start_date=app.start_date,
+            end_date=app.end_date,
+            reason=f"{app.reason} — amended after {app.status}.",
+            expected_row_version=app.row_version,
+        )
+        app.refresh_from_db()
+
+    def _resubmit_in_place(self, app, employee):
+        from leave.services.resubmission import resubmit
+
+        app.refresh_from_db()
+        resubmit(
+            application_id=app.id,
+            actor=employee,
+            expected_row_version=app.row_version,
+        )
+        app.refresh_from_db()
+
+    def _replace_and_add_documents(self, app):
+        from leave.models import SupportingDocument
+        from leave.services.resubmission import add_document, replace_document
+
+        original = app.documents.filter(
+            status=SupportingDocument.Status.ACTIVE
+        ).first()
+        if original is None:
             return
-        for role in advance.split(","):
-            self._decide(app, self.approvers[role], "approve", "Approved.")
+        replace_document(
+            application_id=app.id,
+            actor=app.employee,
+            document_id=original.id,
+            file=SimpleUploadedFile(
+                REPLACEMENT_DOCUMENT_NAME,
+                b"%PDF-1.4 superseded certificate",
+                content_type="application/pdf",
+            ),
+            expected_row_version=app.row_version,
+        )
+        app.refresh_from_db()
+        add_document(
+            application_id=app.id,
+            actor=app.employee,
+            file=SimpleUploadedFile(
+                ADDITIONAL_DOCUMENT_NAME,
+                b"%PDF-1.4 hospital note",
+                content_type="application/pdf",
+            ),
+            expected_row_version=app.row_version,
+        )
+        app.refresh_from_db()
 
     def _decide(self, app, actor, action, comment):
         stage = app.current_stage

@@ -127,6 +127,12 @@ def submit_application(*, user, application_id):
 
         assign_workflow(app, actor=user)
 
+        # Unit 17: write the immutable revision-1 snapshot at submission. The
+        # ``changes`` field stays None (there is no previous revision to diff).
+        from .resubmission import create_revision
+
+        create_revision(app, user)
+
         transaction.on_commit(
             lambda: leave_application_submitted.send(
                 sender=LeaveApplication, application=app

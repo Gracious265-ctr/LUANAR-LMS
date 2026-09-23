@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 17 — Rejection, Correction, and Resubmission (COMPLETE — backend + frontend)
 - Unit 16 — Approver Review and Decision (COMPLETE — backend + frontend)
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
@@ -326,7 +327,6 @@ Update this file after every meaningful implementation change.
   `npm run build` all pass.
 - **Docs.** `backend/docs/leave-validation.md` (pipeline order + error codes),
   `backend/docs/leave-rules-provider-contract.md` (Unit 20 handoff mapping).
-
 ## Completed (Unit 16 — Backend)
 
 - **Approvals surface.** New `backend/workflows/` approval stack: `models.py`
@@ -390,9 +390,104 @@ Update this file after every meaningful implementation change.
   `lib/approvals/__fixtures__/`. **`npm test`: 35 files / 207 tests green;
   `tsc --noEmit`, `npm run lint`, `npm run build` all clean.**
 
-## Next Up
+## Completed (Unit 17 — Backend)
 
-- **Unit 17 (rejection/correction/resubmission) / Unit 18 (cancellation):** the
+- **Resubmission surface.** New `backend/leave/services/resubmission.py` +
+  `leave/views/resubmission.py` + `leave/urls.py` routes:
+  `applications/<pk>/resubmission/` (GET context, PATCH save-changes),
+  `applications/<pk>/documents/` (POST multipart), `applications/<pk>/documents/<document_id>/replace/` (POST), `applications/<pk>/documents/<document_id>/` (DELETE), `applications/<pk>/resubmit/` (POST `{row_version}`). Core rules implemented: PATCH save keeps `rejected`/`correction_required` status; resubmit → application `pending`, same current stage + approver (`ApplicationStage.version += 1`), same reference, `submission_cycle += 1`; immutable `ApplicationRevision` (`unique(application, revision_number)`, `changes` = snapshot diff vs previous, `None` for revision 1); `row_version` optimistic token bumped on every mutation; documents retire metadata-only (never physically deleted); vetoes: 409 `not_editable` while pending/approved, `not_resubmittable` unless `rejected`/`correction_required`, `version_conflict`, `workflow_inconsistent`, `approver_unavailable` for inactive approvers (Spec §9 message); 400 `validation_failed` with `{code, field, message, detail}[]`.
+- **Edit context.** `resubmission/` GET returns the saved form payload +
+  `permissions` (`editable`, `resubmittable`, `needs_resubmission`) +
+  `documents: {active, retired, changes}` where retired rows carry
+  `retire_reason`/`replaced_by_id`, plus `changes_preview` computed by the
+  `leave/services/diff.py` snapshot engine (`dataclasses` + `json` only,
+  no Django) — used by `test_diff.py` (11 tests). APIClient multipart tests use
+  `SimpleUploadedFile` (a bare name/size shim never reaches `request.FILES`).
+- **Review-fix pass.** Post-review corrections:
+  `tracking/services.py` — `decision.stage.stage_order` (not bare `stage_order`) + `select_related("stage")`.
+  `diff.py` — `_display_value` converts `start_date`/`end_date` to ISO strings; `_chain_ends_on_active` returns the active endpoint ID (or `None`) instead of bool; `_diff_documents` builds `replaced` before `added`, tracks endpoint IDs, and excludes only claimed endpoints from `added`.
+  `resubmission.py` — `resubmit` acquires `_acquire_employee_lock(actor.id)` before `run_validation`; rebuilds `application.rules_snapshot` via `build_rules_snapshot(result.context)` and includes it in `save(update_fields=...)`; `upload_document` uses a unique `uuid` path segment while keeping `file.name` as `file_name`; `create_revision` sets `leave_type_id=application.leave_type_id` directly (raw provider ID, no FK lookup) so revisions survive even when no `LeaveType` row matches.
+  `test_diff.py` — date expectations updated to ISO strings; `test_replacement_endpoint_is_not_reported_as_added` now expects both cert-v2.pdf and note.pdf in added; added `test_two_step_replacement_chain`.
+  `edit-application.tsx` — `handleFieldChange` accepts `Partial<ResubmissionContent>` patch and merges via `setContext`; `handleSave` returns `row_version | null`; `handleResubmit` uses the returned version and stops if save fails; 409 specific codes (`approver_unavailable`, `workflow_inconsistent`) checked before generic `e.status === 409`; `showError` hides while `isLoading` is true; `setDirty(true)` removed from document handlers.
+- **FOR UPDATE pitfalls (Postgres).** `select_for_update()` cannot be combined
+  with `select_related` over nullable outer-join sides → `_lock_owned` locks
+  only the base row then re-fetches relations; `resubmit()` uses `_lock_owned`.
+- **Storage/Schema.** `SupportingDocument.file_url` widened to
+  `URLField(max_length=2048)` (Supabase signed URLs exceed the default 200);
+  migration `leave/0009_widen_supportingdocument_file_url` created and applied
+  (also `0008_*`). `upload_document` and `_today()` (`timezone.localdate()`)
+  are unit-tested via mocks in `test_resubmission.py`.
+- **Approvals consumption (Unit 16 changes).** decided-tab excludes
+  `assigned_approver == user AND current_stage.status == PENDING`; document
+  download restricted to `SupportingDocument.Status.ACTIVE`;
+  `approvals_serializers` fixed: `stage_order` read off `decision.stage`,
+  `SupportingDocument` import, redundant `decisions` dict removed, decisions
+  prefetched with `select_related("stage")`.
+- **Tracking §8 extension.** `WorkflowTracking` contract gains
+  `submission_cycle`, `resubmissions`, `decisions`; `_merge_real_data`
+  overlays real revisions/decisions/`can_resubmit`; serializer renders the
+  block; fixture scenarios stay additive.
+- **Seed.** `seed_approvals_dev` extended with 5 Unit 17 scenarios
+  (refs `LV-2026-27-910011..910015`, academic first-stage supervisor):
+  rejected-then-edited, resubmitted-after-rejection, correction-then-edited,
+  returned-then-resubmitted (annual, Feb 2027), rejected-with-replaced-document
+  (compassionate, Mar 2027). Advance protocol supports `,edit` and `,resubmit`
+  suffixes via `_advance`/`_edit_in_place`/`_resubmit_in_place`/
+  `_replace_and_add_documents`. Idempotent (15 "Exists, kept" on re-run);
+  stale dev app `LV-2026-27-000001` deleted from dev DB (overlap blocker).
+- **Backend tests green.** `leave.tests.test_resubmission` 31 new tests,
+  `leave.tests.test_diff` 11 new; full `leave` 295 and `workflows` 182 suites
+  all pass. `application_resubmitted` is the resubmission audit/ApproverEvent
+  action; `AuditEvent` is a generic-FK model (filter by `object_id`).
+
+## Completed (Unit 17 — Frontend)
+
+- **Types & service.** `lib/applications/resubmission-types.ts` (full
+  `ResubmissionContext`, `ResubmissionFeedback`, `ChangesPreview`, validation
+  shapes) and `lib/applications/resubmission-service.ts` (`ApiError`, `request`,
+  `multipart` helpers; `getContext`, `saveChanges`, `addDocument`,
+  `replaceDocument`, `removeDocument`, `resubmit`, `parseValidationBody`).
+  `lib/tracking/types.ts` gained `submission_cycle`, `decisions: TrackingDecision[]`,
+  `resubmissions: TrackingResubmissionEntry[]`. `lib/approvals/types.ts` gained
+  `submission_cycle` + `is_resubmission` on `ApprovalListItem`, `ApprovalDecisionEntry`,
+  `ApprovalChanges`, `ApprovalResubmission` blocks and `decisions[]` + `resubmission`
+  on `ApprovalDetail`. `lib/leave-validation.ts` / `useLeaveValidation` accept
+  optional `application_id` to exclude the current application from overlap checks.
+- **Proxy route handlers** under `app/api/applications/[id]/resubmission/`
+  (GET/PATCH), `.../documents/` (POST multipart), `.../[documentId]/replace/`
+  (POST multipart), `.../[documentId]/` (DELETE), `.../resubmit/` (POST) — all
+  built on the shared `proxyRequest` helper.
+- **Edit page** at `app/(dashboard)/applications/[id]/edit` →
+  `components/applications/resubmission/edit-application.tsx` ("use client"):
+  fetches context via `getResubmissionContext`, redirects when `!can_edit`,
+  renders `ApproverFeedbackCard`, `ResubmissionForm`, `ResubmissionDocuments`,
+  `ValidationErrorsPanel`, `ResubmitConfirmDialog`, footer with Save/Resubmit/Cancel;
+  `useUnsavedChangesGuard` for `beforeunload` + in-app navigation warning.
+- **Resubmission components** (spec §9): `approver-feedback-card.tsx`
+  (XCircle/CircleCross per action, reused by tracker banner + edit page),
+  `resubmission-form.tsx` (controlled Unit 13 form, live working-days via
+  `useLeaveValidation(application_id=...)`), `resubmission-documents.tsx`
+  (react-dropzone add, Replace/Remove with `window.confirm`, retired history),
+  `resubmit-confirm-dialog.tsx` (Dialog with `blockDismiss`, returns-to note,
+  `ChangesSummary`, `approver_unavailable` banner), `validation-errors-panel.tsx`
+  (aria-live alert list), `changes-summary.tsx` (before/after field rows +
+  added/removed/replaced document lists — shared with approver card),
+  `use-unsaved-changes-guard.ts`.
+- **Approvals consumption** (spec §10): `ApprovalsListItem` gains `is_resubmission`;
+  `ApprovalDetail` gains `decisions[]` (chronological) + `resubmission` block
+  (`previous_decision`, `changes`, `history`). `approval-history-timeline.tsx`
+  renders stage rows grouped by cycle (via `decisions[]`). `approvals-list.tsx`
+  shows `ResubmissionBadge` from `is_resubmission`. `approval-review.tsx` top
+  header already shows `ResubmissionBadge` on the reference.
+- **Tracker fixtures** extended with `submission_cycle`, `decisions[]`, `resubmissions`
+  for all 8 tracking fixtures, enabling cycle-grouped timeline rendering.
+- **Backend diff improvement** (`leave/diff.py`): `leave_type` now surfaced as the
+  type *name* (labelled) rather than the raw id, keeping comparison by id. Aligned
+  `test_diff.py` (`test_leave_type_change_is_labelled_by_name`).
+- **Verification:** `npm test` 207/207 green, `tsc --noEmit` clean, `npm run lint`
+  clean, `npm run build` passes. Backend `uv run manage.py test` green.
+
+## Next Up
   Unit 15 endpoint and payload are extended additively by these per their specs;
   Unit 16's approvals API, `status` enum, and decision contracts are the
   consumption boundary for both. The Unit 19 document-lifecycle spec is drafted
@@ -571,3 +666,16 @@ Update this file after every meaningful implementation change.
   lazy draft creation; removed `router.replace` from `ensureDraftCreated`
 - Supabase credentials configured in `.env`, bucket `leave-documents` created
 - Sidebar active state derives from `usePathname()` (both tracks agreed)
+- **Unit 17 frontend complete (2026-09-23):** resubmission types/service,
+  proxy handlers, edit page + orchestrator, resubmission components
+  (feedback card, form, documents, confirm dialog, validation panel,
+  changes summary, unsaved-changes guard), approvals types/consumption
+  (decisions[], resubmission block, is_resubmission badge, cycle-grouped
+  timeline), tracker fixtures extended, diff improvement (leave_type
+  labelled by name). Verification: `npm test` 207/207, `tsc --noEmit`,
+  `npm run lint`, `npm run build` all clean; backend `manage.py test`
+  green. Route fix: tracker `OutcomePanel` "Edit & resubmit" link
+  updated from `/dashboard/leave/{id}/edit` to `/applications/{id}/edit`.
+  `useLeaveValidation` hook now passes `application_id` (optional) so
+  overlap checks exclude the current application; test updated to
+  expect `application_id: null`.

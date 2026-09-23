@@ -58,9 +58,17 @@ def run_validation(
     end_date_raw,
     application=None,
     today: date | None = None,
+    as_of: date | None = None,
+    exclude_application_id=None,
 ) -> ValidationResult:
-    """Run the full validation pipeline and return a :class:`ValidationResult`."""
-    today = today or get_today()
+    """Run the full validation pipeline and return a :class:`ValidationResult`.
+
+    ``as_of`` is the Unit 17 alias for ``today`` (the date used for notice,
+    future-date and financial-year checks). ``exclude_application_id`` (when
+    given) makes the overlap rule ignore that application — used to keep the
+    application itself from blocking its own resubmission.
+    """
+    today = today or as_of or get_today()
     provider = get_provider()
 
     employee = provider.get_employee_for_user(user)
@@ -74,6 +82,7 @@ def run_validation(
         end_date=end_date_raw,
         application=application,
         today=today,
+        exclude_application_id=exclude_application_id,
     )
 
     errors, skipped = [], []

@@ -32,6 +32,8 @@ export interface ApprovalListItem {
   working_days: number | null;
   submitted_at: string | null;
   status: ApprovalStatus;
+  submission_cycle: number;
+  is_resubmission: boolean;
   my_decision: { action: DecisionAction; decided_at: string } | null;
 }
 
@@ -98,6 +100,53 @@ export interface ApprovalStage {
   action: DecisionAction | null;
 }
 
+export interface ApprovalDecisionEntry {
+  cycle: number;
+  stage_order: number;
+  role_label: string;
+  approver_name: string;
+  action: DecisionAction;
+  comment: string;
+  decided_at: string | null;
+}
+
+/** Change summary shapes (shared with the resubmission edit preview). */
+export interface ApprovalChangeField {
+  field: string;
+  label: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface ApprovalChanges {
+  has_changes: boolean;
+  fields: ApprovalChangeField[];
+  documents: {
+    added: { name: string }[];
+    removed: { name: string }[];
+    replaced: { old_name: string; new_name: string }[];
+  };
+}
+
+export interface ApprovalResubmission {
+  is_resubmission: true;
+  cycle: number;
+  resubmitted_at: string | null;
+  previous_decision: {
+    role_label: string;
+    approver_name: string;
+    action: DecisionAction;
+    comment: string;
+    decided_at: string | null;
+  } | null;
+  changes: ApprovalChanges | null;
+  history: {
+    cycle: number;
+    resubmitted_at: string | null;
+    changes: ApprovalChanges | null;
+  }[];
+}
+
 export interface CurrentApprovalStage {
   version: number;
   role_label: string;
@@ -120,6 +169,8 @@ export interface ApprovalDetail {
   balance: ApprovalBalance;
   leave_history: LeaveHistory;
   documents: ApprovalDocumentSummary[];
+  decisions: ApprovalDecisionEntry[];
+  resubmission: ApprovalResubmission | null;
   stages: ApprovalStage[];
   current_stage: CurrentApprovalStage | null;
   permissions: ApprovalPermissions;

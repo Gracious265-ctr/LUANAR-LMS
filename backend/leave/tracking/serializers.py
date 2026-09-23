@@ -118,6 +118,7 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             ),
             "status": workflow.status,
             "approved_at": _iso(workflow.approved_at),
+            "submission_cycle": workflow.submission_cycle,
             "current_stage": workflow.current_stage,
             "stages": [
                 TrackedStageSerializer().to_representation(stage)
@@ -126,6 +127,25 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "events": [
                 TrackedEventSerializer().to_representation(event)
                 for event in workflow.events
+            ],
+            "decisions": [
+                {
+                    "cycle": decision["cycle"],
+                    "stage_order": decision["stage_order"],
+                    "role_label": decision["role_label"],
+                    "approver_name": decision["approver_name"],
+                    "action": decision["action"],
+                    "comment": decision["comment"],
+                    "decided_at": _iso(decision["decided_at"]),
+                }
+                for decision in workflow.decisions
+            ],
+            "resubmissions": [
+                {
+                    "cycle": item["cycle"],
+                    "resubmitted_at": _iso(item["resubmitted_at"]),
+                }
+                for item in workflow.resubmissions
             ],
             "rejection": (
                 TrackedOutcomeSerializer(context={"outcome_key": "reason"}).to_representation(

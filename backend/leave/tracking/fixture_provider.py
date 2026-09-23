@@ -64,6 +64,9 @@ class FixtureTrackingProvider(TrackingProvider):
             rejection=self._outcome(scenario.get("rejection")),
             correction=self._outcome(scenario.get("correction")),
             resubmission=self._resubmission(scenario["resubmission"]),
+            submission_cycle=scenario.get("submission_cycle", 1),
+            resubmissions=tuple(scenario.get("resubmissions") or ()),
+            decisions=tuple(scenario.get("decisions") or ()),
         )
 
     def _stage(self, item: dict) -> TrackedStage:

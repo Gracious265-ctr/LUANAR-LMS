@@ -8,7 +8,8 @@ Ownership and gating:
 - draft         -> 409 ``application_not_submitted``
 - unknown id    -> 404
 - non-GET       -> 405
-- exactly one query for the whole request (fixture provider does no DB access)
+- three queries: application, revisions (resubmission history) and decisions
+  (Unit 17 additive; the fixture provider itself does no DB access)
 """
 
 from django.contrib.auth import get_user_model
@@ -16,7 +17,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from leave.models import LeaveApplication
+from leave.models import ApplicationRevision, LeaveApplication, LeaveType
 
 from .stubs import make_user
 
@@ -136,8 +137,12 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_only_one_query_for_owner_request(self):
+        # Unit 17 additive data: the endpoint now also reads the application's
+        # real revisions (resubmission history) and decisions, so the fixture
+        # provider query count grows from 1 to 3. The provider itself still
+        # performs no database access.
         app = self.make_app()
-        with self.assertNumQueries(1):
+        with self.assertNumQueries(3):
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -180,12 +185,26 @@ class TrackingOwnershipTests(TrackingEndpointTests):
 
     def test_outcomes_are_null_after_resubmission(self):
         app = self.make_app(reference_number="LV-2026-27-900007")
+        leave_type = LeaveType.objects.create(name="Annual Leave", code="annual")
+        ApplicationRevision.objects.create(
+            application=app,
+            revision_number=2,
+            leave_type=leave_type,
+            leave_type_name="Annual Leave",
+            start_date=app.start_date,
+            end_date=app.end_date,
+            working_days=app.working_days,
+            reason=app.reason,
+        )
         response = self.client.get(self.url(app.id))
         self.assertIsNone(response.data["rejection"])
         self.assertIsNone(response.data["correction"])
         self.assertEqual(response.data["resubmission"]["count"], 1)
+        self.assertEqual(response.data["submission_cycle"], 1)
         self.assertEqual(
             response.data["resubmission"]["last_resubmitted_at"],
-            "2026-10-19T09:00:00Z",
+            response.data["resubmissions"][0]["resubmitted_at"],
         )
+        self.assertEqual(response.data["resubmissions"][0]["cycle"], 2)
+        self.assertFalse(response.data["resubmission"]["can_resubmit"])
         self.assertFalse(response.data["resubmission"]["can_resubmit"])

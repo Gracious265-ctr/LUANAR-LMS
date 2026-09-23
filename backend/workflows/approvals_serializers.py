@@ -10,6 +10,7 @@ import logging
 
 from rest_framework import serializers
 
+from leave.models import SupportingDocument
 from leave.providers import get_provider
 from leave.providers.base import LeaveBalanceUnavailableError
 
@@ -41,6 +42,8 @@ class ApprovalListItemSerializer(serializers.Serializer):
             "working_days": application.working_days,
             "submitted_at": application.submitted_at,
             "status": application.status,
+            "submission_cycle": application.submission_cycle,
+            "is_resubmission": application.submission_cycle > 1,
             "my_decision": (
                 None
                 if decision is None
@@ -63,10 +66,7 @@ class ApprovalDetailSerializer(serializers.Serializer):
     def to_representation(self, application) -> dict:
         user = self.context["user"]
         view_access = self.context["view_access"]
-        decisions = {
-            decision.stage_id: decision
-            for decision in application.approval_decisions.all()
-        }
+        decisions = list(application.approval_decisions.all())
 
         authority = get_decision_authority(user, application)
         current = application.current_stage
@@ -105,9 +105,14 @@ class ApprovalDetailSerializer(serializers.Serializer):
                     "uploaded_at": document.uploaded_at,
                 }
                 for document in application.documents.all()
+                if document.status == SupportingDocument.Status.ACTIVE
             ],
+            "decisions": [
+                self._decision_entry(decision) for decision in decisions
+            ],
+            "resubmission": self._resubmission_block(application, decisions),
             "stages": [
-                self._stage_entry(stage, decisions.get(stage.id))
+                self._stage_entry(stage, _latest_decision_for(decisions, stage))
                 for stage in application.stages.all()
             ],
             "current_stage": self._current_stage(application, current),
@@ -116,6 +121,55 @@ class ApprovalDetailSerializer(serializers.Serializer):
                 "reason": authority.reason,
             },
             "my_stage_role_label": view_access.stage.role_label,
+        }
+
+    def _decision_entry(self, decision) -> dict:
+        return {
+            "cycle": decision.submission_cycle,
+            "stage_order": decision.stage.stage_order,
+            "role_label": decision.role_label,
+            "approver_name": decision.approver_name,
+            "action": decision.action,
+            "comment": decision.comment,
+            "decided_at": _iso(decision.decided_at),
+        }
+
+    def _resubmission_block(self, application, decisions) -> dict | None:
+        if application.submission_cycle <= 1:
+            return None
+
+        revisions = list(application.revisions.order_by("revision_number"))
+        latest = revisions[-1] if revisions else None
+
+        previous_decision = _latest_decision_for(
+            decisions, action_filter=("reject", "return_for_correction")
+        )
+
+        return {
+            "is_resubmission": True,
+            "cycle": application.submission_cycle,
+            "resubmitted_at": _iso(latest.created_at) if latest else None,
+            "previous_decision": (
+                {
+                    "role_label": previous_decision.role_label,
+                    "approver_name": previous_decision.approver_name,
+                    "action": previous_decision.action,
+                    "comment": previous_decision.comment,
+                    "decided_at": _iso(previous_decision.decided_at),
+                }
+                if previous_decision is not None
+                else None
+            ),
+            "changes": latest.changes if latest else None,
+            "history": [
+                {
+                    "cycle": revision.revision_number,
+                    "resubmitted_at": _iso(revision.created_at),
+                    "changes": revision.changes,
+                }
+                for revision in revisions
+                if revision.revision_number > 1
+            ],
         }
 
     def _balance(self, application) -> dict:
@@ -181,3 +235,26 @@ class ApprovalDetailSerializer(serializers.Serializer):
             "is_final": current.is_final,
             "next_role_label": next_stage.role_label if next_stage else None,
         }
+
+
+def _latest_decision_for(decisions, stage=None, action_filter=None):
+    """Return the most recent decision, optionally filtered by stage/action."""
+    candidates = decisions
+    if action_filter is not None:
+        candidates = [
+            decision for decision in candidates if decision.action in action_filter
+        ]
+    if stage is not None:
+        candidates = [
+            decision for decision in candidates if decision.stage_id == stage.id
+        ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda decision: (decision.decided_at, str(decision.id)))
+
+
+def _iso(value):
+    """Render a datetime as UTC ISO 8601 with a ``Z`` suffix."""
+    if not value:
+        return None
+    return value.isoformat().replace("+00:00", "Z")

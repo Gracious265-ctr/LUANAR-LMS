@@ -1,3 +1,5 @@
+import uuid
+
 from supabase import create_client
 
 from django.conf import settings
@@ -14,7 +16,7 @@ def get_supabase_client():
 
 def upload_document(file, application_id: str) -> dict:
     client = get_supabase_client()
-    path = f"leave-documents/{application_id}/{file.name}"
+    path = f"leave-documents/{application_id}/{uuid.uuid4()}/{file.name}"
     client.storage.from_(settings.SUPABASE_BUCKET).upload(
         path, file.read(), {"content-type": file.content_type}
     )

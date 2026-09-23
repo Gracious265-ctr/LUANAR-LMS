@@ -61,6 +61,7 @@ describe("useLeaveValidation", () => {
         start_date: "2026-09-28",
         end_date: "2026-10-02",
         draft_id: "draft-1",
+        application_id: null,
       },
       expect.any(AbortSignal)
     );

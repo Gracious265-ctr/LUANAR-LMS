@@ -107,5 +107,18 @@
     "last_resubmitted_at": null,
     "can_resubmit": false,
     "returns_to_stage": null
-  }
+  },
+  "submission_cycle": 1,
+  "decisions": [
+    {
+      "cycle": 1,
+      "stage_order": 1,
+      "role_label": "Supervisor",
+      "approver_name": "Mr. Chikondi Banda",
+      "action": "approve",
+      "comment": "Verified. Forwarded.",
+      "decided_at": "2026-10-14T07:15:03Z"
+    }
+  ],
+  "resubmissions": []
 }

@@ -187,6 +187,11 @@ class LeaveApplication(models.Model):
     )
     submission_cycle = models.PositiveIntegerField(default=1)
 
+    # Unit 17 optimistic-concurrency token. Incremented on every saved edit and
+    # every document operation while the application is rejected or correction
+    # required, so two windows can never silently overwrite each other.
+    row_version = models.PositiveIntegerField(default=1)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -206,6 +211,14 @@ class LeaveApplication(models.Model):
 
 
 class SupportingDocument(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        RETIRED = "retired", "Retired"
+
+    class RetireReason(models.TextChoices):
+        REPLACED = "replaced", "Replaced"
+        REMOVED = "removed", "Removed"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         LeaveApplication,
@@ -213,17 +226,108 @@ class SupportingDocument(models.Model):
         related_name="documents",
     )
     file_path = models.CharField(max_length=512)
-    file_url = models.URLField()
+    file_url = models.URLField(max_length=2048)
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()
     content_type = models.CharField(max_length=100)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    # Unit 17 lifecycle: documents on a submitted application are never
+    # physically deleted. A replace/remove retires the old row (``status``
+    # drops to ``retired``) so it stays in the application history; the file in
+    # storage is never removed either (retirement is metadata-only).
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE
+    )
+    retired_at = models.DateTimeField(null=True, blank=True)
+    retired_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="documents_retired",
+    )
+    retire_reason = models.CharField(
+        max_length=20, choices=RetireReason.choices, null=True, blank=True
+    )
+    replaced_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replaced_from",
+    )
+
     class Meta:
         ordering = ["-uploaded_at"]
+        indexes = [
+            models.Index(fields=["application", "status"]),
+        ]
 
     def __str__(self) -> str:
         return f"Document({self.file_name})"
+
+
+class ApplicationRevision(models.Model):
+    """An immutable content snapshot taken at each submission (Unit 17).
+
+    Revision ``1`` is written at the initial submission (Unit 14); the
+    `resubmit` service writes revision ``N`` for cycle ``N``. ``revision_number``
+    therefore equals ``LeaveApplication.submission_cycle`` at the time of
+    creation. ``changes`` is the diff against the previous revision (``None``
+    for revision 1) and is what the approver sees in the change summary.
+
+    Rows are append-only: no update or delete through the ORM, admin, or API.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        LeaveApplication,
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    revision_number = models.PositiveIntegerField()
+    leave_type = models.ForeignKey(
+        LeaveType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    leave_type_name = models.CharField(max_length=120)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    working_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    reason = models.TextField(blank=True, default="")
+    documents = models.JSONField(default=list)
+    changes = models.JSONField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="application_revisions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["revision_number"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(revision_number__gte=1),
+                name="applicationrevision_revision_number_gte_1",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "revision_number"],
+                name="applicationrevision_application_revision_number_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Revision {self.revision_number} of "
+            f"{self.application.reference_number or self.application_id}"
+        )
 
 
 class ReferenceSequence(models.Model):

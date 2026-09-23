@@ -88,6 +88,12 @@ class WorkflowTracking:
     correction_required | cancelled``. ``stages`` are ascending by ``order``;
     ``events`` are newest first. ``rejection``/``correction`` are non-null only
     in their respective statuses and both reset to ``None`` once resubmitted.
+
+    Unit 17 additions (additive): ``submission_cycle`` is the application's
+    current cycle (1 = original submission); ``resubmissions`` lists each
+    resubmission as ``{cycle, resubmitted_at}`` (newest last); ``decisions``
+    are the real ``ApprovalDecision`` rows grouped by cycle. ``can_resubmit``
+    is computed by the service from the real application status.
     """
 
     status: str
@@ -102,3 +108,6 @@ class WorkflowTracking:
             count=0, last_resubmitted_at=None, can_resubmit=False
         )
     )
+    submission_cycle: int = 1
+    resubmissions: tuple[dict, ...] = field(default_factory=tuple)
+    decisions: tuple[dict, ...] = field(default_factory=tuple)

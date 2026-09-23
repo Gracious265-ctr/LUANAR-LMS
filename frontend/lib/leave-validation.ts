@@ -59,6 +59,8 @@ export interface ValidateLeaveInput {
   start_date: string | null;
   end_date: string | null;
   draft_id?: string | null;
+  /** Submitted application id so overlap checks ignore the application itself. */
+  application_id?: string | null;
 }
 
 /** Thrown by `submitApplication` so callers can branch on status/code. */

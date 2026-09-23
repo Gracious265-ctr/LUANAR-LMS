@@ -15,3 +15,4 @@ class ValidateLeaveSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     draft_id = serializers.UUIDField(required=False)
+    application_id = serializers.UUIDField(required=False)

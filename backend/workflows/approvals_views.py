@@ -5,7 +5,7 @@ or approver id is ever read from the client. Every request routes through the
 policies module, so the frontend never decides who may act.
 """
 
-from django.db.models import Max, Q
+from django.db.models import Max, Prefetch, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
@@ -39,7 +39,15 @@ def _load_application(application_id):
     return get_object_or_404(
         LeaveApplication.objects.select_related(
             "employee", "employee__employee_profile"
-        ).prefetch_related("stages", "approval_decisions", "documents"),
+        ).prefetch_related(
+            "stages",
+            "documents",
+            "revisions",
+            Prefetch(
+                "approval_decisions",
+                queryset=ApprovalDecision.objects.select_related("stage"),
+            ),
+        ),
         id=application_id,
     )
 
@@ -117,8 +125,14 @@ class ApprovalListView(APIView):
         latest = Max(
             "approval_decisions__decided_at", filter=Q(approval_decisions__approver=user)
         )
+        # Unit 17: exclude applications whose current stage is this user's and
+        # currently pending — a resubmitted application shows only in Pending.
         queryset = (
             LeaveApplication.objects.filter(approval_decisions__approver=user)
+            .exclude(
+                current_stage__assigned_approver=user,
+                current_stage__status=ApplicationStage.Status.PENDING,
+            )
             .distinct()
             .annotate(_last_decided=latest)
             .order_by("-_last_decided")
@@ -192,7 +206,9 @@ class ApprovalDocumentDownloadView(APIView):
         _view_access_or_404(request.user, application)
 
         document = SupportingDocument.objects.filter(
-            application=application, id=document_id
+            application=application,
+            id=document_id,
+            status=SupportingDocument.Status.ACTIVE,
         ).first()
         if document is None:
             raise Http404("No document matches the given query.")

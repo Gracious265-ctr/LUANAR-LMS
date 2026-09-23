@@ -11,6 +11,13 @@ from .views import (
     SupportingDocumentViewSet,
 )
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
+from .views.resubmission import (
+    ApplicationResubmissionView,
+    ApplicationResubmitView,
+    ResubmissionDocumentCollectionView,
+    ResubmissionDocumentDetailView,
+    ResubmissionDocumentReplaceView,
+)
 
 app_name = "leave"
 
@@ -56,5 +63,30 @@ urlpatterns = [
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/",
         supporting_doc_detail,
         name="supportingdocument-detail",
+    ),
+    path(
+        "applications/<uuid:pk>/resubmission/",
+        ApplicationResubmissionView.as_view(),
+        name="application-resubmission",
+    ),
+    path(
+        "applications/<uuid:pk>/resubmission/documents/",
+        ResubmissionDocumentCollectionView.as_view(),
+        name="application-resubmission-documents",
+    ),
+    path(
+        "applications/<uuid:pk>/resubmission/documents/<uuid:document_id>/replace/",
+        ResubmissionDocumentReplaceView.as_view(),
+        name="application-resubmission-document-replace",
+    ),
+    path(
+        "applications/<uuid:pk>/resubmission/documents/<uuid:document_id>/",
+        ResubmissionDocumentDetailView.as_view(),
+        name="application-resubmission-document-detail",
+    ),
+    path(
+        "applications/<uuid:pk>/resubmit/",
+        ApplicationResubmitView.as_view(),
+        name="application-resubmit",
     ),
 ]

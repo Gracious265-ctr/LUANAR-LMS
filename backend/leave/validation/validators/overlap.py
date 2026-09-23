@@ -33,6 +33,8 @@ def validate_overlap(
     )
     if ctx.application is not None:
         queryset = queryset.exclude(id=ctx.application.id)
+    if ctx.exclude_application_id is not None:
+        queryset = queryset.exclude(id=ctx.exclude_application_id)
 
     blocking = list(queryset.order_by("start_date"))
     if not blocking:

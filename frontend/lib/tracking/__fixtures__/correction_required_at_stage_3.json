@@ -137,5 +137,36 @@
       "order": 3,
       "role_label": "Registrar"
     }
-  }
+  },
+  "submission_cycle": 1,
+  "decisions": [
+    {
+      "cycle": 1,
+      "stage_order": 3,
+      "role_label": "Registrar",
+      "approver_name": "Dr. Joyce Phiri",
+      "action": "return_for_correction",
+      "comment": "Supporting documents must be uploaded before approval.",
+      "decided_at": "2026-10-17T10:00:00Z"
+    },
+    {
+      "cycle": 1,
+      "stage_order": 2,
+      "role_label": "HOD",
+      "approver_name": "Dr. Grace Mwale",
+      "action": "approve",
+      "comment": "Approved.",
+      "decided_at": "2026-10-15T14:22:19Z"
+    },
+    {
+      "cycle": 1,
+      "stage_order": 1,
+      "role_label": "Supervisor",
+      "approver_name": "Mr. Chikondi Banda",
+      "action": "approve",
+      "comment": "Verified. Forwarded.",
+      "decided_at": "2026-10-14T07:15:03Z"
+    }
+  ],
+  "resubmissions": []
 }

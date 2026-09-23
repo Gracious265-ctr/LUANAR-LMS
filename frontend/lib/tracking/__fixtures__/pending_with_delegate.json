@@ -102,5 +102,8 @@
     "last_resubmitted_at": null,
     "can_resubmit": false,
     "returns_to_stage": null
-  }
+  },
+  "submission_cycle": 1,
+  "decisions": [],
+  "resubmissions": []
 }

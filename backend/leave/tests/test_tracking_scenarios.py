@@ -21,7 +21,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from leave.models import LeaveApplication
+from leave.models import ApplicationRevision, LeaveApplication, LeaveType
 
 from .stubs import make_user
 
@@ -50,8 +50,18 @@ class TrackingScenarioTests(TestCase):
         self.user = make_user()
         self.client.force_authenticate(user=self.user)
 
-    def create_for_reference(self, reference):
-        return LeaveApplication.objects.create(
+    def create_for_reference(self, reference, status=None):
+        assignments = load_assignments()
+        name = assignments.get(reference, "pending_first_stage")
+        scenario = load_scenario(name)
+        if status is None:
+            status = {
+                "pending": LeaveApplication.Status.PENDING,
+                "approved": LeaveApplication.Status.APPROVED,
+                "rejected": LeaveApplication.Status.REJECTED,
+                "correction_required": LeaveApplication.Status.CORRECTION_REQUIRED,
+            }.get(scenario["status"], LeaveApplication.Status.SUBMITTED)
+        app = LeaveApplication.objects.create(
             employee=self.user,
             leave_type_id=1,
             start_date="2026-11-02",
@@ -59,12 +69,29 @@ class TrackingScenarioTests(TestCase):
             working_days=5,
             calendar_days=5,
             financial_year_label="2026-27",
-            status=LeaveApplication.Status.SUBMITTED,
+            status=status,
             reference_number=reference,
             submitted_at="2026-10-12T07:15:03Z",
             rules_snapshot={"leave_type": {"id": 1, "name": "Annual Leave"}},
         )
-        return leave_application
+        # A scenario with a ``resubmitted`` event describes an application that
+        # actually went through a resubmission, which must exist as a real
+        # immutable revision so ``resubmission.count`` stays consistent.
+        if any(item.get("type") == "resubmitted" for item in scenario["events"]):
+            leave_type, _ = LeaveType.objects.get_or_create(
+                name="Annual Leave", code="annual"
+            )
+            ApplicationRevision.objects.create(
+                application=app,
+                revision_number=2,
+                leave_type=leave_type,
+                leave_type_name="Annual Leave",
+                start_date=app.start_date,
+                end_date=app.end_date,
+                working_days=app.working_days,
+                reason=app.reason,
+            )
+        return app
 
     def fetch(self, reference):
         app = self.create_for_reference(reference)

@@ -131,5 +131,32 @@
     "last_resubmitted_at": "2026-10-20T13:12:07Z",
     "can_resubmit": false,
     "returns_to_stage": null
-  }
+  },
+  "submission_cycle": 2,
+  "decisions": [
+    {
+      "cycle": 1,
+      "stage_order": 2,
+      "role_label": "Dean",
+      "approver_name": "Dr. Anne Banda",
+      "action": "reject",
+      "comment": "Peak teaching period; please resubmit for the following term.",
+      "decided_at": "2026-10-16T11:40:55Z"
+    },
+    {
+      "cycle": 1,
+      "stage_order": 1,
+      "role_label": "HOD",
+      "approver_name": "Dr. Grace Mwale",
+      "action": "approve",
+      "comment": "Forwarded for review.",
+      "decided_at": "2026-10-14T07:15:03Z"
+    }
+  ],
+  "resubmissions": [
+    {
+      "cycle": 2,
+      "resubmitted_at": "2026-10-20T13:12:07Z"
+    }
+  ]
 }

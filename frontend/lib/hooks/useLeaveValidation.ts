@@ -12,6 +12,7 @@ export interface LeaveValidationInput {
   start_date: string | null;
   end_date: string | null;
   draft_id?: string | null;
+  application_id?: string | null;
 }
 
 export interface UseLeaveValidationOptions {
@@ -56,6 +57,7 @@ export function useLeaveValidation(
           start_date: input.start_date,
           end_date: input.end_date,
           draft_id: input.draft_id ?? null,
+          application_id: input.application_id ?? null,
         },
         controller.signal
       )
@@ -85,6 +87,7 @@ export function useLeaveValidation(
     input.start_date,
     input.end_date,
     input.draft_id,
+    input.application_id,
     debounceMs,
     enabled,
     hasRequiredFields,
