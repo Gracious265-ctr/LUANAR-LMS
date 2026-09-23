@@ -1,0 +1,77 @@
+"use client";
+
+import { Download, FileText } from "lucide-react";
+import { useState } from "react";
+
+import { formatDateTime, formatSize } from "@/lib/approvals/format";
+import { fetchDocumentDownload } from "@/lib/approvals/service";
+import type { ApprovalReview } from "@/lib/approvals/types";
+
+import { Panel } from "./panel";
+
+export function DocumentsCard({ data }: { data: ApprovalReview }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const documents = data.documents;
+
+  async function openDocument(documentId: string) {
+    if (busyId) return;
+    setBusyId(documentId);
+    setError("");
+    try {
+      const doc = await fetchDocumentDownload(data.application.id, documentId);
+      window.open(doc.download_url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not open the document."
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Panel title="Supporting documents">
+      {documents.length === 0 ? (
+        <p className="text-sm text-text-secondary">
+          No supporting documents were attached.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border-default">
+          {documents.map((doc) => (
+            <li key={doc.id} className="flex items-center justify-between gap-3 py-2.5">
+              <div className="flex items-center gap-3">
+                <FileText className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-medium text-text-primary">{doc.name}</p>
+                  <p className="text-xs text-text-muted">
+                    {formatSize(doc.size)}
+                    {doc.uploaded_at ? ` · ${formatDateTime(doc.uploaded_at)}` : ""}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => openDocument(doc.id)}
+                disabled={busyId !== null}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                {busyId === doc.id ? "Opening…" : "View"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="mt-3 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
+        >
+          {error}
+        </p>
+      )}
+    </Panel>
+  );
+}

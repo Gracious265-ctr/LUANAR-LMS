@@ -109,6 +109,22 @@ def submit_application(*, user, application_id):
             ]
         )
 
+        try:
+            from workflows.services import WorkflowAssignmentError, assign_workflow
+
+            assign_workflow(app)
+        except WorkflowAssignmentError as exc:
+            raise ValidationFailedError(
+                [
+                    {
+                        "code": "workflow_unavailable",
+                        "message": message,
+                        "field": "—",
+                    }
+                    for message in exc.messages
+                ]
+            )
+
         record_audit(
             actor=user,
             action=AuditEntry.Action.SUBMITTED,

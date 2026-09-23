@@ -13,7 +13,22 @@ from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
 
-from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow
+from .models import (
+    APPROVER_ROLE_CODES,
+    ApplicationStage,
+    ApprovalDecision,
+    Delegation,
+    Reassignment,
+    Workflow,
+)
+
+
+class WorkflowAssignmentError(Exception):
+    """The application could not be assigned a workflow; carries messages."""
+
+    def __init__(self, messages: list[str]):
+        self.messages = messages
+        super().__init__("; ".join(messages))
 
 
 class StageSequenceError(ValueError):
@@ -532,3 +547,268 @@ def reassign_application(
                 reason=reason,
             )
     return reassignment
+
+
+def assign_workflow(application):
+    """Materialise the configured stage chain for ``application`` (Unit 16).
+
+    Runs idempotently: if the current submission cycle already has stages, the
+    existing live stage is returned unchanged. Otherwise the workflow provider's
+    stage definitions are validated and bulk-created with exactly one ``pending``
+    stage (the first), and ``application.current_stage`` is pointed at it.
+
+    Raises :class:`WorkflowAssignmentError` (responsibility of the caller to map
+    to a submisable ``ValidationFailedError``-style failure) when the provider
+    yields no/ill-formed stages or a stage cannot be resolved to an active user.
+    Returns the first (pending) stage.
+    """
+    from .providers import get_workflow_provider
+
+    with transaction.atomic():
+        cycle = application.submission_cycle
+        existing = application.stages.filter(submission_cycle=cycle).first()
+        if existing is not None:
+            return application.current_stage
+
+        definitions = get_workflow_provider().get_stage_definitions(application)
+        if not definitions:
+            raise WorkflowAssignmentError(["No workflow stages configured."])
+        orders = [definition.order for definition in definitions]
+        if sorted(orders) != list(range(1, len(definitions) + 1)):
+            raise WorkflowAssignmentError(["Workflow stages must be ordered 1..N."])
+
+        stages = []
+        for index, definition in enumerate(definitions):
+            if definition.approver_user_id is None:
+                raise WorkflowAssignmentError(
+                    [f"No active user for the {definition.role_label} stage."]
+                )
+            try:
+                approver = User.objects.get(pk=definition.approver_user_id)
+            except User.DoesNotExist:
+                raise WorkflowAssignmentError(
+                    [f"No active user for the {definition.role_label} stage."]
+                )
+            stages.append(
+                ApplicationStage(
+                    application=application,
+                    submission_cycle=cycle,
+                    stage_order=definition.order,
+                    role=definition.role,
+                    role_label=definition.role_label,
+                    assigned_approver=approver,
+                    status=(
+                        ApplicationStage.Status.PENDING
+                        if index == 0
+                        else ApplicationStage.Status.WAITING
+                    ),
+                    is_final=index == len(definitions) - 1,
+                )
+            )
+
+        ApplicationStage.objects.bulk_create(stages)
+        first = stages[0]
+        application.current_stage = first
+        application.current_approver = first.assigned_approver
+        application.save(update_fields=["current_stage", "current_approver", "updated_at"])
+        return first
+
+
+class ApprovalNotFoundError(Exception):
+    """The application does not exist or is not viewable by the approver."""
+
+
+class ApprovalNotAllowedError(Exception):
+    """The approver may not decide right now; carries a reason code."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+class ApprovalStageChangedError(Exception):
+    """The stage was already decided by someone else (stale/conflict, 409)."""
+
+
+class ApprovalValidationError(ValueError):
+    """Invalid action or comment; carries a dict of field errors."""
+
+    def __init__(self, errors: dict):
+        self.errors = errors
+        super().__init__(str(errors))
+
+
+def decide(*, application_id, actor, action: str, comment: str = "", expected_version: int):
+    """Record one decision and advance the application (Unit 16, spec 6.3).
+
+    Runs in one transaction under a row lock on both the application and its
+    current stage. Writes exactly one immutable :class:`ApprovalDecision`,
+    transitions stage/application state, increments ``decision_version``, and
+    emits the approval event on commit.
+
+    Raises ``ApprovalNotFoundError`` (404), ``ApprovalValidationError`` (400),
+    ``ApprovalNotAllowedError`` (403) or ``ApprovalStageChangedError`` (409).
+    Returns the persisted application.
+    """
+    from .events import (
+        APPLICATION_FINALISED,
+        DECISION_RECORDED,
+        ApprovalEvent,
+        emit_approval_event,
+    )
+    from .policies import get_decision_authority
+
+    if action not in ApprovalDecision.Action.values:
+        raise ApprovalValidationError({"action": "Must be approve, reject or return_for_correction."})
+
+    comment = (comment or "").strip()
+    if len(comment) > 1000:
+        raise ApprovalValidationError({"comment": "Must be at most 1000 characters."})
+    if action in (ApprovalDecision.Action.REJECT, ApprovalDecision.Action.RETURN_FOR_CORRECTION) and not comment:
+        raise ApprovalValidationError(
+            {"comment": "A comment is required when rejecting or returning for correction."}
+        )
+
+    from .policies import get_decision_authority as _authority
+
+    app = None
+    with transaction.atomic():
+        app = LeaveApplication.objects.select_for_update().filter(id=application_id).first()
+        if app is None:
+            raise ApprovalNotFoundError()
+
+        if app.current_stage_id is None:
+            raise ApprovalNotAllowedError("application_closed")
+
+        stage = (
+            ApplicationStage.objects.select_for_update()
+            .filter(pk=app.current_stage_id)
+            .first()
+        )
+        # The live chain lives under ``workflow_chain_cycle`` (stages are reused
+        # across resubmission cycles per Unit 17); the guard must not compare
+        # against ``app.submission_cycle``, which increments on resubmission.
+        if stage is None or stage.submission_cycle != app.workflow_chain_cycle:
+            raise ApprovalNotAllowedError("application_closed")
+
+        if stage.decision_version != expected_version:
+            raise ApprovalStageChangedError()
+
+        if ApprovalDecision.objects.filter(
+            application=app,
+            approver=actor,
+            submission_cycle=app.submission_cycle,
+        ).exists():
+            raise ApprovalStageChangedError()
+
+        authority = _authority(actor, app)
+        if not authority.can_decide:
+            raise ApprovalNotAllowedError(authority.reason or "not_current_stage")
+        if stage.status != ApplicationStage.Status.PENDING:
+            raise ApprovalNotAllowedError("already_decided")
+
+        before_status = app.status
+        before_order = stage.stage_order
+        before_version = stage.decision_version
+
+        ApprovalDecision.objects.create(
+            application=app,
+            stage=stage,
+            approver=actor,
+            approver_name=actor.get_full_name(),
+            role_label=stage.role_label,
+            action=action,
+            comment=comment,
+            submission_cycle=app.submission_cycle,
+        )
+
+        stage.decision_version = before_version + 1
+        next_stage = None
+        if action == ApprovalDecision.Action.APPROVE:
+            stage.status = ApplicationStage.Status.APPROVED
+            if stage.is_final:
+                app.status = LeaveApplication.Status.APPROVED
+            else:
+                next_stage = (
+                    ApplicationStage.objects.select_for_update()
+                    .filter(
+                        application=app,
+                        submission_cycle=app.workflow_chain_cycle,
+                        stage_order=stage.stage_order + 1,
+                    )
+                    .first()
+                )
+                if next_stage is None:
+                    raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
+                next_stage.status = ApplicationStage.Status.PENDING
+        elif action == ApprovalDecision.Action.REJECT:
+            stage.status = ApplicationStage.Status.REJECTED
+            app.status = LeaveApplication.Status.REJECTED
+        else:
+            stage.status = ApplicationStage.Status.CORRECTION_REQUESTED
+            app.status = LeaveApplication.Status.CORRECTION_REQUIRED
+
+        # Persist the decided stage first so a single ``pending`` stage always
+        # exists at any one moment (enforced by the partial unique constraint).
+        stage.save(update_fields=["status", "decision_version", "updated_at"])
+        if next_stage is not None:
+            next_stage.save(update_fields=["status", "decision_version", "updated_at"])
+            app.current_stage = next_stage
+
+        after_status = app.status
+        after_order = (
+            app.current_stage.stage_order
+            if app.current_stage_id is not None
+            else stage.stage_order
+        )
+        app.save(update_fields=["status", "current_stage", "updated_at"])
+
+        record_audit(
+            actor=actor,
+            action=_audit_action(action),
+            target_type=AuditEntry.TargetType.APPLICATION,
+            target_id=app.pk,
+            target_summary=app.reference_number,
+            detail=changed_fields(
+                {
+                    "status": before_status,
+                    "current_stage_order": before_order,
+                    "decision_version": before_version,
+                },
+                {
+                    "status": after_status,
+                    "current_stage_order": after_order,
+                    "decision_version": stage.decision_version,
+                },
+            ),
+            reason=comment,
+        )
+
+        event = ApprovalEvent(
+            kind=(
+                APPLICATION_FINALISED
+                if after_status != LeaveApplication.Status.SUBMITTED
+                else DECISION_RECORDED
+            ),
+            application_id=str(app.pk),
+            reference_number=app.reference_number or "",
+            action=action,
+            stage_order=stage.stage_order,
+            role_label=stage.role_label,
+            approver_id=actor.id,
+            approver_name=actor.get_full_name(),
+            comment=comment,
+            submission_cycle=app.submission_cycle,
+        )
+        transaction.on_commit(lambda e=event: emit_approval_event(e))
+
+    return app
+
+
+def _audit_action(action: str) -> str:
+    mapping = {
+        ApprovalDecision.Action.APPROVE: AuditEntry.Action.APPROVED,
+        ApprovalDecision.Action.REJECT: AuditEntry.Action.REJECTED,
+        ApprovalDecision.Action.RETURN_FOR_CORRECTION: AuditEntry.Action.CORRECTION_REQUESTED,
+    }
+    return mapping[action]

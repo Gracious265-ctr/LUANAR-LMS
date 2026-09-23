@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -10,6 +11,15 @@ APPROVER_ROLE_CHOICES = [
     for code, label in User.Role.choices
     if code in APPROVER_ROLE_CODES
 ]
+
+# Stage roles in the approver chain. HR and employee are never workflow stages.
+STAGE_ROLE_CODES = ("supervisor", "hod", "dean", "registrar", "dvc")
+
+STAGE_ROLE_LABELS = {
+    code: label for code, label in User.Role.choices if code in STAGE_ROLE_CODES
+}
+
+STAGE_ROLE_CHOICES = list(STAGE_ROLE_LABELS.items())
 
 
 class Workflow(models.Model):
@@ -232,3 +242,225 @@ class Reassignment(models.Model):
     def __str__(self) -> str:
         application = self.application.reference_number or "Draft"
         return f"Reassignment({application} → {self.to_approver.get_full_name()})"
+
+
+class ApplicationStage(models.Model):
+    """One immutable position in an application's assigned approval chain.
+
+    Stages are created in one batch by ``assign_workflow`` when the application
+    is first submitted; only the stage that ``LeaveApplication.current_stage``
+    points at is live, and exactly one stage is ``pending`` at a time.
+
+    On resubmission (Unit 17) the chain is *kept*, not rebuilt: the scheme
+    keeps the same reference and the same stage/approver, so stages never leave
+    the cycle they were created under. The current stage flips back to
+    ``pending`` in place and ``decision_version`` increments; earlier and later
+    stages are untouched and ``LieaveApplication.submission_cycle`` increments
+    while stage ``submission_cycle`` stays at the chain-creation cycle. Chain
+    lookups use ``LeaveApplication.workflow_chain_cycle`` (the minimum stage
+    cycle, i.e. usually 1), never ``submission_cycle``.
+
+    ``decision_version`` starts at ``1`` and is optimistically incremented every
+    time the stage is acted upon (approve/reject/correction/resubmission).
+    Decision requests carry the version they read; a mismatch aborts with a
+    stale/conflict (409).
+    """
+
+    class Status(models.TextChoices):
+        WAITING = "waiting", "Waiting"
+        PENDING = "pending", "Pending action"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUESTED = "correction_requested", "Correction requested"
+        SUPERSEDED = "superseded", "Superseded by resubmission"
+
+    application = models.ForeignKey(
+        "leave.LeaveApplication",
+        on_delete=models.CASCADE,
+        related_name="stages",
+        help_text="The application this stage belongs to.",
+    )
+    submission_cycle = models.PositiveSmallIntegerField(
+        default=1,
+        help_text="The resubmission cycle this stage belongs to.",
+    )
+    stage_order = models.PositiveIntegerField(
+        help_text="Position in the chain, 1-based and unique per application/cycle.",
+    )
+    role = models.CharField(
+        max_length=20,
+        choices=STAGE_ROLE_CHOICES,
+        help_text="The approver role responsible for this stage.",
+    )
+    role_label = models.CharField(
+        max_length=80,
+        help_text="Human-readable label for ``role``.",
+    )
+    assigned_approver = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="application_stages",
+        help_text="The specific user responsible for this stage.",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.WAITING,
+    )
+    is_final = models.BooleanField(
+        default=False,
+        help_text="True for the last stage; approving it finalises the application.",
+    )
+    decision_version = models.PositiveIntegerField(
+        default=1,
+        help_text="Optimistic-lock counter, incremented on every decision.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["application", "submission_cycle", "stage_order"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(stage_order__gte=1),
+                name="stage_order_positive",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "submission_cycle", "stage_order"],
+                name="unique_stage_order_per_application",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "submission_cycle"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_stage_per_application",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["assigned_approver", "status"],
+                name="idx_stage_approver_status",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Stage {self.stage_order} (cycle {self.submission_cycle},"
+            f" {self.role_label})"
+            f" #{self.application.reference_number or self.application_id}"
+        )
+
+
+class ApprovalDecisionLockedError(Exception):
+    """Raised on any attempt to update or delete an ``ApprovalDecision``."""
+
+
+class ApprovalDecisionQuerySet(models.QuerySet):
+    """Append-only: queryset-wide update/delete are rejected."""
+
+    def update(self, *args: object, **kwargs: object):
+        raise ApprovalDecisionLockedError(
+            "Approval decisions are append-only and cannot be updated."
+        )
+
+    def delete(self):
+        raise ApprovalDecisionLockedError(
+            "Approval decisions are append-only and cannot be deleted."
+        )
+
+
+class ApprovalDecisionManager(models.Manager.from_queryset(ApprovalDecisionQuerySet)):
+    """Manager enforcing the append-only invariant."""
+
+
+class ApprovalDecision(models.Model):
+    """One recorded worker; append-only by design (spec 6.4).
+
+    A decision belongs to exactly one stage of one application. It is written
+    once, atomically with the stage/app transition it causes, and can never be
+    updated or deleted — not via the API, the admin, or ORM helpers.
+    """
+
+    class Action(models.TextChoices):
+        APPROVE = "approve", "Approve"
+        REJECT = "reject", "Reject"
+        RETURN_FOR_CORRECTION = "return_for_correction", "Return for correction"
+
+    application = models.ForeignKey(
+        "leave.LeaveApplication",
+        on_delete=models.PROTECT,
+        related_name="approval_decisions",
+        help_text="The application the decision was made on.",
+    )
+    stage = models.ForeignKey(
+        ApplicationStage,
+        on_delete=models.PROTECT,
+        related_name="decisions",
+        help_text="The stage this decision was recorded against.",
+    )
+    approver = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="approval_decisions",
+        help_text="The user who made the decision.",
+    )
+    approver_name = models.CharField(
+        max_length=150,
+        help_text="Snapshot of the approver's full name at decision time.",
+    )
+    role_label = models.CharField(
+        max_length=80,
+        help_text="Snapshot of the stage's role label.",
+    )
+    action = models.CharField(
+        max_length=24,
+        choices=Action.choices,
+    )
+    comment = models.TextField(
+        blank=True,
+        default="",
+        help_text="Mandatory for reject and return-for-correction.",
+    )
+    submission_cycle = models.PositiveIntegerField(
+        default=1,
+        help_text="The resubmission cycle this decision belongs to.",
+    )
+    decided_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="Explicit timestamp recorded by the decision service.",
+    )
+
+    objects = ApprovalDecisionManager()
+
+    class Meta:
+        ordering = ["-decided_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(action__in=("reject", "return_for_correction"))
+                | ~models.Q(comment=""),
+                name="comment_required_for_reject_or_return",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["approver", "decided_at"],
+                name="idx_decision_approver_time",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.get_action_display()} ({self.approver_name})"
+            f" on {self.application.reference_number or self.application_id}"
+        )
+
+    def delete(self, *args: object, **kwargs: object) -> None:
+        raise ApprovalDecisionLockedError(
+            "Approval decisions are append-only and cannot be deleted."
+        )
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self._state.adding:
+            raise ApprovalDecisionLockedError(
+                "Approval decisions are append-only and cannot be updated."
+            )
+        super().save(*args, **kwargs)
