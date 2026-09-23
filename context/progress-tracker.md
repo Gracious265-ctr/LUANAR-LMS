@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 16 — Approver Review and Decision (COMPLETE — backend + frontend)
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
@@ -12,12 +13,15 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 16 — Approver Review and Decision** is the Employee + Approver
-  track's next build: an approver queue of pending applications plus a
-  review/decision endpoint and screen where the approver approves, rejects,
-  or returns the application for correction. It reuses the Unit 15 status
-  enum, tracker component, and stage/decision contract, and depends on the
-  workflow-routing spine (`current_approver`) rather than a separate provider.
+- **Unit 17 — Rejection, Correction, and Resubmission** is the Employee +
+  Approver track's next build: an employee whose application was rejected or
+  returned for correction reads the approver comment, edits the application
+  (including its documents), and resubmits under the **same reference number**
+  so it returns to the **same stage and approver** — where the approver sees
+  exactly what changed before deciding again. It extends the Unit 15 tracker
+  (`/applications/[id]`) with a feedback banner and the Unit 13 edit form with
+  a resubmission mode, and depends on the Unit 16 statuses, stage/decision
+  contracts, and review payload (`permissions`, `submission_cycle`, documents).
 
 ## Completed (Unit 15)
 
@@ -323,13 +327,76 @@ Update this file after every meaningful implementation change.
 - **Docs.** `backend/docs/leave-validation.md` (pipeline order + error codes),
   `backend/docs/leave-rules-provider-contract.md` (Unit 20 handoff mapping).
 
+## Completed (Unit 16 — Backend)
+
+- **Approvals surface.** New `backend/workflows/` approval stack: `models.py`
+  (`ApplicationStage` with optimistic `version` + DB check constraints, and
+  append-only immutable `ApprovalDecision` records — ORM overrides raise
+  `ImmutableDecisionError`, DB constraints block commentless rejects),
+  `approval.py` (`decide()` transition table with optimistic concurrency →
+  `StageChanged` on stale version, sequential-integrity `NotAllowed`, per-action
+  comment rules, final approval closes the application), `policies.py`
+  (`get_decision_authority`, `get_view_access` — `None` → 404 so existence is
+  never leaked; `get_leave_history_scope` role matrix with fails-closed `None`
+  guard; `get_leave_history`), `events.py`/`services.py`, and
+  `fixture_provider.py` with locked route map: academic →
+  Supervisor→HOD→Registrar→DVC, administration → HOD→Dean→Registrar→DVC,
+  per-department overrides documented for tests/dev.
+- **Approvals API** under `/api/v1/approvals/...`: `capabilities/`
+  (`{is_approver, pending_count}`), list (`tab=pending|decided`, search by
+  reference/name, pagination, oldest-first), detail (full review payload:
+  application, employee-info whitelist, balance, leave history, documents,
+  stage list, permissions, current stage), `decision/` (200 on land,
+  400 bad action/blank comment, 403 not-current/already-decided/closed,
+  409 stale version), `documents/{id}/download-url/` (signed URL, 503 when
+  storage unavailable). `seed_approvals_dev` command idempotent with
+  references 910001..910010.
+- **Backend tests.** `workflows.tests_approvals`: **48 tests green, 0 failures/
+  errors** — decision transitions, immutable records + DB constraints,
+  optimistic concurrency, audit-event assertions, visibility matrices,
+  API auth/paging/search/decisions, academic route, sign-off seed idempotency.
+  Test-suite fixes landed: weekday-snapping cursor in the shared `submit()`
+  helper (auto blocks never start on a weekend → `START_NOT_WORKING_DAY`
+  elimination), per-class academic-route override (adds dean stage) in
+  `VisibilityScopeTests` with `addCleanup` restore, registrar advance added
+  before DVC scope checks, audit `.get()` scoped by `new_state="approved"`,
+  and `update_profile` now mutates through the cached instance so the reverse
+  relation stays coherent with the DB.
+
+- **Frontend.** `lib/approvals/` (`types.ts` mirroring the serializer shapes,
+  `format.ts` reusing Unit 15's `Africa/Blantyre` date helpers plus
+  range/bytes/decision-label helpers, `service.ts` — status-aware `ApiError`
+  for 400/403/404/409, `hooks.ts` `useApprovalsList`/`useApprovalDetail`,
+  `capabilities-context.tsx` provider with `refresh()`), proxy routes
+  `app/api/approvals/{capabilities,route,[id],decision,download-url}` built on
+  the shared `proxyRequest`; `components/approvals/` — `ApprovalsList`
+  (Pending/Decided tabs, 300ms-debounced search, pagination, per-tab empty
+  states with role-appropriate copy, error/retry + skeleton), `ApprovalReview`
+  (header + reference/resubmission badge + reuse of the Unit 15 `StatusBadge`,
+  cards: application details, employee info, leave balance with requested-vs-
+  available + over-balance note for annual leave, leave history, documents with
+  download-url flow, approval-history timeline, `DecisionPanel` + accessible
+  `DecisionDialog` handling approve/reject/return-for-correction, 400 inline
+  comment errors, 403 read-only refetch, 409 stage-conflict reload,
+  success toast + capabilities refresh); hand-rolled accessible primitives in
+  `components/ui/` (`Dialog` with focus trap/Escape/aria-modal, `Tabs`, and
+  `Textarea`) per project convention — no new packages. Nav: capability-driven
+  `ApprovalsNavItem` (lucide `ClipboardCheck`, blue `pending_count` badge) in
+  the dashboard shell, hidden until capabilities resolve; hardcoded approvals
+  block removed. States/review page under `app/(dashboard)/approvals/`.
+- **Frontend tests.** `tests/dashboard-shell.test.tsx` updated to
+  capabilities-gated nav; new suites `approvals-service`, `approvals-format`,
+  `approvals-list`, `approval-review` (19 new tests) + JSON fixtures in
+  `lib/approvals/__fixtures__/`. **`npm test`: 35 files / 207 tests green;
+  `tsc --noEmit`, `npm run lint`, `npm run build` all clean.**
+
 ## Next Up
 
-- **Unit 16 — Approver Review and Decision:** pending-queue + review/decision
-  endpoint and screen for approvers, reusing the Unit 15 status enum/badges,
-  tracker component, and stage/decision contract; the Unit 15 endpoint and
-  payload are extended additively by Unit 17 (rejection/correction/resubmission)
-  and Unit 18 (cancellation) per their specs.
+- **Unit 17 (rejection/correction/resubmission) / Unit 18 (cancellation):** the
+  Unit 15 endpoint and payload are extended additively by these per their specs;
+  Unit 16's approvals API, `status` enum, and decision contracts are the
+  consumption boundary for both. The Unit 19 document-lifecycle spec is drafted
+  (see Session Notes) and depends on the Unit 16/17 status enum values used here.
 
 ## Open Questions
 
@@ -361,6 +428,36 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Troubleshooting log introduced (2026-09-23):** added
+  `context/troubleshooting-notes.md` — a standing log of errors, root causes,
+  and fixes. Mandate recorded in `context/AGENTS.md`: every error/bug/debugging
+  session must be appended there before moving on, in the shape of the existing
+  entries (symptom / root cause / what to look for / fix). First entry:
+  the `psycopg.errors.DeadlockDetected` failure caused by two `manage.py test`
+  runs sharing the same test DB (`test_luanar_leave`), plus the general
+  playbook for classifying `F` vs `E` and resetting the disposable test DB.
+- **Unit 16 frontend complete (2026-09-22):** approver queue + review/decision
+  UI landed. Key decisions: no Radix/21st.dev (nothing installed) — hand-rolled
+  accessible `Dialog`/`Tabs`/`Textarea` primitives in `components/ui/` with
+  focus trap, Escape (blocked while submitting), `aria-modal`, and pointer-
+  outside dismiss; capability-driven nav via a React provider (render null
+  while capabilities load — no nav flash), replacing the role-guess hardcode
+  (`/dashboard/approvals` was a stale placeholder; real routes are `/approvals`
+  per the spec's route-group placement). Review flow maps locked contracts:
+  `stage_version` from `current_stage.version` (409 → reload banner), comment
+  mandatory for reject/return (400 field errors inline), 403 → read-only
+  refetch, append-only decisions so post-decision is a read-only summary with a
+  "Return to approvals" link. Test gotchas: rows render in both the desktop
+  table and mobile cards so queries use `getAllBy*`/`findAllBy*`; desktop +
+  mobile sticky bars duplicate the action buttons (decision-dialog tests click
+  the first match); the eslint `react-hooks/set-state-in-effect` rule rejects
+  synchronous `setState` in effects, so hooks flip to `loading` via a
+  microtask instead. `latestDecisionAction` was dropped in favour of passing
+  the action through from the submit call. Full verification: frontend
+  `npm test` 35 files/207 green, `tsc --noEmit` clean, lint clean, build clean;
+  backend `manage.py check` clean (approvals suite unchanged since its 48/48
+  green run).
+- **Unit 19 spec drafted (2026-09-21):** `context/specs/19-supporting-document-lifecycle.md` — supporting documents get a full state-aware lifecycle. The four developer-approved decisions: (1) Unit 19 owns the document lifecycle (Unit 17's resubmission document flows reuse its service, not re-implement); (2) the file-storage abstraction + local-filesystem dev backend are built here — `LEAVE_STORAGE_BACKEND` dotted-path factory mirroring `get_provider()`, defaulting to `DevelopmentStorageBackend` (repo `storage/` root) so uploads/downloads work with no Supabase credentials; (3) draft-phase replace/remove keeps Unit 13 behavior (physically deletes old file+row), while post-submission replaces/removes retire and never delete (Unit 17 rule); (4) history = `SupportingDocument.status/retired_at/retired_by/retire_reason/replaced_by` + `document_uploaded`/`document_removed`/`document_replaced` AuditEvents, no new model. Download moves from stored signed URLs to one authenticated Django streaming endpoint (`content/?download=1`) opened via the Next proxy; `file_url` stays but now stores the content-URL. Depends on Units 16/17 status enum values — the edit/read-only gate is a membership check so it activates when those merge. Next; spec's §12 docs updates (architecture.md storage decision, README API table) are implementation-time.
 - **Unit 15 complete (2026-09-21):** read-only, owner-only tracking endpoint +
   `/applications/[id]` page behind a swappable fixture provider (contracts live
   in the Django-free `contracts.py`; `LEAVE_TRACKING_PROVIDER` setting drives
