@@ -384,10 +384,10 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 17 — Rejection, Correction and Resubmission** (next build; consumes
-  Unit 16 stage/decision/service, extends the pending queue, and keeps the
-  resubmission pointers Unit 16 preserved). Unit 15 endpoints/payloads are
-  extended additively per its spec.
+- **Unit 19 — Supporting Document Lifecycle** (next build; consumes Unit 13's
+  `SupportingDocument` model/proxies and drafts, adds employee-side preview/edit
+  of documents plus approver access controls). No spec yet — draft
+  `context/specs/19-supporting-document-lifecycle.md` first.
 - **HR track (this developer):** Unit 16+ build on the audit spine (approval/
   cancel/correction events and application-scoped history), then Unit 21 routing
   which consumes the `current_approver` spine and `active_delegation_for`.
@@ -485,8 +485,9 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   `getByText` only matches direct text nodes, so assertions spanning nested
   `<span>`/`<time>` reuse the repo's normalized-`textContent` matcher. The
   `pendingEligibilityRef` in the dialog hit the `react-hooks/refs` lint rule
-  (ref value read during render) and was converted to state. Next up: **Unit 17
-  — Rejection, Correction and Resubmission**.
+  (ref value read during render) and was converted to state. Committed as
+  `8a48f21` on `feature/hr-track`. Next build: **Unit 19 — Supporting Document
+  Lifecycle** (spec to be drafted).
 - **Unit 11 complete (2026-09-21):** HR Finalized Leave + Audit View landed on
   `feature/hr-unit-11` (cut from `development` after Unit 9's commit `2a63f55`).
   Audit is explicit (`record_audit` in the same transaction as the action) — no
