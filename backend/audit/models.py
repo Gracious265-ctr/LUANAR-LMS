@@ -20,6 +20,11 @@ class AuditEntry(models.Model):
         CANCELLED = "cancelled", "Cancelled"
         REASSIGNED = "reassigned", "Reassigned"
         SUBMITTED = "submitted", "Submitted"
+        CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
+        APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
+        DOCUMENT_ADDED = "document_added", "Document added"
+        DOCUMENT_REPLACED = "document_replaced", "Document replaced"
+        DOCUMENT_REMOVED = "document_removed", "Document removed"
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""
@@ -43,7 +48,7 @@ class AuditEntry(models.Model):
         related_name="audit_entries",
         help_text="The user who performed the action.",
     )
-    action = models.CharField(max_length=20, choices=Action.choices)
+    action = models.CharField(max_length=32, choices=Action.choices)
     target_type = models.CharField(
         max_length=32,
         choices=TargetType.choices,

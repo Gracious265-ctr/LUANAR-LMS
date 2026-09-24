@@ -11,12 +11,13 @@ from ..types import ValidationContext, ValidationIssue
 
 
 def count_supporting_documents(application) -> int:
-    """Return the number of documents on an application.
+    """Return the number of active documents on an application.
 
     Thin wrapper over the Unit 13 ``SupportingDocument`` relation so a model
-    or manager rename touches exactly one function.
+    or manager rename touches exactly one function. Retired rows (Unit 17)
+    no longer count towards the requirement.
     """
-    return application.documents.count()
+    return application.documents.filter(status="active").count()
 
 
 def validate_documents(

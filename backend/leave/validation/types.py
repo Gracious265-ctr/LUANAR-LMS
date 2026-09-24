@@ -38,6 +38,7 @@ class ValidationContext:
     end_date: date | None
     application: object | None
     today: date
+    exclude_application_id: int | None = None
     financial_year: FinancialYear | None = None
     holidays: dict[date, str] = field(default_factory=dict)
     working_days: int | None = None

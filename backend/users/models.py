@@ -39,6 +39,11 @@ class EmployeeProfile(models.Model):
     )
     designation = models.CharField(max_length=200, blank=True)
     department = models.CharField(max_length=200, blank=True)
+    faculty = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Faculty/school for the Dean's review scope (Unit 16).",
+    )
     category = models.CharField(
         max_length=20,
         choices=Category.choices,

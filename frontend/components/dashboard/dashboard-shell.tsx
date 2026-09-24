@@ -14,7 +14,6 @@ import {
   History,
   Home,
   LogOut,
-  ShieldCheck,
   Tags,
   UserCheck,
   Users,
@@ -24,6 +23,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+
+import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 
 interface User {
   id: number;
@@ -137,15 +138,7 @@ const Sidebar = memo(function Sidebar({
           currentPath={currentPath}
           open={open}
         />
-        {showApprovals && (
-          <Option
-            Icon={ShieldCheck}
-            title="Approvals"
-            href="/dashboard/approvals"
-            currentPath={currentPath}
-            open={open}
-          />
-        )}
+        {showApprovals && <ApprovalsNavItem open={open} />}
         {showDepartment && (
           <Option
             Icon={Users}

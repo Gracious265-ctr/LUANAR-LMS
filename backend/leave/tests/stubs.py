@@ -174,20 +174,66 @@ class StubRulesProvider:
         )
 
 
+class StubWorkflowProvider:
+    """Controllable in-memory workflow provider (Unit 16).
+
+    Mirrors the ``WorkflowProvider`` protocol. Roles not registered with an
+    explicit approver fall back to the application's own employee, so existing
+    submission tests keep passing without extra setup; approval tests register
+    real approver users per role.
+    """
+
+    def __init__(self):
+        self.approvers: dict[str, int] = {}
+        self.default_chain = ("supervisor", "hod", "registrar", "dvc")
+        self.strict = False
+
+    def set_chain(self, *roles: str) -> None:
+        self.default_chain = tuple(roles)
+
+    def register_approver(self, role: str, user) -> None:
+        self.approvers[role] = user.id
+
+    def get_stage_definitions(self, application):
+        from workflows.models import STAGE_ROLE_LABELS
+        from workflows.providers import StageDefinition
+
+        definitions = []
+        for order, role in enumerate(self.default_chain, start=1):
+            approver_id = self.approvers.get(role)
+            if approver_id is None and not self.strict:
+                approver_id = application.employee_id
+            definitions.append(
+                StageDefinition(
+                    order=order,
+                    role=role,
+                    role_label=STAGE_ROLE_LABELS[role],
+                    approver_user_id=approver_id,
+                )
+            )
+        return definitions
+
+
 class StubProviderMixin:
     """TestCase mixin that installs a stub provider + fixed ``today``.
 
     Call ``use_stub()`` at the start of a test (or in ``setUp``); it patches the
     two ``get_provider`` import sites and ``get_today`` for the duration of the
-    test and returns the :class:`StubRulesProvider`.
+    test and returns the :class:`StubRulesProvider`. A stub workflow provider
+    is attached as ``stub.workflow`` and installed for ``assign_workflow``.
     """
 
     def use_stub(self, stub=None, today=TODAY) -> StubRulesProvider:
         stub = stub or StubRulesProvider()
+        stub.workflow = StubWorkflowProvider()
         patchers = [
             mock.patch("leave.validation.pipeline.get_provider", return_value=stub),
             mock.patch("leave.validation.pipeline.get_today", return_value=today),
             mock.patch("leave.providers.get_provider", return_value=stub),
+            mock.patch(
+                "workflows.providers.get_workflow_provider",
+                return_value=stub.workflow,
+            ),
         ]
         for patcher in patchers:
             patcher.start()

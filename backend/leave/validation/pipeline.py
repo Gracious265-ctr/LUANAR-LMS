@@ -58,9 +58,17 @@ def run_validation(
     end_date_raw,
     application=None,
     today: date | None = None,
+    as_of: date | None = None,
+    exclude_application_id=None,
 ) -> ValidationResult:
-    """Run the full validation pipeline and return a :class:`ValidationResult`."""
-    today = today or get_today()
+    """Run the full validation pipeline and return a :class:`ValidationResult`.
+
+    ``as_of``/``today`` name the same clock seam (``as_of`` is preferred);
+    ``exclude_application_id`` lets a resubmission validate the employee's
+    other open applications without treating the live application (or its draft)
+    as its own overlap blocker.
+    """
+    today = today or as_of or get_today()
     provider = get_provider()
 
     employee = provider.get_employee_for_user(user)
@@ -74,6 +82,7 @@ def run_validation(
         end_date=end_date_raw,
         application=application,
         today=today,
+        exclude_application_id=exclude_application_id,
     )
 
     errors, skipped = [], []

@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Min
 from django.utils.text import slugify
 
 
@@ -134,6 +135,9 @@ class LeaveApplication(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUIRED = "correction_required", "Correction required"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     employee = models.ForeignKey(
@@ -174,11 +178,31 @@ class LeaveApplication(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
 
+    # Resubmission cycle counter. Starts at 1; increments on every resubmission.
+    # All workflow stages and approval decisions for one submission carry this
+    # value so a stale stage can never be confused with the live chain.
+    submission_cycle = models.PositiveSmallIntegerField(default=1)
+
+    # The stage the application is currently parked at. Written by the workflow
+    # assignment/approval services; null for drafts and finalised applications.
+    current_stage = models.ForeignKey(
+        "workflows.ApplicationStage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The live workflow stage awaiting (or last acted on) this application.",
+    )
+
     # Authoritative, server-calculated values written once at submission (Unit 14).
     working_days = models.PositiveSmallIntegerField(null=True, blank=True)
     calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
     financial_year_label = models.CharField(max_length=16, null=True, blank=True)
     rules_snapshot = models.JSONField(null=True, blank=True)
+
+    # Optimistic-lock version. Every employee edit bumps this by one so a stale
+    # edit context from a parallel tab/window is rejected with a conflict.
+    row_version = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["-updated_at"]
@@ -187,8 +211,30 @@ class LeaveApplication(models.Model):
         ref = self.reference_number or "Draft"
         return f"LeaveApplication({ref} - {self.employee})"
 
+    @property
+    def workflow_chain_cycle(self) -> int:
+        """The cycle the live workflow chain was created under.
+
+        Resubmission reuses the original stage chain, so stage rows keep the
+        cycle of the first submission. Decision-time rules keep working off
+        ``submission_cycle``; chain lookups (which stage is pending, what comes
+        next) must use this property so they never filter against a cycle the
+        stages were not created under.
+        """
+        return (
+            self.stages.aggregate(chain=Min("submission_cycle"))["chain"] or 1
+        )
+
 
 class SupportingDocument(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        RETIRED = "retired", "Retired"
+
+    class RetireReason(models.TextChoices):
+        REPLACED = "replaced", "Replaced"
+        REMOVED = "removed", "Removed"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         LeaveApplication,
@@ -202,11 +248,106 @@ class SupportingDocument(models.Model):
     content_type = models.CharField(max_length=100)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    # Lifecycle (Unit 17). Documents are never hard-deleted after submission:
+    # replaced/removed rows are retired so the audit trail and the revision
+    # snapshot can still resolve their names. Only active rows are returned to
+    # employees/approvers and counted by the documents validator.
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE
+    )
+    retired_at = models.DateTimeField(null=True, blank=True)
+    retired_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="retired_documents",
+    )
+    retire_reason = models.CharField(
+        max_length=20,
+        choices=RetireReason.choices,
+        null=True,
+        blank=True,
+    )
+    replaced_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="replaced_documents",
+    )
+
     class Meta:
         ordering = ["-uploaded_at"]
+        indexes = [
+            models.Index(fields=["application", "status"]),
+        ]
 
     def __str__(self) -> str:
         return f"Document({self.file_name})"
+
+
+class ApplicationRevision(models.Model):
+    """Append-only snapshot of an application at one submission (Unit 17).
+
+    ``revision_number`` equals the application's ``submission_cycle`` at write
+    time, so every resubmission records the exact state the approver saw before
+    deciding. The approval review payload diffs a newer revision against the
+    cycle-1 baseline to show "changes since your decision". Immutable like
+    ``ApprovalDecision``: rows are write-only history.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        LeaveApplication,
+        on_delete=models.PROTECT,
+        related_name="revisions",
+    )
+    revision_number = models.PositiveSmallIntegerField()
+
+    leave_type_id = models.PositiveIntegerField(null=True, blank=True)
+    leave_type_name = models.CharField(max_length=120, blank=True, default="")
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    working_days = models.PositiveSmallIntegerField(null=True, blank=True)
+    reason = models.TextField(blank=True, default="")
+
+    documents = models.JSONField(default=list)
+    changes = models.JSONField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="application_revisions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-revision_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "revision_number"],
+                name="applicationrevision_application_revision_number_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(revision_number__gte=1),
+                name="applicationrevision_revision_number_gte_1",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"Revision({self.revision_number} of "
+            f"{self.application.reference_number or self.application_id})"
+        )
+
+    def save(self, *args, **kwargs):
+        raise ValueError("ApplicationRevision is append-only; it cannot be modified.")
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("ApplicationRevision is append-only; it cannot be deleted.")
 
 
 class ReferenceSequence(models.Model):

@@ -6,6 +6,7 @@ Update this file after every meaningful implementation change.
 
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
 - Unit 15 — Employee Application Tracking (COMPLETE)
+- Unit 16 — Approver Review and Decision (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
@@ -16,12 +17,12 @@ Update this file after every meaningful implementation change.
 - Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are merged
   onto `development`, and the HR track's next build **Unit 11 — Finalized Leave +
   Audit View** is complete (depends on the submitted applications Unit 13 provides).
-- **Unit 16 — Approver Review and Decision** is the Employee + Approver
-  track's next build: an approver queue of pending applications plus a
-  review/decision endpoint and screen where the approver approves, rejects,
-  or returns the application for correction. It reuses the Unit 15 status
-  enum, tracker component, and stage/decision contract, and depends on the
-  workflow-routing spine (`current_approver`) rather than a separate provider.
+- **Unit 16 — Approver Review and Decision is COMPLETE** (see "Completed
+  (Unit 16)" below). It delivers the approver queue, review/decision screen,
+  and decision service on the Unit 15 status enum/badges, tracker component,
+  and stage/decision contract; Unit 15 endpoints/payloads are extended
+  additively by Unit 17 (rejection/correction/resubmission) and Unit 18
+  (cancellation) per their specs.
 
 ## Completed (Unit 15)
 
@@ -378,11 +379,10 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 16 — Approver Review and Decision:** pending-queue + review/decision
-  endpoint and screen for approvers, reusing the Unit 15 status enum/badges,
-  tracker component, and stage/decision contract; the Unit 15 endpoint and
-  payload are extended additively by Unit 17 (rejection/correction/resubmission)
-  and Unit 18 (cancellation) per their specs.
+- **Unit 17 — Rejection, Correction and Resubmission** (next build; consumes
+  Unit 16 stage/decision/service, extends the pending queue, and keeps the
+  resubmission pointers Unit 16 preserved). Unit 15 endpoints/payloads are
+  extended additively per its spec.
 - **HR track (this developer):** Unit 16+ build on the audit spine (approval/
   cancel/correction events and application-scoped history), then Unit 21 routing
   which consumes the `current_approver` spine and `active_delegation_for`.
@@ -597,3 +597,82 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   lazy draft creation; removed `router.replace` from `ensureDraftCreated`
 - Supabase credentials configured in `.env`, bucket `leave-documents` created
 - Sidebar active state derives from `usePathname()` (both tracks agreed)
+
+## Completed (Unit 16) — Approver Review and Decision (2026-09-23, complete)
+
+Backend (`backend/workflows/`):
+
+- **Models/migrations.** `WorkflowDefinition` (name, code, keys, ordered roles),
+  `WorkflowAssignment` (definition + per-application group keys in `keys` JSON),
+  `ApplicationStage` (application, workflow, role, order, `status`, assigned
+  approver, `decision_version`; unique partial `pending_stage_per_application`),
+  `ApprovalDecision` (immutable: application, stage FK, action
+  `approve|reject|return_for_correction`, optional comment, `submission_cycle`,
+  `stage_version`, `decided_by`, `decided_at`; no admin registration — decisions
+  are append-only, protected by `ApprovalDecisionLockedError`).
+  Migrations: `workflows/0006_*`, `leave/0007_*`,
+  `users/0003_alter_employeeprofile_faculty.py`, `audit/0004_*`.
+- **Provider.** `WORKFLOW_PROVIDER = "workflows.providers.FixtureWorkflowProvider"`
+  (`workflows/providers.py`, ABC + settings-driven factory) reading fixture
+  chains from `workflows/fixtures/workflow_fixtures.json`:
+  supervisor→hod→registrar→dvc, hod→dean→registrar→dvc (Faculty-level anchor
+  chains for `academic`), etc. `WorkflowAssignmentError` → `workflow_unavailable`.
+- **Decision pipeline.** `workflows/services.py::decide(user, application, action,
+  comment)` runs one transaction with `select_for_update` on the pending stage;
+  raises `ApprovalStageChangedError` (409), `ApprovalNotAllowedError` (403, with
+  `reason`: `application_closed|already_decided|not_current_stage`),
+  `ApprovalValidationError` (400). Non-final approved stage saves before the next
+  pending stage is created; `decision_version` is NOT bumped on handoff.
+  `emit_approval_event` no-op dispatcher (`workflows/events.py`) hooks:
+  `decision_recorded`, `stage_assigned`, `application_finalised`. No balance
+  deduction, no email (per spec boundaries).
+- **Policies.** `workflows/policies.py` — `can_view`/`can_decide` per role with
+  `Authority` dataclass (supervisor: all; hod/dean: conditionally all;
+  registrar/dvc: current financial year).
+- **API.** `approval_payloads.py` (list item, review payload — includes
+  `can_decide`, `decision_restriction`, `application.submission_cycle`,
+  per-stage `decision_version`, current-stage `is_final` + `next_role_label`),
+  `approval_views.py` (`ApprovalListView`, `ApprovalDetailView`,
+  `ApprovalDecisionView`, `ApprovalDocumentDownloadView`,
+  `ApprovalCapabilitiesView`) wired in `workflows/urls.py` at
+  `/api/v1/approvals/...`. Pending list orders by `submitted_at`; decided list
+  orders by subquery-annotated `last_decided` desc (`distinct()`).
+  `submit_application` now assigns the workflow; history view surfaced approval/
+  decision entries from the Unit 15 spine.
+- **Testing/seed.** `SeedStubProviderMixin.use_stub()` in
+  `backend/workflows/tests/utils.py`; status-permission poker tour covering all
+  five roles; `seed_approvals_dev` command (DEBUG-only, idempotent; creates
+  `science-employee@test.luanar` in Faculty of Science and 7 in-flight/done
+  scenarios `LV-<fy>-800001..800007` through the real `submit`/`decide`
+  services). **Workflows suite: 171 tests; full backend suite: 530 tests pass;
+  `manage.py check` clean.**
+
+Frontend (`frontend/`):
+
+- **Proxy routes** `app/api/approvals/*` (`route.ts`, `capabilities/route.ts`,
+  `[id]/route.ts`, `[id]/decision/route.ts`,
+  `[id]/documents/[documentId]/download-url/route.ts`) via
+  `@/app/api/_lib/api-fetch` (cookie forwarding, token refresh,
+  `DJANGO_API_URL`).
+- **lib/approvals/** `types.ts` (DRF-snake_case types), `service.ts`
+  (typed result unions incl. `conflict`/`forbidden`/`validation` for decisions,
+  capabilities, sign-url download), `labels.ts` (status/action metadata,
+  restriction copy), `format.ts` (`formatDate`/`formatDateTime` re-export,
+  `formatSize`), `__fixtures__/index.ts` (factory helpers for list/review/
+  briefing/capabilities).
+- **Components** `approvals-list` (pending/decided tabs, debounced search,
+  pagination, desktop table + mobile cards, empty/error/retry states),
+  `approval-detail` (review page with info/balance/leave-history/app
+  documents/history cards, `DecisionPanel` with inline confirmation),
+  `decision-dialog` (approve/reject/return dialog: live comment counter,
+  whitespace guard, stage-version payload, conflict 409 reload banner, field
+  errors, final-stage warning, success toast + callback), `badges`, `panel`,
+  `approvals-nav-item` (sidebar item driven by `fetchCapabilities`, pending
+  count badge `>99 → "99+"`, hidden when not an approver). Dashboard shell
+  now renders `ApprovalsNavItem`.
+- **Pages** `dashboard/approvals` (list) + `dashboard/approvals/[id]` (review).
+  All UTC timestamps localised to `Africa/Blantyre`.
+- **Verification:** 33 new tests across 5 files (service contract, list,
+  detail, decision dialog, nav item) using `fireEvent` (user-event not
+  installed in this repo); full frontend run **244 tests pass (44 files)**,
+  `tsc --noEmit` clean on both tsconfigs, `eslint --max-warnings=0` clean.

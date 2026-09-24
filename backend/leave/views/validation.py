@@ -49,12 +49,28 @@ class LeaveValidateView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+        # Unit 17: validating an existing submitted application excludes that
+        # application from its own overlap check.
+        application_id = data.get("application_id")
+        if application_id is not None:
+            application = (
+                LeaveApplication.objects.filter(
+                    id=application_id, employee=request.user
+                ).first()
+            )
+            if application is None:
+                return Response(
+                    {"detail": "The application does not exist or does not belong to you."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         result = run_validation(
             user=request.user,
             leave_type_id=data["leave_type_id"],
             start_date_raw=data["start_date"],
             end_date_raw=data["end_date"],
             application=application,
+            exclude_application_id=application_id,
         )
         return Response(validation_payload(result))
 
