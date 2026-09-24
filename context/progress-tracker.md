@@ -803,4 +803,22 @@ Update this file after every meaningful implementation change.
   updated from `/dashboard/leave/{id}/edit` to `/applications/{id}/edit`.
   `useLeaveValidation` hook now passes `application_id` (optional) so
   overlap checks exclude the current application; test updated to
-  expect `application_id: null`.
+  expect `application_id: null`.- **Test infrastructure speedup (2026-09-24):** test runs were the bottleneck as
+  the suite grew. Added `backend/config/settings/test.py` — MD5 password hasher
+  (users are created in nearly every test), in-memory email backend, and a
+  `TEST_DB_NAME` env override for the disposable test DB so parallel work
+  sessions each run on their own DB (fixes the documented
+  `DeadlockDetected` test-DB collision). Backend command is now
+  `DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test
+  --keepdb --parallel auto` — full suite **591 tests in ~19 s** (was minutes
+  of setup + PBKDF2 per user). Hoisted read-only fixtures in `workflows/tests.py`
+  to `setUpTestData` for 5 high-count classes (WorkflowEndpoint/Admin/
+  ActivationEndpoint, DelegationModelState/Service) — 56 tests still green;
+  `ApprovalFixtureMixin` left on per-test `setUp` because it needs per-instance
+  mock patchers and several tests mutate shared approver profiles. Frontend:
+  `pool: "vmThreads"` (one jsdom per worker), `css: false`, and
+  `// @vitest-environment node` on 6 pure-logic suites (approvals-format,
+  tracking-format, tracking-service, entitlements, financial-years, leave-rules;
+  approvals-service stays jsdom — it reads `window.location.origin`); added
+  `npm run test:changed` (`vitest run --changed`). Frontend suite 97 s → 29 s,
+  245/245 green; `tsc --noEmit`, lint, backend all clean.

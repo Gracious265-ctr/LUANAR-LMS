@@ -142,9 +142,25 @@ uv run manage.py createsuperuser
 
 ### Backend
 
+Fast local run (reuses the test DB via `--keepdb`, parallelizes across cores,
+MD5 password hasher so user creation is cheap):
+
 ```bash
 cd backend
-uv run manage.py test
+DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto
+```
+
+Run one app only (e.g. while working on a single unit):
+
+```bash
+DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test workflows --keepdb
+```
+
+Parallel sessions (e.g. multiple agents/branches) must use a unique test DB
+each or they deadlock on `test_luanar_leave`:
+
+```bash
+TEST_DB_NAME=test_luanar_leave_my_branch DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto
 ```
 
 If the test runner fails with `permission denied to create database`, the
