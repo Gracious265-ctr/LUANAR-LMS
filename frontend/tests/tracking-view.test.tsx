@@ -9,6 +9,12 @@ vi.mock("@/lib/tracking/service", () => ({
   fetchTracking: vi.fn(),
 }));
 
+vi.mock("@/lib/cancellation/service", () => ({
+  fetchCancellations: vi.fn(),
+}));
+
+import { fetchCancellations } from "@/lib/cancellation/service";
+
 import approved from "@/lib/tracking/__fixtures__/approved.json";
 import cancelled from "@/lib/tracking/__fixtures__/cancelled.json";
 import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correction_required_at_stage_3.json";
@@ -59,6 +65,7 @@ const stepCount = () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchCancellations).mockResolvedValue([]);
 });
 
 describe("TrackingView · header", () => {

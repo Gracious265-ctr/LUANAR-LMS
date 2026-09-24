@@ -44,6 +44,7 @@ class ApplicationStage(models.Model):
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUESTED = "correction_requested", "Correction requested"
+        CANCELLED = "cancelled", "Cancelled"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",

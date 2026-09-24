@@ -139,10 +139,11 @@ class TrackingOwnershipTests(TrackingEndpointTests):
     def test_only_one_query_for_owner_request(self):
         # Unit 17 additive data: the endpoint now also reads the application's
         # real revisions (resubmission history) and decisions, so the fixture
-        # provider query count grows from 1 to 3. The provider itself still
-        # performs no database access.
+        # provider query count grows from 1 to 3. Unit 18 adds a live
+        # cancellation-request check (4). The provider itself still performs no
+        # database access.
         app = self.make_app()
-        with self.assertNumQueries(3):
+        with self.assertNumQueries(4):
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 

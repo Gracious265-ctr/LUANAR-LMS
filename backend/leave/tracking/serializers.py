@@ -8,6 +8,8 @@ the context key supplied by the view.
 
 from rest_framework import serializers
 
+from .contracts import _iso
+
 
 class TrackedApproverSerializer(serializers.Serializer):
     """Serializes the approver nested in a stage."""
@@ -164,11 +166,15 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "resubmission": ResubmissionInfoSerializer().to_representation(
                 workflow.resubmission
             ),
+            "cancellation_action": workflow.cancellation_action,
+            "cancellation_blocked_reason": workflow.cancellation_blocked_reason,
+            "has_open_cancellation_request": workflow.has_open_cancellation_request,
+            "latest_cancellation": workflow.latest_cancellation,
+            "cancelled_at": _iso(workflow.cancelled_at),
+            "estimated_restoration_days": (
+                str(workflow.estimated_restoration_days)
+                if workflow.estimated_restoration_days is not None
+                else None
+            ),
+            "restoration_financial_year": workflow.restoration_financial_year,
         }
-
-
-def _iso(value):
-    """Render a datetime as UTC ISO 8601 with a ``Z`` suffix (Section 1)."""
-    if not value:
-        return None
-    return value.isoformat().replace("+00:00", "Z")

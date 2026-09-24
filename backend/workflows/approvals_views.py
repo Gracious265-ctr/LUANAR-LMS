@@ -176,6 +176,14 @@ class ApprovalDecisionView(APIView):
                 expected_stage_version=payload.validated_data["stage_version"],
             )
         except NotAllowed as exc:
+            if exc.reason == "application_cancelled":
+                return Response(
+                    {
+                        "code": "application_cancelled",
+                        "detail": "This application was cancelled and can no longer be decided.",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             return Response(
                 {"detail": f"Decision not allowed ({exc.reason})."},
                 status=status.HTTP_403_FORBIDDEN,

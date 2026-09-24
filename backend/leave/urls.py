@@ -18,6 +18,14 @@ from .views.resubmission import (
     ResubmissionDocumentDetailView,
     ResubmissionDocumentReplaceView,
 )
+from .cancellations.views import (
+    CancellationEligibilityView,
+    CancelApplicationView,
+    CancellationListView,
+    CancellationApprovalsListView,
+    CancellationDetailView,
+    CancellationDecisionView,
+)
 
 app_name = "leave"
 
@@ -88,5 +96,36 @@ urlpatterns = [
         "applications/<uuid:pk>/resubmit/",
         ApplicationResubmitView.as_view(),
         name="application-resubmit",
+    ),
+    # Unit 18 - Leave Cancellation
+    path(
+        "applications/<uuid:pk>/cancellation-eligibility/",
+        CancellationEligibilityView.as_view(),
+        name="cancellation-eligibility",
+    ),
+    path(
+        "applications/<uuid:pk>/cancel/",
+        CancelApplicationView.as_view(),
+        name="cancel-application",
+    ),
+    path(
+        "applications/<uuid:pk>/cancellations/",
+        CancellationListView.as_view(),
+        name="cancellation-list",
+    ),
+    path(
+        "approvals/cancellations/",
+        CancellationApprovalsListView.as_view(),
+        name="cancellations-approvals-list",
+    ),
+    path(
+        "approvals/cancellations/<int:request_id>/",
+        CancellationDetailView.as_view(),
+        name="cancellation-detail",
+    ),
+    path(
+        "approvals/cancellations/<int:request_id>/decision/",
+        CancellationDecisionView.as_view(),
+        name="cancellation-decision",
     ),
 ]

@@ -53,9 +53,16 @@ def get_decision_authority(user, application) -> Authority:
     1. the application status is submitted/pending;
     2. ``current_stage`` is ``pending``;
     3. the current stage's assigned approver is ``user``.
-    Otherwise ``reason`` is one of ``application_closed``, ``not_current_stage``
-    or ``already_decided``.
+    Otherwise ``reason`` is one of ``application_cancelled``,
+    ``application_closed``, ``not_current_stage`` or ``already_decided``.
+    ``application_cancelled`` is distinct so the API returns 409 (section 3.8)
+    while other closures stay 403.
     """
+    if (
+        application.status == LeaveApplication.Status.CANCELLED
+        and application.cancelled_at is not None
+    ):
+        return Authority(False, "application_cancelled")
     if application.status not in DECISIONABLE_STATUSES:
         return Authority(False, "application_closed")
 

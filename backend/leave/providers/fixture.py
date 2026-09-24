@@ -8,8 +8,40 @@ submission run against its data until the HR-track models are merged. See
 from datetime import date
 from decimal import Decimal
 
+from django.db.models import Q, Sum
+
 from . import fixture_data as data
 from .base import EmployeeInfo, LeaveBalance
+
+
+def _ledger_net_used(employee_id: int, financial_year_label: str) -> Decimal:
+    """Net days deducted in ``financial_year_label`` (section 3.3).
+
+    Computed from the append-only ledger as sum(deductions) - sum(restorations)
+    for the employee and financial year. Returns 0 when no ledger rows exist,
+    which keep the legacy caller behaviour for untouched databases.
+    """
+    from leave.models import LeaveBalanceTransaction
+
+    row = (
+        LeaveBalanceTransaction.objects.filter(
+            employee_id=employee_id,
+            financial_year=financial_year_label,
+        )
+        .aggregate(
+            deducted=Sum(
+                "days",
+                filter=Q(type=LeaveBalanceTransaction.Type.DEDUCTION),
+            ),
+            restored=Sum(
+                "days",
+                filter=Q(type=LeaveBalanceTransaction.Type.RESTORATION),
+            ),
+        )
+    )
+    deducted = row["deducted"] or Decimal("0")
+    restored = row["restored"] or Decimal("0")
+    return deducted - restored
 
 
 def _entitlement_days(grade: str) -> int:
@@ -86,14 +118,18 @@ class FixtureRulesProvider:
         }
 
     def get_available_balance(self, employee_id: int, financial_year_label: str):
-        grade = self._grades.get(employee_id, "")
-        return Decimal(_entitlement_days(grade))
+        grade = self._grade_for(employee_id)
+        net_used = _ledger_net_used(employee_id, financial_year_label)
+        return Decimal(_entitlement_days(grade)) - net_used
 
     def get_leave_balance(self, employee_id: int, financial_year_label: str):
         grade = self._grade_for(employee_id)
-        entitlement = _entitlement_days(grade)
+        entitlement = Decimal(_entitlement_days(grade))
+        net_used = _ledger_net_used(employee_id, financial_year_label)
         return LeaveBalance(
-            entitlement=entitlement, used=0, available=entitlement
+            entitlement=entitlement,
+            used=net_used,
+            available=entitlement - net_used,
         )
 
     def _grade_for(self, employee_id: int) -> str:

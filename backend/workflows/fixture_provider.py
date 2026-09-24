@@ -12,12 +12,14 @@ the ``WORKFLOW_PROVIDER`` setting only (see
 ``docs/leave-rules-provider-contract.md`` for the handoff pattern).
 """
 
+from workflows.models import ApplicationStage
+
 from users.models import User
 
 from leave.providers import fixture_data as leave_fixture_data
 
 from .errors import WorkflowValidationError
-from .providers import StageDefinition, WorkflowProvider
+from .providers import StageDefinition, StageSpec, WorkflowProvider
 
 # Keyed by (category, department). A blank department matches any department;
 # each category falls back to its blank-department entry, then to
@@ -67,6 +69,36 @@ class FixtureWorkflowProvider(WorkflowProvider):
             User.objects.filter(role=role, is_active=True)
             .order_by("username")
             .first()
+        )
+
+    # Cancellation stages (Unit 18). The application's original workflow
+    # snapshot is the ``ApplicationStage`` rows written at submission (Unit 16);
+    # keeping only Supervisor/HOD roles in their original order satisfies rule
+    # 2.1.4. Reconciliation with the real Unit 6 workflow contract happens at
+    # Unit 20; the swap is the ``WORKFLOW_PROVIDER`` setting only.
+    CANCELLATION_ROLES = ("supervisor", "hod")
+
+    def get_cancellation_stages(self, application) -> list[StageSpec]:
+        snapshot = (
+            ApplicationStage.objects.filter(application=application)
+            .order_by("stage_order")
+            .values("stage_order", "role", "assigned_approver_id")
+        )
+        return [
+            StageSpec(
+                order=row["stage_order"],
+                role=row["role"],
+                approver_user_id=row["assigned_approver_id"],
+            )
+            for row in snapshot
+            if row["role"] in self.CANCELLATION_ROLES
+        ]
+
+    def get_workflow_member_user_ids(self, application) -> list[int]:
+        return list(
+            ApplicationStage.objects.filter(
+                application=application
+            ).values_list("assigned_approver_id", flat=True)
         )
 
     def _employee_scope(self, employee) -> tuple[str, str]:

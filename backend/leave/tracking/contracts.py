@@ -11,6 +11,14 @@ frontend depends only on the serialized shape, not on these classes.
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
+
+
+def _iso(value):
+    """Render a datetime as a UTC ``Z``-suffixed ISO string (or ``None``)."""
+    if not value:
+        return None
+    return value.isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -94,6 +102,8 @@ class WorkflowTracking:
     resubmission as ``{cycle, resubmitted_at}`` (newest last); ``decisions``
     are the real ``ApprovalDecision`` rows grouped by cycle. ``can_resubmit``
     is computed by the service from the real application status.
+
+    Unit 18 additions (additive): cancellation fields.
     """
 
     status: str
@@ -111,3 +121,10 @@ class WorkflowTracking:
     submission_cycle: int = 1
     resubmissions: tuple[dict, ...] = field(default_factory=tuple)
     decisions: tuple[dict, ...] = field(default_factory=tuple)
+    cancellation_action: str | None = None
+    cancellation_blocked_reason: str | None = None
+    has_open_cancellation_request: bool = False
+    latest_cancellation: dict | None = None
+    cancelled_at: datetime | None = None
+    estimated_restoration_days: Decimal | None = None
+    restoration_financial_year: str | None = None

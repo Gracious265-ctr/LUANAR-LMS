@@ -1,3 +1,11 @@
+import type {
+  CancellationAction,
+  CancellationBlockedReason,
+  CancellationRequestKind,
+  CancellationRequestStatus,
+  CancellationStage,
+} from "@/lib/cancellation/types";
+
 export type TrackingStatus =
   | "pending"
   | "approved"
@@ -122,6 +130,26 @@ export interface TrackingResponse {
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
+  cancellation_action: CancellationAction | null;
+  cancellation_blocked_reason: CancellationBlockedReason | null;
+  has_open_cancellation_request: boolean;
+  latest_cancellation: TrackingCancellationRequest | null;
+  cancelled_at: string | null;
+  estimated_restoration_days: string | null;
+  restoration_financial_year: string | null;
+}
+
+/** Open cancellation request summary in the tracking payload (Unit 18). */
+export interface TrackingCancellationRequest {
+  id: string;
+  kind: CancellationRequestKind;
+  status: CancellationRequestStatus;
+  reason: string;
+  requested_at: string | null;
+  decided_at: string | null;
+  stage_version: number;
+  current_stage_role: string | null;
+  stages: CancellationStage[];
 }
 
 export type TrackingResult =

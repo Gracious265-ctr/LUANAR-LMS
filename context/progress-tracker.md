@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
 - Unit 17 — Rejection, Correction, and Resubmission (COMPLETE — backend + frontend)
 - Unit 16 — Approver Review and Decision (COMPLETE — backend + frontend)
 - Unit 15 — Employee Application Tracking (COMPLETE)
@@ -14,15 +15,16 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 17 — Rejection, Correction, and Resubmission** is the Employee +
-  Approver track's next build: an employee whose application was rejected or
-  returned for correction reads the approver comment, edits the application
-  (including its documents), and resubmits under the **same reference number**
-  so it returns to the **same stage and approver** — where the approver sees
-  exactly what changed before deciding again. It extends the Unit 15 tracker
-  (`/applications/[id]`) with a feedback banner and the Unit 13 edit form with
-  a resubmission mode, and depends on the Unit 16 statuses, stage/decision
-  contracts, and review payload (`permissions`, `submission_cycle`, documents).
+- **Unit 18 — Leave Cancellation** is the Employee + Approver track's next
+  build: an employee can *withdraw* a pending application immediately or
+  *request cancellation* of approved leave that has not yet started, with the
+  approval chain limited to the Supervisor/HOD snapshot of the original
+  workflow — final approval restores the deducted balance to the originally
+  debited financial year (and marks it non-carry-forward-eligible). It extends
+  the Unit 15 tracker (cancel button + cancellation card) and the Unit 16
+  approvals area (`/approvals` switch + `?cancellation=` review panel), and
+  depends on Unit 16 (workflow snapshot, approver identity) and Unit 14
+  (balance ledger, financial-year representation).
 
 ## Completed (Unit 15)
 
@@ -487,6 +489,116 @@ Update this file after every meaningful implementation change.
 - **Verification:** `npm test` 207/207 green, `tsc --noEmit` clean, `npm run lint`
   clean, `npm run build` passes. Backend `uv run manage.py test` green.
 
+## Completed (Unit 18 — Leave Cancellation)
+
+- **Models** in `leave/models.py`: `CancellationRequest` (kind withdrawal /
+  approved_leave, status pending/approved/rejected, reason 10–1000 after
+  trim), per-request `CancellationApprovalStage` rows plus stage lifecycle
+  (`waiting → pending → approved/rejected`, `not_reached`, `cancelled`),
+  `EmployeeNotificationState` (pending/sent/failed/not_required) and the
+  append-only `LeaveBalanceTransaction` ledger. **Backend package**
+  `leave/cancellations/` (`services.py`, `serializers.py`, `views.py`,
+  `fixture_balance.py`, `balance.py`, `events.py`, `permissions.py`).
+- **Endpoints** (`backend/leave/urls.py:100-130`):
+  `applications/{id}/cancellation-eligibility/` (GET — the four keys from
+  `get_eligibility`: `cancellation_action`, `cancellation_blocked_reason`,
+  `estimated_restoration_days` as a float, `restoration_financial_year`),
+  `applications/{id}/cancel/` (POST `reason`/`confirm`/`expected_action` →
+  `{kind, cancellation_request}`), `applications/{id}/cancellations/` (owner
+  list, newest first), `approvals/cancellations/` (GET `?tab=pending|decided`,
+  DRF pagination), `approvals/cancellations/{id}/` (detail + `balance_impact`),
+  `.../decision/` (POST `decision`/`comment`/`stage_version`).
+- **Rules.** Withdrawal: immediate `Cancelled`, no ledger rows, stages closed,
+  audit + event after commit, notification `not_required`. Request: chain =
+  Supervisor/HOD roles only, snapshot from the original workflow
+  (`FIXTURE_WORKFLOWS` — default HOD only, academic Supervisor→HOD; no-profile
+  users get HOD chain); one open request per application. Sequential stages;
+  later-stage approver cannot act early (`not_current_approver` 403; read
+  allowed for assigned approvers). Reject requires a comment and leaves the
+  leave `Approved` with the balance untouched. Final approval restores exactly
+  the original deduction to the debited FY, sets `carry_forward_eligible=false`,
+  and is idempotent against replay/concurrent decisions. Start-date re-checked
+  at final approval (`leave_already_started` 409; reject still allowed).
+  Maternity/paternity/compassionate cancellations restore 0 days.
+- **Guards.** `confirmation_required`/`reason_too_short`/`reason_too_long`/
+  `comment_required` → 400; `not_current_approver` → 403; `application_not_found`
+  → 404; `action_changed`/`stale_stage_version`/`request_not_pending`/
+  `leave_already_started`/`not_cancellable_status`/`open_request_exists` → 409;
+  `no_cancellation_approvers` → 422. Employee identity comes only from the token.
+- **Balance integration** (`FixtureBalanceProvider.get_deduction` now uses
+  `working_days or calculated_days or 0`): cancellation restoration is the
+  inverse of the deduction and shows immediately in Unit 14 balance; ledger is
+  append-only; withdrawn apps absent from Unit 16 queues and later decisions 409.
+- **Frontend service layer** `lib/cancellation/` (`types.ts`, `service.ts`,
+  `hooks.ts`, `format.ts`, `labels.ts`): fetchers for eligibility, submit,
+  app-scoped list, approvals list/detail, decision submit; `ApiError` re-exported
+  from `lib/approvals/service`; `useCancellationEligibility`, `useCancellations`,
+  `useCancellationApprovalsList`, `useCancellationApprovalDetail`; `formatFinancialYear`,
+  `startsInLabel`.
+- **Proxy routes**: `app/api/applications/[id]/{cancellation-eligibility,cancel,cancellations}/`
+  and `app/api/approvals/cancellations/{route,[requestId]/route,[requestId]/decision/route}`
+  via the shared `proxyRequest` helper (relative-import depth per nesting level).
+- **Components** `components/cancellation/`: `CancelApplicationButton`
+  (Withdraw / Request per `cancellation_action`, muted blocked-reason),
+  `CancelApplicationDialog` (Details→Confirm two steps, live 0/1000 counter,
+  trim-then-validate, Back preserves text, double-submit guard, `action_changed`
+  → message + parent refetch, server reason/confirmation/blocked codes mapped
+  to field/inline errors), `CancellationStageStepper` (aria-label "Cancellation
+  progress"), `CancellationCard` (self-hiding, status badge — slate "Cancelled",
+  stepper, approved outcome with restored days + FY label / "No annual leave
+  balance was affected.", rejected outcome with comment, notification chip,
+  collapsible `Cancellation history (N)`), `CancellationRequestsTable`
+  (Pending / Decided by me tabs, DRF pagination, "Starts in N days"/"Started",
+  rows link to `/approvals/{appId}?cancellation={requestId}`),
+  `CancellationDecisionPanel` (reason/balance-impact/stage tracker, Approve +
+  Reject confirm dialogs, mandatory reject comment, "Leave has started; this
+  request can only be rejected." disables Approve, 409 → toast
+  "This request changed. Refreshing…" + refetch + parent refetch, 403 → read-only
+  message).
+- **Tracking integration**: `lib/tracking/types.ts` + fixtures gained
+  `cancellation_action`, `cancellation_blocked_reason`,
+  `has_open_cancellation_request`, `latest_cancellation`, `cancelled_at`,
+  `estimated_restoration_days`, `restoration_financial_year`; `TrackingHeader`
+  renders the cancel button and a "Cancellation requested" pill; `TrackingView`
+  renders `CancellationCard` after the current-status card.
+- **Approvals integration**: `approvals-hub.tsx` adds an Applications |
+  Cancellation requests switch (Unit 16 queue unchanged); `approvals/[id]`
+  reads `searchParams.cancellation` (a Promise) and `ApprovalReview` renders
+  `CancellationDecisionPanel` at the top, refetching app detail + capabilities
+  on decision.
+- **Tests** (§3.11): backend `test_cancellation.py` (53 tests) covering the
+  eligibility matrix, withdrawal, stage derivation, sequential approval, final
+  approval + restoration idempotency, guards, authorization, and
+  balance/regression; frontend new tests for the button/dialog (visibility
+  matrix, 9/10/1000/1001 validation, two-step + Back, double-submit,
+  `action_changed` + server-error mapping), the card (pending, approved with
+  and without restoration, rejected-with-comment, history, notification chips),
+  the approver panel (approve/reject flows, mandatory reject comment, started
+  warning, 409 refetch, 403 read-only) and the approvals hub switch/list.
+- **Verification:** frontend `npm test` 245/245 green, `tsc --noEmit` clean,
+  `eslint` clean (one pre-existing warning in
+  `edit-application.tsx:184` useCallback deps). Backend `uv run manage.py test`
+  590/590 green (incl. tracking query-count 3→4), `manage.py check` clean.
+  No new packages added.
+- **Code-review pass (15 findings):** FKs on `LeaveBalanceTransaction`
+  (`employee`/`leave_type`/`application`/`cancellation_request`) are now
+  `PROTECT`, not `CASCADE` (models + migration 0010); shared `_iso` moved to
+  `tracking/contracts.py`; `_approve_final` restores only an *actual* ledger
+  deduction (`get_ledger_deduction`, never the display estimate) keeping
+  `Σ deductions − Σ restorations` consistent; unused `permissions.py` classes
+  removed; `_leave_started` uses the injectable `get_today`; unknown-404 detail
+  test now exercises a real `<int:request_id>`. Frontend: dialog closes after a
+  successful submit and clears the `action_changed` "refreshing" banner when
+  fresh eligibility arrives; `CancellationCard` refetches off the tracking
+  page's `lastRefreshed` signal; panel drives `canAct`/read-only decision from
+  the backend's viewer-specific `can_act` + `my_decision` detail fields (no
+  stage-list inference) and surfaces dialog errors without `commentError`;
+  `TrackingCancellation.latest_cancellation` is typed as
+  `TrackingCancellationRequest`; test helper uses the bound-query type.
+  Skipped: serializer `max_length` on the decision comment would change the
+  `comment_required` error shape (limit already enforced for approve + reject
+  in `services.py`).
+
 ## Next Up
   Unit 15 endpoint and payload are extended additively by these per their specs;
   Unit 16's approvals API, `status` enum, and decision contracts are the
@@ -666,6 +778,19 @@ Update this file after every meaningful implementation change.
   lazy draft creation; removed `router.replace` from `ensureDraftCreated`
 - Supabase credentials configured in `.env`, bucket `leave-documents` created
 - Sidebar active state derives from `usePathname()` (both tracks agreed)
+- **Unit 18 leave cancellation complete (2026-09-24):** backend package
+  `leave/cancellations/` + endpoints (eligibility, cancel, request lists,
+  approvals list/detail/decision), Supervisor/HOD-only chain from the workflow
+  snapshot, sequential stages, mandatory reject comment, start-date re-check,
+  audited, idempotent balance restoration to the debited FY with
+  `carry_forward_eligible=false`; 53 cancellation tests, full backend suite 590.
+  Frontend: `lib/cancellation/` service layer + 6 proxy routes, cancel
+  button/dialog, cancellation card + stepper, approvals table, decision panel,
+  tracking header/view integration, approvals hub switch + `?cancellation=`
+  review panel. Verification: frontend 244/244, `tsc` and `eslint` clean;
+  backend 590/590 green. Two component fixes during testing: the decision
+  panel's read-only message was dead code after a 403 (now renders), and the
+  dialog's `action_changed` path now calls the parent refetch as documented.
 - **Unit 17 frontend complete (2026-09-23):** resubmission types/service,
   proxy handlers, edit page + orchestrator, resubmission components
   (feedback card, form, documents, confirm dialog, validation panel,

@@ -93,3 +93,126 @@ victim*, not the actual offense). Common sources of a second runner:
    ```
 4. Success = `Ran 51 tests` then `OK`. The deadlock does not indicate any
    product-code change is required.
+
+---
+
+## RTL: step-2 content of a dialog "not found" after clicking Continue
+
+### Symptom
+New Vitest tests for `CancelApplicationDialog` failed with
+`Unable to find an accessible element with the role "button" and name
+"Submit cancellation request"` — the step-2 confirm button — even though the
+reason text asserted via `await findByText(...)` was present. Vitest and the
+test itself passed debug reproductions where a `setTimeout` was added.
+
+### Root cause
+The tests clicked buttons with a raw DOM method:
+`dialog.getByRole("button", {...}).click()`. RTL's `fireEvent` (and
+`userEvent`) wrap dispatches in `act()`, so React flushes the resulting
+state update synchronously. A raw `.click()` does **not** — React 18 batches
+the update, and a *synchronous* `getByRole` immediately after it runs against
+the pre-render DOM (the step-2 button is absent). `findBy*`/`waitFor` flush
+React, which is why text-based asserts still passed; the famous
+`An update to ... was not wrapped in act(...)` warnings accompany this.
+
+This also applies to setting React-controlled input values: `setAttribute(...)`
++ `dispatchEvent(new Event("input"))` does not update a controlled component
+(React reads the value-tracker property, not the attribute); `fireEvent.change`
+does.
+
+### What to look for
+- `act(...)` warnings in test stderr followed by "not found" for content that
+  logically must be rendered.
+- Direct `.click()` on query results, or `setAttribute`+`dispatchEvent` input
+  mutation, instead of `fireEvent.click(...)` / `fireEvent.change(...)`.
+- Same flow passes with an added `await waitFor(...)`/`setTimeout`.
+
+### Fix
+Always interact through RTL events:
+```ts
+fireEvent.change(textarea, { target: { value: "reason" } });
+fireEvent.click(continueBtn);
+expect(await screen.findByRole("button", { name: "Submit ..." })).toBeInTheDocument();
+```
+
+---
+
+## React controlled inputs: SetAttribute+dispatchEvent leaves the value empty
+
+### Symptom
+Unit 18 dialog/panel tests typed into textareas via
+`textarea.setAttribute("value", x); textarea.dispatchEvent(new Event("input"))`
+and the live character counter stayed `0/1000`, the Continue button stayed
+disabled, and submitted payloads were missing the comment/reason.
+
+### Root cause
+For a React *controlled* input, the input's value lives in React state driven
+by the value tracker that React installs on the DOM node — not in the
+`value` attribute. Setting the attribute neither changes `.value` nor
+satisfies the tracker, so React's `onChange` reads the unchanged value.
+
+### What to look for
+- Tests that "work" in other frameworks or with uncontrolled inputs.
+- `toHaveValue` / counter / button-disabled assertions failing while the DOM
+  attribute visibly holds the typed text.
+
+### Fix
+Use RTL's `fireEvent.change(element, { target: { value: "..." } })` (or
+`userEvent.type`), which simulates a real user change and updates controlled
+state.
+
+---
+
+## Unit 18 decision panel: 403 read-only message was dead code
+
+### Symptom
+When `submitCancellationDecision` returned `403 not_current_approver`, the
+component set `readOnly = true` but the whole "Decision" panel disappeared,
+so the intended "You are viewing this cancellation request in read-only mode
+..." guidance never rendered. A test asserting it failed.
+
+### Root cause
+The Decision panel rendered only when `canAct || (decided && myDecision)`.
+After a 403 the request is still *pending* (`decided === false`), so both
+terms were false and nothing rendered. The read-only branch was unreachable:
+`(decided && myDecision)` implies `myDecision` is set, and the read-only
+message only shows when `myDecision` is falsy.
+
+### What to look for
+- A conditional `canAct || (decided && myDecision)` that hides its own
+  `else` (read-only/blocked) branch whenever the status is still pending.
+- A 403 handler that sets a flag but no visible state change follows.
+
+### Fix
+Include the `readOnly` flag itself in the render predicate:
+`(canAct || (decided && myDecision) || readOnly)` so the read-only message
+shows when the viewer is locked out.
+
+---
+
+## Unit 18 dialog: action_changed did not trigger the parent refetch
+
+### Symptom
+The `action_changed` handler surfaced "The application changed since you
+opened this dialog." and a "Refreshing to the latest application state…"
+banner, but the parent tracking page never re-fetched — the stale button/
+eligibility state persisted on reopen. A test asserting `onSuccess` was
+called failed.
+
+### Root cause
+`handleSubmitError`'s `action_changed` branch returned `true` without calling
+`onSuccess`, so the parent never refetched the live tracking payload even
+though the dialog claimed it was refreshing.
+
+### What to look for
+- A "refreshing to the latest state" message with no corresponding
+  refetch/`onSuccess` invocation in the same code path.
+- An error path that shows a recovery message but doesn't wire the screen
+  refresh the message promises.
+
+### Fix
+Call `onSuccess()` from the `action_changed` branch (the dialog's reset/
+refetch contract) while keeping the inline message and refreshing note so the
+employee sees why their state changed.
+
+---

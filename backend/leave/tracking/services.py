@@ -12,8 +12,21 @@ no database access, so ``assertNumQueries`` on the whole endpoint stays at one.
 
 from dataclasses import dataclass
 
-from ..models import LeaveApplication
-from .contracts import ResubmissionInfo, WorkflowTracking
+from ..cancellations.services import compute_cancellation_eligibility
+from ..models import (
+    CancellationApprovalStage,
+    CancellationRequest,
+    LeaveApplication,
+)
+from .contracts import (
+    ResubmissionInfo,
+    TrackedApprover,
+    TrackedEvent,
+    TrackedOutcome,
+    TrackedStage,
+    WorkflowTracking,
+    _iso,
+)
 from .provider import get_tracking_provider
 
 
@@ -105,6 +118,52 @@ def _merge_real_data(workflow: WorkflowTracking, application) -> WorkflowTrackin
         returns_to_stage=workflow.resubmission.returns_to_stage,
     )
 
+    # Unit 18: cancellation fields (section 3.4 eligibility is live).
+    open_cancellation = CancellationRequest.objects.filter(
+        application=application,
+        status=CancellationRequest.Status.PENDING,
+    ).first()
+
+    eligibility = compute_cancellation_eligibility(application)
+
+    latest_cancellation = None
+    if open_cancellation:
+        stages = tuple(
+            {
+                "order": stage.order,
+                "role": stage.role,
+                "role_label": stage.role_label,
+                "approver_name": (
+                    stage.approver.get_full_name() or stage.approver.username
+                    if stage.approver is not None
+                    else ""
+                ),
+                "status": stage.status,
+                "decided_at": _iso(stage.decided_at),
+                "comment": stage.comment,
+            }
+            for stage in open_cancellation.stages.select_related("approver").all()
+        )
+        latest_cancellation = {
+            "id": str(open_cancellation.id),
+            "kind": open_cancellation.kind,
+            "status": open_cancellation.status,
+            "reason": open_cancellation.reason,
+            "requested_at": _iso(open_cancellation.requested_at),
+            "decided_at": _iso(open_cancellation.decided_at),
+            "stage_version": open_cancellation.stage_version,
+            "current_stage_role": next(
+                (
+                    stage["role_label"]
+                    for stage in stages
+                    if stage["status"]
+                    == CancellationApprovalStage.Status.PENDING
+                ),
+                None,
+            ),
+            "stages": stages,
+        }
+
     return WorkflowTracking(
         status=workflow.status,
         approved_at=workflow.approved_at,
@@ -117,4 +176,11 @@ def _merge_real_data(workflow: WorkflowTracking, application) -> WorkflowTrackin
         submission_cycle=application.submission_cycle,
         resubmissions=resubmissions,
         decisions=decisions,
+        cancellation_action=eligibility["cancellation_action"],
+        cancellation_blocked_reason=eligibility["cancellation_blocked_reason"],
+        has_open_cancellation_request=open_cancellation is not None,
+        latest_cancellation=latest_cancellation,
+        cancelled_at=application.cancelled_at,
+        estimated_restoration_days=eligibility["estimated_restoration_days"],
+        restoration_financial_year=eligibility["restoration_financial_year"],
     )

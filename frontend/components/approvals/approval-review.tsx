@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
+import { CancellationDecisionPanel } from "@/components/cancellation/CancellationDecisionPanel";
 import { useCapabilities } from "@/lib/approvals/capabilities-context";
 import { decisionPastTense, formatDateTime } from "@/lib/approvals/format";
 import { useApprovalDetail } from "@/lib/approvals/hooks";
@@ -20,7 +21,13 @@ import { EmployeeInfoCard } from "./employee-info-card";
 import { LeaveHistoryCard } from "./leave-history-card";
 import { ResubmissionBadge } from "./primitives";
 
-export function ApprovalReview({ applicationId }: { applicationId: string }) {
+export function ApprovalReview({
+  applicationId,
+  cancellationRequestId,
+}: {
+  applicationId: string;
+  cancellationRequestId?: string;
+}) {
   const { state, setState, refetch } = useApprovalDetail(applicationId);
   const { refresh: refreshCapabilities } = useCapabilities();
   const [toast, setToast] = useState<string | null>(null);
@@ -84,6 +91,16 @@ export function ApprovalReview({ applicationId }: { applicationId: string }) {
         </div>
         <StatusBadge status={detail.status} />
       </header>
+
+      {cancellationRequestId && (
+        <CancellationDecisionPanel
+          requestId={cancellationRequestId}
+          onRefetch={() => {
+            refetch();
+            void refreshCapabilities();
+          }}
+        />
+      )}
 
       <div className="flex flex-col gap-6 lg:flex-row-reverse">
         <div className="space-y-6 lg:w-[340px] lg:shrink-0">

@@ -1,4 +1,4 @@
-"""Seed fixture approval data for Units 16-17 (idempotent dev/demo command).
+"""Seed fixture approval data for Units 16-18 (idempotent dev/demo command).
 
 Reuses the seeded ``@test.luanar`` users (creating per-approver-role ones when
 missing) and builds pending/rejected/correction-required/fully-approved
@@ -11,17 +11,25 @@ application demos the "requested exceeds available balance" read-only note and
 one carries a supporting document (real storage when Supabase env vars are
 present, otherwise metadata only).
 
+Unit 18 adds a cancellation block (section 3.10) with dates relative to today:
+a pending application at stage 2, approved annual leave with a seeded 5-day
+ledger deduction, approved leave starting tomorrow/today/yesterday (blocked
+cases), approved maternity leave (no balance impact), a rejected application
+(not cancellable), and one approved academic application carrying an open
+cancellation request at stage 1 of 2 (pending with the seeded Supervisor).
+
 Idempotent: an application that already carries one of the reserved reference
 numbers is left untouched; approver/employee users are found-or-created.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
 from leave.models import LeaveApplication, LeaveType, ReferenceSequence
 from leave.services.references import next_reference
@@ -102,9 +110,11 @@ class Command(BaseCommand):
 
         self._ensure_workflow_fixture_map()
         visible = {role: [] for role in approvers}
+        self.cancellation_scenarios = self._cancellation_scenarios()
+        scenarios = SCENARIOS + self.cancellation_scenarios
         with transaction.atomic():
             self._fast_forward_sequence_if_needed()
-            for slot, (key, emp_username, leave_name, start, end, advance) in enumerate(SCENARIOS):
+            for slot, (key, emp_username, leave_name, start, end, advance) in enumerate(scenarios):
                 reference = self._scenario(slot, employees[emp_username], key, leave_name, start, end, advance)
                 for role, user in approvers.items():
                     app = LeaveApplication.objects.filter(reference_number=reference).first()
@@ -191,7 +201,13 @@ class Command(BaseCommand):
 
         if key == "exceeds_available_balance":
             self._upgrade_to_allow_submit(employee)
-        app = self._submit(employee, leave_name, start, end)
+        app = self._submit(
+            employee,
+            leave_name,
+            start,
+            end,
+            attach_document=(key == "cancellation_approved_maternity"),
+        )
         # The submit service assigns the authoritative reference via
         # next_reference(); reference_number (and its sequence value) are
         # authoritative, so the read-back below is the single source of truth.
@@ -207,9 +223,100 @@ class Command(BaseCommand):
         if key == "rejected_with_replaced_document":
             self._attach_document(app, ref)
             self._replace_and_add_documents(app)
+        self._cancellation_post_step(key, app, employee)
         return ref
 
-    def _submit(self, employee, leave_name, start, end):
+    def _cancellation_scenarios(self):
+        """Unit 18 block (section 3.10): dates relative to today so they rotate.
+
+        Windows are 5-day blocks kept mutually non-overlapping (the submit
+        service rejects overlapping leave for the same employee), ordered so
+        each scenario submits against already-finalized earlier ones. Annual
+        leave needs 5 working days notice, so the tomorrow/today/yesterday demos
+        submit with a future window and are then backdated by
+        ``_cancellation_post_step`` — the start-date guard is what the demo
+        exercises.
+        """
+        today = timezone.localdate()
+
+        def starts(offset_days, width_days=4):
+            start = today + timedelta(days=offset_days)
+            return start.isoformat(), (start + timedelta(days=width_days)).isoformat()
+
+        return [
+            # Employee A — administration workflow (hod -> dean -> registrar -> dvc).
+            ("cancellation_pending_at_stage2", "employee@test.luanar", "Annual", *starts(21), "hod"),
+            ("cancellation_approved_14d", "employee@test.luanar", "Annual", *starts(14), "hod,dean,registrar,dvc"),
+            ("cancellation_approved_tomorrow", "employee@test.luanar", "Annual", *starts(8, 0), "hod,dean,registrar,dvc"),
+            ("cancellation_approved_today", "employee@test.luanar", "Annual", *starts(12, 0), "hod,dean,registrar,dvc"),
+            ("cancellation_approved_yesterday", "employee@test.luanar", "Annual", *starts(11, 0), "hod,dean,registrar,dvc"),
+            ("cancellation_approved_maternity", "employee@test.luanar", "Maternity", *starts(200), "hod,dean,registrar,dvc"),
+            ("cancellation_rejected_app", "employee@test.luanar", "Annual", *starts(33, 0), "reject@hod"),
+            # Employee B — academic workflow (supervisor -> hod -> registrar -> dvc).
+            ("cancellation_academic_10d", "academic@test.luanar", "Annual", *starts(12), "supervisor,hod,registrar,dvc"),
+        ]
+
+    def _cancellation_post_step(self, key, app, employee):
+        from leave.models import LeaveBalanceTransaction
+
+        if key == "cancellation_approved_14d":
+            self._seed_deduction(app, LeaveBalanceTransaction.Type.DEDUCTION, "5")
+        elif key == "cancellation_approved_tomorrow":
+            self._seed_deduction(app, LeaveBalanceTransaction.Type.DEDUCTION, "5")
+            self._backdate_start(app, timezone.localdate() + timedelta(days=1))
+        elif key == "cancellation_approved_today":
+            self._seed_deduction(app, LeaveBalanceTransaction.Type.DEDUCTION, "5")
+            self._backdate_start(app, timezone.localdate())
+        elif key == "cancellation_approved_yesterday":
+            self._seed_deduction(app, LeaveBalanceTransaction.Type.DEDUCTION, "5")
+            self._backdate_start(app, timezone.localdate() - timedelta(days=1))
+        elif key == "cancellation_academic_10d":
+            self._seed_deduction(app, LeaveBalanceTransaction.Type.DEDUCTION, "5")
+            self._open_cancellation_request(app, employee)
+        # Maternity and rejected scenarios intentionally add no ledger row and no
+        # open request (maternity restores 0, a rejected app is not cancellable).
+
+    def _seed_deduction(self, app, txn_type, days):
+        """Create one ledger row for an approved leave (section 3.3 fixtures)."""
+        from leave.models import LeaveBalanceTransaction
+
+        LeaveBalanceTransaction.objects.get_or_create(
+            employee=app.employee,
+            application=app,
+            leave_type_id=app.leave_type_id,
+            financial_year=FINANCIAL_YEAR_LABEL,
+            type=txn_type,
+            defaults={
+                "days": days,
+                "carry_forward_eligible": False,
+            },
+        )
+
+    def _backdate_start(self, app, target):
+        """Shift an approved application so it starts on ``target``.
+
+        The whole window moves by the same delta (single-day demos stay single
+        day), so the range never sweeps across other seeded windows.
+        """
+        delta = target - app.start_date
+        app.start_date = target
+        if app.end_date is not None:
+            app.end_date = app.end_date + delta
+        app.save(update_fields=["start_date", "end_date"])
+        app.refresh_from_db()
+
+    def _open_cancellation_request(self, app, employee):
+        from leave.cancellations.services import submit_cancellation
+
+        submit_cancellation(
+            user=employee,
+            application_id=app.id,
+            reason="Seed demo: requesting cancellation of approved leave.",
+            confirm=True,
+            expected_action="request",
+        )
+
+    def _submit(self, employee, leave_name, start, end, attach_document=False):
         leave_type_id = self._leave_type_id(leave_name)
         app = LeaveApplication.objects.create(
             employee=employee,
@@ -218,6 +325,8 @@ class Command(BaseCommand):
             end_date=date.fromisoformat(end),
             reason=f"Seed approval scenario {employee.username}",
         )
+        if attach_document:
+            self._attach_document(app, self.reserved_ref(0), metadata_only=True)
         from leave.services.submission import submit_application
 
         try:
@@ -354,11 +463,15 @@ class Command(BaseCommand):
             profile.grade = "A"
             profile.save(update_fields=["grade"])
 
-    def _attach_document(self, app, reference):
+    def _attach_document(self, app, reference, metadata_only=False):
         from leave.models import SupportingDocument
 
         file_path = f"leave-documents/{app.id}/{DOCUMENT_NAME}"
-        if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
+        if (
+            not metadata_only
+            and settings.SUPABASE_URL
+            and settings.SUPABASE_SERVICE_KEY
+        ):
             try:
                 file_path = upload_document(
                     SimpleUploadedFile(
