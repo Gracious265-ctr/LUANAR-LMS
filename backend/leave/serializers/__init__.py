@@ -270,6 +270,10 @@ class PublicHolidaySerializer(serializers.ModelSerializer):
 
 
 class SupportingDocumentSerializer(serializers.ModelSerializer):
+    replaced_by_name = serializers.CharField(
+        source="replaced_by.file_name", read_only=True, default=None
+    )
+
     class Meta:
         model = SupportingDocument
         fields = [
@@ -280,6 +284,12 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
             "file_size",
             "content_type",
             "uploaded_at",
+            "status",
+            "retired_at",
+            "retired_by",
+            "retire_reason",
+            "replaced_by",
+            "replaced_by_name",
         ]
         read_only_fields = fields
 

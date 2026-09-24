@@ -1,12 +1,6 @@
-export interface SupportingDocument {
-  id: string;
-  file_path: string;
-  file_url: string;
-  file_name: string;
-  file_size: number;
-  content_type: string;
-  uploaded_at: string;
-}
+import type { SupportingDocument } from "@/lib/documents/types";
+
+export type { SupportingDocument } from "@/lib/documents/types";
 
 export interface LeaveApplication {
   id: string;
@@ -88,39 +82,4 @@ export async function deleteLeaveApplication(id: string): Promise<void> {
     credentials: "include",
   });
   if (!res.ok) throw new Error("Failed to delete application");
-}
-
-export async function uploadDocument(
-  applicationId: string,
-  file: File
-): Promise<SupportingDocument> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/`,
-    {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-    }
-  );
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to upload" }));
-    throw new Error(error.detail || "Failed to upload document");
-  }
-  return res.json();
-}
-
-export async function deleteDocument(
-  applicationId: string,
-  documentId: string
-): Promise<void> {
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/${documentId}/`,
-    {
-      method: "DELETE",
-      credentials: "include",
-    }
-  );
-  if (!res.ok) throw new Error("Failed to delete document");
 }

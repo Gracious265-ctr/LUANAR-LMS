@@ -229,6 +229,14 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
 | GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
+| GET | `/api/v1/leave-documents/config/` | Upload-size/type policy (`max_size_bytes`, `allowed_content_types`) for the document UI |
+| GET | `/api/v1/leave-applications/{id}/documents/` | List active supporting documents (owner-only; paginated) |
+| POST | `/api/v1/leave-applications/{id}/documents/` | Upload a supporting document (draft/rejected/correction_required only; multipart `file`; 409 `document_read_only` otherwise, 400 with `field`/`code`/`message` when rejected) |
+| GET | `/api/v1/leave-applications/{id}/documents/{docId}/` | Retrieve one supporting document (owner-only) |
+| DELETE | `/api/v1/leave-applications/{id}/documents/{docId}/` | Remove a document: draft hard-deletes the file+row; post-submission retires it and keeps the bytes |
+| POST | `/api/v1/leave-applications/{id}/documents/{docId}/replace/` | Replace a document with a new file (draft hard-deletes the old file; post-submission retires `docId` and records `replaced_by`) |
+| GET | `/api/v1/leave-applications/{id}/documents/history/` | Document lifecycle snapshot: `active`, `retired` (with `retire_reason`/`replaced_by`), and `document_uploaded`/`document_removed`/`document_replaced` audit events |
+| GET | `/api/v1/leave-applications/{id}/documents/{docId}/content/` | Stream a document's bytes (owner or current approver; `?download=1` sets content-disposition; 404 for everyone else) |
 
 ## Git Workflow
 

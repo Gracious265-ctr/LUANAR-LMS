@@ -891,9 +891,11 @@ class ApprovalApiTests(ApprovalFixtureMixin, TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    @mock.patch("workflows.approvals_views.get_signed_download_url")
-    def test_download_url_for_owned_document(self, mock_url):
-        mock_url.return_value = "https://signed-url.test/note.pdf?token=abc"
+    @mock.patch("workflows.approvals_views.get_storage_backend")
+    def test_download_url_for_owned_document(self, mock_backend):
+        backend = mock.Mock()
+        backend.signed_url.return_value = "https://signed-url.test/note.pdf?token=abc"
+        mock_backend.return_value = backend
         app = self.submit()
         doc = SupportingDocument.objects.create(
             application=app,
@@ -909,7 +911,7 @@ class ApprovalApiTests(ApprovalFixtureMixin, TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["url"], "https://signed-url.test/note.pdf?token=abc")
-        mock_url.assert_called_once_with("leave-documents/x/note.pdf", expires=60)
+        backend.signed_url.assert_called_once_with("leave-documents/x/note.pdf", expires=60)
 
     def test_download_url_for_document_of_another_application_is_404(self):
         app = self.submit()
@@ -928,9 +930,13 @@ class ApprovalApiTests(ApprovalFixtureMixin, TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
-    @mock.patch("workflows.approvals_views.get_signed_download_url")
-    def test_download_url_503_when_storage_unavailable(self, mock_url):
-        mock_url.side_effect = ValueError("Supabase credentials are not configured.")
+    @mock.patch("workflows.approvals_views.get_storage_backend")
+    def test_download_url_503_when_storage_unavailable(self, mock_backend):
+        backend = mock.Mock()
+        backend.signed_url.side_effect = ValueError(
+            "Supabase credentials are not configured."
+        )
+        mock_backend.return_value = backend
         app = self.submit()
         doc = SupportingDocument.objects.create(
             application=app,

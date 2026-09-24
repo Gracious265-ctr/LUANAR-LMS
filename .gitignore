@@ -53,3 +53,6 @@ db.sqlite3
 
 # Drafts
 *.draft
+
+# Unit 19 local document storage root (LEAVE_STORAGE_ROOT default)
+/storage/

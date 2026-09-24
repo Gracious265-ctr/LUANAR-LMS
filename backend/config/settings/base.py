@@ -167,3 +167,19 @@ SUPABASE_URL = env("SUPABASE_URL", default="")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", default="")
 SUPABASE_BUCKET = env("SUPABASE_BUCKET", default="leave-documents")
 SUPABASE_SIGNED_URL_EXPIRY = env.int("SUPABASE_SIGNED_URL_EXPIRY", default=3600)
+
+# Leave document storage (Unit 19). Storage is abstracted; the dev backend
+# writes to local disk so uploads/downloads work without Supabase credentials,
+# and the production storage technology stays replaceable per architecture.md.
+LEAVE_STORAGE_BACKEND = "leave.storage.development.DevelopmentStorageBackend"
+LEAVE_STORAGE_ROOT = Path(BASE_DIR.parent, "storage")
+LEAVE_DOCUMENT_MAX_SIZE_BYTES = 10 * 1024 * 1024
+LEAVE_DOCUMENT_ALLOWED_TYPES = (
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+)

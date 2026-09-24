@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 19 — Supporting Document Lifecycle (COMPLETE — backend + frontend)
 - Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
 - Unit 17 — Rejection, Correction, and Resubmission (COMPLETE — backend + frontend)
 - Unit 16 — Approver Review and Decision (COMPLETE — backend + frontend)
@@ -15,16 +16,38 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 18 — Leave Cancellation** is the Employee + Approver track's next
-  build: an employee can *withdraw* a pending application immediately or
-  *request cancellation* of approved leave that has not yet started, with the
-  approval chain limited to the Supervisor/HOD snapshot of the original
-  workflow — final approval restores the deducted balance to the originally
-  debited financial year (and marks it non-carry-forward-eligible). It extends
-  the Unit 15 tracker (cancel button + cancellation card) and the Unit 16
-  approvals area (`/approvals` switch + `?cancellation=` review panel), and
-  depends on Unit 16 (workflow snapshot, approver identity) and Unit 14
-  (balance ledger, financial-year representation).
+- **Unit 19 — Supporting Document Lifecycle** is the document subsystem the
+  Employee + Approver tracks consume: a state-aware lifecycle (upload, view,
+  download, replace/retire, full history) with a status gate (`draft`,
+  `rejected`, `correction_required` editable; `submitted`, `pending`,
+  `approved`, `cancelled` read-only). It builds a storage-backend abstraction
+  (`LEAVE_STORAGE_BACKEND`, development filesystem + Supabase implementations),
+  a single `leave/services/documents.py` service (which Unit 17's resubmission
+  document flows delegate to), an authenticated streaming `content/` endpoint
+  replacing signed-URL downloads, a shared read-only `document-list` +
+  `document-history-timeline` UI, and audit-driven history via
+  `audit.services.record_event`. Confirmed decisions (2026-09-21): Unit 19 owns
+  the document lifecycle; storage is abstracted behind a provider-style dotted
+  path; draft-phase replace/remove physically deletes while post-submission
+  retires; no new history model (state + audit events only).
+
+  **Implementation complete (2026-09-24).** Backend: `leave/storage/` package
+  (`StorageBackend` protocol, `DevelopmentStorageBackend`, `SupabaseStorageBackend`,
+  `get_storage_backend()` factory, `LEAVE_STORAGE_BACKEND` + `LEAVE_STORAGE_ROOT`
+  settings, `LEAVE_STORAGE_BACKEND=silent` for test/supabase-no-credentials); the
+  now-authoritative `leave/services/documents.py`; lifecycle
+  `SupportingDocumentViewSet` + flat `LeaveDocumentConfigView`; status-gated
+  edit rules (409 `document_read_only`), typed 400 `{field, code, message}`
+  validation, owner/approver-404 content streaming; retire-in-place
+  replace/remove vs draft hard-delete; resubmission (Unit 17) document flows
+  delegate to the documents service; approvals streaming download via
+  `signed_url` mockable backend. Frontend: `lib/documents/` client (`types`,
+  `config`, `service`), Next proxy routes (content/replace/history/config),
+  `SupportingDocumentsUploader` editable/read-only modes with 409 banner, shared
+  `document-list` + `document-history-timeline` wired into the review summary,
+  `lib/leave-api` retyped. Verified: backend full suite 620 OK, `manage.py check`
+  clean, no pending migrations; frontend 273 tests OK, `tsc --noEmit` clean,
+  lint clean (one pre-existing warning in edit-application.tsx).
 
 ## Completed (Unit 15)
 
@@ -630,8 +653,8 @@ Update this file after every meaningful implementation change.
 - `calculate_working_days` excludes weekends only; connecting it to the Unit 5
   public-holiday / financial-year services (and the "intervention days" notion)
   is a documented TODO
-- Document storage uses Supabase with signed URLs (configurable expiry) —
-  requires `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
+- Document storage swaps to Supabase signed URLs — requires `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
 
 ## Session Notes
 
@@ -665,6 +688,7 @@ Update this file after every meaningful implementation change.
   backend `manage.py check` clean (approvals suite unchanged since its 48/48
   green run).
 - **Unit 19 spec drafted (2026-09-21):** `context/specs/19-supporting-document-lifecycle.md` — supporting documents get a full state-aware lifecycle. The four developer-approved decisions: (1) Unit 19 owns the document lifecycle (Unit 17's resubmission document flows reuse its service, not re-implement); (2) the file-storage abstraction + local-filesystem dev backend are built here — `LEAVE_STORAGE_BACKEND` dotted-path factory mirroring `get_provider()`, defaulting to `DevelopmentStorageBackend` (repo `storage/` root) so uploads/downloads work with no Supabase credentials; (3) draft-phase replace/remove keeps Unit 13 behavior (physically deletes old file+row), while post-submission replaces/removes retire and never delete (Unit 17 rule); (4) history = `SupportingDocument.status/retired_at/retired_by/retire_reason/replaced_by` + `document_uploaded`/`document_removed`/`document_replaced` AuditEvents, no new model. Download moves from stored signed URLs to one authenticated Django streaming endpoint (`content/?download=1`) opened via the Next proxy; `file_url` stays but now stores the content-URL. Depends on Units 16/17 status enum values — the edit/read-only gate is a membership check so it activates when those merge. Next; spec's §12 docs updates (architecture.md storage decision, README API table) are implementation-time.
+- **Unit 19 shipped (2026-09-24):** backend + frontend complete and all green (see Current Goal). The spec's §12 doc updates are done: `architecture.md` §5.2 (storage decision), §12.8 (byte-access + no-permanent-deletion invariants), §13 decision table rows; root `README.md` API table now lists the config/list/upload/retrieve/delete/replace/history/content endpoints.
 - **Unit 15 complete (2026-09-21):** read-only, owner-only tracking endpoint +
   `/applications/[id]` page behind a swappable fixture provider (contracts live
   in the Django-free `contracts.py`; `LEAVE_TRACKING_PROVIDER` setting drives

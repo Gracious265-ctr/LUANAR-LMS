@@ -53,11 +53,8 @@ class ResubmissionFixtureMixin(StubProviderMixin):
         self._patch_today()
         self._dates = EARLIEST_ANNUAL_START
         self._upload_patcher = mock.patch(
-            "leave.services.resubmission.upload_document",
-            return_value={
-                "path": "leave-documents/fake/uploaded.pdf",
-                "url": "https://cdn.example.test/leave-documents/fake/uploaded.pdf",
-            },
+            "leave.services.documents.get_storage_backend",
+            return_value=mock.Mock(),
         )
         self.upload_document = self._upload_patcher.start()
         self.addCleanup(self._upload_patcher.stop)

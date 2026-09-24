@@ -5,6 +5,7 @@ from .views import (
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
+    LeaveDocumentConfigView,
     LeaveRuleViewSet,
     LeaveTypeViewSet,
     PublicHolidayViewSet,
@@ -47,12 +48,20 @@ supporting_doc_list = SupportingDocumentViewSet.as_view(
 supporting_doc_detail = SupportingDocumentViewSet.as_view(
     {"get": "retrieve", "delete": "destroy"}
 )
+supporting_doc_history = SupportingDocumentViewSet.as_view({"get": "history"})
+supporting_doc_replace = SupportingDocumentViewSet.as_view({"post": "replace_document"})
+supporting_doc_content = SupportingDocumentViewSet.as_view({"get": "content"})
 
 urlpatterns = [
     path(
         "leave/validate/",
         LeaveValidateView.as_view(),
         name="leave-validate",
+    ),
+    path(
+        "leave-documents/config/",
+        LeaveDocumentConfigView.as_view(),
+        name="leave-document-config",
     ),
     path(
         "leave-applications/<uuid:pk>/submit/",
@@ -68,9 +77,24 @@ urlpatterns = [
         name="supportingdocument-list",
     ),
     path(
+        "leave-applications/<uuid:application_pk>/documents/history/",
+        supporting_doc_history,
+        name="supportingdocument-history",
+    ),
+    path(
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/",
         supporting_doc_detail,
         name="supportingdocument-detail",
+    ),
+    path(
+        "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/replace/",
+        supporting_doc_replace,
+        name="supportingdocument-replace",
+    ),
+    path(
+        "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/content/",
+        supporting_doc_content,
+        name="supportingdocument-content",
     ),
     path(
         "applications/<uuid:pk>/resubmission/",

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { createLeaveApplication } from "@/lib/leave-api";
+import { createLeaveApplication, type SupportingDocument } from "@/lib/leave-api";
 import { useAutosaveDraft } from "@/lib/hooks/useAutosaveDraft";
 import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveTypeSelect } from "./LeaveTypeSelect";
@@ -25,9 +25,7 @@ export function LeaveApplicationForm({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
-  const [documents, setDocuments] = useState<
-    { id: string; file_name: string; file_size: number; file_path: string; file_url: string; content_type: string; uploaded_at: string }[]
-  >([]);
+  const [documents, setDocuments] = useState<SupportingDocument[]>([]);
   const [initialLoaded, setInitialLoaded] = useState(
     () => !(mode === "edit" && applicationId)
   );
