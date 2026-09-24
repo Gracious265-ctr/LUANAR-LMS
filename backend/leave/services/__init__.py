@@ -73,6 +73,15 @@ def resolve_grade_entitlement(
     return max(candidates, key=lambda rule: rule.effective_from)
 
 
+def resolved_annual_entitlement(
+    grade: str | None, as_of: date | None = None
+) -> GradeEntitlement | None:
+    """Resolve a grade to its annual-days entitlement rule (or None)."""
+    if not grade:
+        return None
+    return resolve_grade_entitlement(grade, as_of)
+
+
 def normalize_leave_code(value: str) -> str | None:
     """Slugify a leave-type code; None when blank."""
     text = (value or "").strip()
@@ -120,6 +129,16 @@ def find_overlapping_financial_year(
         if date_ranges_overlap(start_date, end_date, year.start_date, year.end_date):
             return year
     return None
+
+
+def financial_year_label(year: FinancialYear) -> str:
+    """Derive the canonical short label for a financial year.
+
+    LUANAR years span calendar years (e.g. ``2026-07-01`` → ``2027-06-30``);
+    the label is the start year joined with the last two digits of the end
+    year (``2026-27``). The label is a derivation, not a stored column.
+    """
+    return f"{year.start_date.year}-{str(year.end_date.year)[-2:]}"
 
 
 def financial_year_for_date(d: date) -> FinancialYear | None:

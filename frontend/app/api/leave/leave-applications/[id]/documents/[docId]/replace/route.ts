@@ -1,4 +1,4 @@
-import { proxyRequest } from "../../../../_lib/proxy";
+import { proxyRequest } from "../../../../../_lib/proxy";
 
 export async function POST(
   request: Request,

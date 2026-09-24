@@ -11,6 +11,7 @@ from .views import (
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
+from .views.me import LeaveSummaryView
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
 app_name = "leave"
@@ -42,6 +43,11 @@ urlpatterns = [
         "leave/validate/",
         LeaveValidateView.as_view(),
         name="leave-validate",
+    ),
+    path(
+        "leave/me/summary/",
+        LeaveSummaryView.as_view(),
+        name="leave-me-summary",
     ),
     path(
         "leave-applications/<uuid:pk>/submit/",

@@ -94,15 +94,15 @@ USE_I18N = True
 USE_TZ = True
 
 # Leave validation (Unit 14). The rules provider is the single source of
-# leave-type rules, employees, financial years, public holidays and balances;
-# swap in the real HR-track provider later via this setting (see
-# docs/leave-rules-provider-contract.md for the Unit 20 handoff).
-LEAVE_RULES_PROVIDER = "leave.providers.fixture.FixtureRulesProvider"
+# leave-type rules, employees, financial years, public holidays and balances.
+# Since Unit 20 it is backed by the real HR-track tables
+# (DatabaseRulesProvider); see docs/leave-rules-provider-contract.md.
+LEAVE_RULES_PROVIDER = "leave.providers.database.DatabaseRulesProvider"
 LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
 
 # Leave application tracking (Unit 15). The tracking provider supplies the
 # read-only workflow payload; the fixture provider is replaced by the real
-# workflow-backed provider in Unit 20 (see docs/leave-rules-provider-contract.md).
+# workflow-backed provider in Unit 21 (see docs/leave-rules-provider-contract.md).
 LEAVE_TRACKING_PROVIDER = "leave.tracking.fixture_provider.FixtureTrackingProvider"
 
 # Approver workflow (Unit 16). The workflow provider resolves the stage chain
@@ -111,8 +111,7 @@ WORKFLOW_PROVIDER = "workflows.providers.FixtureWorkflowProvider"
 
 # Leave cancellation balance (Unit 18). The balance provider answers how many
 # annual days an approved application deducted and records the restoration when
-# a cancellation is finally approved. The ledger-backed fixture implementation
-# is swapped for the real HR-track provider at Unit 20.
+# a cancellation is finally approved.
 LEAVE_BALANCE_PROVIDER = (
     "leave.cancellations.providers.LedgerBalanceProvider"
 )

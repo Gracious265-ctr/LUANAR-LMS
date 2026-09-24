@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Calendar, Clock, FileText, ShieldCheck } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
+import { getLeaveSummary } from "@/lib/leave-summary";
 
 const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -13,6 +14,10 @@ export default async function DashboardPage() {
   }
 
   const showApprovals = APPROVER_ROLES.includes(user.role);
+  const summary = await getLeaveSummary();
+  const balance = summary?.available_balance ?? null;
+  const fiscalPeriod = summary?.financial_year?.label;
+  const profile = summary?.profile;
 
   return (
     <div className="space-y-6">
@@ -21,14 +26,25 @@ export default async function DashboardPage() {
         <p className="text-text-secondary">
           Welcome back, {user.full_name}
         </p>
+        {profile && (
+          <p className="text-sm text-text-muted mt-1">
+            {[profile.grade && `Grade ${profile.grade}`, profile.department]
+              .filter(Boolean)
+              .join(" · ") || "No employee record on file."}
+          </p>
+        )}
       </div>
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Available Balance"
-          value="21"
-          subtitle="days remaining"
+          value={balance ?? "—"}
+          subtitle={
+            profile && fiscalPeriod
+              ? `${fiscalPeriod} · days remaining`
+              : "no financial year set"
+          }
           icon={<Calendar className="w-5 h-5" />}
           variant="primary"
         />

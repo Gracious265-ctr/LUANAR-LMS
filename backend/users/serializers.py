@@ -60,6 +60,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "department",
             "faculty",
             "category",
+            "gender",
             "grade",
             "appointment_date",
             "is_active",
@@ -151,6 +152,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "department": instance.department,
             "faculty": instance.faculty,
             "category": instance.category,
+            "gender": instance.gender,
             "grade": instance.grade,
             "appointment_date": instance.appointment_date,
         }

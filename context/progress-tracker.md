@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 20 — HR-to-Employee Data Integration (COMPLETE)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE)
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
 - Unit 15 — Employee Application Tracking (COMPLETE)
@@ -99,6 +100,51 @@ Update this file after every meaningful implementation change.
   statuses plus the correction path staying editable with Replace. Full run:
   **49 files / 296 tests green**, `tsc --noEmit -p tsconfig.test.json`, and
   `npm run lint` clean.
+
+## Completed (Unit 20)
+
+- **Spec.** `context/specs/20-hr-to-employee-data-integration.md` — decisions
+  D1–D10. Boundary (D2): rules provider only; tracking + workflow provider
+  swaps stay Unit 21. Schema (D3): add only `EmployeeProfile.gender` +
+  `LeaveRule.eligibility_rules` (JSON list of `{"type","params"}`; free-text
+  `eligibility` stays the human description). No FY/holiday seed (D5) — Unit 5
+  forbids invented LUANAR dates; HR configures via the existing UI.
+- **Schema.** `users.EmployeeProfile.Gender` (`M`/`F` TextChoices) + `gender`
+  CharField (`users/0004_employeeprofile_gender`); `leave.LeaveRule.
+  eligibility_rules` JSONField (`leave/0011_leaverule_eligibility_rules`).
+  Serializers: `EmployeeSerializer` + `LeaveRuleSerializer` gain the fields
+  in audit snapshots. Services: `financial_year_label(year)` and
+  `resolved_annual_entitlement(grade, as_of=None)` in `leave/services/`.
+- **Provider.** `leave/providers/database.py::DatabaseRulesProvider` now the
+  `LEAVE_RULES_PROVIDER` (`config/settings/base.py`). Implements all five
+  protocol methods against the HR tables: `get_employee_for_user` (blank
+  grade/appointment → `None`, `department_id=None`), `get_leave_type_rules`
+  (via `resolve_leave_rule`; units derived by code, working-days for `annual`
+  else calendar-days; `eligibility` from JSON; not-yet-effective rule →
+  `None`), `get_financial_year_for` (label derived D6), `get_public_holidays`
+  (range only), `get_available_balance` (entitlement + `LeaveBalanceTransaction`
+  restorations − deductions for the FY, clamped ≥ 0).
+- **Seeds.** `seed_dev_users` gains `gender` on the 7 profiles and per-type
+  `eligibility_rules`/`min_notice_days`/`requires_supporting_document`
+  (LeaveRule now `update_or_create` so previously-seeded DBs pick up the new
+  fields idempotently); annual keeps a 5-working-day notice. `seed_approvals_dev`
+  already raised `CommandError` when no active FY (spec D5) — no change.
+- **Employee summary endpoint.** `GET /api/v1/leave/me/summary/`
+  (`leave/views/me.py::LeaveSummaryView`, IsAuthenticated) →
+  `{profile, entitlement, financial_year, available_balance}`; every value
+  degrades to `None` when HR config is missing so the dashboard renders an
+  honest empty state.
+- **Tests.** `leave/tests/test_database_provider.py` — 19 tests across all 5
+  provider methods (units, eligibility parsing, FY label/containment, holiday
+  range, ledger-net balance scoped to FY + clamped, profile/grade/appointment
+  missing) and the summary endpoint (401, no-profile degradation, full HR
+  record). Full backend suite **623 tests OK**, `manage.py check` clean.
+- **Frontend.** `lib/leave-summary.ts` (`LeaveSummary` types +
+  `getLeaveSummary()` via `apiClient`); `app/(dashboard)/dashboard/page.tsx`
+  now shows the live Available Balance (plus FY label, and a grade ·
+  department record line) instead of the hard-coded `"21"`. Frontend suite
+  unchanged at 296 tests; dashboard has no existing test asserting the
+  placeholder.
 
 ## Completed (Unit 15)
 
@@ -542,6 +588,20 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
 
 ## Session Notes
 
+- **Unit 20 complete (2026-09-24):** HR-to-Employee Data Integration landed.
+  The default `LEAVE_RULES_PROVIDER` is now `DatabaseRulesProvider`; the
+  dashboard's hard-coded `"21"` balance is replaced by the live summary
+  endpoint. Two gotchas worth flagging: (1) the DB-backed `get_employee_for_user`
+  treats a blank grade or missing `appointment_date` as "no employee" (matches
+  the precondition `EMPLOYEE_PROFILE_MISSING`), and `department_id` stays
+  `None` because `EmployeeProfile.department` is free text; (2) `seed_dev_users`
+  LeaveRule seeding switched from `get_or_create` to `update_or_create` so
+  databases seeded before Unit 20 pick up `gender`/`eligibility_rules`
+  idempotently on re-run. Swapping the settings caused zero existing-test
+  regressions (validation/pipeline suites inject `StubRulesProvider`; tracking
+  fixtures bypass the provider entirely). Next build: **Unit 21 — Workflow-to-
+  Approver Integration** (swap `LEAVE_TRACKING_PROVIDER` + `WORKFLOW_PROVIDER`
+  to real workflow-backed implementations on the fixture spine).
 - **Unit 18 complete (2026-09-24):** Leave Cancellation landed on the Unit 15/16
   spine. Decisions worth flagging: employee UI (eligibility + card) drives off a
   purpose-built `cancellation-eligibility` endpoint rather than deriving from the

@@ -69,6 +69,15 @@ class LeaveRule(models.Model):
     )
     max_duration_days = models.PositiveIntegerField()
     eligibility = models.TextField(blank=True)
+    eligibility_rules = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Machine-readable eligibility rules for the validation engine, each "
+            "``{'type': ..., 'params': {...}}``. ``eligibility`` above stays the "
+            "human-readable description."
+        ),
+    )
     min_notice_days = models.PositiveIntegerField(default=0)
     requires_supporting_document = models.BooleanField(default=False)
     consumes_annual_entitlement = models.BooleanField(default=False)

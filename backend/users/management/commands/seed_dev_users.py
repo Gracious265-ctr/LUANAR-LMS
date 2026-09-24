@@ -22,6 +22,7 @@ USERS = [
             "department": "Administration",
             "designation": "Administrative Officer",
             "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.FEMALE,
             "grade": "B",
             "appointment_date": date(2022, 3, 15),
         },
@@ -36,6 +37,7 @@ USERS = [
             "department": "Bunda College",
             "designation": "Lecturer",
             "category": EmployeeProfile.Category.ACADEMIC,
+            "gender": EmployeeProfile.Gender.MALE,
             "grade": "E",
             "appointment_date": date(2018, 9, 1),
         },
@@ -50,6 +52,7 @@ USERS = [
             "department": "Bunda College",
             "designation": "Head of Department",
             "category": EmployeeProfile.Category.ACADEMIC,
+            "gender": EmployeeProfile.Gender.MALE,
             "grade": "G",
             "appointment_date": date(2015, 1, 10),
         },
@@ -64,6 +67,7 @@ USERS = [
             "department": "Faculty of Agriculture",
             "designation": "Dean",
             "category": EmployeeProfile.Category.ACADEMIC,
+            "gender": EmployeeProfile.Gender.MALE,
             "grade": "H",
             "appointment_date": date(2012, 6, 1),
         },
@@ -78,6 +82,7 @@ USERS = [
             "department": "Central Administration",
             "designation": "University Registrar",
             "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.FEMALE,
             "grade": "H",
             "appointment_date": date(2010, 8, 15),
         },
@@ -92,6 +97,7 @@ USERS = [
             "department": "Central Administration",
             "designation": "Deputy Vice-Chancellor",
             "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.FEMALE,
             "grade": "H",
             "appointment_date": date(2008, 4, 1),
         },
@@ -106,6 +112,7 @@ USERS = [
             "department": "Human Resources",
             "designation": "HR Manager",
             "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.MALE,
             "grade": "E",
             "appointment_date": date(2019, 2, 1),
         },
@@ -198,17 +205,25 @@ class Command(BaseCommand):
                 "code": "annual",
                 "name": "Annual leave",
                 "max_duration_days": 30,
+                "min_notice_days": 5,
                 "consumes_annual_entitlement": True,
             },
             {
                 "code": "maternity",
                 "name": "Maternity leave",
                 "max_duration_days": 90,
+                "requires_supporting_document": True,
+                "eligibility_rules": [
+                    {"type": "gender", "params": {"allowed": ["F"]}},
+                ],
             },
             {
                 "code": "paternity",
                 "name": "Paternity leave",
                 "max_duration_days": 10,
+                "eligibility_rules": [
+                    {"type": "gender", "params": {"allowed": ["M"]}},
+                ],
             },
             {
                 "code": "compassionate",
@@ -224,11 +239,16 @@ class Command(BaseCommand):
                 code=item["code"],
                 defaults={"name": item["name"]},
             )
-            _, created = LeaveRule.objects.get_or_create(
+            _, created = LeaveRule.objects.update_or_create(
                 leave_type=leave_type,
                 effective_from=effective_from,
                 defaults={
                     "max_duration_days": item["max_duration_days"],
+                    "min_notice_days": item.get("min_notice_days", 0),
+                    "requires_supporting_document": item.get(
+                        "requires_supporting_document", False
+                    ),
+                    "eligibility_rules": item.get("eligibility_rules", []),
                     "consumes_annual_entitlement": item.get(
                         "consumes_annual_entitlement", False
                     ),

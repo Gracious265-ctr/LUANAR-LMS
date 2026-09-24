@@ -32,6 +32,10 @@ class EmployeeProfile(models.Model):
         ACADEMIC = "academic", "Academic"
         ADMINISTRATION = "administration", "Administration"
 
+    class Gender(models.TextChoices):
+        MALE = "M", "Male"
+        FEMALE = "F", "Female"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -48,6 +52,13 @@ class EmployeeProfile(models.Model):
         max_length=20,
         choices=Category.choices,
         default=Category.ACADEMIC,
+    )
+    gender = models.CharField(
+        max_length=1,
+        choices=Gender.choices,
+        blank=True,
+        default="",
+        help_text="Used by the eligibility engine (gender-based leave rules).",
     )
     grade = models.CharField(max_length=20, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
