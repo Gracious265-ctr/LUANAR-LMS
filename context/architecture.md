@@ -369,6 +369,41 @@ Supervisor → HOD → Registrar → DVC
 
 Different employee categories may use different configured workflows.
 
+### 7.1 Rules provider
+
+All leave validation, submission-time checks, reference generation and read
+balances flow through the `RulesProvider` protocol
+(`backend/leave/providers/base.py`), instantiated from the
+`LEAVE_RULES_PROVIDER` dotted-path setting. Since Unit 20 the default is
+`DatabaseRulesProvider` (`backend/leave/providers/database.py`), which serves
+real HR-track rows — `EmployeeProfile` (grade, category, appointment date,
+gender), `GradeEntitlement` bands, effective-dated `LeaveRule`s,
+`FinancialYear` and the leave-day ledger (`LeaveBalanceTransaction`). The
+placeholder `FixtureRulesProvider` remains the reference for tests.
+`StubRulesProvider` (`backend/leave/tests/stubs.py`) is the deterministic
+provider injected into isolated unit tests.
+
+Eligibility is enforced from structured `LeaveRule.eligibility_rules`
+(vocabulary: `gender` / `min_service` / `grade_range` / `employee_category`)
+in addition to the human-readable free-text `eligibility` field that is for
+display. `EmployeeProfile.gender` (`M`/`F`) carries the gender value the
+gender eligibility rule checks.
+
+### 7.2 Employee-facing read endpoints
+
+HR-only viewsets expose entitlements, leave types, rules, financial years and
+holidays. Two authenticated-only (non-HR) endpoints back the employee
+dashboard rather than duplicating that admin surface:
+
+- `GET /api/v1/leave/my/overview/` — profile, annual
+  entitlement/used/available for the current financial year, financial-year
+  label, pending-application count, upcoming-leave count and next leave start
+  date. Balance fields are `null` when no profile or financial year exists.
+- `GET /api/v1/leave/my/leave-types/` — leave types that currently have an
+  effective rule, with rule hints (max duration, supporting-document
+  requirement, min notice, eligibility), so the application form never offers
+  a type the backend would reject.
+
 ---
 
 ## 8. Background Processing

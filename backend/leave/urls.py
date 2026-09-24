@@ -12,6 +12,7 @@ from .views import (
     SupportingDocumentViewSet,
 )
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
+from .views.my_leave import MyLeaveOverviewView, MyLeaveTypesView
 from .views.resubmission import (
     ApplicationResubmissionView,
     ApplicationResubmitView,
@@ -53,6 +54,16 @@ supporting_doc_replace = SupportingDocumentViewSet.as_view({"post": "replace_doc
 supporting_doc_content = SupportingDocumentViewSet.as_view({"get": "content"})
 
 urlpatterns = [
+    path(
+        "leave/my/overview/",
+        MyLeaveOverviewView.as_view(),
+        name="leave-my-overview",
+    ),
+    path(
+        "leave/my/leave-types/",
+        MyLeaveTypesView.as_view(),
+        name="leave-my-leave-types",
+    ),
     path(
         "leave/validate/",
         LeaveValidateView.as_view(),

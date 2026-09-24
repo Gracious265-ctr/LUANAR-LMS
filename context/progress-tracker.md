@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 20 — HR-to-Employee Data Integration (COMPLETE — backend + frontend)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE — backend + frontend)
 - Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
 - Unit 17 — Rejection, Correction, and Resubmission (COMPLETE — backend + frontend)
@@ -16,38 +17,36 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 19 — Supporting Document Lifecycle** is the document subsystem the
-  Employee + Approver tracks consume: a state-aware lifecycle (upload, view,
-  download, replace/retire, full history) with a status gate (`draft`,
-  `rejected`, `correction_required` editable; `submitted`, `pending`,
-  `approved`, `cancelled` read-only). It builds a storage-backend abstraction
-  (`LEAVE_STORAGE_BACKEND`, development filesystem + Supabase implementations),
-  a single `leave/services/documents.py` service (which Unit 17's resubmission
-  document flows delegate to), an authenticated streaming `content/` endpoint
-  replacing signed-URL downloads, a shared read-only `document-list` +
-  `document-history-timeline` UI, and audit-driven history via
-  `audit.services.record_event`. Confirmed decisions (2026-09-21): Unit 19 owns
-  the document lifecycle; storage is abstracted behind a provider-style dotted
-  path; draft-phase replace/remove physically deletes while post-submission
-  retires; no new history model (state + audit events only).
+- **Unit 20 — HR-to-Employee Data Integration** replaces the placeholder
+  fixture rules provider with a real database-backed provider so the employee
+  experience reflects the actual HR-track record: HR creates an employee →
+  assigns grade/department/category → the system resolves entitlement and
+  balance → the employee sees their correct profile, entitlement and balance
+  on the dashboard.
 
-  **Implementation complete (2026-09-24).** Backend: `leave/storage/` package
-  (`StorageBackend` protocol, `DevelopmentStorageBackend`, `SupabaseStorageBackend`,
-  `get_storage_backend()` factory, `LEAVE_STORAGE_BACKEND` + `LEAVE_STORAGE_ROOT`
-  settings, `LEAVE_STORAGE_BACKEND=silent` for test/supabase-no-credentials); the
-  now-authoritative `leave/services/documents.py`; lifecycle
-  `SupportingDocumentViewSet` + flat `LeaveDocumentConfigView`; status-gated
-  edit rules (409 `document_read_only`), typed 400 `{field, code, message}`
-  validation, owner/approver-404 content streaming; retire-in-place
-  replace/remove vs draft hard-delete; resubmission (Unit 17) document flows
-  delegate to the documents service; approvals streaming download via
-  `signed_url` mockable backend. Frontend: `lib/documents/` client (`types`,
-  `config`, `service`), Next proxy routes (content/replace/history/config),
-  `SupportingDocumentsUploader` editable/read-only modes with 409 banner, shared
-  `document-list` + `document-history-timeline` wired into the review summary,
-  `lib/leave-api` retyped. Verified: backend full suite 620 OK, `manage.py check`
-  clean, no pending migrations; frontend 273 tests OK, `tsc --noEmit` clean,
-  lint clean (one pre-existing warning in edit-application.tsx).
+  **Implementation complete (2026-09-24).** Backend: `DatabaseRulesProvider`
+  (`leave/providers/database.py`) implements the full `RulesProvider` contract
+  over `EmployeeProfile`, `GradeEntitlement`, effective-dated `LeaveRule`,
+  `FinancialYear` and the ledger; `LEAVE_RULES_PROVIDER` now points at it.
+  Structured `LeaveRule.eligibility_rules` (D7 vocabulary — gender /
+  min_service / grade_range / employee_category) + `EmployeeProfile.gender`
+  (`M`/`F`) carry what the eligibility validator enforces (free-text
+  `eligibility` remains display-only). New authenticated-only (non-HR)
+  endpoints `GET /api/v1/leave/my/overview/` and
+  `GET /api/v1/leave/my/leave-types/` back the dashboard. Seed commands
+  (`seed_dev_users`, `seed_approvals_dev`) share idempotent defaults via
+  `leave/defaults.py` (entitlement bands A–C 21 / D–G 24 / H–U 30, built-in
+  leave types with rules + eligibility, financial year covering today) and
+  now run against the real provider. Frontend: `lib/leave-overview.ts` +
+  `/api/leave/my/overview` + `/api/leave/leave-types` Next proxies,
+  `lib/services/leaveTypes.ts` real fetch (replaces the Unit-4 mock), and the
+  dashboard now shows the real employee record (grade, designation,
+  department, category, gender, appointment date, financial year,
+  entitlement/used/available) instead of hard-coded stat cards, with the
+  "Awaiting My Approval" card fed by the real `approvals/capabilities` count.
+  Verified: backend full suite 643 OK (serial + `--parallel auto`),
+  `makemigrations --check` clean; frontend 277 tests OK, `tsc --noEmit`
+  clean, `eslint` clean, `npm run build` clean.
 
 ## Completed (Unit 15)
 
@@ -622,11 +621,62 @@ Update this file after every meaningful implementation change.
   `comment_required` error shape (limit already enforced for approve + reject
   in `services.py`).
 
+## Completed (Unit 20)
+
+- **Backend — rules provider swap.** `DatabaseRulesProvider`
+  (`leave/providers/database.py`) implements the full Unit 20 contract
+  (`backend/docs/leave-rules-provider-contract.md`): `get_employee_for_user`,
+  `get_leave_balance`, `get_financial_year_for`, `get_today`,
+  `get_leave_type_rules` (effective-dated, with structured eligibility),
+  `get_available_balance` and `get_public_holidays`. Durability notes:
+  `max_duration_unit="calendar_days"`, `min_notice_unit="working_days"`
+  (`LeaveRule` stores units silently), `LeaveType` has no active flag so
+  `is_active=True` always, `EmployeeInfo.department_id=None` (department is
+  free text), FY label `f"{start.year}-{end.year % 100:02d}"`, ledger net used
+  = `Σ deductions − Σ restorations`. Provider wired via
+  `config/settings/base.py` `LEAVE_RULES_PROVIDER`.
+- **Models/schema.** `LeaveRule.eligibility_rules` JSONField (migration
+  0011) holding the D7 vocabulary so the validator can materialize
+  `EligibilityRule`s; `EmployeeProfile.gender` TextChoices `M`/`F` (users
+  migration 0003); `LeaveRuleSerializer.validate_eligibility_rules` enforces
+  the D7 shapes.
+- **Endpoints.** `MyLeaveOverviewView` + `MyLeaveTypesView`
+  (`leave/views/my_leave.py`, registered in `leave/urls.py`), both
+  `IsAuthenticated` only — profile + balance + counts for the overview, and
+  only leave types with an effective rule for the form.
+- **Seeds via `leave/defaults.py`.** Shared idempotent
+  `ensure_default_entitlements` / `ensure_default_leave_types_and_rules` /
+  `ensure_default_financial_year` used by `seed_dev_users` and
+  `seed_approvals_dev`. Business impact of the swap on seed tests: the
+  approvals dev seed now runs real validation, so it ensures its own config
+  (grades, entitlements, leave types+rules, financial year, employee gender
+  for the maternity scenario) and drops the fixture-data lookup in
+  `_leave_type_id`; `StubProviderMixin.use_stub` now also patches
+  `workflows.approvals_serializers.get_provider` so approval review payloads
+  stay deterministic under the injected stub.
+- **Frontend.** `lib/leave-overview.ts` (typed overview + `formatIsoDate`),
+  `/api/leave/my/overview` + `/api/leave/leave-types` Next proxy routes,
+  `lib/services/leaveTypes.ts` real fetch mapping snake_case → camelCase
+  (replaces the Unit-4 mock; consumers use only `id`+`name`), dashboard
+  rewritten to render the real employee record and balances (removed the fake
+  `"21"` available-balance and zero counts) with the approver card fed by the
+  existing `approvals/capabilities` payload.
+- **Tests.** `leave/tests/test_database_rules_provider.py` (contract suite
+  incl. ledger, eligibility, FY, holidays, effective-dated rules),
+  `leave/tests/test_my_leave_views.py`, `leave/tests/test_leave_rule_serializer.py`,
+  `frontend/tests/leave-types-service.test.ts`,
+  `frontend/tests/leave-overview.test.ts`. Full backend suite 643 OK (serial +
+  `--parallel auto`); frontend 277 OK, tsc/eslint/build clean.
+
 ## Next Up
-  Unit 15 endpoint and payload are extended additively by these per their specs;
-  Unit 16's approvals API, `status` enum, and decision contracts are the
-  consumption boundary for both. The Unit 19 document-lifecycle spec is drafted
-  (see Session Notes) and depends on the Unit 16/17 status enum values used here.
+
+  Unit 21 — Workflow-to-Approver Integration: connect HR workflow
+  configuration to real submitted applications (resolve the applicable
+  workflow, route to the correct responsible approver, sequential progression,
+  mandatory stages, department/faculty routing, delegated approvers and
+  reassigned applications). Removes hard-coded development workflows; verify
+  against the existing approvals API (Unit 16) and assignment policy. Depends
+  on HR Units 6–9 and Employee/Approver Units 14–17.
 
 ## Open Questions
 

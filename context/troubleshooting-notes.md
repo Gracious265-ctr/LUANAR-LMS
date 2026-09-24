@@ -216,3 +216,52 @@ refetch contract) while keeping the inline message and refreshing note so the
 employee sees why their state changed.
 
 ---
+
+## Unit 20 provider swap: workflows seed/approval tests failed against the real provider
+
+### Symptom
+After flipping `LEAVE_RULES_PROVIDER` to `DatabaseRulesProvider`:
+1. `workflows.tests_approvals.SeedApprovalsDevTests.test_seed_command_runs_idempotently`
+   — ERROR `ValidationFailedError: 1 validation error(s)` raised from
+   `submit_application` inside `seed_approvals_dev`.
+2. `workflows.tests_seed_cancellations.SeedCancellationsTest.setUpClass` —
+   ERROR, same root cause.
+3. `workflows.tests_approvals.ApprovalApiTests.test_detail_renders_full_review_payload`
+   — FAIL: expected entitlement/used/available 24/0/24, got 0/0/0.
+
+### Root cause
+The approvals dev seed had always run against the placeholder fixture
+provider, which short-circuited validation; the real provider validates
+against real rows that don't exist in a bare test DB (no `FinancialYear`, no
+`LeaveRule`s, no `GradeEntitlement`s — so balance resolves to 0) and it
+enforces gender eligibility (the maternity scenario needed a female employee).
+Two independent traps:
+- **Import-site patching:** `StubProviderMixin.use_stub()` patches
+  `leave.providers.get_provider`, but `workflows.approvals_serializers`
+  does `from leave.providers import get_provider` at import time, so its
+  `_balance()` kept calling the *real* provider for the review payload while
+  validation used the stub.
+- **Fixture-id coupling:** `seed_approvals_dev._leave_type_id` resolved leave
+  types through `fixture_data.LEAVE_TYPES` ids (1–4), which no longer map to
+  real rows.
+
+### What to look for
+- `Functions/binaries` approval payloads that changed when the default
+  provider swapped — check the import site of `get_provider` vs where the test
+  patches it (patch the consumer module, e.g.
+  `workflows.approvals_serializers.get_provider`, not just `leave.providers`).
+- Seed commands that create applications without first ensuring the
+  validation-time HR config (financial year, leave types + effective rules,
+  entitlements, employee gender) exists in the target DB.
+
+### Fix
+- Added shared idempotent defaults `leave/defaults.py`
+  (`ensure_default_entitlements`, `ensure_default_leave_types_and_rules`,
+  `ensure_default_financial_year`), called by both `seed_dev_users` and
+  `seed_approvals_dev`; the approvals seed now also sets employee/approver
+  gender and resolves leave types from the DB by name (no fixture ids).
+- Added `workflows.approvals_serializers.get_provider` to
+  `StubProviderMixin.use_stub()` so approvals (which use the injected stub)
+  render stub-consistent balances.
+
+---

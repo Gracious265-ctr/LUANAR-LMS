@@ -1,12 +1,14 @@
 # `RulesProvider` contract (Unit 20 handoff)
 
 Validators, submission and reference generation depend on
-`leave.providers.base.RulesProvider` (a `Protocol`). The current implementation,
-`FixtureRulesProvider` (`leave/providers/fixture.py`), returns **placeholder
-data only** and must be replaced by a provider backed by the HR-track models
-from Units 2–5. The swap is one new class plus one settings change
-(`LEAVE_RULES_PROVIDER`); nothing else in `leave/` imports the real models
-(decision D1).
+`leave.providers.base.RulesProvider` (a `Protocol`). **Unit 20 implements the
+contract** with `DatabaseRulesProvider` (`leave/providers/database.py`),
+backed by the HR-track models from Units 2–5. It is wired in via
+`LEAVE_RULES_PROVIDER` in `config/settings/base.py`. `FixtureRulesProvider`
+(`leave/providers/fixture.py`) remains as the reference/placeholder
+implementation used by heritage tests; `StubRulesProvider`
+(`leave/tests/stubs.py`) remains the injectable, deterministic provider for
+isolated unit tests.
 
 `get_provider()` in `leave/providers/__init__.py` instantiates the class
 pointed to by the `LEAVE_RULES_PROVIDER` setting (a dotted path).

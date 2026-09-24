@@ -137,11 +137,67 @@ class LeaveRuleSerializer(serializers.ModelSerializer):
             "leave_type_name",
             "max_duration_days",
             "eligibility",
+            "eligibility_rules",
             "min_notice_days",
             "requires_supporting_document",
             "consumes_annual_entitlement",
             "effective_from",
         ]
+
+    ELIGIBILITY_RULE_TYPES = ("gender", "min_service", "grade_range", "employee_category")
+
+    def validate_eligibility_rules(self, value: list) -> list:
+        if not isinstance(value, list):
+            raise serializers.ValidationError(
+                "Eligibility rules must be a list."
+            )
+        for index, item in enumerate(value):
+            self._validate_eligibility_rule(index, item)
+        return value
+
+    def _validate_eligibility_rule(self, index: int, item) -> None:
+        if not isinstance(item, dict):
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}] must be an object."
+            )
+        rule_type = item.get("type")
+        params = item.get("params") or {}
+        if rule_type not in self.ELIGIBILITY_RULE_TYPES:
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}] uses unknown rule type {rule_type!r}."
+            )
+        if not isinstance(params, dict):
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}].params must be an object."
+            )
+
+        if rule_type == "gender":
+            allowed = params.get("allowed") or []
+            if (not isinstance(allowed, list) or not allowed
+                    or any(v not in ("M", "F") for v in allowed)):
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.allowed with M/F values."
+                )
+        elif rule_type == "min_service":
+            months = params.get("months")
+            if not isinstance(months, int) or months < 1:
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.months >= 1."
+                )
+        elif rule_type == "grade_range":
+            min_grade, max_grade = params.get("min"), params.get("max")
+            if not min_grade or not max_grade or min_grade > max_grade:
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.min <= params.max."
+                )
+        elif rule_type == "employee_category":
+            allowed = params.get("allowed") or []
+            if (not isinstance(allowed, list) or not allowed
+                    or any(v not in ("academic", "administration") for v in allowed)):
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.allowed with "
+                    "category values."
+                )
 
     def validate_max_duration_days(self, value: int) -> int:
         if value is None or value < 1:

@@ -212,6 +212,7 @@ class StubProviderMixin:
             mock.patch("leave.validation.pipeline.get_provider", return_value=stub),
             mock.patch("leave.validation.pipeline.get_today", return_value=today),
             mock.patch("leave.providers.get_provider", return_value=stub),
+            mock.patch("workflows.approvals_serializers.get_provider", return_value=stub),
         ]
         for patcher in patchers:
             patcher.start()

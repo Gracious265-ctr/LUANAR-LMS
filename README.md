@@ -237,6 +237,8 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/leave-applications/{id}/documents/{docId}/replace/` | Replace a document with a new file (draft hard-deletes the old file; post-submission retires `docId` and records `replaced_by`) |
 | GET | `/api/v1/leave-applications/{id}/documents/history/` | Document lifecycle snapshot: `active`, `retired` (with `retire_reason`/`replaced_by`), and `document_uploaded`/`document_removed`/`document_replaced` audit events |
 | GET | `/api/v1/leave-applications/{id}/documents/{docId}/content/` | Stream a document's bytes (owner or current approver; `?download=1` sets content-disposition; 404 for everyone else) |
+| GET | `/api/v1/leave/my/overview/` | Employee dashboard payload: HR profile (grade, designation, department, category, gender, appointment date), annual entitlement/used/available for the current financial year, pending/upcoming leave counts and next leave start (authenticated; balance fields `null` when unset) |
+| GET | `/api/v1/leave/my/leave-types/` | Leave types with an effective rule the signed-in user may apply for, with rule hints (max duration, document requirement, min notice, eligibility; authenticated) |
 
 ## Git Workflow
 

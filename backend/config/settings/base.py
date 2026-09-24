@@ -95,9 +95,9 @@ USE_TZ = True
 
 # Leave validation (Unit 14). The rules provider is the single source of
 # leave-type rules, employees, financial years, public holidays and balances;
-# swap in the real HR-track provider later via this setting (see
-# docs/leave-rules-provider-contract.md for the Unit 20 handoff).
-LEAVE_RULES_PROVIDER = "leave.providers.fixture.FixtureRulesProvider"
+# the database provider backs it with the real HR-track models (Unit 20, see
+# docs/leave-rules-provider-contract.md).
+LEAVE_RULES_PROVIDER = "leave.providers.database.DatabaseRulesProvider"
 LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
 
 # Leave application tracking (Unit 15). The tracking provider supplies the
