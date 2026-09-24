@@ -226,6 +226,10 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver` and records history (HR-only) |
 | GET | `/api/v1/reassignments/` | Reassignment history, paginated newest first; `application=<uuid>` filter (HR-only) |
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
+| GET | `/api/v1/audit-entries/` | Append-only administrative audit log, newest first; filters `action` (dotted code), `target_type` (content-type model), `target_id`, `actor` (HR-only) |
+| GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
+| GET | `/api/v1/finalized-leave/` | Organization-wide submitted leave applications, newest `submitted_at` first; `?employee=` search; detail includes documents, reassignment history, and the application audit timeline (HR-only) |
+| GET | `/api/v1/finalized-leave/{id}/` | One finalized application with history roll-up; 404 for drafts (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
 | GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
@@ -276,7 +280,7 @@ luanar-lms/
 │   ├── workflows/     # Approval workflow configuration (workflows, stages)
 │   ├── notifications/ # Notifications domain (stub)
 │   ├── documents/     # Documents domain (stub)
-│   └── audit/         # Audit domain (stub)
+│   └── audit/         # Audit domain (append-only AuditEvent log + HR finalized-leave/audit views)
 ├── storage/           # File storage (TBD)
 └── context/           # Project documentation
 ```

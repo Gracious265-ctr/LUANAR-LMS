@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.db import transaction
 from rest_framework import serializers
+
+from audit.serializers import AuditedModelSerializer
 
 from .models import EmployeeProfile
 
@@ -27,8 +30,10 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
-class EmployeeSerializer(serializers.ModelSerializer):
+class EmployeeSerializer(AuditedModelSerializer):
     """HR-facing serializer for employee records and their linked account."""
+
+    audit_prefix = "employee"
 
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email")
@@ -81,44 +86,64 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
         return value
 
+    def _audit_snapshot(self, instance: EmployeeProfile) -> dict:
+        user = instance.user
+        return {
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "is_active": user.is_active,
+            "designation": instance.designation,
+            "department": instance.department,
+            "category": instance.category,
+            "grade": instance.grade,
+            "appointment_date": instance.appointment_date,
+        }
+
     def create(self, validated_data: dict) -> EmployeeProfile:
         user_data = validated_data.pop("user", {})
         email = user_data["email"]
 
-        user = User.objects.filter(
-            Q(email__iexact=email) | Q(username__iexact=email)
-        ).first()
+        with transaction.atomic():
+            user = User.objects.filter(
+                Q(email__iexact=email) | Q(username__iexact=email)
+            ).first()
 
-        if user is None:
-            user = User(
-                username=email,
-                email=email,
-                first_name=user_data.get("first_name", ""),
-                last_name=user_data.get("last_name", ""),
-                role=User.Role.EMPLOYEE,
-                is_active=user_data.get("is_active", True),
-            )
-            user.set_unusable_password()
-            user.save()
+            if user is None:
+                user = User(
+                    username=email,
+                    email=email,
+                    first_name=user_data.get("first_name", ""),
+                    last_name=user_data.get("last_name", ""),
+                    role=User.Role.EMPLOYEE,
+                    is_active=user_data.get("is_active", True),
+                )
+                user.set_unusable_password()
+                user.save()
 
-        return EmployeeProfile.objects.create(user=user, **validated_data)
+            instance = EmployeeProfile.objects.create(user=user, **validated_data)
+            self._audit_after_create(instance)
+        return instance
 
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
         user_data = validated_data.pop("user", {})
         user = instance.user
+        before = self._audit_snapshot(instance)
 
-        if "email" in user_data:
-            user.email = user_data["email"]
-            user.username = user_data["email"]
+        with transaction.atomic():
+            if "email" in user_data:
+                user.email = user_data["email"]
+                user.username = user_data["email"]
 
-        for field in ("first_name", "last_name", "is_active"):
-            if field in user_data:
-                setattr(user, field, user_data[field])
+            for field in ("first_name", "last_name", "is_active"):
+                if field in user_data:
+                    setattr(user, field, user_data[field])
 
-        user.save()
+            user.save()
 
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
 
+            self._audit_after_update(instance, before)
         return instance

@@ -12,6 +12,7 @@ Update this file after every meaningful implementation change.
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
+- Unit 11 — HR Finalized Leave and Audit View (COMPLETE — backend + frontend, ported onto `development`)
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
 - Unit 9 — HR Emergency Reassignment (COMPLETE)
 
@@ -47,6 +48,41 @@ Update this file after every meaningful implementation change.
   Verified: backend full suite 643 OK (serial + `--parallel auto`),
   `makemigrations --check` clean; frontend 277 tests OK, `tsc --noEmit`
   clean, `eslint` clean, `npm run build` clean.
+
+## Completed (Unit 11)
+
+- **HR Finalized Leave and Audit View — ported onto `development` (`feature/unit-11`),
+  2026-09-24.** Ports hr-track's Unit 11 **without** importing its proprietary
+  `AuditEntry`/`record_audit`: `audit.AuditEvent` + `record_event` (Units 14–19)
+  stay the single append-only writer. Widened
+  `AuditEvent.object_id` UUIDField → `CharField(100)` (+ index `audit_target_idx`
+  on `(content_type, object_id)`, migration `audit/0002`) to cover HR
+  configuration targets with integer pks. Added `record_config_change`
+  (packages `summary`/`reason`/`before`/`after` diff into metadata),
+  `current_actor`, `events_for_target`. New read-only HR endpoints
+  `GET /api/v1/audit-entries/` (filters `action`/`target_type`/`target_id`/
+  `actor`) and `GET /api/v1/finalized-leave/` (SUBMITTED apps, `-submitted_at`,
+  `?employee=`, detail roll-up = documents + reassignments + audit timeline) in
+  `audit` app. Wired explicit, exactly-once, in-transaction audit hooks into
+  `EmployeeSerializer` (`employee.created/updated`), leave config serializers
+  (`grade_entitlement`/`leave_type`/`leave_rule`/`financial_year`/
+  `public_holiday`), `WorkflowSerializer` (audit after `_replace_stages`),
+  delegation services (`delegation.approved/rejected/cancelled`),
+  `reassign_application` (`application.reassigned`), and
+  `LeaveDocumentTemplateView.patch` (`document_template.updated`).
+  `AuditedModelSerializer` base + custom create/update callers normalized to
+  avoid double-audits (FY/workflow). Frontend: `lib/audit.ts` (dotted-code
+  `ACTION_LABELS`, content-type `TARGET_TYPE_LABELS`, 4 server-safe fetchers),
+  `components/hr/` (`audit-meta`, `audit-entries-table`, `finalized-leave-table`,
+  `application-history-view`, `edit-action-link`), pages
+  `dashboard/hr-admin/audit` + `audit/applications/[id]`, sidebar "Audit" item
+  (`History`) + HR index card. **Key decisions:** no second audit model; no
+  double-audits of existing trail events; HR read is SUBMITTED-only (drafts
+  404); admin mutations stay outside the audited API path; dotted action codes.
+  Verified: backend full suite 669 OK + `check` + `makemigrations --check`
+  clean; frontend 286 tests OK, `tsc --noEmit` clean, `eslint` clean,
+  `npm run build` clean (both audit routes). Dev DB migrated (`audit/0002`);
+  stray `hr-*@audit.test` diagnostics removed.
 
 ## Completed (Unit 15)
 

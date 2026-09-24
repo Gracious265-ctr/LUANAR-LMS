@@ -1,6 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
+from audit.serializers import AuditedModelSerializer
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
@@ -36,8 +37,18 @@ class WorkflowStageSerializer(serializers.ModelSerializer):
         return value
 
 
-class WorkflowSerializer(serializers.ModelSerializer):
+class WorkflowSerializer(AuditedModelSerializer):
     """HR-facing serializer for approval workflows and their ordered stages."""
+
+    audit_prefix = "workflow"
+    audit_fields = [
+        "name",
+        "employee_category",
+        "department",
+        "effective_from",
+        "is_active",
+        "state",
+    ]
 
     stages = WorkflowStageSerializer(many=True)
     state = serializers.CharField(read_only=True)
@@ -54,6 +65,14 @@ class WorkflowSerializer(serializers.ModelSerializer):
             "state",
             "stages",
         ]
+
+    def _audit_snapshot(self, instance: Workflow) -> dict:
+        data = {field: getattr(instance, field) for field in self.audit_fields}
+        data["stages"] = [
+            stage.approver_role
+            for stage in instance.stages.order_by("order").all()
+        ]
+        return data
 
     def _value(self, attrs: dict, field: str):
         if field in attrs:
@@ -131,13 +150,18 @@ class WorkflowSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             workflow = Workflow.objects.create(**validated_data)
             self._replace_stages(workflow, stages)
+            self._audit_after_create(workflow)
         return workflow
 
     def update(self, instance, validated_data: dict) -> Workflow:
         stages = validated_data.pop("stages", [])
+        before = self._audit_snapshot(instance)
         with transaction.atomic():
-            instance = super().update(instance, validated_data)
+            instance = super(AuditedModelSerializer, self).update(
+                instance, validated_data
+            )
             self._replace_stages(instance, stages)
+            self._audit_after_update(instance, before)
         return instance
 
     def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:

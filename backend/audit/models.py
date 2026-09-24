@@ -27,7 +27,7 @@ class AuditEvent(models.Model):
         blank=True,
         related_name="+",
     )
-    object_id = models.UUIDField(null=True, blank=True)
+    object_id = models.CharField(max_length=100, null=True, blank=True)
     content_object = GenericForeignKey("content_type", "object_id")
 
     prev_state = models.CharField(max_length=50, blank=True, default="")
@@ -37,6 +37,9 @@ class AuditEvent(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["content_type", "object_id"], name="audit_target_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"AuditEvent({self.action} -> {self.new_state or '—'})"
