@@ -7,6 +7,9 @@ from .approval_views import (
     ApprovalDocumentDownloadView,
     ApprovalListAPIView,
     ApprovalsCapabilitiesView,
+    CancellationDecisionAPIView,
+    CancellationDetailAPIView,
+    CancellationListAPIView,
 )
 from .views import DelegationViewSet, ReassignmentViewSet, WorkflowViewSet
 
@@ -20,6 +23,21 @@ router.register("reassignments", ReassignmentViewSet, basename="reassignment")
 urlpatterns = [
     path("", include(router.urls)),
     path("approvals/capabilities/", ApprovalsCapabilitiesView.as_view()),
+    path(
+        "approvals/cancellations/",
+        CancellationListAPIView.as_view(),
+        name="cancellations-list",
+    ),
+    path(
+        "approvals/cancellations/<str:request_id>/",
+        CancellationDetailAPIView.as_view(),
+        name="cancellations-detail",
+    ),
+    path(
+        "approvals/cancellations/<str:request_id>/decision/",
+        CancellationDecisionAPIView.as_view(),
+        name="cancellations-decision",
+    ),
     path("approvals/", ApprovalListAPIView.as_view()),
     path("approvals/<str:pk>/", ApprovalDetailAPIView.as_view()),
     path("approvals/<str:pk>/decision/", ApprovalDecisionAPIView.as_view()),

@@ -23,7 +23,7 @@ function useDebounced(value: string, delay = 300): string {
   return debounced;
 }
 
-export function ApprovalsList() {
+export function ApprovalsList({ headerless = false }: { headerless?: boolean }) {
   const [tab, setTab] = useState<ApprovalTab>("pending");
   const [qInput, setQInput] = useState("");
   const q = useDebounced(qInput);
@@ -74,13 +74,15 @@ export function ApprovalsList() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Approvals</h1>
-        <p className="text-sm text-text-secondary">
-          Applications waiting for your decision.
-        </p>
-      </div>
+    <div className={cn("space-y-6", !headerless && "mx-auto max-w-5xl")}>
+      {!headerless && (
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Approvals</h1>
+          <p className="text-sm text-text-secondary">
+            Applications waiting for your decision.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div

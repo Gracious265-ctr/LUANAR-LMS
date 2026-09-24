@@ -4,6 +4,7 @@ import { ArrowLeft, Check, CheckCircle2, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { CancellationDetailPanel } from "@/components/cancellations/cancellation-detail-panel";
 import { approvalVerb } from "@/lib/approvals/labels";
 import { fetchApproval } from "@/lib/approvals/service";
 import type {
@@ -23,7 +24,13 @@ import { EmployeeInfoCard } from "./employee-info-card";
 import { LeaveHistoryCard } from "./leave-history-card";
 import { Panel } from "./panel";
 
-export function ApprovalDetail({ id }: { id: string }) {
+export function ApprovalDetail({
+  id,
+  cancellationRequestId,
+}: {
+  id: string;
+  cancellationRequestId?: string;
+}) {
   const [data, setData] = useState<ApprovalReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -146,6 +153,13 @@ export function ApprovalDetail({ id }: { id: string }) {
       </div>
 
       <h1 className="text-2xl font-bold text-text-primary">{app.reference}</h1>
+
+      {cancellationRequestId && (
+        <CancellationDetailPanel
+          requestId={cancellationRequestId}
+          onApplicationChanged={retry}
+        />
+      )}
 
       <div className="relative grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

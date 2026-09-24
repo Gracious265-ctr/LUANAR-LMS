@@ -312,6 +312,28 @@ describe("TrackingView · activity timeline", () => {
   });
 });
 
+describe("TrackingView · cancellation fields", () => {
+  it("shows the open-cancellation pill when a request is awaiting approval", async () => {
+    const data = clone(fixtures.approved);
+    data.has_open_cancellation_request = true;
+    mockOk(data);
+    renderView("app-open-cancellation");
+
+    await screen.findByText("Approved");
+    expect(screen.getByText("Cancellation requested")).toBeInTheDocument();
+  });
+
+  it("shows the cancelled-on line when the leave was cancelled", async () => {
+    const data = clone(fixtures.cancelled);
+    data.cancelled_at = "2026-10-16T08:00:00Z";
+    mockOk(data);
+    renderView("app-cancelled-2");
+
+    await screen.findByText("Cancelled");
+    expect(screen.getByText(textContent("Cancelled on 16 Oct 2026, 10:00"))).toBeInTheDocument();
+  });
+});
+
 describe("TrackingView · page states", () => {
   it("shows the loading skeleton while the request is in flight", () => {
     vi.mocked(fetchTracking).mockReturnValue(

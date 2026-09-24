@@ -48,6 +48,7 @@ urlpatterns = [
         name="leave-application-submit",
     ),
     path("", include("leave.tracking.urls")),
+    path("", include("leave.cancellations.urls")),
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
     path(

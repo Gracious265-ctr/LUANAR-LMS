@@ -25,6 +25,15 @@ class AuditEntry(models.Model):
         DOCUMENT_ADDED = "document_added", "Document added"
         DOCUMENT_REPLACED = "document_replaced", "Document replaced"
         DOCUMENT_REMOVED = "document_removed", "Document removed"
+        CANCELLATION_REQUESTED = "cancellation_requested", "Cancellation requested"
+        CANCELLATION_WITHDRAWN = "cancellation_withdrawn", "Application withdrawn"
+        CANCELLATION_STAGE_APPROVED = (
+            "cancellation_stage_approved",
+            "Cancellation stage approved",
+        )
+        CANCELLATION_APPROVED = "cancellation_approved", "Cancellation approved"
+        CANCELLATION_REJECTED = "cancellation_rejected", "Cancellation rejected"
+        BALANCE_RESTORED = "balance_restored", "Leave balance restored"
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""
@@ -41,6 +50,8 @@ class AuditEntry(models.Model):
         DELEGATION = "delegation", "Delegation"
         REASSIGNMENT = "reassignment", "Reassignment"
         DOCUMENT_TEMPLATE = "document-template", "Document template"
+        CANCELLATION = "cancellation", "Cancellation request"
+        BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

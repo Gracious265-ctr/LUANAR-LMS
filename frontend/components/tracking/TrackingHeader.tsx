@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
@@ -54,6 +54,12 @@ export function TrackingHeader({
           {application.reference_number}
         </h1>
         <StatusBadge status={status} />
+        {data.has_open_cancellation_request && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            Cancellation requested
+          </span>
+        )}
       </div>
 
       <div className="space-y-1 text-sm">
@@ -69,6 +75,12 @@ export function TrackingHeader({
             {formatDateTime(application.submitted_at)}
           </time>
         </p>
+        {data.cancelled_at && (
+          <p className="text-status-cancelled">
+            Cancelled on{" "}
+            <time dateTime={data.cancelled_at}>{formatDateTime(data.cancelled_at)}</time>
+          </p>
+        )}
       </div>
     </div>
   );

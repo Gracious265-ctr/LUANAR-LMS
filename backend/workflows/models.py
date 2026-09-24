@@ -273,6 +273,10 @@ class ApplicationStage(models.Model):
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUESTED = "correction_requested", "Correction requested"
         SUPERSEDED = "superseded", "Superseded by resubmission"
+        # A pending stage closed by an employee withdrawing their application
+        # (Unit 18). The application leaves the approver queues and any decision
+        # on it returns 409.
+        CANCELLED = "cancelled", "Cancelled"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",

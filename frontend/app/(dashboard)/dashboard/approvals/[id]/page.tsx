@@ -6,9 +6,20 @@ export const metadata = {
 
 export default async function ApprovalDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ cancellation?: string | string[] }>;
 }) {
   const { id } = await params;
-  return <ApprovalDetail id={id} />;
+  const { cancellation } = await searchParams;
+  const cancellationRequestId = Array.isArray(cancellation)
+    ? cancellation[0]
+    : cancellation;
+  return (
+    <ApprovalDetail
+      id={id}
+      cancellationRequestId={cancellationRequestId ?? undefined}
+    />
+  );
 }

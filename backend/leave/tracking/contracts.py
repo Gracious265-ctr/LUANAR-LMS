@@ -102,3 +102,10 @@ class WorkflowTracking:
             count=0, last_resubmitted_at=None, can_resubmit=False
         )
     )
+    # Unit 18 additions: cancellation state appended to the same payload so
+    # existing consumers keep working unchanged.
+    cancelled_at: datetime | None = None
+    cancellation_action: str | None = None
+    cancellation_blocked_reason: str | None = None
+    has_open_cancellation_request: bool = False
+    latest_cancellation: dict | None = None

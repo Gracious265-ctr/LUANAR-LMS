@@ -677,6 +677,11 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         if app is None:
             raise ApprovalNotFoundError()
 
+        if app.status == LeaveApplication.Status.CANCELLED:
+            # Unit 18: a withdrawn or cancelled application can never be decided
+            # again; surface as a conflict so clients can refresh.
+            raise ApprovalStageChangedError()
+
         if app.current_stage_id is None:
             raise ApprovalNotAllowedError("application_closed")
 

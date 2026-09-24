@@ -138,6 +138,12 @@ class LeaveApplication(models.Model):
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUIRED = "correction_required", "Correction required"
+        CANCELLED = "cancelled", "Cancelled"
+
+    # The set of statuses where the employee can no longer submit/edit (Unit 17).
+    # Unit 18 adds ``CANCELLED``: a withdrawn or cancelled application is terminal.
+    SUBMITTED_STATUSES = (Status.SUBMITTED,)
+    APPROVED_STATUSES = (Status.APPROVED,)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     employee = models.ForeignKey(
@@ -177,6 +183,11 @@ class LeaveApplication(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
+
+    # Set when the application reaches the terminal ``CANCELLED`` state (Unit 18):
+    # either the employee withdrew a pending application or an approved-leave
+    # cancellation was finally approved. Null for every other status.
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     # Resubmission cycle counter. Starts at 1; increments on every resubmission.
     # All workflow stages and approval decisions for one submission carry this
@@ -363,3 +374,8 @@ class ReferenceSequence(models.Model):
 
     def __str__(self) -> str:
         return f"RefSeq({self.financial_year_label}: {self.last_value})"
+
+
+# Unit 18 models live in ``leave/cancellations/models.py`` (same app label). This
+# import registers them with the app so ``makemigrations`` sees the new tables.
+from .cancellations import models as _cancellations_models  # noqa: E402, F401  # isort: skip

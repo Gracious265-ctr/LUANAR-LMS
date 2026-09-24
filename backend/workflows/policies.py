@@ -65,7 +65,13 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     The user must be the assigned approver of at least one stage (of the live
     submission cycle) that is not ``waiting`` — i.e. the application must have
     reached them, or they must already have decided on it.
+
+    Unit 18: a Supervisor or HOD assigned to a cancellation stage may also read
+    the approved application's review payload, even though the application is
+    no longer ``submitted``. The ``stage`` of such a ``ViewAccess`` is ``None``.
     """
+    from leave.cancellations.models import CancellationApprovalStage
+
     stage = (
         application.stages.filter(
             assigned_approver=user,
@@ -74,9 +80,26 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         .exclude(status=ApplicationStage.Status.WAITING)
         .first()
     )
-    if stage is None:
-        return None
-    return ViewAccess(stage.stage_order, stage.role, stage.role_label, stage)
+    if stage is not None:
+        return ViewAccess(stage.stage_order, stage.role, stage.role_label, stage)
+
+    cancellation_stage = (
+        CancellationApprovalStage.objects.filter(
+            request__application=application,
+            approver=user,
+        )
+        .exclude(status=CancellationApprovalStage.Status.NOT_REACHED)
+        .order_by("order")
+        .first()
+    )
+    if cancellation_stage is not None:
+        return ViewAccess(
+            cancellation_stage.order,
+            cancellation_stage.role,
+            cancellation_stage.role_label,
+            None,
+        )
+    return None
 
 
 def get_leave_history_scope(

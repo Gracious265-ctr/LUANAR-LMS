@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
+import { CancellationSection } from "@/components/cancellations/cancellation-section";
 import { fetchTracking } from "@/lib/tracking/service";
 import type { TrackingResult } from "@/lib/tracking/types";
 
@@ -88,6 +89,14 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   const showAttention =
     Boolean(data.rejection) || Boolean(data.correction);
 
+  // Only mount the cancellation surface when the tracking payload carries the
+  // Unit 18 fields (older fixtures without them must not trigger extra calls).
+  const hasCancellationFields =
+    data.cancellation_action !== undefined ||
+    data.cancellation_blocked_reason !== undefined ||
+    data.has_open_cancellation_request === true ||
+    data.latest_cancellation !== undefined;
+
   return (
     <div className="space-y-6">
       <TrackingHeader
@@ -96,6 +105,14 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
         refreshing={refreshing}
         lastRefreshed={lastRefreshed}
       />
+
+      {hasCancellationFields && (
+        <CancellationSection
+          applicationId={applicationId}
+          application={data.application}
+          onApplicationChanged={() => load("refresh")}
+        />
+      )}
 
       <CurrentStatusCard data={data} />
 

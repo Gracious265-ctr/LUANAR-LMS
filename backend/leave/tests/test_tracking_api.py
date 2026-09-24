@@ -8,7 +8,8 @@ Ownership and gating:
 - draft         -> 409 ``application_not_submitted``
 - unknown id    -> 404
 - non-GET       -> 405
-- exactly one query for the whole request (fixture provider does no DB access)
+- exactly two queries for the whole request (one for the application, one for
+  the latest cancellation request; the fixture provider does no DB access)
 """
 
 from django.contrib.auth import get_user_model
@@ -137,7 +138,7 @@ class TrackingOwnershipTests(TrackingEndpointTests):
 
     def test_only_one_query_for_owner_request(self):
         app = self.make_app()
-        with self.assertNumQueries(1):
+        with self.assertNumQueries(2):
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 

@@ -109,6 +109,14 @@ LEAVE_TRACKING_PROVIDER = "leave.tracking.fixture_provider.FixtureTrackingProvid
 # for an application; swap in the real HR-track provider via this setting.
 WORKFLOW_PROVIDER = "workflows.providers.FixtureWorkflowProvider"
 
+# Leave cancellation balance (Unit 18). The balance provider answers how many
+# annual days an approved application deducted and records the restoration when
+# a cancellation is finally approved. The ledger-backed fixture implementation
+# is swapped for the real HR-track provider at Unit 20.
+LEAVE_BALANCE_PROVIDER = (
+    "leave.cancellations.providers.LedgerBalanceProvider"
+)
+
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

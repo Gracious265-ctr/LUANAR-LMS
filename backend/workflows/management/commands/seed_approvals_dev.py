@@ -47,7 +47,9 @@ class Command(BaseCommand):
         SeedUsersCommand().handle()
 
         fy = active_financial_year()
-        fy_label = fy.label if fy else None
+        fy_label = (
+            f"{fy.start_date.year}-{str(fy.end_date.year)[-2:]}" if fy else None
+        )
         if not fy_label:
             raise CommandError("No active financial year configured.")
 
@@ -62,14 +64,15 @@ class Command(BaseCommand):
                     f"Approvals already seeded (references {prefix}*) — keeping."
                 )
             )
-            return
-
-        self._seed_applications(fy_label, prefix)
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"Done. Created approvals with references {prefix}*."
+        else:
+            self._seed_applications(fy_label, prefix)
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Done. Created approvals with references {prefix}*."
+                )
             )
-        )
+
+        self._seed_cancellations(fy_label)
 
     def _ensure_second_employee(self):
         """An academic outside the Dean's faculty (review-scope boundary)."""
@@ -140,7 +143,7 @@ class Command(BaseCommand):
             )
 
         # Pending at the supervisor.
-        pending_supervisor = act(submit(app(employee, 1, "Annual")))
+        pending_supervisor = submit(app(employee, 1, "Annual"))
         # Pending at the hod.
         pending_hod = act(submit(app(employee, 2, "Annual")), supervisor, "approve")
         # Pending at the registrar.
@@ -175,3 +178,136 @@ class Command(BaseCommand):
             count += 1
             if count >= 6 + (seq % 2):  # stagger scenarios a little
                 return candidate
+
+    def _seed_cancellations(self, fy_label: str):
+        """Unit 18 cancellation scenarios (references LV-<FY>-810NNN).
+
+        Creates approved applications that actually flowed through the real
+        workflow, then opens/rejects/approves cancellation requests so the
+        supervisor queue and decided tab have realistic items. Idempotent on
+        the 810 prefix.
+        """
+        from leave.cancellations.models import CancellationRequest
+        from leave.cancellations.providers import get_today
+        from leave.cancellations.services import (
+            DECISION_APPROVE,
+            DECISION_REJECT,
+            decide_cancellation,
+            submit_cancellation,
+        )
+        from workflows.services import decide
+
+        prefix = f"LV-{fy_label}-810"
+        if CancellationRequest.objects.filter(
+            application__reference_number__startswith=prefix
+        ).exists():
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Cancellations already seeded (references {prefix}*) — keeping."
+                )
+            )
+            return
+
+        employee = User.objects.get(
+            username="employee@test.luanar", role=User.Role.EMPLOYEE
+        )
+        supervisor = User.objects.get(username="supervisor@test.luanar")
+        hod = User.objects.get(username="hod@test.luanar")
+        registrar = User.objects.get(username="registrar@test.luanar")
+        dvc = User.objects.get(username="dvc@test.luanar")
+
+        today = get_today()
+        base_start = today + timedelta(days=21)
+        while base_start.weekday() >= 5:
+            base_start += timedelta(days=1)
+
+        def approved(seq: int):
+            start = base_start + timedelta(days=(seq - 1) * 14)
+            application = LeaveApplication.objects.create(
+                employee=employee,
+                leave_type_id=1,
+                start_date=start,
+                end_date=start + timedelta(days=6),
+                reason=f"Cancellation scenario {seq} (seeded)",
+                reference_number=f"{prefix}{seq:03d}",
+            )
+            submitted = submit_application(
+                user=employee, application_id=application.pk
+            )
+            for actor in (supervisor, hod, registrar, dvc):
+                stage = submitted.current_stage
+                submitted = decide(
+                    application_id=submitted.pk,
+                    actor=actor,
+                    action="approve",
+                    comment="",
+                    expected_version=stage.decision_version,
+                )
+            return submitted
+
+        def request_for(seq: int, reason: str):
+            return submit_cancellation(
+                user=employee,
+                application_id=approved(seq).pk,
+                reason=reason,
+                confirm=True,
+                expected_action="request",
+                today=today,
+            )
+
+        # Pending at the supervisor (first cancellation approver).
+        request_for(
+            1,
+            "A departmental retreat prevents me taking the approved leave as planned.",
+        )
+
+        # Pending at the HOD (supervisor already approved).
+        hod_request = request_for(
+            2, "An audit deadline now conflicts with the approved leave dates."
+        )
+        decide_cancellation(
+            user=supervisor,
+            request_id=hod_request.pk,
+            decision=DECISION_APPROVE,
+            comment="",
+            stage_version=1,
+            today=today,
+        )
+
+        # Fully cancelled: approved through both stages, balance restored.
+        cancelled_request = request_for(
+            3, "The project I was heading was postponed until next year."
+        )
+        decide_cancellation(
+            user=supervisor,
+            request_id=cancelled_request.pk,
+            decision=DECISION_APPROVE,
+            comment="",
+            stage_version=1,
+            today=today,
+        )
+        decide_cancellation(
+            user=hod,
+            request_id=cancelled_request.pk,
+            decision=DECISION_APPROVE,
+            comment="Leave recovery approved.",
+            stage_version=2,
+            today=today,
+        )
+
+        # Rejected: the leave stays approved but appears in the decided tab.
+        rejected_request = request_for(
+            4, "I have been asked to travel for an overseas workshop."
+        )
+        decide_cancellation(
+            user=supervisor,
+            request_id=rejected_request.pk,
+            decision=DECISION_REJECT,
+            comment="Coverage cannot be spared over this period.",
+            stage_version=1,
+            today=today,
+        )
+
+        self.stdout.write(
+            self.style.SUCCESS(f"Done. Seeded cancellations with references {prefix}*.")
+        )

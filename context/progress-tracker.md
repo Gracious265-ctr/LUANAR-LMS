@@ -7,6 +7,7 @@ Update this file after every meaningful implementation change.
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 16 — Approver Review and Decision (COMPLETE)
+- Unit 18 — Leave Cancellation (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
@@ -23,6 +24,10 @@ Update this file after every meaningful implementation change.
   and stage/decision contract; Unit 15 endpoints/payloads are extended
   additively by Unit 17 (rejection/correction/resubmission) and Unit 18
   (cancellation) per their specs.
+- **Unit 18 — Leave Cancellation is COMPLETE** (see "Completed (Unit 18)"
+  below). Employee withdraw/request UI on the tracking page, a pending-approval
+  Supervisor/HOD stage chain, and the approver queue/decision surface reachable
+  from `/approvals` via a segmented switch and `?cancellation=` panel.
 
 ## Completed (Unit 15)
 
@@ -470,6 +475,18 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
 
 ## Session Notes
 
+- **Unit 18 complete (2026-09-24):** Leave Cancellation landed on the Unit 15/16
+  spine. Decisions worth flagging: employee UI (eligibility + card) drives off a
+  purpose-built `cancellation-eligibility` endpoint rather than deriving from the
+  tracking payload; the approver cancellation list is paginated with the Unit 16
+  `_Paginator`; tracking fixtures cast via `as unknown` needed a gate so
+  `CancellationSection` only mounts when the Unit 18 fields are present
+  (otherwise every legacy tracking test would fire unmocked fetches). RTL's
+  `getByText` only matches direct text nodes, so assertions spanning nested
+  `<span>`/`<time>` reuse the repo's normalized-`textContent` matcher. The
+  `pendingEligibilityRef` in the dialog hit the `react-hooks/refs` lint rule
+  (ref value read during render) and was converted to state. Next up: **Unit 17
+  — Rejection, Correction and Resubmission**.
 - **Unit 11 complete (2026-09-21):** HR Finalized Leave + Audit View landed on
   `feature/hr-unit-11` (cut from `development` after Unit 9's commit `2a63f55`).
   Audit is explicit (`record_audit` in the same transaction as the action) — no
@@ -676,3 +693,83 @@ Frontend (`frontend/`):
   detail, decision dialog, nav item) using `fireEvent` (user-event not
   installed in this repo); full frontend run **244 tests pass (44 files)**,
   `tsc --noEmit` clean on both tsconfigs, `eslint --max-warnings=0` clean.
+
+## Completed (Unit 18) — Leave Cancellation (2026-09-24, complete)
+
+Backend (`backend/leave/cancellations/` + `backend/workflows/`):
+
+- **Models/migrations.** `CancellationRequest` (kind `withdrawal|approved_leave`,
+  status `pending|approved|rejected`, reason, timestamps, `stage_version`,
+  `application_status_at_request`, `balance_restored_days`,
+  `restored_financial_year`, `employee_notification_state`) and
+  `CancellationApprovalStage` (order, role, status
+  `waiting|pending|approved|rejected|not_reached`, approver, decided_at,
+  comment) in `leave/0010_*`; `LeaveApplication.cancelled_at` in `leave/0009_*`;
+  audit `Action`/`target_type` additions in `audit/0006_*`; workflow
+  `ApplicationStage` status additions in `workflows/0007_*`.
+- **Services.** `leave/cancellations/services.py` withdrawal + eligible-request
+  creation (448 stacking via `CancellationEligibilityPayload`), eligibility
+  matrix against the Unit 16 `ApplicationStage` rows
+  (`not_cancellable_status`/`leave_already_started`/`open_request_exists`/
+  `no_cancellation_approvers`), and cancelled-status owner reads;
+  `backend/leave/tracking/` extended additively (contracts, serializer,
+  service) with `cancelled_at`, `cancellation_action`,
+  `cancellation_blocked_reason`, `has_open_cancellation_request`,
+  `latest_cancellation`.
+- **Approver surface.** `workflows/approval_views.py` +
+  `workflows/urls.py`: `CancellationListAPIView` (`?tab=pending|decided`,
+  oldest-first, paginated `{tab,count,next,previous,results}` via `_Paginator`
+  page_size 20 per the Unit 16 convention),
+  `CancellationDetailAPIView` (404 to non-assigned viewers, includes
+  `requested_by_name`), `CancellationDecisionAPIView` (approve/reject,
+  reject comment required 400 `comment_required`, stage-version 409, 403
+  `not_current_approver`, approve blocked when leave started). Stage chain
+  supervisor→hod from `workflows/policies.py::cancellation_approval_rules` +
+  `providers.py`; final approval cancels the application (status `cancelled`,
+  `cancelled_at`), restores `working_days` to the FY balance, closes open
+  `ApplicationStage` rows; notification state recorded (dispatch deferred).
+- **Seed/tests.** `seed_approvals_dev` extended with cancellation scenarios.
+  `leave.tests.test_cancellations`: **43 tests** covering the eligibility
+  matrix, withdraw, open-request guard, reason validation, approver list
+  tabs/pagination OK, detail visibility, decisions incl. 409/403/400 branches.
+  Full backend suite **573 tests green**; `manage.py check` clean.
+
+Frontend (`frontend/`):
+
+- **lib/cancellations/**: `types.ts`, `labels.ts` (status/stage/kind/notification
+  meta, `actionLabel`/`confirmLabel`/`blockedReasonLabel`/`consequenceLine`/
+  `outcomeBanner`/`formatDayCount`), `format.ts`, `service.ts` (typed result
+  unions; `action_changed` 409 carries fresh `eligibility`), `__fixtures__/`.
+- **Proxy routes**: `app/api/leave/leave-applications/[id]/{cancellation-eligibility,
+  cancel,cancellations}/` and `app/api/approvals/cancellations/{[requestId],…/decision}/`
+  via `@/app/api/_lib/api-fetch`.
+- **Employee UI** (`components/cancellations/`): two-step `cancel-application-dialog`
+  (reason 10–1000 live counter + inline validation, `expected_action` mismatch →
+  "Refresh and review the latest state" with fresh eligibility),
+  `cancellation-stage-stepper`, `cancellation-card` (status badge, outcome
+  banner with restored days/rejecting comment, notification chip, collapsible
+  history), `cancellation-section` under the tracking header (button driven by
+  `cancellation_action`/blocked line; refetches after every mutation — no
+  optimistic updates).
+- **Tracking**: `lib/tracking/types.ts` + `TrackingHeader` ("Cancellation
+  requested" pill, "Cancelled on …" line) + `TrackingView` mounting
+  `CancellationSection` only when Unit 18 fields are present.
+- **Approver UI**: `approvals-workspace` (Applications | Cancellation requests
+  segmented control), `cancellation-requests-table` (Pending / Decided by me,
+  "starts in N days" → pending-orange ≤3 / red "Started", Unit 16-style
+  pagination and empty/error/retry states), `cancellation-detail-panel` on
+  `/approvals/[applicationId]?cancellation={requestId}` (requester, reason,
+  original-leave + balance-impact cards, stage tracker, leave-started warning
+  disabling Approve, `cancellation-decision-dialog` with required-on-reject
+  comment and 409 → "This request changed. Refreshing…" + refetch, read-only
+  "This cancellation is not with you right now." for non-current approvers).
+- **Verification:** 8 new Vitest files (service contract, cancel dialog,
+  section, requests table, detail panel, tracking-field additions) —
+  full frontend suite **282 tests / 49 files green**, `npm run lint` clean,
+  `tsc --noEmit -p tsconfig.test.json` clean, `npm run build` succeeds
+  (all pages + new proxy routes compile).
+- **Decisions.** Followed repo `lib/<domain>/` + `components/<domain>/`
+  conventions (over the spec's `lib/services/cancellation/`); approver list
+  paginated with the Unit 16 `_Paginator`; `expected_action` concurrency guard
+  mirrors Unit 16's stage-version; detail panel silently renders nothing when
+  `?cancellation=` does not resolve to an assigned request.

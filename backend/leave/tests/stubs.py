@@ -187,6 +187,8 @@ class StubWorkflowProvider:
         self.approvers: dict[str, int] = {}
         self.default_chain = ("supervisor", "hod", "registrar", "dvc")
         self.strict = False
+        self.cancellation_roles = ("supervisor", "hod")
+        self.block_cancellation = False
 
     def set_chain(self, *roles: str) -> None:
         self.default_chain = tuple(roles)
@@ -212,6 +214,53 @@ class StubWorkflowProvider:
                 )
             )
         return definitions
+
+    def get_cancellation_stages(self, application):
+        if self.block_cancellation:
+            return []
+        from django.db.models import Min
+        from workflows.models import STAGE_ROLE_LABELS, ApplicationStage
+        from workflows.providers import CancellationStageSpec
+
+        cycle = (
+            ApplicationStage.objects.filter(application=application).aggregate(
+                chain=Min("submission_cycle")
+            )["chain"]
+            or 1
+        )
+        stages = ApplicationStage.objects.filter(
+            application=application,
+            submission_cycle=cycle,
+            role__in=self.cancellation_roles,
+        ).order_by("stage_order")
+        return [
+            CancellationStageSpec(
+                order=stage.stage_order,
+                role=stage.role,
+                role_label=stage.role_label
+                or STAGE_ROLE_LABELS.get(stage.role, stage.role),
+                approver_user_id=stage.assigned_approver_id,
+            )
+            for stage in stages
+        ]
+
+    def get_workflow_member_user_ids(self, application):
+        from django.db.models import Min
+        from workflows.models import ApplicationStage
+
+        cycle = (
+            ApplicationStage.objects.filter(application=application).aggregate(
+                chain=Min("submission_cycle")
+            )["chain"]
+            or 1
+        )
+        return list(
+            ApplicationStage.objects.filter(
+                application=application, submission_cycle=cycle
+            )
+            .order_by("stage_order")
+            .values_list("assigned_approver_id", flat=True)
+        )
 
 
 class StubProviderMixin:

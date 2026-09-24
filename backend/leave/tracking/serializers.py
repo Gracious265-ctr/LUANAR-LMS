@@ -144,6 +144,13 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "resubmission": ResubmissionInfoSerializer().to_representation(
                 workflow.resubmission
             ),
+            "cancelled_at": _iso(workflow.cancelled_at),
+            "cancellation_action": workflow.cancellation_action,
+            "cancellation_blocked_reason": workflow.cancellation_blocked_reason,
+            "has_open_cancellation_request": (
+                workflow.has_open_cancellation_request
+            ),
+            "latest_cancellation": workflow.latest_cancellation,
         }
 
 

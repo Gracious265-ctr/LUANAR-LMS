@@ -89,6 +89,16 @@ export interface CurrentStage {
   assigned_at: string;
 }
 
+export type CancellationAction = "withdraw" | "request";
+
+export interface LatestCancellation {
+  id: string;
+  kind: "withdrawal" | "approved_leave";
+  status: "pending" | "approved" | "rejected";
+  requested_at: string | null;
+  decided_at: string | null;
+}
+
 export interface TrackingResponse {
   application: ApplicationSummary;
   status: TrackingStatus;
@@ -99,6 +109,12 @@ export interface TrackingResponse {
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
+  /** Unit 18 additions: cancellation state appended to the same payload. */
+  cancelled_at: string | null;
+  cancellation_action: CancellationAction | null;
+  cancellation_blocked_reason: string | null;
+  has_open_cancellation_request: boolean;
+  latest_cancellation: LatestCancellation | null;
 }
 
 export type TrackingResult =

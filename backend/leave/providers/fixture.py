@@ -87,4 +87,40 @@ class FixtureRulesProvider:
 
     def get_available_balance(self, employee_id: int, financial_year_label: str):
         grade = self._grades.get(employee_id, "")
-        return Decimal(_entitlement_days(grade))
+        net = Decimal(_entitlement_days(grade)) + _ledger_net(
+            employee_id, financial_year_label
+        )
+        return max(net, Decimal(0))
+
+
+def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
+    """Restorations minus deductions from the append-only balance ledger.
+
+    Lazy import keeps the provider free of circular imports. ``deduction`` rows
+    land when an approved application consumes annual leave; restorations are
+    written only by Unit 18 final cancellations. Absent rows contribute zero, so
+    the placeholder entitlement answer is unchanged for existing scenarios.
+    """
+    try:
+        from django.db.models import Q, Sum
+
+        from leave.cancellations.models import LeaveBalanceTransaction
+
+        delta = LeaveBalanceTransaction.objects.filter(
+            employee_id=employee_id,
+            financial_year=financial_year_label,
+        ).aggregate(
+            restoration=Sum(
+                "days",
+                filter=Q(type=LeaveBalanceTransaction.Type.RESTORATION),
+            ),
+            deduction=Sum(
+                "days",
+                filter=Q(type=LeaveBalanceTransaction.Type.DEDUCTION),
+            ),
+        )
+    except Exception:  # pragma: no cover - race with migration state
+        return Decimal(0)
+    restored = delta["restoration"] or Decimal(0)
+    deducted = delta["deduction"] or Decimal(0)
+    return Decimal(restored) - Decimal(deducted)
