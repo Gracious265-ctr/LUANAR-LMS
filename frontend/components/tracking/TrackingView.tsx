@@ -12,6 +12,7 @@ import { ApprovalStepper } from "./ApprovalStepper";
 import { CurrentStatusCard } from "./CurrentStatusCard";
 import { OutcomePanel } from "./OutcomePanel";
 import { ResubmissionNote } from "./ResubmissionNote";
+import { SupportingDocumentsCard } from "./supporting-documents-card";
 import { TrackingError } from "./TrackingError";
 import { TrackingHeader } from "./TrackingHeader";
 import { TrackingSkeleton } from "./TrackingSkeleton";
@@ -111,6 +112,13 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
           applicationId={applicationId}
           application={data.application}
           onApplicationChanged={() => load("refresh")}
+        />
+      )}
+
+      {data.documents !== undefined && (
+        <SupportingDocumentsCard
+          applicationId={applicationId}
+          documents={data.documents}
         />
       )}
 

@@ -25,6 +25,7 @@ class AuditEntry(models.Model):
         DOCUMENT_ADDED = "document_added", "Document added"
         DOCUMENT_REPLACED = "document_replaced", "Document replaced"
         DOCUMENT_REMOVED = "document_removed", "Document removed"
+        DOCUMENT_RETIRED = "document_retired", "Document retired"
         CANCELLATION_REQUESTED = "cancellation_requested", "Cancellation requested"
         CANCELLATION_WITHDRAWN = "cancellation_withdrawn", "Application withdrawn"
         CANCELLATION_STAGE_APPROVED = (

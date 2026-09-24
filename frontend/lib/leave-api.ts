@@ -1,11 +1,15 @@
 export interface SupportingDocument {
   id: string;
-  file_path: string;
   file_url: string;
   file_name: string;
   file_size: number;
   content_type: string;
   uploaded_at: string;
+  status: "active" | "retired";
+  retired_at: string | null;
+  retire_reason: "replaced" | "removed" | null;
+  retired_by: { id: number; name: string } | null;
+  replaced_by: { id: string; file_name: string } | null;
 }
 
 export interface LeaveApplication {
@@ -24,6 +28,22 @@ export interface LeaveApplication {
   calendar_days: number | null;
   financial_year_label: string | null;
   documents: SupportingDocument[];
+}
+
+const DOCUMENT_ERRORS: Record<string, string> = {
+  application_not_editable:
+    "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
+  document_not_active:
+    "This document has already been removed or replaced.",
+};
+
+async function documentError(res: Response, fallback: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  const detail =
+    (body?.detail as string | undefined) ||
+    DOCUMENT_ERRORS[body?.code as string] ||
+    fallback;
+  return new Error(detail);
 }
 
 export async function getLeaveApplications(status?: string): Promise<{
@@ -104,10 +124,21 @@ export async function uploadDocument(
       body: formData,
     }
   );
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to upload" }));
-    throw new Error(error.detail || "Failed to upload document");
-  }
+  if (!res.ok) throw await documentError(res, "Failed to upload document");
+  return res.json();
+}
+
+export async function listDocuments(
+  applicationId: string,
+  { includeRetired = false }: { includeRetired?: boolean } = {}
+): Promise<SupportingDocument[]> {
+  const res = await fetch(
+    `/api/leave/leave-applications/${applicationId}/documents/${
+      includeRetired ? "?include_retired=true" : ""
+    }`,
+    { credentials: "include" }
+  );
+  if (!res.ok) throw new Error("Failed to fetch documents");
   return res.json();
 }
 
@@ -122,5 +153,25 @@ export async function deleteDocument(
       credentials: "include",
     }
   );
-  if (!res.ok) throw new Error("Failed to delete document");
+  if (!res.ok) throw await documentError(res, "Failed to delete document");
+}
+
+export async function replaceDocument(
+  applicationId: string,
+  documentId: string,
+  file: File
+): Promise<SupportingDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(
+    `/api/leave/leave-applications/${applicationId}/documents/${documentId}/replace/`,
+    {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    }
+  );
+  if (!res.ok) throw await documentError(res, "Failed to replace document");
+  const data = await res.json();
+  return data.document;
 }

@@ -1,16 +1,24 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, Trash2, FileText } from "lucide-react";
+import { FileText, RefreshCw, Trash2, Upload } from "lucide-react";
 
-import { uploadDocument, deleteDocument, type SupportingDocument } from "@/lib/leave-api";
+import {
+  deleteDocument,
+  listDocuments,
+  replaceDocument,
+  uploadDocument,
+  type SupportingDocument,
+} from "@/lib/leave-api";
 import { cn } from "@/lib/utils";
 
 interface SupportingDocumentsUploaderProps {
   applicationId: string | null;
   documents: SupportingDocument[];
-  disabled?: boolean;
+  editable?: boolean;
+  /** Offer per-row Replace (true on a ``correction_required`` application only). */
+  canReplace?: boolean;
   onDocumentsChange: (docs: SupportingDocument[]) => void;
   onEnsureDraft?: () => Promise<string | null>;
 }
@@ -18,12 +26,22 @@ interface SupportingDocumentsUploaderProps {
 export function SupportingDocumentsUploader({
   applicationId,
   documents,
-  disabled,
+  editable = true,
+  canReplace = false,
   onDocumentsChange,
   onEnsureDraft,
 }: SupportingDocumentsUploaderProps) {
   const [uploading, setUploading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const replaceInputs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const refresh = useCallback(
+    async (applicationIdToFetch: string) => {
+      onDocumentsChange(await listDocuments(applicationIdToFetch));
+    },
+    [onDocumentsChange]
+  );
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -39,12 +57,10 @@ export function SupportingDocumentsUploader({
       setUploading(true);
       setError(null);
       try {
-        let updated = [...documents];
         for (const file of acceptedFiles) {
-          const doc = await uploadDocument(id, file);
-          updated = [...updated, doc];
+          await uploadDocument(id, file);
         }
-        onDocumentsChange(updated);
+        await refresh(id);
       } catch (err) {
         setError(
           err instanceof Error
@@ -55,26 +71,62 @@ export function SupportingDocumentsUploader({
         setUploading(false);
       }
     },
-    [applicationId, documents, onDocumentsChange, onEnsureDraft]
+    [applicationId, onEnsureDraft, refresh]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    disabled: disabled || uploading,
+    disabled: !editable || uploading,
   });
 
   const handleRemove = useCallback(
-    async (docId: string) => {
-      if (!applicationId) return;
+    async (document: SupportingDocument) => {
+      if (!applicationId || busyId) return;
+      const confirmed = window.confirm(
+        canReplace
+          ? `Remove ${document.file_name}? The file stays archived under the previous submission.`
+          : `Remove ${document.file_name}? This permanently deletes the file.`
+      );
+      if (!confirmed) return;
+      setBusyId(document.id);
       setError(null);
       try {
-        await deleteDocument(applicationId, docId);
-        onDocumentsChange(documents.filter((d) => d.id !== docId));
-      } catch {
-        setError("Could not remove this document. Please try again.");
+        await deleteDocument(applicationId, document.id);
+        await refresh(applicationId);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not remove this document. Please try again."
+        );
+      } finally {
+        setBusyId(null);
       }
     },
-    [applicationId, documents, onDocumentsChange]
+    [applicationId, busyId, canReplace, refresh]
+  );
+
+  const handleReplace = useCallback(
+    async (document: SupportingDocument, file: File) => {
+      if (!applicationId || busyId) return;
+      setBusyId(document.id);
+      setError(null);
+      try {
+        await replaceDocument(applicationId, document.id, file);
+        await refresh(applicationId);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not replace this document. Please try again."
+        );
+      } finally {
+        setBusyId(null);
+        const input = replaceInputs.current[document.id];
+        if (input) input.value = "";
+      }
+    },
+    [applicationId, busyId, refresh]
   );
 
   const formatFileSize = (bytes: number) => {
@@ -89,7 +141,7 @@ export function SupportingDocumentsUploader({
         Supporting Documents
       </label>
 
-      {!disabled && (
+      {editable && (
         <div
           {...getRootProps()}
           className={cn(
@@ -112,12 +164,20 @@ export function SupportingDocumentsUploader({
         </div>
       )}
 
+      {canReplace && editable && documents.length > 0 && (
+        <p className="mt-2 text-xs text-text-muted">
+          This application was returned for correction. Replace a document to
+          submit a corrected copy — the previous version stays in your history
+          for the approvers to compare.
+        </p>
+      )}
+
       {documents.length > 0 && (
         <div className="mt-3 space-y-2">
           {documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-center justify-between rounded-lg border border-border-default bg-surface-card p-3"
+              className="flex items-center justify-between rounded-lg border border-border-default bg-surface-card p-3 gap-3"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <FileText className="h-4 w-4 text-text-muted shrink-0" />
@@ -130,22 +190,56 @@ export function SupportingDocumentsUploader({
                   </p>
                 </div>
               </div>
-              {!disabled && (
-                <button
-                  type="button"
-                  aria-label={`Remove document ${doc.file_name}`}
-                  onClick={() => handleRemove(doc.id)}
-                  className="shrink-0 p-1 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              {editable && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {canReplace && (
+                    <>
+                      <input
+                        ref={(el) => {
+                          replaceInputs.current[doc.id] = el;
+                        }}
+                        type="file"
+                        aria-label={`Replace document ${doc.file_name}`}
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void handleReplace(doc, file);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => replaceInputs.current[doc.id]?.click()}
+                        disabled={busyId !== null}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-input-border bg-input-background px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                        {busyId === doc.id ? "Replacing…" : "Replace"}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove document ${doc.file_name}`}
+                    onClick={() => void handleRemove(doc)}
+                    disabled={busyId !== null}
+                    className="p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               )}
             </div>
           ))}
         </div>
       )}
 
-      {error && !disabled && (
+      {!editable && documents.length === 0 && (
+        <p className="text-sm text-text-secondary">
+          No supporting documents were attached.
+        </p>
+      )}
+
+      {error && editable && (
         <p role="alert" className="text-xs text-status-rejected mt-2">
           {error}
         </p>

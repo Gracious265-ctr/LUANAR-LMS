@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { createLeaveApplication } from "@/lib/leave-api";
+import { createLeaveApplication, type SupportingDocument } from "@/lib/leave-api";
 import { useAutosaveDraft } from "@/lib/hooks/useAutosaveDraft";
 import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveTypeSelect } from "./LeaveTypeSelect";
@@ -17,6 +17,8 @@ interface LeaveApplicationFormProps {
   applicationId?: string;
 }
 
+const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
+
 export function LeaveApplicationForm({
   mode,
   applicationId,
@@ -26,9 +28,8 @@ export function LeaveApplicationForm({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
-  const [documents, setDocuments] = useState<
-    { id: string; file_name: string; file_size: number; file_path: string; file_url: string; content_type: string; uploaded_at: string }[]
-  >([]);
+  const [status, setStatus] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<SupportingDocument[]>([]);
 const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -60,10 +61,11 @@ const [loadError, setLoadError] = useState<string | null>(null);
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.status === "submitted") {
+          if (READ_ONLY_STATUSES.includes(data.status)) {
             setSubmitted(true);
             return;
           }
+          setStatus(data.status);
           setLeaveTypeId(data.leave_type_id);
           setStartDate(data.start_date || "");
           setEndDate(data.end_date || "");
@@ -148,11 +150,11 @@ const [loadError, setLoadError] = useState<string | null>(null);
     return (
       <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
         <div className="text-lg font-semibold text-text-primary mb-2">
-          Application Already Submitted
+          Application No Longer Editable
         </div>
         <p className="text-sm text-text-secondary mb-6">
-          This leave application has been submitted and can no longer be edited.
-          View its current details in your applications list.
+          This leave application has left the editable stage and is now a
+          read-only record. View its current details in your applications list.
         </p>
         <Link
           href="/dashboard/leave/drafts"
@@ -244,6 +246,8 @@ const [loadError, setLoadError] = useState<string | null>(null);
         <SupportingDocumentsUploader
           applicationId={currentId}
           documents={documents}
+          editable={mode === "create" || status === "draft" || status === "correction_required"}
+          canReplace={status === "correction_required"}
           onDocumentsChange={setDocuments}
           onEnsureDraft={ensureDraftCreated}
         />

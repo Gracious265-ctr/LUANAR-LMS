@@ -9,6 +9,10 @@ vi.mock("@/lib/tracking/service", () => ({
   fetchTracking: vi.fn(),
 }));
 
+vi.mock("@/lib/leave-api", () => ({
+  listDocuments: vi.fn(),
+}));
+
 import approved from "@/lib/tracking/__fixtures__/approved.json";
 import cancelled from "@/lib/tracking/__fixtures__/cancelled.json";
 import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correction_required_at_stage_3.json";
@@ -18,6 +22,7 @@ import pending_with_delegate from "@/lib/tracking/__fixtures__/pending_with_dele
 import rejected_at_stage_2 from "@/lib/tracking/__fixtures__/rejected_at_stage_2.json";
 import resubmitted_after_correction from "@/lib/tracking/__fixtures__/resubmitted_after_correction.json";
 import resubmitted_after_rejection from "@/lib/tracking/__fixtures__/resubmitted_after_rejection.json";
+import { listDocuments } from "@/lib/leave-api";
 
 const fixtures: Record<string, TrackingResponse> = {
   "pending_first_stage": pending_first_stage as unknown as TrackingResponse,
@@ -59,6 +64,7 @@ const stepCount = () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listDocuments).mockResolvedValue([]);
 });
 
 describe("TrackingView · header", () => {
@@ -309,6 +315,110 @@ describe("TrackingView · activity timeline", () => {
     expect(times.length).toBeGreaterThan(0);
     expect(times[0].textContent).toBe("12 Oct 2026, 09:15");
     expect(times[0].getAttribute("dateTime")).toBe("2026-10-12T07:15:03Z");
+  });
+});
+
+describe("TrackingView · supporting documents", () => {
+  beforeEach(() => {
+    vi.mocked(listDocuments).mockReset();
+    vi.mocked(listDocuments).mockResolvedValue([]);
+  });
+
+  it("renders active documents with an Open button", async () => {
+    mockOk(fixtures.resubmitted_after_correction);
+    renderView();
+
+    const card = within(await screen.findByLabelText("Supporting documents"));
+    expect(card.getByText("medical-certificate-v2.pdf")).toBeInTheDocument();
+    expect(card.getByRole("button", { name: "Open" })).toBeInTheDocument();
+  });
+
+  it("shows the empty state when no documents are attached", async () => {
+    mockOk(fixtures.pending_first_stage);
+    renderView();
+
+    const card = within(await screen.findByLabelText("Supporting documents"));
+    expect(
+      card.getByText("No supporting documents were attached.")
+    ).toBeInTheDocument();
+  });
+
+  it("renders replaced and removed rows in the collapsed archive section", async () => {
+    mockOk(fixtures.correction_required_at_stage_3);
+    vi.mocked(listDocuments).mockResolvedValue([
+      {
+        id: "doc-old-replaced",
+        file_url: "https://signed/old.pdf",
+        file_name: "medical-certificate-v1.pdf",
+        file_size: 1024,
+        content_type: "application/pdf",
+        uploaded_at: "2026-10-10T08:00:00Z",
+        status: "retired",
+        retired_at: "2026-10-18T08:45:00Z",
+        retire_reason: "replaced",
+        retired_by: { id: 8, name: "Test Employee" },
+        replaced_by: { id: "doc-correction-active", file_name: "medical-certificate-v2.pdf" },
+      },
+      {
+        id: "doc-old-removed",
+        file_url: "https://signed/removed.pdf",
+        file_name: "draft-note.txt",
+        file_size: 512,
+        content_type: "text/plain",
+        uploaded_at: "2026-10-01T08:00:00Z",
+        status: "retired",
+        retired_at: "2026-10-05T09:00:00Z",
+        retire_reason: "removed",
+        retired_by: { id: 8, name: "Test Employee" },
+        replaced_by: null,
+      },
+    ]);
+    renderView();
+    const card = within(await screen.findByLabelText("Supporting documents"));
+
+    const archive = await card.findByRole("button", {
+      name: "Archived (2)",
+    });
+    expect(archive).toBeInTheDocument();
+    archive.click();
+
+    expect(await card.findByText("medical-certificate-v1.pdf")).toBeInTheDocument();
+    expect(
+      card.getByText("Replaced on 18 Oct 2026, 10:45")
+    ).toBeInTheDocument();
+    expect(card.getByText("draft-note.txt")).toBeInTheDocument();
+    expect(card.getByText("Removed on 5 Oct 2026, 11:00")).toBeInTheDocument();
+
+    const openButtons = card.getAllByRole("button", { name: "Open" });
+    expect(openButtons).toHaveLength(2);
+  });
+
+  it("offers no Open button for removed (intentionally deleted) rows", async () => {
+    mockOk(fixtures.correction_required_at_stage_3);
+    vi.mocked(listDocuments).mockResolvedValue([
+      {
+        id: "doc-old-removed",
+        file_url: "https://signed/removed.pdf",
+        file_name: "draft-note.txt",
+        file_size: 512,
+        content_type: "text/plain",
+        uploaded_at: "2026-10-01T08:00:00Z",
+        status: "retired",
+        retired_at: "2026-10-05T09:00:00Z",
+        retire_reason: "removed",
+        retired_by: { id: 8, name: "Test Employee" },
+        replaced_by: null,
+      },
+    ]);
+    renderView();
+    const card = within(await screen.findByLabelText("Supporting documents"));
+    const archive = await card.findByRole("button", { name: "Archived (1)" });
+    archive.click();
+
+    expect(await card.findByText("draft-note.txt")).toBeInTheDocument();
+    expect(
+      card.queryAllByRole("button", { name: "Open" }).length
+    ).toBe(1); // only the active row
   });
 });
 

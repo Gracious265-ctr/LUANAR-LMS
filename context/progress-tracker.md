@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 19 — Supporting Document Lifecycle (COMPLETE)
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 16 — Approver Review and Decision (COMPLETE)
@@ -28,6 +29,76 @@ Update this file after every meaningful implementation change.
   below). Employee withdraw/request UI on the tracking page, a pending-approval
   Supervisor/HOD stage chain, and the approver queue/decision surface reachable
   from `/approvals` via a segmented switch and `?cancellation=` panel.
+- **Unit 19 — Supporting Document Lifecycle is COMPLETE** (see "Completed
+  (Unit 19)" below): editable-status document upload/remove/replace (draft
+  hard-delete vs correction retire/replace; retired rows kept for the archive
+  with lifecycle fields), a tracking `documents` block plus a read-only
+  Supporting documents card with an Archived section, and the required-document
+  validator counting active rows only. Backend **604 tests** and frontend
+  **296 tests** green, `tsc` + `npm run lint` clean; no new migration (Unit 17
+  already shipped the `status`/`retire_*`/`replaced_by` schema).
+
+## Completed (Unit 19)
+
+- **Backend — document lifecycle service + view.** `leave/documents/services.py`
+  owns the lifecycle: editable guard (draft + correction_required only),
+  hard-delete in draft (row + storage; storage-delete failure logs and
+  continues) with a `document_removed` audit row, retire for correction
+  remove/replace (`removed`/`replaced` reasons + `document_retired` audit),
+  and `replace` (new active row + retired old row kept in storage).
+  `SupportingDocumentViewSet` gains `?include_retired=true` (lifecycle fields,
+  no pagination) and `POST .../documents/{pk}/replace/` → 201
+  `{document, retired_document}`, 409 `{code, detail}`
+  (`application_not_editable`, `document_not_active`) for non-editable states,
+  400s flattened to `{detail: <string>}`; serializer exposes lifecycle fields,
+  never `file_path`. Subpath moved into `leave/views/documents.py` (re-imported
+  via `leave/views/__init__.py`).
+- **Backend — tracking documents block** (owner only): `TrackedDocumentSerializer`
+  (`id, file_name, file_size, content_type, file_url, uploaded_at`) with a
+  re-signed URL (`signed_document_url`, `ValueError` fallback to stored URL),
+  prefetching active rows only (3 queries). `test_tracking_api` updated to
+  `assertNumQueries(3)` + a documents-block test.
+- **Backend — required-document validator** `count_supporting_documents`
+  (`leave/validation/validators/documents.py`) counts status `active` only.
+- **Seed.** `seed_approvals_dev` gains idempotent `_seed_documents` (refs
+  `LV-<FY>-820001` correction_required w/ active + retired/replaced doc,
+  `820002` draft w/ two active docs; direct model creates, no Supabase);
+  smoke-tested via transactional rollback.
+- **Backend tests.** New `leave/tests/test_documents.py` (30 tests): editable
+  status matrix, draft vs correction semantics (hard delete + `document_removed`
+  vs retire + `document_retired`/`replaced_by`, storage kept), validation
+  (required/size/content-type/sanitization), 409 codes, serializer contract,
+  audit rows, auth (foreign → 404, anon → 401), required-doc counting.
+  `legacy.py` updated (409 on submitted upload; size mock path
+  `leave.documents.services.MAX_DOCUMENT_SIZE`). Full suite **604 tests OK**,
+  `manage.py check` clean.
+- **Frontend — proxies + client.** Documents GET proxies thread
+  `?include_retired=true`; new replace proxy route (multipart passthrough).
+  `lib/leave-api.ts`: `SupportingDocument` drops `file_path`, gains
+  `status/retired_at/retire_reason/retired_by/replaced_by`;
+  `listDocuments`/`deleteDocument`/`replaceDocument`;
+  `DOCUMENT_ERRORS` + `documentError()` surfacing backend `detail`/`code`.
+  `lib/audit.ts` drops `file_path`. `SupportingDocumentsUploader` takes
+  `editable?`/`canReplace?` (replaces `disabled`), confirms removals, shows
+  per-row Replace on corrections with a "returned for correction … previous
+  version stays in your history" hint, and refetches the server list after
+  upload/remove/replace. `LeaveApplicationForm` passes `editable`/`canReplace`
+  from status + mode and shows a generalized "Application No Longer Editable"
+  notice for submitted/approved/rejected/cancelled.
+- **Frontend — tracking card.** New `components/tracking/supporting-documents-
+  card.tsx` renders the payload `documents` block with Open buttons, fetches
+  `listDocuments(id, { includeRetired: true })` on mount for a collapsible
+  "Archived (N)" section (replaced rows keep Open, removed rows don't, styled
+  per spec), an empty state, and an error line; mounted in `TrackingView` when
+  the payload has a `documents` block. `lib/tracking/types.ts` gains
+  `TrackingDocument` + `documents?`; all 9 fixtures updated (2 carry a document).
+- **Frontend tests.** `supporting-documents-uploader` rewritten (mocks upload/
+  delete/replace/list + `documentError` mapping), `tracking-view` gains a
+  "Supporting documents" describe (archive fetch runs on mount), and
+  `leave-application-form` asserts the read-only notice for all four terminal
+  statuses plus the correction path staying editable with Replace. Full run:
+  **49 files / 296 tests green**, `tsc --noEmit -p tsconfig.test.json`, and
+  `npm run lint` clean.
 
 ## Completed (Unit 15)
 
@@ -384,13 +455,9 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 19 — Supporting Document Lifecycle** (next build; consumes Unit 13's
-  `SupportingDocument` model/proxies and drafts, adds employee-side preview/edit
-  of documents plus approver access controls). No spec yet — draft
-  `context/specs/19-supporting-document-lifecycle.md` first.
-- **HR track (this developer):** Unit 16+ build on the audit spine (approval/
-  cancel/correction events and application-scoped history), then Unit 21 routing
-  which consumes the `current_approver` spine and `active_delegation_for`.
+- **HR track:** build Unit 21 routing (consumes the `current_approver` spine and
+  `active_delegation_for`) on top of the Unit 16+ audit spine (approval/cancel/
+  correction events and application-scoped history from Units 16–19).
 - **Employee + Approver track:** Units 4/5 (Leave Types API, Calendar/Rules API)
   were listed as deferred in the Unit 13 spec but are **already implemented** by
   the HR track and integrated on this merged branch.

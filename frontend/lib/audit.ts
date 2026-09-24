@@ -34,7 +34,6 @@ export interface FinalizedApplication {
 
 export interface SupportingDocument {
   id: string;
-  file_path: string;
   file_url: string;
   file_name: string;
   file_size: number;

@@ -148,5 +148,15 @@
     "last_resubmitted_at": "2026-10-19T09:00:00Z",
     "can_resubmit": false,
     "returns_to_stage": null
-  }
+  },
+  "documents": [
+    {
+      "id": "doc-resubmitted-active",
+      "file_name": "medical-certificate-v2.pdf",
+      "file_size": 51200,
+      "content_type": "application/pdf",
+      "file_url": "https://signed/medical-certificate-v2.pdf",
+      "uploaded_at": "2026-10-18T08:45:00Z"
+    }
+  ]
 }

@@ -302,18 +302,33 @@ class PublicHolidaySerializer(AuditedModelSerializer):
 
 
 class SupportingDocumentSerializer(serializers.ModelSerializer):
+    """Employee-facing view of a supporting document.
+
+    ``file_url`` is a freshly signed URL derived from the internal
+    ``file_path`` at read time; ``file_path`` itself is never serialized.
+    Retrospective fields (``status``, ``retired_at``, ``retire_reason``,
+    ``retired_by``, ``replaced_by``) are present so the document list endpoint
+    can render the archive when ``?include_retired=true``.
+    """
+
     file_url = serializers.SerializerMethodField()
+    retired_by = serializers.SerializerMethodField()
+    replaced_by = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportingDocument
         fields = [
             "id",
-            "file_path",
             "file_url",
             "file_name",
             "file_size",
             "content_type",
             "uploaded_at",
+            "status",
+            "retired_at",
+            "retire_reason",
+            "retired_by",
+            "replaced_by",
         ]
         read_only_fields = fields
 
@@ -323,9 +338,22 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
         except ValueError:
             return obj.file_url
 
+    def get_retired_by(self, obj):
+        if obj.retired_by is None:
+            return None
+        return {
+            "id": obj.retired_by_id,
+            "name": obj.retired_by.get_full_name() or obj.retired_by.username,
+        }
+
+    def get_replaced_by(self, obj):
+        if obj.replaced_by is None:
+            return None
+        return {"id": str(obj.replaced_by_id), "file_name": obj.replaced_by.file_name}
+
 
 class LeaveApplicationSerializer(serializers.ModelSerializer):
-    documents = SupportingDocumentSerializer(many=True, read_only=True)
+    documents = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaveApplication
@@ -359,3 +387,9 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "submitted_at",
         ]
+
+    def get_documents(self, obj) -> list:
+        """The active working set; retired rows are never nested here."""
+        return SupportingDocumentSerializer(
+            obj.documents.filter(status="active"), many=True
+        ).data

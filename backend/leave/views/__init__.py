@@ -6,7 +6,6 @@ from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from audit.validation import positive_int
@@ -20,7 +19,6 @@ from ..models import (
     LeaveRule,
     LeaveType,
     PublicHoliday,
-    SupportingDocument,
 )
 from ..permissions import IsOwner
 from ..serializers import (
@@ -31,16 +29,11 @@ from ..serializers import (
     LeaveRuleSerializer,
     LeaveTypeSerializer,
     PublicHolidaySerializer,
-    SupportingDocumentSerializer,
 )
 from ..services import normalize_grade, resolve_grade_entitlement
-from ..services.storage import (
-    MAX_DOCUMENT_SIZE,
-    delete_document,
-    is_allowed_document_content_type,
-    upload_document,
-)
+from ..services.storage import delete_document
 from ..services.working_days import calculate_working_days
+from .documents import SupportingDocumentViewSet
 
 logger = logging.getLogger(__name__)
 
@@ -273,55 +266,3 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
         days = calculate_working_days(start, end)
         return Response({"days": days})
-
-
-class SupportingDocumentViewSet(viewsets.ModelViewSet):
-    serializer_class = SupportingDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwner]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def get_queryset(self):
-        return SupportingDocument.objects.filter(
-            application__employee=self.request.user,
-            application_id=self.kwargs["application_pk"],
-        )
-
-    def perform_create(self, serializer):
-        application = LeaveApplication.objects.filter(
-            id=self.kwargs["application_pk"], employee=self.request.user
-        ).first()
-        if application is None:
-            raise Http404("Leave application not found.")
-        if application.status != LeaveApplication.Status.DRAFT:
-            raise ValidationError("Cannot upload documents to a submitted application.")
-
-        file = self.request.FILES.get("file")
-        if not file:
-            raise ValidationError("No file provided.")
-        if file.size > MAX_DOCUMENT_SIZE:
-            raise ValidationError(
-                f"Files may not exceed {MAX_DOCUMENT_SIZE // (1024 * 1024)} MB."
-            )
-
-        content_type = file.content_type or "application/octet-stream"
-        if not is_allowed_document_content_type(content_type):
-            raise ValidationError("File type is not allowed.")
-
-        result = upload_document(file, str(application.id))
-        serializer.save(
-            application=application,
-            file_path=result["path"],
-            file_url=result["url"],
-            file_name=file.name,
-            file_size=file.size,
-            content_type=content_type,
-        )
-
-    def perform_destroy(self, instance):
-        if instance.application.status != LeaveApplication.Status.DRAFT:
-            raise ValidationError("Cannot remove documents from a submitted application.")
-        try:
-            delete_document(instance.file_path)
-        except Exception:
-            logger.exception("Failed to delete document %s from storage", instance.id)
-        instance.delete()

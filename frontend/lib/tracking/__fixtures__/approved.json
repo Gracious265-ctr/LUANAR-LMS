@@ -145,5 +145,6 @@
     "last_resubmitted_at": null,
     "can_resubmit": false,
     "returns_to_stage": null
-  }
+  },
+  "documents": []
 }

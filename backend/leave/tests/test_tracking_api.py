@@ -8,8 +8,9 @@ Ownership and gating:
 - draft         -> 409 ``application_not_submitted``
 - unknown id    -> 404
 - non-GET       -> 405
-- exactly two queries for the whole request (one for the application, one for
-  the latest cancellation request; the fixture provider does no DB access)
+- exactly three queries for the whole request (one for the application, one
+  for the prefetched active documents, one for the latest cancellation request;
+  the fixture provider does no DB access)
 """
 
 from django.contrib.auth import get_user_model
@@ -17,7 +18,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from leave.models import LeaveApplication
+from leave.models import LeaveApplication, SupportingDocument
 
 from .stubs import make_user
 
@@ -136,11 +137,43 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             response = getattr(self.client, method)(self.url(app.id))
             self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def test_only_one_query_for_owner_request(self):
+    def test_only_three_queries_for_owner_request(self):
         app = self.make_app()
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_documents_block_returns_active_rows(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        app = self.make_app()
+        SupportingDocument.objects.create(
+            application=app,
+            file_path="leave-documents/abcd/active.pdf",
+            file_url="stale://active",
+            file_name="active.pdf",
+            file_size=100,
+            content_type="application/pdf",
+        )
+        retired = SupportingDocument.objects.create(
+            application=app,
+            file_path="leave-documents/abcd/old.pdf",
+            file_url="stale://old",
+            file_name="old.pdf",
+            file_size=100,
+            content_type="application/pdf",
+        )
+        retired.retire(self.owner, reason=SupportingDocument.RetireReason.REPLACED)
+
+        response = self.client.get(self.url(app.id))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        docs = response.data["documents"]
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["file_name"], "active.pdf")
+        self.assertEqual(
+            docs[0]["id"], str(SupportingDocument.objects.get(file_name="active.pdf").id)
+        )
+        self.assertNotIn("file_path", docs[0])
 
     def test_current_stage_is_serialized_passthrough(self):
         app = self.make_app()

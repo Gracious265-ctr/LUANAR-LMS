@@ -1586,8 +1586,6 @@ class SupportingDocumentAPITest(TestCase):
         self.app.status = LeaveApplication.Status.SUBMITTED
         self.app.reference_number = "LUANAR-2026-00001"
         self.app.save()
-        from io import BytesIO
-
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
@@ -1596,7 +1594,8 @@ class SupportingDocumentAPITest(TestCase):
             {"file": file},
             format="multipart",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "application_not_editable")
 
     def test_upload_to_unknown_application_returns_404(self):
         from uuid import uuid4
@@ -1629,7 +1628,7 @@ class SupportingDocumentAPITest(TestCase):
     def test_upload_over_size_limit_returns_400(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
-        with mock.patch("leave.views.MAX_DOCUMENT_SIZE", 100):
+        with mock.patch("leave.documents.services.MAX_DOCUMENT_SIZE", 100):
             file = SimpleUploadedFile(
                 "big.pdf", b"x" * 101, content_type="application/pdf"
             )

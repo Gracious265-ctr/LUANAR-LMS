@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Min
+from django.utils import timezone
 from django.utils.text import slugify
 
 
@@ -287,6 +288,28 @@ class SupportingDocument(models.Model):
         blank=True,
         related_name="replaced_documents",
     )
+
+    def retire(self, user, reason, *, replaced_by=None) -> None:
+        """Flip this row to ``retired`` (Unit 19).
+
+        Retirement is permanent: a document is never re-activated. The storage
+        object is deliberately kept so submitted revision snapshots and the
+        audit trail still resolve. ``reason`` is ``replaced`` or ``removed``.
+        """
+        self.status = self.Status.RETIRED
+        self.retired_at = timezone.now()
+        self.retired_by = user
+        self.retire_reason = reason
+        self.replaced_by = replaced_by
+        self.save(
+            update_fields=[
+                "status",
+                "retired_at",
+                "retired_by",
+                "retire_reason",
+                "replaced_by",
+            ]
+        )
 
     class Meta:
         ordering = ["-uploaded_at"]

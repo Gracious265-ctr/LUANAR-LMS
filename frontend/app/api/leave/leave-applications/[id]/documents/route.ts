@@ -1,11 +1,17 @@
 import { proxyRequest } from "../../../_lib/proxy";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  return proxyRequest("GET", `leave-applications/${id}/documents/`);
+  const includeRetired = new URL(request.url).searchParams.get(
+    "include_retired"
+  );
+  const path = includeRetired
+    ? `leave-applications/${id}/documents/?include_retired=true`
+    : `leave-applications/${id}/documents/`;
+  return proxyRequest("GET", path);
 }
 
 export async function POST(

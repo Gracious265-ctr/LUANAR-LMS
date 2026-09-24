@@ -37,7 +37,6 @@ const application: ApplicationDetail = {
   documents: [
     {
       id: "doc-1",
-      file_path: "docs/doc.pdf",
       file_url: "/media/docs/doc.pdf",
       file_name: "Travel itinerary.pdf",
       file_size: 1024,

@@ -9,12 +9,15 @@ Unit 18 extends the payload with cancellation state: the real application
 status wins over the fixture scenario once it leaves ``submitted`` (so a
 cancelled application reports ``cancelled``), and one extra query loads the
 latest cancellation request. The fixture provider's own scenario load performs
-no database access, so the owner endpoint totals two queries.
+no database access, so the owner endpoint totals three queries (application,
+prefetched active documents, latest cancellation).
 """
 
 from dataclasses import dataclass, replace
 
-from ..models import LeaveApplication
+from django.db.models import Prefetch
+
+from ..models import LeaveApplication, SupportingDocument
 from .contracts import WorkflowTracking
 from .provider import get_tracking_provider
 
@@ -44,6 +47,13 @@ def get_application_tracking(user, application_id) -> TrackingPayload:
     """
     application = LeaveApplication.objects.filter(
         id=application_id, employee=user
+    ).prefetch_related(
+        Prefetch(
+            "documents",
+            queryset=SupportingDocument.objects.filter(
+                status=SupportingDocument.Status.ACTIVE
+            ),
+        )
     ).first()
     if application is None:
         raise ApplicationNotFoundError()

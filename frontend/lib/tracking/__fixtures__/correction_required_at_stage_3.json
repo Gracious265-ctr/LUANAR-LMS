@@ -137,5 +137,15 @@
       "order": 3,
       "role_label": "Registrar"
     }
-  }
+  },
+  "documents": [
+    {
+      "id": "doc-correction-active",
+      "file_name": "medical-certificate-v2.pdf",
+      "file_size": 51200,
+      "content_type": "application/pdf",
+      "file_url": "https://signed/medical-certificate-v2.pdf",
+      "uploaded_at": "2026-10-18T08:45:00Z"
+    }
+  ]
 }

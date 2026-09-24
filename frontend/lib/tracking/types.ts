@@ -69,6 +69,16 @@ export interface ResubmissionInfo {
   returns_to_stage: { order: number; role_label: string } | null;
 }
 
+/** One active supporting document attached to the tracked application. */
+export interface TrackingDocument {
+  id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  file_url: string;
+  uploaded_at: string;
+}
+
 export interface ApplicationSummary {
   id: string;
   reference_number: string;
@@ -109,6 +119,8 @@ export interface TrackingResponse {
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
+  /** Unit 19 addition: the employee's active supporting documents. */
+  documents: TrackingDocument[];
   /** Unit 18 additions: cancellation state appended to the same payload. */
   cancelled_at: string | null;
   cancellation_action: CancellationAction | null;

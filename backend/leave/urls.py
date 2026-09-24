@@ -33,6 +33,7 @@ supporting_doc_list = SupportingDocumentViewSet.as_view(
 supporting_doc_detail = SupportingDocumentViewSet.as_view(
     {"get": "retrieve", "delete": "destroy"}
 )
+supporting_doc_replace = SupportingDocumentViewSet.as_view({"post": "replace"})
 
 employee_leave_types = EmployeeLeaveTypeViewSet.as_view({"get": "list"})
 
@@ -65,5 +66,10 @@ urlpatterns = [
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/",
         supporting_doc_detail,
         name="supportingdocument-detail",
+    ),
+    path(
+        "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/replace/",
+        supporting_doc_replace,
+        name="supportingdocument-replace",
     ),
 ]

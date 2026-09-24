@@ -73,6 +73,7 @@ class Command(BaseCommand):
             )
 
         self._seed_cancellations(fy_label)
+        self._seed_documents(fy_label)
 
     def _ensure_second_employee(self):
         """An academic outside the Dean's faculty (review-scope boundary)."""
@@ -310,4 +311,78 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(f"Done. Seeded cancellations with references {prefix}*.")
+        )
+
+    def _seed_documents(self, fy_label: str):
+        """Unit 19 document-lifecycle scenarios (references LV-<FY>-820NNN).
+
+        Attaches supporting documents directly (no Supabase uploads) so the
+        employee uploader, archive and tracking card have realistic content:
+        a ``correction_required`` application with one active row plus one
+        retired``/``replaced`` row (exercises the replace UI and archive), and
+        a draft with two active rows. Idempotent on the 820 prefix.
+        """
+        from leave.models import SupportingDocument
+
+        prefix = f"LV-{fy_label}-820"
+        if LeaveApplication.objects.filter(
+            reference_number__startswith=prefix
+        ).exists():
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Documents already seeded (references {prefix}*) — keeping."
+                )
+            )
+            return
+
+        employee = User.objects.get(
+            username="employee@test.luanar", role=User.Role.EMPLOYEE
+        )
+
+        def add(application, name, content_type="application/pdf", size=48_000):
+            return SupportingDocument.objects.create(
+                application=application,
+                file_path=f"seeded/820/{application.reference_number}/{name}",
+                file_url=(
+                    f"https://dev-storage/leave-documents/"
+                    f"{application.reference_number}/{name}"
+                ),
+                file_name=name,
+                file_size=size,
+                content_type=content_type,
+            )
+
+        start = self._suitable_start(employee, 8)
+
+        corrected = LeaveApplication.objects.create(
+            employee=employee,
+            leave_type_id=1,
+            start_date=start,
+            end_date=start + timedelta(days=6),
+            reason="Document replacement scenario (seeded)",
+            reference_number=f"{prefix}01",
+            status=LeaveApplication.Status.CORRECTION_REQUIRED,
+        )
+        active = add(corrected, "leave-letter.pdf")
+        replaced = add(corrected, "medical-certificate-v1.pdf")
+        replaced.retire(
+            employee,
+            reason=SupportingDocument.RetireReason.REPLACED,
+            replaced_by=active,
+        )
+
+        draft = LeaveApplication.objects.create(
+            employee=employee,
+            leave_type_id=1,
+            start_date=start + timedelta(days=21),
+            end_date=start + timedelta(days=27),
+            reason="Draft with documents (seeded)",
+            reference_number=f"{prefix}02",
+            status=LeaveApplication.Status.DRAFT,
+        )
+        add(draft, "annual-certificate.pdf")
+        add(draft, "supporting-note.txt", content_type="text/plain")
+
+        self.stdout.write(
+            self.style.SUCCESS(f"Done. Seeded documents with references {prefix}*.")
         )
