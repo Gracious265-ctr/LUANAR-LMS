@@ -2,6 +2,8 @@ from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from audit.serializers import AuditedModelSerializer
+
 from ..models import (
     FinancialYear,
     GradeEntitlement,
@@ -19,8 +21,11 @@ from ..services import (
 )
 
 
-class GradeEntitlementSerializer(serializers.ModelSerializer):
+class GradeEntitlementSerializer(AuditedModelSerializer):
     """HR-facing serializer for grade/entitlement rules."""
+
+    audit_prefix = "grade_entitlement"
+    audit_fields = ["grade_start", "grade_end", "days", "effective_from"]
 
     class Meta:
         model = GradeEntitlement
@@ -79,8 +84,11 @@ class GradeEntitlementSerializer(serializers.ModelSerializer):
             )
 
 
-class LeaveTypeSerializer(serializers.ModelSerializer):
+class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
+
+    audit_prefix = "leave_type"
+    audit_fields = ["name", "code"]
 
     class Meta:
         model = LeaveType
@@ -122,8 +130,20 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LeaveRuleSerializer(serializers.ModelSerializer):
+class LeaveRuleSerializer(AuditedModelSerializer):
     """HR-facing serializer for effective-dated leave rules."""
+
+    audit_prefix = "leave_rule"
+    audit_fields = [
+        "leave_type_id",
+        "max_duration_days",
+        "min_notice_days",
+        "requires_supporting_document",
+        "consumes_annual_entitlement",
+        "eligibility",
+        "eligibility_rules",
+        "effective_from",
+    ]
 
     leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
     leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
@@ -137,11 +157,67 @@ class LeaveRuleSerializer(serializers.ModelSerializer):
             "leave_type_name",
             "max_duration_days",
             "eligibility",
+            "eligibility_rules",
             "min_notice_days",
             "requires_supporting_document",
             "consumes_annual_entitlement",
             "effective_from",
         ]
+
+    ELIGIBILITY_RULE_TYPES = ("gender", "min_service", "grade_range", "employee_category")
+
+    def validate_eligibility_rules(self, value: list) -> list:
+        if not isinstance(value, list):
+            raise serializers.ValidationError(
+                "Eligibility rules must be a list."
+            )
+        for index, item in enumerate(value):
+            self._validate_eligibility_rule(index, item)
+        return value
+
+    def _validate_eligibility_rule(self, index: int, item) -> None:
+        if not isinstance(item, dict):
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}] must be an object."
+            )
+        rule_type = item.get("type")
+        params = item.get("params") or {}
+        if rule_type not in self.ELIGIBILITY_RULE_TYPES:
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}] uses unknown rule type {rule_type!r}."
+            )
+        if not isinstance(params, dict):
+            raise serializers.ValidationError(
+                f"eligibility_rules[{index}].params must be an object."
+            )
+
+        if rule_type == "gender":
+            allowed = params.get("allowed") or []
+            if (not isinstance(allowed, list) or not allowed
+                    or any(v not in ("M", "F") for v in allowed)):
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.allowed with M/F values."
+                )
+        elif rule_type == "min_service":
+            months = params.get("months")
+            if not isinstance(months, int) or months < 1:
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.months >= 1."
+                )
+        elif rule_type == "grade_range":
+            min_grade, max_grade = params.get("min"), params.get("max")
+            if not min_grade or not max_grade or min_grade > max_grade:
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.min <= params.max."
+                )
+        elif rule_type == "employee_category":
+            allowed = params.get("allowed") or []
+            if (not isinstance(allowed, list) or not allowed
+                    or any(v not in ("academic", "administration") for v in allowed)):
+                raise serializers.ValidationError(
+                    f"eligibility_rules[{index}] requires params.allowed with "
+                    "category values."
+                )
 
     def validate_max_duration_days(self, value: int) -> int:
         if value is None or value < 1:
@@ -163,8 +239,11 @@ class LeaveRuleSerializer(serializers.ModelSerializer):
         return value
 
 
-class FinancialYearSerializer(serializers.ModelSerializer):
+class FinancialYearSerializer(AuditedModelSerializer):
     """HR-facing serializer for configured financial-year periods."""
+
+    audit_prefix = "financial_year"
+    audit_fields = ["start_date", "end_date", "is_active"]
 
     class Meta:
         model = FinancialYear
@@ -223,20 +302,28 @@ class FinancialYearSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict):
         with transaction.atomic():
-            instance = super().create(validated_data)
+            instance = super(AuditedModelSerializer, self).create(validated_data)
             self._settle_active_flag(instance)
+            self._audit_after_create(instance)
         return instance
 
     def update(self, instance, validated_data: dict):
+        before = self._audit_snapshot(instance)
         with transaction.atomic():
-            instance = super().update(instance, validated_data)
+            instance = super(AuditedModelSerializer, self).update(
+                instance, validated_data
+            )
             self._settle_active_flag(instance)
             instance.refresh_from_db()
+            self._audit_after_update(instance, before)
         return instance
 
 
-class PublicHolidaySerializer(serializers.ModelSerializer):
+class PublicHolidaySerializer(AuditedModelSerializer):
     """HR-facing serializer for configured public-holiday dates."""
+
+    audit_prefix = "public_holiday"
+    audit_fields = ["name", "date"]
 
     class Meta:
         model = PublicHoliday
@@ -270,6 +357,10 @@ class PublicHolidaySerializer(serializers.ModelSerializer):
 
 
 class SupportingDocumentSerializer(serializers.ModelSerializer):
+    replaced_by_name = serializers.CharField(
+        source="replaced_by.file_name", read_only=True, default=None
+    )
+
     class Meta:
         model = SupportingDocument
         fields = [
@@ -280,6 +371,12 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
             "file_size",
             "content_type",
             "uploaded_at",
+            "status",
+            "retired_at",
+            "retired_by",
+            "retire_reason",
+            "replaced_by",
+            "replaced_by_name",
         ]
         read_only_fields = fields
 

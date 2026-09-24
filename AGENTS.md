@@ -26,6 +26,8 @@ Always load these skills at the start of any task in this repo, based on match â
 
 ## Verification
 
-- Backend: `uv run manage.py test` (from `backend/`, requires `CREATEDB` on the DB role)
-- Frontend: `npm test` (from `frontend/`, Vitest run)
+- Backend (full): `DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto` (from `backend/`, requires `CREATEDB` on the DB role)
+- Backend (scoped, e.g. one app/branch): `DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test <app> --keepdb --parallel auto`
+- Parallel sessions/branches must each use a unique test DB or they deadlock: `TEST_DB_NAME=test_luanar_leave_<branch> DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto`
+- Frontend: `npm test` (from `frontend/`, Vitest run; safe to run while backend tests run)
 - Lint: run the project's lint scripts when relevant

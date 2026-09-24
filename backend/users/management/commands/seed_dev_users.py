@@ -2,9 +2,12 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
-from leave.models import GradeEntitlement, LeaveRule, LeaveType
+from leave import defaults as leave_defaults
+from leave.defaults import (
+    ENTITLEMENT_BANDS,
+    DEFAULT_LEAVE_RULES,
+)
 from users.models import EmployeeProfile
 
 User = get_user_model()
@@ -23,6 +26,7 @@ USERS = [
             "designation": "Administrative Officer",
             "category": EmployeeProfile.Category.ADMINISTRATION,
             "grade": "B",
+            "gender": EmployeeProfile.Gender.FEMALE,
             "appointment_date": date(2022, 3, 15),
         },
     },
@@ -37,6 +41,7 @@ USERS = [
             "designation": "Lecturer",
             "category": EmployeeProfile.Category.ACADEMIC,
             "grade": "E",
+            "gender": EmployeeProfile.Gender.MALE,
             "appointment_date": date(2018, 9, 1),
         },
     },
@@ -51,6 +56,7 @@ USERS = [
             "designation": "Head of Department",
             "category": EmployeeProfile.Category.ACADEMIC,
             "grade": "G",
+            "gender": EmployeeProfile.Gender.MALE,
             "appointment_date": date(2015, 1, 10),
         },
     },
@@ -65,6 +71,7 @@ USERS = [
             "designation": "Dean",
             "category": EmployeeProfile.Category.ACADEMIC,
             "grade": "H",
+            "gender": EmployeeProfile.Gender.MALE,
             "appointment_date": date(2012, 6, 1),
         },
     },
@@ -79,6 +86,7 @@ USERS = [
             "designation": "University Registrar",
             "category": EmployeeProfile.Category.ADMINISTRATION,
             "grade": "H",
+            "gender": EmployeeProfile.Gender.MALE,
             "appointment_date": date(2010, 8, 15),
         },
     },
@@ -93,6 +101,7 @@ USERS = [
             "designation": "Deputy Vice-Chancellor",
             "category": EmployeeProfile.Category.ADMINISTRATION,
             "grade": "H",
+            "gender": EmployeeProfile.Gender.MALE,
             "appointment_date": date(2008, 4, 1),
         },
     },
@@ -107,6 +116,7 @@ USERS = [
             "designation": "HR Manager",
             "category": EmployeeProfile.Category.ADMINISTRATION,
             "grade": "E",
+            "gender": EmployeeProfile.Gender.FEMALE,
             "appointment_date": date(2019, 2, 1),
         },
     },
@@ -157,6 +167,7 @@ class Command(BaseCommand):
 
         self._seed_default_entitlements()
         self._seed_default_leave_types()
+        self._seed_default_financial_year()
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -164,84 +175,42 @@ class Command(BaseCommand):
             )
         )
 
+    def _seed_default_financial_year(self):
+        """Seed a financial year covering today (idempotent)."""
+        year, created = leave_defaults.ensure_default_financial_year()
+        if not created:
+            self.stdout.write(self.style.WARNING("Financial year already configured."))
+            return
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Created financial year: {year.start_date} – {year.end_date} "
+                f"({year.start_date.year}-{year.end_date.year % 100:02d})"
+            )
+        )
+
     def _seed_default_entitlements(self):
         """Seed the default grade/entitlement bands (idempotent)."""
-        default_bands = [
-            ("A", "C", 21),
-            ("D", "G", 24),
-            ("H", "U", 30),
-        ]
-        effective_from = timezone.localdate()
-        created_count = 0
-
-        for grade_start, grade_end, days in default_bands:
-            _, created = GradeEntitlement.objects.get_or_create(
-                grade_start=grade_start,
-                grade_end=grade_end,
-                effective_from=effective_from,
-                defaults={"days": days},
-            )
-            if created:
-                created_count += 1
+        created_count = leave_defaults.ensure_default_entitlements()
+        if created_count:
+            for grade_start, grade_end, days in ENTITLEMENT_BANDS:
                 self.stdout.write(
                     self.style.SUCCESS(
                         f"Created entitlement: {grade_start}–{grade_end} → {days} days"
                     )
                 )
+            self.stdout.write(
+                self.style.SUCCESS(f"Entitlements created: {created_count}")
+            )
 
-        if created_count:
-            self.stdout.write(self.style.SUCCESS(f"Entitlements created: {created_count}"))
     def _seed_default_leave_types(self):
         """Seed the built-in leave types and default rules (idempotent)."""
-        default_rules = [
-            {
-                "code": "annual",
-                "name": "Annual leave",
-                "max_duration_days": 30,
-                "consumes_annual_entitlement": True,
-            },
-            {
-                "code": "maternity",
-                "name": "Maternity leave",
-                "max_duration_days": 90,
-            },
-            {
-                "code": "paternity",
-                "name": "Paternity leave",
-                "max_duration_days": 10,
-            },
-            {
-                "code": "compassionate",
-                "name": "Compassionate leave",
-                "max_duration_days": 5,
-            },
-        ]
-        effective_from = timezone.localdate()
-        created_count = 0
-
-        for item in default_rules:
-            leave_type, _ = LeaveType.objects.get_or_create(
-                code=item["code"],
-                defaults={"name": item["name"]},
-            )
-            _, created = LeaveRule.objects.get_or_create(
-                leave_type=leave_type,
-                effective_from=effective_from,
-                defaults={
-                    "max_duration_days": item["max_duration_days"],
-                    "consumes_annual_entitlement": item.get(
-                        "consumes_annual_entitlement", False
-                    ),
-                },
-            )
-            if created:
-                created_count += 1
+        created_count = leave_defaults.ensure_default_leave_types_and_rules()
+        if created_count:
+            for item in DEFAULT_LEAVE_RULES:
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"Created leave rule: {leave_type.name} → "
+                        f"Created leave rule: {item['name']} → "
                         f"{item['max_duration_days']} days"
                     )
                 )
-
-        if created_count:
             self.stdout.write(self.style.SUCCESS(f"Leave rules created: {created_count}"))

@@ -19,8 +19,8 @@ from django.utils import timezone
 
 from ..diff import compute_changes
 from ..models import ApplicationRevision, LeaveApplication, LeaveType, SupportingDocument
+from . import documents
 from .submission import _acquire_employee_lock, build_rules_snapshot
-from .storage import upload_document
 
 MAX_REASON_LENGTH = 2000
 
@@ -36,13 +36,10 @@ STAGE_STATUS_BY_APPLICATION_STATUS = {
     LeaveApplication.Status.CORRECTION_REQUIRED: "correction_requested",
 }
 
-
-class ApplicationNotFoundError(Exception):
-    """The application does not exist or belongs to another employee."""
-
-
-class DocumentNotFoundError(Exception):
-    """The document is not part of this application or is no longer active."""
+# Ownership/not-found errors come from the Unit 19 document service; re-exported
+# here so the resubmission views keep catching one error class per case.
+ApplicationNotFoundError = documents.ApplicationNotFoundError
+DocumentNotFoundError = documents.DocumentNotFoundError
 
 
 class NotEditableError(Exception):
@@ -162,7 +159,13 @@ def save_changes(
 
 
 def add_document(*, application_id, actor, file, expected_row_version) -> dict:
-    """Upload and attach a new active document, then return the edit context."""
+    """Upload and attach a new active document, then return the edit context.
+
+    The file validation, storage write, row creation and audit event are all
+    handled by the Unit 19 document service (``documents.add_document``); this
+    wrapper keeps the resubmission concurrency/baseline orchestration and its
+    API/error contract.
+    """
     with transaction.atomic():
         application = _lock_owned(application_id, actor)
         _guard_editable(application)
@@ -170,36 +173,21 @@ def add_document(*, application_id, actor, file, expected_row_version) -> dict:
 
         ensure_baseline_revision(application)
 
-        result = upload_document(file, str(application.id))
-        document = SupportingDocument.objects.create(
-            application=application,
-            file_path=result["path"],
-            file_url=result["url"],
-            file_name=file.name,
-            file_size=file.size,
-            content_type=file.content_type or "application/octet-stream",
-        )
+        documents.add_document(application_id=application_id, actor=actor, file=file)
 
         application.row_version += 1
         application.save(update_fields=["row_version", "updated_at"])
-
-        record_event(
-            actor=actor,
-            action="leave_application.document_added",
-            target=application,
-            prev_state=application.status,
-            new_state=application.status,
-            metadata={
-                "document_id": str(document.id),
-                "document_name": document.file_name,
-            },
-        )
 
         return _edit_context(application, actor)
 
 
 def replace_document(*, application_id, actor, document_id, file, expected_row_version) -> dict:
-    """Retire ``document_id`` and attach its replacement; no file is deleted."""
+    """Retire ``document_id`` and attach its replacement; no file is deleted.
+
+    Delegates to the Unit 19 document service (``documents.replace_document``),
+    which keeps the retirement/audit semantics; the resubmission wrapper owns
+    the concurrency guard, baseline revision, row-version bump and edit context.
+    """
     with transaction.atomic():
         application = _lock_owned(application_id, actor)
         _guard_editable(application)
@@ -207,47 +195,24 @@ def replace_document(*, application_id, actor, document_id, file, expected_row_v
 
         ensure_baseline_revision(application)
 
-        previous = _active_document_or_404(application, document_id)
-
-        result = upload_document(file, str(application.id))
-        replacement = SupportingDocument.objects.create(
-            application=application,
-            file_path=result["path"],
-            file_url=result["url"],
-            file_name=file.name,
-            file_size=file.size,
-            content_type=file.content_type or "application/octet-stream",
-        )
-
-        _retire(
-            document=previous,
+        documents.replace_document(
+            application_id=application_id,
             actor=actor,
-            reason=SupportingDocument.RetireReason.REPLACED,
-            replaced_by=replacement,
+            document_id=document_id,
+            file=file,
         )
 
         application.row_version += 1
         application.save(update_fields=["row_version", "updated_at"])
-
-        record_event(
-            actor=actor,
-            action="leave_application.document_replaced",
-            target=application,
-            prev_state=application.status,
-            new_state=application.status,
-            metadata={
-                "old_document_id": str(previous.id),
-                "old_document_name": previous.file_name,
-                "new_document_id": str(replacement.id),
-                "new_document_name": replacement.file_name,
-            },
-        )
 
         return _edit_context(application, actor)
 
 
 def remove_document(*, application_id, actor, document_id, expected_row_version) -> dict:
-    """Retire ``document_id`` as removed; the file stays in storage history."""
+    """Retire ``document_id`` as removed; the file stays in storage history.
+
+    Delegates to the Unit 19 document service (``documents.remove_document``).
+    """
     with transaction.atomic():
         application = _lock_owned(application_id, actor)
         _guard_editable(application)
@@ -255,28 +220,14 @@ def remove_document(*, application_id, actor, document_id, expected_row_version)
 
         ensure_baseline_revision(application)
 
-        document = _active_document_or_404(application, document_id)
-        _retire(
-            document=document,
+        documents.remove_document(
+            application_id=application_id,
             actor=actor,
-            reason=SupportingDocument.RetireReason.REMOVED,
-            replaced_by=None,
+            document_id=document_id,
         )
 
         application.row_version += 1
         application.save(update_fields=["row_version", "updated_at"])
-
-        record_event(
-            actor=actor,
-            action="leave_application.document_removed",
-            target=application,
-            prev_state=application.status,
-            new_state=application.status,
-            metadata={
-                "document_id": str(document.id),
-                "document_name": document.file_name,
-            },
-        )
 
         return _edit_context(application, actor)
 
@@ -579,33 +530,6 @@ def _guard_approver_active(stage) -> None:
         raise ApproverUnavailableError(
             "Your approver is currently unavailable. Please contact HR."
         )
-
-
-def _active_document_or_404(application, document_id) -> SupportingDocument:
-    document = application.documents.filter(
-        id=document_id,
-        status=SupportingDocument.Status.ACTIVE,
-    ).first()
-    if document is None:
-        raise DocumentNotFoundError()
-    return document
-
-
-def _retire(*, document, actor, reason, replaced_by) -> None:
-    document.status = SupportingDocument.Status.RETIRED
-    document.retired_at = timezone.now()
-    document.retired_by = actor
-    document.retire_reason = reason
-    document.replaced_by = replaced_by
-    document.save(
-        update_fields=[
-            "status",
-            "retired_at",
-            "retired_by",
-            "retire_reason",
-            "replaced_by",
-        ]
-    )
 
 
 def _validate_basic_shape(*, leave_type_id, start_date, end_date, reason, today) -> None:

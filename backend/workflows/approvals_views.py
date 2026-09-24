@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from leave.models import LeaveApplication, SupportingDocument
-from leave.services.storage import get_signed_download_url
+from leave.storage import get_storage_backend
 
 from .approvals_serializers import (
     CONFIGURED_PAGE_SIZE,
@@ -222,7 +222,7 @@ class ApprovalDocumentDownloadView(APIView):
             raise Http404("No document matches the given query.")
 
         try:
-            url = get_signed_download_url(document.file_path, expires=60)
+            url = get_storage_backend().signed_url(document.file_path, expires=60)
         except ValueError:
             return Response(
                 {"detail": "Document download is unavailable."},

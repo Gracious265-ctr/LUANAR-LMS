@@ -72,8 +72,8 @@ function makeResult(over: Partial<ValidationResult> = {}): ValidationResult {
 function renderReview(validation: Partial<ValidationResult>, app = makeApplication()) {
   vi.mocked(getLeaveApplication).mockResolvedValue(app);
   vi.mocked(getLeaveTypes).mockResolvedValue([
-    { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
-    { id: 2, name: "Maternity Leave", requiresDocuments: true, maxDurationDays: 90 },
+    { id: 1, code: "annual", name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
+    { id: 2, code: "maternity", name: "Maternity Leave", requiresDocuments: true, maxDurationDays: 90 },
   ]);
   vi.mocked(useLeaveValidation).mockReturnValue({
     result: validation as ValidationResult,

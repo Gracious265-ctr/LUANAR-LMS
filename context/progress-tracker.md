@@ -4,27 +4,85 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 20 — HR-to-Employee Data Integration (COMPLETE — backend + frontend)
+- Unit 19 — Supporting Document Lifecycle (COMPLETE — backend + frontend)
 - Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
 - Unit 17 — Rejection, Correction, and Resubmission (COMPLETE — backend + frontend)
 - Unit 16 — Approver Review and Decision (COMPLETE — backend + frontend)
 - Unit 15 — Employee Application Tracking (COMPLETE)
 - Unit 14 — Leave Validation and Submission (COMPLETE)
 - Unit 13 — Leave Application and Drafts (COMPLETE), integrated onto `development`
+- Unit 11 — HR Finalized Leave and Audit View (COMPLETE — backend + frontend, ported onto `development`)
 - Unit 10 — HR Approved Leave Document Template (COMPLETE)
 - Unit 9 — HR Emergency Reassignment (COMPLETE)
 
 ## Current Goal
 
-- **Unit 18 — Leave Cancellation** is the Employee + Approver track's next
-  build: an employee can *withdraw* a pending application immediately or
-  *request cancellation* of approved leave that has not yet started, with the
-  approval chain limited to the Supervisor/HOD snapshot of the original
-  workflow — final approval restores the deducted balance to the originally
-  debited financial year (and marks it non-carry-forward-eligible). It extends
-  the Unit 15 tracker (cancel button + cancellation card) and the Unit 16
-  approvals area (`/approvals` switch + `?cancellation=` review panel), and
-  depends on Unit 16 (workflow snapshot, approver identity) and Unit 14
-  (balance ledger, financial-year representation).
+- **Unit 20 — HR-to-Employee Data Integration** replaces the placeholder
+  fixture rules provider with a real database-backed provider so the employee
+  experience reflects the actual HR-track record: HR creates an employee →
+  assigns grade/department/category → the system resolves entitlement and
+  balance → the employee sees their correct profile, entitlement and balance
+  on the dashboard.
+
+  **Implementation complete (2026-09-24).** Backend: `DatabaseRulesProvider`
+  (`leave/providers/database.py`) implements the full `RulesProvider` contract
+  over `EmployeeProfile`, `GradeEntitlement`, effective-dated `LeaveRule`,
+  `FinancialYear` and the ledger; `LEAVE_RULES_PROVIDER` now points at it.
+  Structured `LeaveRule.eligibility_rules` (D7 vocabulary — gender /
+  min_service / grade_range / employee_category) + `EmployeeProfile.gender`
+  (`M`/`F`) carry what the eligibility validator enforces (free-text
+  `eligibility` remains display-only). New authenticated-only (non-HR)
+  endpoints `GET /api/v1/leave/my/overview/` and
+  `GET /api/v1/leave/my/leave-types/` back the dashboard. Seed commands
+  (`seed_dev_users`, `seed_approvals_dev`) share idempotent defaults via
+  `leave/defaults.py` (entitlement bands A–C 21 / D–G 24 / H–U 30, built-in
+  leave types with rules + eligibility, financial year covering today) and
+  now run against the real provider. Frontend: `lib/leave-overview.ts` +
+  `/api/leave/my/overview` + `/api/leave/leave-types` Next proxies,
+  `lib/services/leaveTypes.ts` real fetch (replaces the Unit-4 mock), and the
+  dashboard now shows the real employee record (grade, designation,
+  department, category, gender, appointment date, financial year,
+  entitlement/used/available) instead of hard-coded stat cards, with the
+  "Awaiting My Approval" card fed by the real `approvals/capabilities` count.
+  Verified: backend full suite 643 OK (serial + `--parallel auto`),
+  `makemigrations --check` clean; frontend 277 tests OK, `tsc --noEmit`
+  clean, `eslint` clean, `npm run build` clean.
+
+## Completed (Unit 11)
+
+- **HR Finalized Leave and Audit View — ported onto `development` (`feature/unit-11`),
+  2026-09-24.** Ports hr-track's Unit 11 **without** importing its proprietary
+  `AuditEntry`/`record_audit`: `audit.AuditEvent` + `record_event` (Units 14–19)
+  stay the single append-only writer. Widened
+  `AuditEvent.object_id` UUIDField → `CharField(100)` (+ index `audit_target_idx`
+  on `(content_type, object_id)`, migration `audit/0002`) to cover HR
+  configuration targets with integer pks. Added `record_config_change`
+  (packages `summary`/`reason`/`before`/`after` diff into metadata),
+  `current_actor`, `events_for_target`. New read-only HR endpoints
+  `GET /api/v1/audit-entries/` (filters `action`/`target_type`/`target_id`/
+  `actor`) and `GET /api/v1/finalized-leave/` (SUBMITTED apps, `-submitted_at`,
+  `?employee=`, detail roll-up = documents + reassignments + audit timeline) in
+  `audit` app. Wired explicit, exactly-once, in-transaction audit hooks into
+  `EmployeeSerializer` (`employee.created/updated`), leave config serializers
+  (`grade_entitlement`/`leave_type`/`leave_rule`/`financial_year`/
+  `public_holiday`), `WorkflowSerializer` (audit after `_replace_stages`),
+  delegation services (`delegation.approved/rejected/cancelled`),
+  `reassign_application` (`application.reassigned`), and
+  `LeaveDocumentTemplateView.patch` (`document_template.updated`).
+  `AuditedModelSerializer` base + custom create/update callers normalized to
+  avoid double-audits (FY/workflow). Frontend: `lib/audit.ts` (dotted-code
+  `ACTION_LABELS`, content-type `TARGET_TYPE_LABELS`, 4 server-safe fetchers),
+  `components/hr/` (`audit-meta`, `audit-entries-table`, `finalized-leave-table`,
+  `application-history-view`, `edit-action-link`), pages
+  `dashboard/hr-admin/audit` + `audit/applications/[id]`, sidebar "Audit" item
+  (`History`) + HR index card. **Key decisions:** no second audit model; no
+  double-audits of existing trail events; HR read is SUBMITTED-only (drafts
+  404); admin mutations stay outside the audited API path; dotted action codes.
+  Verified: backend full suite 669 OK + `check` + `makemigrations --check`
+  clean; frontend 286 tests OK, `tsc --noEmit` clean, `eslint` clean,
+  `npm run build` clean (both audit routes). Dev DB migrated (`audit/0002`);
+  stray `hr-*@audit.test` diagnostics removed.
 
 ## Completed (Unit 15)
 
@@ -599,11 +657,62 @@ Update this file after every meaningful implementation change.
   `comment_required` error shape (limit already enforced for approve + reject
   in `services.py`).
 
+## Completed (Unit 20)
+
+- **Backend — rules provider swap.** `DatabaseRulesProvider`
+  (`leave/providers/database.py`) implements the full Unit 20 contract
+  (`backend/docs/leave-rules-provider-contract.md`): `get_employee_for_user`,
+  `get_leave_balance`, `get_financial_year_for`, `get_today`,
+  `get_leave_type_rules` (effective-dated, with structured eligibility),
+  `get_available_balance` and `get_public_holidays`. Durability notes:
+  `max_duration_unit="calendar_days"`, `min_notice_unit="working_days"`
+  (`LeaveRule` stores units silently), `LeaveType` has no active flag so
+  `is_active=True` always, `EmployeeInfo.department_id=None` (department is
+  free text), FY label `f"{start.year}-{end.year % 100:02d}"`, ledger net used
+  = `Σ deductions − Σ restorations`. Provider wired via
+  `config/settings/base.py` `LEAVE_RULES_PROVIDER`.
+- **Models/schema.** `LeaveRule.eligibility_rules` JSONField (migration
+  0011) holding the D7 vocabulary so the validator can materialize
+  `EligibilityRule`s; `EmployeeProfile.gender` TextChoices `M`/`F` (users
+  migration 0003); `LeaveRuleSerializer.validate_eligibility_rules` enforces
+  the D7 shapes.
+- **Endpoints.** `MyLeaveOverviewView` + `MyLeaveTypesView`
+  (`leave/views/my_leave.py`, registered in `leave/urls.py`), both
+  `IsAuthenticated` only — profile + balance + counts for the overview, and
+  only leave types with an effective rule for the form.
+- **Seeds via `leave/defaults.py`.** Shared idempotent
+  `ensure_default_entitlements` / `ensure_default_leave_types_and_rules` /
+  `ensure_default_financial_year` used by `seed_dev_users` and
+  `seed_approvals_dev`. Business impact of the swap on seed tests: the
+  approvals dev seed now runs real validation, so it ensures its own config
+  (grades, entitlements, leave types+rules, financial year, employee gender
+  for the maternity scenario) and drops the fixture-data lookup in
+  `_leave_type_id`; `StubProviderMixin.use_stub` now also patches
+  `workflows.approvals_serializers.get_provider` so approval review payloads
+  stay deterministic under the injected stub.
+- **Frontend.** `lib/leave-overview.ts` (typed overview + `formatIsoDate`),
+  `/api/leave/my/overview` + `/api/leave/leave-types` Next proxy routes,
+  `lib/services/leaveTypes.ts` real fetch mapping snake_case → camelCase
+  (replaces the Unit-4 mock; consumers use only `id`+`name`), dashboard
+  rewritten to render the real employee record and balances (removed the fake
+  `"21"` available-balance and zero counts) with the approver card fed by the
+  existing `approvals/capabilities` payload.
+- **Tests.** `leave/tests/test_database_rules_provider.py` (contract suite
+  incl. ledger, eligibility, FY, holidays, effective-dated rules),
+  `leave/tests/test_my_leave_views.py`, `leave/tests/test_leave_rule_serializer.py`,
+  `frontend/tests/leave-types-service.test.ts`,
+  `frontend/tests/leave-overview.test.ts`. Full backend suite 643 OK (serial +
+  `--parallel auto`); frontend 277 OK, tsc/eslint/build clean.
+
 ## Next Up
-  Unit 15 endpoint and payload are extended additively by these per their specs;
-  Unit 16's approvals API, `status` enum, and decision contracts are the
-  consumption boundary for both. The Unit 19 document-lifecycle spec is drafted
-  (see Session Notes) and depends on the Unit 16/17 status enum values used here.
+
+  Unit 21 — Workflow-to-Approver Integration: connect HR workflow
+  configuration to real submitted applications (resolve the applicable
+  workflow, route to the correct responsible approver, sequential progression,
+  mandatory stages, department/faculty routing, delegated approvers and
+  reassigned applications). Removes hard-coded development workflows; verify
+  against the existing approvals API (Unit 16) and assignment policy. Depends
+  on HR Units 6–9 and Employee/Approver Units 14–17.
 
 ## Open Questions
 
@@ -630,8 +739,8 @@ Update this file after every meaningful implementation change.
 - `calculate_working_days` excludes weekends only; connecting it to the Unit 5
   public-holiday / financial-year services (and the "intervention days" notion)
   is a documented TODO
-- Document storage uses Supabase with signed URLs (configurable expiry) —
-  requires `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
+- Document storage swaps to Supabase signed URLs — requires `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
 
 ## Session Notes
 
@@ -665,6 +774,7 @@ Update this file after every meaningful implementation change.
   backend `manage.py check` clean (approvals suite unchanged since its 48/48
   green run).
 - **Unit 19 spec drafted (2026-09-21):** `context/specs/19-supporting-document-lifecycle.md` — supporting documents get a full state-aware lifecycle. The four developer-approved decisions: (1) Unit 19 owns the document lifecycle (Unit 17's resubmission document flows reuse its service, not re-implement); (2) the file-storage abstraction + local-filesystem dev backend are built here — `LEAVE_STORAGE_BACKEND` dotted-path factory mirroring `get_provider()`, defaulting to `DevelopmentStorageBackend` (repo `storage/` root) so uploads/downloads work with no Supabase credentials; (3) draft-phase replace/remove keeps Unit 13 behavior (physically deletes old file+row), while post-submission replaces/removes retire and never delete (Unit 17 rule); (4) history = `SupportingDocument.status/retired_at/retired_by/retire_reason/replaced_by` + `document_uploaded`/`document_removed`/`document_replaced` AuditEvents, no new model. Download moves from stored signed URLs to one authenticated Django streaming endpoint (`content/?download=1`) opened via the Next proxy; `file_url` stays but now stores the content-URL. Depends on Units 16/17 status enum values — the edit/read-only gate is a membership check so it activates when those merge. Next; spec's §12 docs updates (architecture.md storage decision, README API table) are implementation-time.
+- **Unit 19 shipped (2026-09-24):** backend + frontend complete and all green (see Current Goal). The spec's §12 doc updates are done: `architecture.md` §5.2 (storage decision), §12.8 (byte-access + no-permanent-deletion invariants), §13 decision table rows; root `README.md` API table now lists the config/list/upload/retrieve/delete/replace/history/content endpoints.
 - **Unit 15 complete (2026-09-21):** read-only, owner-only tracking endpoint +
   `/applications/[id]` page behind a swappable fixture provider (contracts live
   in the Django-free `contracts.py`; `LEAVE_TRACKING_PROVIDER` setting drives
@@ -803,4 +913,22 @@ Update this file after every meaningful implementation change.
   updated from `/dashboard/leave/{id}/edit` to `/applications/{id}/edit`.
   `useLeaveValidation` hook now passes `application_id` (optional) so
   overlap checks exclude the current application; test updated to
-  expect `application_id: null`.
+  expect `application_id: null`.- **Test infrastructure speedup (2026-09-24):** test runs were the bottleneck as
+  the suite grew. Added `backend/config/settings/test.py` — MD5 password hasher
+  (users are created in nearly every test), in-memory email backend, and a
+  `TEST_DB_NAME` env override for the disposable test DB so parallel work
+  sessions each run on their own DB (fixes the documented
+  `DeadlockDetected` test-DB collision). Backend command is now
+  `DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test
+  --keepdb --parallel auto` — full suite **591 tests in ~19 s** (was minutes
+  of setup + PBKDF2 per user). Hoisted read-only fixtures in `workflows/tests.py`
+  to `setUpTestData` for 5 high-count classes (WorkflowEndpoint/Admin/
+  ActivationEndpoint, DelegationModelState/Service) — 56 tests still green;
+  `ApprovalFixtureMixin` left on per-test `setUp` because it needs per-instance
+  mock patchers and several tests mutate shared approver profiles. Frontend:
+  `pool: "vmThreads"` (one jsdom per worker), `css: false`, and
+  `// @vitest-environment node` on 6 pure-logic suites (approvals-format,
+  tracking-format, tracking-service, entitlements, financial-years, leave-rules;
+  approvals-service stays jsdom — it reads `window.location.origin`); added
+  `npm run test:changed` (`vitest run --changed`). Frontend suite 97 s → 29 s,
+  245/245 green; `tsc --noEmit`, lint, backend all clean.

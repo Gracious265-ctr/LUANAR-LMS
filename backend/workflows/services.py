@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from audit.services import record_config_change
 from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
@@ -321,6 +322,19 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
+        record_config_change(
+            actor=actor,
+            action="delegation.approved",
+            target=delegation,
+            before={"status": Delegation.Status.REQUESTED, "delegate": None},
+            after={
+                "status": delegation.status,
+                "delegate": delegate.get_full_name() if delegate else "",
+            },
+            reason=reason,
+            prev_state=Delegation.Status.REQUESTED,
+            new_state=delegation.status,
+        )
     return delegation
 
 
@@ -344,6 +358,16 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "decided_at",
                 "updated_at",
             ]
+        )
+        record_config_change(
+            actor=actor,
+            action="delegation.rejected",
+            target=delegation,
+            before={"status": Delegation.Status.REQUESTED},
+            after={"status": delegation.status},
+            reason=reason,
+            prev_state=Delegation.Status.REQUESTED,
+            new_state=delegation.status,
         )
     return delegation
 
@@ -372,6 +396,16 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "decided_at",
                 "updated_at",
             ]
+        )
+        record_config_change(
+            actor=actor,
+            action="delegation.cancelled",
+            target=delegation,
+            before={"status": Delegation.Status.APPROVED},
+            after={"status": delegation.status},
+            reason=reason,
+            prev_state=Delegation.Status.APPROVED,
+            new_state=delegation.status,
         )
     return delegation
 
@@ -448,4 +482,18 @@ def reassign_application(
         )
         application.current_approver = to_approver
         application.save(update_fields=["current_approver", "updated_at"])
+        record_config_change(
+            actor=actor,
+            action="application.reassigned",
+            target=application,
+            before={
+                "current_approver": (
+                    reassignment.from_approver.get_full_name()
+                    if reassignment.from_approver
+                    else ""
+                )
+            },
+            after={"current_approver": to_approver.get_full_name()},
+            reason=reason,
+        )
     return reassignment

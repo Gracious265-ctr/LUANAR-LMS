@@ -69,6 +69,7 @@ class LeaveRule(models.Model):
     )
     max_duration_days = models.PositiveIntegerField()
     eligibility = models.TextField(blank=True)
+    eligibility_rules = models.JSONField(default=list, blank=True)
     min_notice_days = models.PositiveIntegerField(default=0)
     requires_supporting_document = models.BooleanField(default=False)
     consumes_annual_entitlement = models.BooleanField(default=False)

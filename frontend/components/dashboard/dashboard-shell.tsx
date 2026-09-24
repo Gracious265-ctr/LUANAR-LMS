@@ -11,6 +11,7 @@ import {
   ChevronsRight,
   ClipboardList,
   FileText,
+  History,
   Home,
   LogOut,
   Settings,
@@ -215,6 +216,13 @@ const Sidebar = memo(function Sidebar({
               Icon={FileText}
               title="Document Template"
               href="/dashboard/hr-admin/leave-document-template"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={History}
+              title="Audit"
+              href="/dashboard/hr-admin/audit"
               currentPath={currentPath}
               open={open}
             />

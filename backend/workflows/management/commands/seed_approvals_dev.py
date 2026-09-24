@@ -23,6 +23,7 @@ numbers is left untouched; approver/employee users are found-or-created.
 """
 
 from datetime import date, timedelta
+from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -31,9 +32,10 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from leave import defaults as leave_defaults
 from leave.models import LeaveApplication, LeaveType, ReferenceSequence
 from leave.services.references import next_reference
-from leave.services.storage import upload_document
+from leave.storage import get_storage_backend
 from workflows import fixture_provider as workflow_fixture
 from workflows.approval import decide
 from workflows.policies import get_view_access
@@ -45,11 +47,11 @@ FIRST_RESERVED_SUFFIX = 910001
 SEQUENCE_TARGET = 910000
 
 APPROVER_DEFS = [
-    ("supervisor", "Computer Science", "academic", "E", "2018-09-01"),
-    ("hod", "Computer Science", "academic", "G", "2015-01-10"),
-    ("dean", "Applied Sciences", "academic", "H", "2012-06-01"),
-    ("registrar", "Registry", "administration", "H", "2010-08-15"),
-    ("dvc", "Executive", "administration", "H", "2008-04-01"),
+    ("supervisor", "Computer Science", "academic", "E", "2018-09-01", "M"),
+    ("hod", "Computer Science", "academic", "G", "2015-01-10", "M"),
+    ("dean", "Applied Sciences", "academic", "H", "2012-06-01", "M"),
+    ("registrar", "Registry", "administration", "H", "2010-08-15", "F"),
+    ("dvc", "Executive", "administration", "H", "2008-04-01", "F"),
 ]
 
 # (scenario key, employee username, leave type name, start, end, advance)
@@ -94,16 +96,20 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
+        leave_defaults.ensure_default_entitlements()
+        leave_defaults.ensure_default_leave_types_and_rules()
+        leave_defaults.ensure_default_financial_year()
+
         approvers = {
-            role: self._user_for_role(role, username, department, category, grade, appointed)
-            for role, username, department, category, grade, appointed in self._approver_rows()
+            role: self._user_for_role(role, username, department, category, grade, appointed, gender)
+            for role, username, department, category, grade, appointed, gender in self._approver_rows()
         }
         employees = {
             "employee@test.luanar": self._employee(
-                "employee@test.luanar", "Registry", "administration", "B", "2022-03-15"
+                "employee@test.luanar", "Registry", "administration", "B", "2022-03-15", "F"
             ),
             "academic@test.luanar": self._employee(
-                "academic@test.luanar", "Computer Science", "academic", "E", "2018-09-01"
+                "academic@test.luanar", "Computer Science", "academic", "E", "2018-09-01", "M"
             ),
         }
         self.approvers = approvers
@@ -132,27 +138,27 @@ class Command(BaseCommand):
 
     def _approver_rows(self):
         return [
-            (role, f"{role}@test.luanar", department, category, grade, appointed)
-            for role, department, category, grade, appointed in APPROVER_DEFS
+            (role, f"{role}@test.luanar", department, category, grade, appointed, gender)
+            for role, department, category, grade, appointed, gender in APPROVER_DEFS
         ]
 
-    def _user_for_role(self, role, username, department, category, grade, appointed):
+    def _user_for_role(self, role, username, department, category, grade, appointed, gender):
         user = User.objects.filter(role=role, is_active=True).order_by("username").first()
         if user is None:
             user = User.objects.create_user(
                 username=username, email=username, password="testpass123", role=role
             )
-        self._ensure_profile(user, department, category, grade, appointed)
+        self._ensure_profile(user, department, category, grade, appointed, gender)
         return user
 
-    def _employee(self, username, department, category, grade, appointed):
+    def _employee(self, username, department, category, grade, appointed, gender):
         user, _ = User.objects.get_or_create(
             username=username, defaults={"email": username, "role": User.Role.EMPLOYEE}
         )
-        self._ensure_profile(user, department, category, grade, appointed)
+        self._ensure_profile(user, department, category, grade, appointed, gender)
         return user
 
-    def _ensure_profile(self, user, department, category, grade, appointed):
+    def _ensure_profile(self, user, department, category, grade, appointed, gender):
         from users.models import EmployeeProfile
 
         profile = getattr(user, "employee_profile", None)
@@ -164,6 +170,7 @@ class Command(BaseCommand):
             department=department,
             category=category,
             grade=grade,
+            gender=gender,
             appointment_date=date.fromisoformat(appointed),
         )
 
@@ -346,11 +353,6 @@ class Command(BaseCommand):
         return app
 
     def _leave_type_id(self, leave_name):
-        from leave.providers import fixture_data as leave_fixture_data
-
-        for rules in leave_fixture_data.LEAVE_TYPES:
-            if rules.name.lower() == leave_name.lower() or leave_name.lower() in rules.name.lower():
-                return rules.id
         leave_type = LeaveType.objects.filter(name__icontains=leave_name).first()
         return leave_type.id if leave_type else None
 
@@ -466,26 +468,29 @@ class Command(BaseCommand):
     def _attach_document(self, app, reference, metadata_only=False):
         from leave.models import SupportingDocument
 
-        file_path = f"leave-documents/{app.id}/{DOCUMENT_NAME}"
+        document_id = uuid4()
+        file_path = f"leave-documents/{app.id}/{document_id}/{DOCUMENT_NAME}"
         if (
             not metadata_only
             and settings.SUPABASE_URL
             and settings.SUPABASE_SERVICE_KEY
         ):
             try:
-                file_path = upload_document(
-                    SimpleUploadedFile(
+                get_storage_backend().put(
+                    path=file_path,
+                    file_obj=SimpleUploadedFile(
                         DOCUMENT_NAME,
                         b"%PDF-1.4 seed approval certificate",
                         content_type="application/pdf",
                     ),
-                    str(app.id),
-                )["path"]
+                    content_type="application/pdf",
+                )
             except Exception as exc:  # noqa: BLE001 - storage failures degrade to metadata
                 self.stdout.write(
                     self.style.WARNING(f"Storage upload failed ({exc}); metadata only.")
                 )
         SupportingDocument.objects.create(
+            id=document_id,
             application=app,
             file_path=file_path,
             file_url=f"https://cdn.example.test/{file_path}",

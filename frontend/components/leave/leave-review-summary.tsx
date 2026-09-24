@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, FileText, Pencil, Upload } from "lucide-react";
+import { CalendarDays, FileText, Pencil } from "lucide-react";
 
 import type { ValidationResult } from "@/lib/leave-validation";
 import type { LeaveApplication } from "@/lib/leave-api";
+import { DocumentList } from "./document-list";
 
 interface LeaveReviewSummaryProps {
   application: LeaveApplication;
@@ -82,17 +83,10 @@ export function LeaveReviewSummary({
           <p className="text-xs font-medium text-text-muted uppercase mb-2">
             Attached documents
           </p>
-          <ul className="space-y-1.5">
-            {application.documents.map((doc) => (
-              <li
-                key={doc.id}
-                className="flex items-center gap-2 text-sm text-text-primary"
-              >
-                <Upload className="h-3.5 w-3.5 text-text-muted" />
-                {doc.file_name}
-              </li>
-            ))}
-          </ul>
+          <DocumentList
+            applicationId={application.id}
+            documents={application.documents}
+          />
         </div>
       )}
     </div>

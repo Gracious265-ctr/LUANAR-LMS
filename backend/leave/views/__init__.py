@@ -1,12 +1,15 @@
 import logging
 from datetime import date, datetime
 
+from django.conf import settings
+from django.http import FileResponse, Http404
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
@@ -29,8 +32,7 @@ from ..serializers import (
     PublicHolidaySerializer,
     SupportingDocumentSerializer,
 )
-from ..services import normalize_grade, resolve_grade_entitlement
-from ..services.storage import delete_document, upload_document
+from ..services import documents, normalize_grade, resolve_grade_entitlement
 from ..services.working_days import calculate_working_days
 
 logger = logging.getLogger(__name__)
@@ -213,11 +215,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if instance.status != LeaveApplication.Status.DRAFT:
             raise ValidationError("Submitted applications cannot be deleted.")
-        for doc in instance.documents.all():
-            try:
-                delete_document(doc.file_path)
-            except Exception:
-                logger.exception("Failed to delete document %s from storage", doc.id)
+        documents.delete_draft_documents(instance)
         instance.delete()
 
     @action(detail=False, methods=["post"], url_path="preview-days")
@@ -241,43 +239,133 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         return Response({"days": days})
 
 
+class LeaveDocumentConfigView(APIView):
+    """Server-driven upload limits for the frontend (max size + allowed types)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(
+            {
+                "max_size_bytes": settings.LEAVE_DOCUMENT_MAX_SIZE_BYTES,
+                "allowed_content_types": settings.LEAVE_DOCUMENT_ALLOWED_TYPES,
+            }
+        )
+
+
 class SupportingDocumentViewSet(viewsets.ModelViewSet):
+    """Supporting-document lifecycle (Unit 19), backed by the service module.
+
+    HTTP verbs are list/retrieve/create/destroy plus the ``replace``, ``content``
+    and ``history`` actions. Ownership and the status gate are enforced in the
+    service; retired documents never appear in the default queryset or the
+    ``content`` endpoint.
+    """
+
     serializer_class = SupportingDocumentSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwner]
     parser_classes = [MultiPartParser, FormParser]
+    http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self):
-        return SupportingDocument.objects.filter(
-            application__employee=self.request.user,
-            application_id=self.kwargs["application_pk"],
-        )
-
-    def perform_create(self, serializer):
-        application = LeaveApplication.objects.get(
+        owned = LeaveApplication.objects.filter(
             id=self.kwargs["application_pk"], employee=self.request.user
-        )
-        if application.status != LeaveApplication.Status.DRAFT:
-            raise ValidationError("Cannot upload documents to a submitted application.")
+        ).exists()
+        if not owned:
+            raise Http404
+        return documents.active_documents_queryset(self.kwargs["application_pk"])
 
-        file = self.request.FILES.get("file")
-        if not file:
-            raise ValidationError("No file provided.")
-
-        result = upload_document(file, str(application.id))
-        serializer.save(
-            application=application,
-            file_path=result["path"],
-            file_url=result["url"],
-            file_name=file.name,
-            file_size=file.size,
-            content_type=file.content_type or "application/octet-stream",
+    def _document_error_response(self, exc):
+        if exc.code == "document_read_only":
+            return Response(
+                {"code": exc.code, "detail": exc.message},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            {"field": exc.field, "code": exc.code, "message": exc.message},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
-    def perform_destroy(self, instance):
-        if instance.application.status != LeaveApplication.Status.DRAFT:
-            raise ValidationError("Cannot remove documents from a submitted application.")
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         try:
-            delete_document(instance.file_path)
-        except Exception:
-            logger.exception("Failed to delete document %s from storage", instance.id)
-        instance.delete()
+            document = documents.add_document(
+                application_id=self.kwargs["application_pk"],
+                actor=request.user,
+                file=request.FILES.get("file"),
+            )
+        except documents.ApplicationNotFoundError:
+            raise Http404
+        except documents.DocumentError as exc:
+            return self._document_error_response(exc)
+        documents.set_content_url(document, request)
+        serializer = self.get_serializer(document)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            documents.remove_document(
+                application_id=self.kwargs["application_pk"],
+                document_id=instance.id,
+                actor=request.user,
+            )
+        except documents.DocumentError as exc:
+            return self._document_error_response(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="replace")
+    def replace_document(self, request, *args, **kwargs):
+        try:
+            document = documents.replace_document(
+                application_id=self.kwargs["application_pk"],
+                document_id=self.kwargs["pk"],
+                actor=request.user,
+                file=request.FILES.get("file"),
+            )
+        except documents.ApplicationNotFoundError:
+            raise Http404
+        except documents.DocumentNotFoundError:
+            raise Http404
+        except documents.DocumentError as exc:
+            return self._document_error_response(exc)
+        documents.set_content_url(document, request)
+        return Response(SupportingDocumentSerializer(document).data)
+
+    @action(detail=True, methods=["get"], url_path="content")
+    def content(self, request, *args, **kwargs):
+        application = LeaveApplication.objects.filter(
+            id=self.kwargs["application_pk"]
+        ).first()
+        if application is None or not documents.can_view_content(
+            request.user, application
+        ):
+            raise Http404(
+                "No supporting document matches the given query."
+            )
+        document = (
+            documents.active_documents_queryset(self.kwargs["application_pk"])
+            .filter(id=self.kwargs["pk"])
+            .first()
+        )
+        if document is None:
+            raise Http404("No supporting document matches the given query.")
+        stream, content_type, file_name = documents.get_document_content(document)
+        return FileResponse(
+            stream,
+            content_type=content_type,
+            as_attachment=bool(request.query_params.get("download")),
+            filename=file_name,
+        )
+
+    @action(detail=False, methods=["get"], url_path="history")
+    def history(self, request, *args, **kwargs):
+        try:
+            payload = documents.get_document_history(
+                self.kwargs["application_pk"], request.user
+            )
+        except documents.ApplicationNotFoundError:
+            raise Http404
+        return Response(payload)

@@ -95,9 +95,9 @@ class StageSequenceTests(TestCase):
 class WorkflowEndpointTests(TestCase):
     """HR-only CRUD and validation for approval workflows."""
 
-    def setUp(self):
-        self.client = APIClient()  # type: ignore[assignment]
-        self.hr_user = User.objects.create_user(
+    @classmethod
+    def setUpTestData(cls):
+        cls.hr_user = User.objects.create_user(
             username="hr@test.luanar",
             email="hr@test.luanar",
             password=SEED_PASSWORD,
@@ -105,7 +105,7 @@ class WorkflowEndpointTests(TestCase):
             last_name="HR",
             role=User.Role.HR,
         )
-        self.employee_user = User.objects.create_user(
+        cls.employee_user = User.objects.create_user(
             username="employee@test.luanar",
             email="employee@test.luanar",
             password=SEED_PASSWORD,
@@ -114,7 +114,7 @@ class WorkflowEndpointTests(TestCase):
             role=User.Role.EMPLOYEE,
         )
 
-        self.workflow = Workflow.objects.create(
+        cls.workflow = Workflow.objects.create(
             name="Academic approval",
             employee_category="academic",
             department="",
@@ -125,10 +125,13 @@ class WorkflowEndpointTests(TestCase):
             department="",
         )
         for stage in VALID_STAGES:
-            WorkflowStage.objects.create(workflow=self.workflow, **stage)
+            WorkflowStage.objects.create(workflow=cls.workflow, **stage)
 
-        self.list_url = "/api/v1/workflows/"
-        self.detail_url = f"/api/v1/workflows/{self.workflow.id}/"
+        cls.list_url = "/api/v1/workflows/"
+        cls.detail_url = f"/api/v1/workflows/{cls.workflow.id}/"
+
+    def setUp(self):
+        self.client = APIClient()  # type: ignore[assignment]
 
     def test_list_requires_authentication(self):
         self.assertEqual(
@@ -371,8 +374,11 @@ class WorkflowEndpointTests(TestCase):
 class WorkflowAdminTests(TestCase):
     """Workflow admin guards for stage sequences."""
 
+    @classmethod
+    def setUpTestData(cls):
+        cls.workflow = Workflow.objects.create(name="Admin workflow")
+
     def setUp(self):
-        self.workflow = Workflow.objects.create(name="Admin workflow")
         self.site = AdminSite()
 
     def test_stage_order_must_be_at_least_one(self):
@@ -541,9 +547,9 @@ class WorkflowActivationServiceTests(TestCase):
 class WorkflowActivationEndpointTests(TestCase):
     """Scheduling, activating, and conflict validation through the API."""
 
-    def setUp(self):
-        self.client = APIClient()  # type: ignore[assignment]
-        self.hr_user = User.objects.create_user(
+    @classmethod
+    def setUpTestData(cls):
+        cls.hr_user = User.objects.create_user(
             username="hr@test.luanar",
             email="hr@test.luanar",
             password=SEED_PASSWORD,
@@ -551,8 +557,11 @@ class WorkflowActivationEndpointTests(TestCase):
             last_name="HR",
             role=User.Role.HR,
         )
+        cls.list_url = "/api/v1/workflows/"
+
+    def setUp(self):
+        self.client = APIClient()  # type: ignore[assignment]
         self.client.force_authenticate(user=self.hr_user)
-        self.list_url = "/api/v1/workflows/"
 
     def _payload(self, **overrides) -> dict:
         payload = {
@@ -821,10 +830,13 @@ def make_delegation(
 class DelegationModelStateTests(TestCase):
     """Derived delegation lifecycle states."""
 
+    @classmethod
+    def setUpTestData(cls):
+        cls.hr = make_active_user(User.Role.HR, "hr-deleg@test.luanar")
+        cls.dean = make_active_user(User.Role.DEAN, "dean-deleg@test.luanar")
+        cls.hod = make_active_user(User.Role.HOD, "hod-deleg@test.luanar")
+
     def setUp(self):
-        self.hr = make_active_user(User.Role.HR, "hr-deleg@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-deleg@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-deleg@test.luanar")
         self.today = timezone.localdate()
 
     def test_requested_state(self):
@@ -891,13 +903,16 @@ class DelegationModelStateTests(TestCase):
 class DelegationServiceTests(TestCase):
     """Service-level delegation behavior."""
 
-    def setUp(self):
-        self.hr = make_active_user(User.Role.HR, "hr-svc@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-svc@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-svc@test.luanar")
-        self.employee = make_active_user(
+    @classmethod
+    def setUpTestData(cls):
+        cls.hr = make_active_user(User.Role.HR, "hr-svc@test.luanar")
+        cls.dean = make_active_user(User.Role.DEAN, "dean-svc@test.luanar")
+        cls.hod = make_active_user(User.Role.HOD, "hod-svc@test.luanar")
+        cls.employee = make_active_user(
             User.Role.EMPLOYEE, "employee-svc@test.luanar"
         )
+
+    def setUp(self):
         self.today = timezone.localdate()
 
     def test_is_approver_user(self):

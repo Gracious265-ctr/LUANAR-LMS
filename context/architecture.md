@@ -202,18 +202,22 @@ The database must remain the authoritative source for system state.
 
 ### 5.2 File Storage
 
-The eventual file-storage system will contain binary documents rather than application state.
+The file-storage system contains binary documents rather than application state.
 
 Examples:
 
-* Supporting documents.
+* Supporting documents (Unit 19).
 * Approved leave PDFs.
 * Other generated document formats.
 * Document versions where required.
 
-The database should store metadata and references to files rather than unnecessarily storing large binary files inside ordinary application records.
+The database stores metadata and references to files rather than unnecessarily storing large binary files inside ordinary application records.
 
-The exact storage implementation is **TBD pending LUANAR infrastructure investigation**.
+All supporting-document storage goes through the `StorageBackend` protocol in `backend/leave/storage/` so document logic never depends on a concrete backend. The backend is selected by the `LEAVE_STORAGE_BACKEND` dotted-path setting (mirroring `get_provider()`), defaulting to `DevelopmentStorageBackend` — a local-filesystem backend rooted at `LEAVE_STORAGE_ROOT` that rejects path traversal, so uploads/downloads work in development with no Supabase credentials. `SupabaseStorageBackend` is the production backend.
+
+Document bytes are served only through the application: an authenticated Django streaming endpoint (`content/?download=1`) reached via the Next.js proxy route handlers, never through stored third-party signed URLs. The dev backend therefore does not implement `signed_url` (raises → HTTP 503); file URLs that are still stored (`file_url`) now hold the content endpoint URL, not an external signed URL.
+
+The exact production storage implementation retains the **TBD-until-infrastructure-investigation** status; the protocol boundary keeps the switch to the confirmed LUANAR storage no more than a new backend class + setting.
 
 ---
 
@@ -364,6 +368,41 @@ Supervisor → HOD → Registrar → DVC
 ```
 
 Different employee categories may use different configured workflows.
+
+### 7.1 Rules provider
+
+All leave validation, submission-time checks, reference generation and read
+balances flow through the `RulesProvider` protocol
+(`backend/leave/providers/base.py`), instantiated from the
+`LEAVE_RULES_PROVIDER` dotted-path setting. Since Unit 20 the default is
+`DatabaseRulesProvider` (`backend/leave/providers/database.py`), which serves
+real HR-track rows — `EmployeeProfile` (grade, category, appointment date,
+gender), `GradeEntitlement` bands, effective-dated `LeaveRule`s,
+`FinancialYear` and the leave-day ledger (`LeaveBalanceTransaction`). The
+placeholder `FixtureRulesProvider` remains the reference for tests.
+`StubRulesProvider` (`backend/leave/tests/stubs.py`) is the deterministic
+provider injected into isolated unit tests.
+
+Eligibility is enforced from structured `LeaveRule.eligibility_rules`
+(vocabulary: `gender` / `min_service` / `grade_range` / `employee_category`)
+in addition to the human-readable free-text `eligibility` field that is for
+display. `EmployeeProfile.gender` (`M`/`F`) carries the gender value the
+gender eligibility rule checks.
+
+### 7.2 Employee-facing read endpoints
+
+HR-only viewsets expose entitlements, leave types, rules, financial years and
+holidays. Two authenticated-only (non-HR) endpoints back the employee
+dashboard rather than duplicating that admin surface:
+
+- `GET /api/v1/leave/my/overview/` — profile, annual
+  entitlement/used/available for the current financial year, financial-year
+  label, pending-application count, upcoming-leave count and next leave start
+  date. Balance fields are `null` when no profile or financial year exists.
+- `GET /api/v1/leave/my/leave-types/` — leave types that currently have an
+  effective rule, with rule hints (max duration, supporting-document
+  requirement, min notice, eligibility), so the application form never offers
+  a type the backend would reject.
 
 ---
 
@@ -519,6 +558,10 @@ The system must not submit an application into an incomplete workflow with missi
 
 Template customization changes presentation, not the underlying approved leave record.
 
+**Supporting document bytes must only be reachable through authenticated application access; a submitted application's documents must never be permanently deleted.**
+
+Draft-phase document replace/remove may physically delete the stored file; once an application is submitted, replace/remove only retires a document in place (keeping the stored bytes for audit/revision integrity).
+
 ---
 
 ### 12.9 Cache Independence
@@ -544,7 +587,7 @@ The following decisions are intentionally left open until the relevant LUANAR in
 | Decision                                 | Status |
 | ---------------------------------------- | ------ |
 | Production file-storage technology       | TBD    |
-| Development/test file-storage equivalent | TBD    |
+| Development/test file-storage equivalent | Confirmed: `StorageBackend` protocol + `DevelopmentStorageBackend` (local filesystem under `LEAVE_STORAGE_ROOT`), selected via `LEAVE_STORAGE_BACKEND`; `SupabaseStorageBackend` for production |
 | Production database infrastructure       | TBD    |
 | Institutional identity provider          | TBD    |
 | Employee-data source/integration         | TBD    |

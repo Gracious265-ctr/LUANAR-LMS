@@ -24,7 +24,7 @@ from leave.serializers.resubmission import (
     RowVersionSerializer,
     SaveChangesSerializer,
 )
-from leave.services import resubmission
+from leave.services import documents, resubmission
 from leave.services.issue_payloads import issue_payload
 from leave.services.resubmission import (
     ApplicationNotFoundError,
@@ -125,6 +125,8 @@ class ResubmissionDocumentCollectionView(APIView):
                 "version_conflict",
                 "This application was changed in another window.",
             )
+        except documents.DocumentError as exc:
+            return _document_error_response(exc)
         return Response(payload)
 
 
@@ -169,6 +171,8 @@ class ResubmissionDocumentReplaceView(APIView):
                 "version_conflict",
                 "This application was changed in another window.",
             )
+        except documents.DocumentError as exc:
+            return _document_error_response(exc)
         return Response(payload)
 
 
@@ -200,6 +204,8 @@ class ResubmissionDocumentDetailView(APIView):
                 "version_conflict",
                 "This application was changed in another window.",
             )
+        except documents.DocumentError as exc:
+            return _document_error_response(exc)
         return Response(payload)
 
 
@@ -267,6 +273,20 @@ def _row_version_from_request(request) -> int:
 
 def _not_found():
     return Response({"detail": DETAIL_NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
+
+
+def _document_error_response(exc):
+    if exc.code == "document_read_only":
+        return _conflict("document_read_only", exc.message)
+    return _validation_failed(
+        [
+            {
+                "code": exc.code.upper(),
+                "field": exc.field,
+                "message": exc.message,
+            }
+        ]
+    )
 
 
 def _conflict(code, detail):

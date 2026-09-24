@@ -142,9 +142,25 @@ uv run manage.py createsuperuser
 
 ### Backend
 
+Fast local run (reuses the test DB via `--keepdb`, parallelizes across cores,
+MD5 password hasher so user creation is cheap):
+
 ```bash
 cd backend
-uv run manage.py test
+DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto
+```
+
+Run one app only (e.g. while working on a single unit):
+
+```bash
+DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test workflows --keepdb
+```
+
+Parallel sessions (e.g. multiple agents/branches) must use a unique test DB
+each or they deadlock on `test_luanar_leave`:
+
+```bash
+TEST_DB_NAME=test_luanar_leave_my_branch DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto
 ```
 
 If the test runner fails with `permission denied to create database`, the
@@ -210,9 +226,23 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver` and records history (HR-only) |
 | GET | `/api/v1/reassignments/` | Reassignment history, paginated newest first; `application=<uuid>` filter (HR-only) |
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
+| GET | `/api/v1/audit-entries/` | Append-only administrative audit log, newest first; filters `action` (dotted code), `target_type` (content-type model), `target_id`, `actor` (HR-only) |
+| GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
+| GET | `/api/v1/finalized-leave/` | Organization-wide submitted leave applications, newest `submitted_at` first; `?employee=` search; detail includes documents, reassignment history, and the application audit timeline (HR-only) |
+| GET | `/api/v1/finalized-leave/{id}/` | One finalized application with history roll-up; 404 for drafts (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
 | GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
+| GET | `/api/v1/leave-documents/config/` | Upload-size/type policy (`max_size_bytes`, `allowed_content_types`) for the document UI |
+| GET | `/api/v1/leave-applications/{id}/documents/` | List active supporting documents (owner-only; paginated) |
+| POST | `/api/v1/leave-applications/{id}/documents/` | Upload a supporting document (draft/rejected/correction_required only; multipart `file`; 409 `document_read_only` otherwise, 400 with `field`/`code`/`message` when rejected) |
+| GET | `/api/v1/leave-applications/{id}/documents/{docId}/` | Retrieve one supporting document (owner-only) |
+| DELETE | `/api/v1/leave-applications/{id}/documents/{docId}/` | Remove a document: draft hard-deletes the file+row; post-submission retires it and keeps the bytes |
+| POST | `/api/v1/leave-applications/{id}/documents/{docId}/replace/` | Replace a document with a new file (draft hard-deletes the old file; post-submission retires `docId` and records `replaced_by`) |
+| GET | `/api/v1/leave-applications/{id}/documents/history/` | Document lifecycle snapshot: `active`, `retired` (with `retire_reason`/`replaced_by`), and `document_uploaded`/`document_removed`/`document_replaced` audit events |
+| GET | `/api/v1/leave-applications/{id}/documents/{docId}/content/` | Stream a document's bytes (owner or current approver; `?download=1` sets content-disposition; 404 for everyone else) |
+| GET | `/api/v1/leave/my/overview/` | Employee dashboard payload: HR profile (grade, designation, department, category, gender, appointment date), annual entitlement/used/available for the current financial year, pending/upcoming leave counts and next leave start (authenticated; balance fields `null` when unset) |
+| GET | `/api/v1/leave/my/leave-types/` | Leave types with an effective rule the signed-in user may apply for, with rule hints (max duration, document requirement, min notice, eligibility; authenticated) |
 
 ## Git Workflow
 
@@ -250,7 +280,7 @@ luanar-lms/
 │   ├── workflows/     # Approval workflow configuration (workflows, stages)
 │   ├── notifications/ # Notifications domain (stub)
 │   ├── documents/     # Documents domain (stub)
-│   └── audit/         # Audit domain (stub)
+│   └── audit/         # Audit domain (append-only AuditEvent log + HR finalized-leave/audit views)
 ├── storage/           # File storage (TBD)
 └── context/           # Project documentation
 ```
