@@ -330,8 +330,30 @@ class SupportingDocument(models.Model):
         return f"Document({self.file_name})"
 
 
+class ApplicationRevisionLockedError(Exception):
+    """Raised on any attempt to update or delete an ``ApplicationRevision``."""
+
+
+class ApplicationRevisionQuerySet(models.QuerySet):
+    """Append-only: queryset-wide update/delete are rejected."""
+
+    def update(self, *args: object, **kwargs: object):
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be updated."
+        )
+
+    def delete(self):
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be deleted."
+        )
+
+
+class ApplicationRevisionManager(models.Manager.from_queryset(ApplicationRevisionQuerySet)):
+    """Manager enforcing the append-only invariant."""
+
+
 class ApplicationRevision(models.Model):
-    """Append-only snapshot of an application at one submission (Unit 17).
+    """Append-only snapshot of an application at one submission (Unit 17, Unit 24).
 
     ``revision_number`` equals the application's ``submission_cycle`` at write
     time, so every resubmission records the exact state the approver saw before
@@ -367,6 +389,8 @@ class ApplicationRevision(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = ApplicationRevisionManager()
+
     class Meta:
         ordering = ["-revision_number"]
         constraints = [
@@ -386,11 +410,17 @@ class ApplicationRevision(models.Model):
             f"{self.application.reference_number or self.application_id})"
         )
 
-    def save(self, *args, **kwargs):
-        raise ValueError("ApplicationRevision is append-only; it cannot be modified.")
+    def delete(self, *args: object, **kwargs: object) -> None:
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be deleted."
+        )
 
-    def delete(self, *args, **kwargs):
-        raise ValueError("ApplicationRevision is append-only; it cannot be deleted.")
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self._state.adding:
+            raise ApplicationRevisionLockedError(
+                "Application revisions are append-only and cannot be updated."
+            )
+        super().save(*args, **kwargs)
 
 
 class ReferenceSequence(models.Model):

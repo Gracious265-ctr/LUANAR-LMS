@@ -26,7 +26,7 @@ from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
 
 from .admin import AuditEntryAdmin
-from .models import AuditEntry
+from .models import AuditEntry, AuditEntryLockedError
 from .serializers import AuditedModelSerializer
 from .services import changed_fields, record_audit
 
@@ -95,9 +95,6 @@ class AuditEntryModelTests(TestCase):
         second = record_audit(
             actor=actor, action=AuditEntry.Action.UPDATED,
             target_type="leavetype", target_id=2, target_summary="B",
-        )
-        AuditEntry.objects.filter(pk=first.pk).update(
-            created_at=timezone.now() - timedelta(days=1)
         )
         self.assertEqual([entry.pk for entry in AuditEntry.objects.all()], [second.pk, first.pk])
 
@@ -816,7 +813,17 @@ class AuditedModelSerializerAtomicityTests(TestCase):
 
 
 class AuditEntryIntegrityTests(TestCase):
-    """The append-only log protects its actor rows from deletion."""
+    """The append-only log protects its actor rows and refuses mutation."""
+
+    def _entry(self):
+        actor = make_user(User.Role.HR, "immutable-log@audit.test")
+        return record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type="leavetype",
+            target_id="1",
+            target_summary="Annual leave",
+        )
 
     def test_actor_deletion_is_protected(self):
         from django.db.models.deletion import ProtectedError
@@ -834,4 +841,37 @@ class AuditEntryIntegrityTests(TestCase):
         self.assertTrue(
             User.objects.filter(email="protect-log@audit.test").exists()
         )
+        self.assertEqual(AuditEntry.objects.count(), 1)
+
+    def test_instance_update_is_rejected(self):
+        entry = self._entry()
+        entry.reason = "rewritten"
+        with self.assertRaises(AuditEntryLockedError):
+            entry.save()
+        entry.refresh_from_db()
+        self.assertEqual(entry.reason, "")
+
+    def test_instance_delete_is_rejected(self):
+        entry = self._entry()
+        with self.assertRaises(AuditEntryLockedError):
+            entry.delete()
+        self.assertTrue(AuditEntry.objects.filter(pk=entry.pk).exists())
+
+    def test_queryset_update_is_rejected(self):
+        entry = self._entry()
+        with self.assertRaises(AuditEntryLockedError):
+            AuditEntry.objects.filter(pk=entry.pk).update(reason="rewritten")
+        entry.refresh_from_db()
+        self.assertEqual(entry.reason, "")
+
+    def test_queryset_delete_is_rejected(self):
+        entry = self._entry()
+        with self.assertRaises(AuditEntryLockedError):
+            AuditEntry.objects.filter(pk=entry.pk).delete()
+        self.assertTrue(AuditEntry.objects.filter(pk=entry.pk).exists())
+
+    def test_bulk_delete_of_every_entry_is_rejected(self):
+        self._entry()
+        with self.assertRaises(AuditEntryLockedError):
+            AuditEntry.objects.all().delete()
         self.assertEqual(AuditEntry.objects.count(), 1)

@@ -516,15 +516,48 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 24 — Complete Audit and Historical Integrity (next to draft).** Per the
-  build plan (§Unit 24): connect every significant operation (submission,
-  approval, rejection, correction, resubmission, cancellation, delegation,
-  reassignment, rule/entitlement/workflow changes, document replacement) into
-  the authoritative audit trail, and verify that submitted applications preserve
-  the rules + workflow context that existed at submission time — historical
-  records must not silently change when HR later edits leave rules,
-  entitlements, workflow config, or approver assignments. Depends on Units 11,
-  17, 18, 19, 21, 22, 23 (all now landed). Spec not yet written.
+- **Unit 25 — End-to-End System (next to draft).** Per the build plan
+  (§Unit 25): verify and finish the complete LUANAR leave-management workflow
+  end to end — HR creates employee → assigns grade → configures leave rules →
+  configures workflow → employee logs in and creates an application → system
+  validates it → reference number generated → supervisor receives and approves →
+  next approver receives → all mandatory stages approve → final approver
+  approves → annual balance updated → approved document generated → emails sent
+  → employee views approved leave → HR sees the finalized record. This is the
+  integration/acceptance unit; it depends on every prior unit (01–24, all landed
+  and now verified together). Spec not yet written.
+- **Unit 24 — Complete Audit and Historical Integrity (implemented 2026-09-25;
+  uncommitted).** Spec
+  `context/specs/24-audit-and-historical-integrity-spec.md` — decisions D1–D10,
+  approved before Phase 2. Phase-1 verification against the real code reshaped
+  this unit into a **hardening** unit: the build plan's audit-wiring goal is
+  *already satisfied* by Units 9–23 (all twelve operations write an audit entry
+  from inside the owning transaction, asserted by
+  `audit/tests.py::AuditWiringTests`), and workflow history is already safe
+  because `ApplicationStage` materializes the chain with no FK to `Workflow`.
+  Two real gaps closed:
+  - **Gap A — append-only `AuditEntry`.** `backend/audit/models.py` gained
+    `AuditEntryLockedError`, `AuditEntryQuerySet` (rejects queryset
+    `update`/`delete`), `AuditEntryManager`, and instance `save()`/`delete()`
+    guards — mirroring `ApprovalDecision` / `NotificationOutbox` / the balance
+    ledger. The HTTP + admin surfaces were already sealed; only the ORM was open.
+    No migration (managers aren't serialized unless `use_in_migrations`).
+  - **Gap B — per-cycle history.** `ApplicationRevision.save()` no longer raises
+    on creation (it now permits insert and rejects mutation, per
+    `ApplicationRevisionLockedError`), a QuerySet/Manager blocks bulk
+    update/delete, and `record_revision()` in
+    `leave/services/submission.py` writes one immutable row per submit/resubmit
+    cycle inside the existing atomic block (with a `changed_fields` diff against
+    the prior cycle and the active-document list). `rules_snapshot` is still
+    overwritten in place per cycle and still drives `finalise.py` (D8), but the
+    cycle-1 context an approver saw is no longer lost, closing the §14 breach.
+  Recon-flagged defects in earlier units (edit/resubmit API + frontend contract,
+  final-approval/deduction pairing, audit-JSON `CombinedExpression`,
+  `row_version`) remain explicitly **out of scope** (D10).
+  **Verification:** `check` clean; `makemigrations --check` clean (both
+  deliverables are manager-only); full suite **651 tests OK** (636 + 15 new;
+  the trailing `destroy_test_db` OperationalError is the known test-DB
+  teardown/lock issue, after all tests pass).
 - **Unit 23 — Final Approval, Balance, and Document Generation (implemented,
   committed as `eb7361d`).** Spec
   `context/specs/23-final-approval-balance-and-document-spec.md` revised during

@@ -2,6 +2,28 @@ from django.conf import settings
 from django.db import models
 
 
+class AuditEntryLockedError(Exception):
+    """Raised on any attempt to update or delete an ``AuditEntry``."""
+
+
+class AuditEntryQuerySet(models.QuerySet):
+    """Append-only: queryset-wide update/delete are rejected."""
+
+    def update(self, *args: object, **kwargs: object):
+        raise AuditEntryLockedError(
+            "Audit entries are append-only and cannot be updated."
+        )
+
+    def delete(self):
+        raise AuditEntryLockedError(
+            "Audit entries are append-only and cannot be deleted."
+        )
+
+
+class AuditEntryManager(models.Manager.from_queryset(AuditEntryQuerySet)):
+    """Manager enforcing the append-only invariant."""
+
+
 class AuditEntry(models.Model):
     """One entry in the authoritative audit/history log.
 
@@ -86,6 +108,8 @@ class AuditEntry(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = AuditEntryManager()
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
@@ -94,3 +118,11 @@ class AuditEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} {self.target_type} {self.target_id}"
+
+    def delete(self, *args: object, **kwargs: object) -> None:
+        raise AuditEntryLockedError("Audit entries are append-only and cannot be deleted.")
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self._state.adding:
+            raise AuditEntryLockedError("Audit entries are append-only and cannot be updated.")
+        super().save(*args, **kwargs)

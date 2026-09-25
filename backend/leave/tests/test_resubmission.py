@@ -166,6 +166,53 @@ class ResubmissionServiceTests(StubFlowBaseTests):
             resubmit_application(user=self.owner, application_id=app.pk)
         self.assertGreaterEqual(len(ctx.exception.errors), 1)
 
+    def test_resubmission_freezes_a_new_revision_with_the_diff(self):
+        from leave.models import ApplicationRevision
+
+        app = self.make_rejected()
+        cycle_one = ApplicationRevision.objects.get(application=app)
+
+        app.reason = "Family visit (dates corrected)"
+        app.save(update_fields=["reason"])
+        resubmit_application(user=self.owner, application_id=app.pk)
+
+        self.assertEqual(ApplicationRevision.objects.filter(application=app).count(), 2)
+        cycle_two = ApplicationRevision.objects.get(application=app, revision_number=2)
+        self.assertEqual(cycle_two.reason, "Family visit (dates corrected)")
+        self.assertEqual(cycle_two.changes["before"]["reason"], "Family visit")
+        self.assertEqual(
+            cycle_two.changes["after"]["reason"], "Family visit (dates corrected)"
+        )
+
+        # The cycle-1 row is untouched history, not rewritten by the resubmission.
+        cycle_one.refresh_from_db()
+        self.assertEqual(cycle_one.reason, "Family visit")
+        self.assertIsNone(cycle_one.changes)
+
+    def test_revision_write_failure_rolls_back_resubmission(self):
+        from unittest import mock
+
+        from audit.models import AuditEntry
+        from leave.models import ApplicationRevision
+
+        app = self.make_rejected()
+        with mock.patch(
+            "leave.models.ApplicationRevision.objects.create",
+            side_effect=RuntimeError("revision store down"),
+        ):
+            with self.assertRaises(RuntimeError):
+                resubmit_application(user=self.owner, application_id=app.pk)
+
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.REJECTED)
+        self.assertEqual(app.submission_cycle, 1)
+        self.assertEqual(ApplicationRevision.objects.filter(application=app).count(), 1)
+        self.assertFalse(
+            AuditEntry.objects.filter(
+                action=AuditEntry.Action.APPLICATION_RESUBMITTED
+            ).exists()
+        )
+
 
 class _FakeResult:
     valid = False

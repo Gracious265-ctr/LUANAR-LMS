@@ -4,8 +4,9 @@
 correction-required application to its configured stage as a fresh pending
 approval. It re-validates the current content against the rules effective on
 the resubmission date (same reference number), refreshes the immutable rules
-snapshot, increments ``submission_cycle``, re-opens the returning stage in
-place (``pending``, ``decision_version + 1``) and moves the routing spine —
+snapshot, freezes the new cycle's revision history row, increments
+``submission_cycle``, re-opens the returning stage in place (``pending``,
+``decision_version + 1``) and moves the routing spine —
 ``LeaveApplication.current_approver`` — to that stage's **configured**
 ``assigned_approver`` (deliberately not the rejecting actor; delegations and
 reassignments re-apply automatically at query time). The stage chain is never
@@ -42,7 +43,12 @@ def resubmit_application(*, user, application_id):
     from ..providers import get_provider
     from ..signals import leave_application_submitted
     from ..validation.pipeline import run_validation
-    from .submission import ValidationFailedError, _acquire_employee_lock, build_rules_snapshot
+    from .submission import (
+        ValidationFailedError,
+        _acquire_employee_lock,
+        build_rules_snapshot,
+        record_revision,
+    )
     from workflows.models import ApplicationStage
 
     with transaction.atomic():
@@ -120,6 +126,8 @@ def resubmit_application(*, user, application_id):
             ]
         )
         app.refresh_from_db()
+
+        record_revision(app, user=user)
 
         record_audit(
             actor=user,
