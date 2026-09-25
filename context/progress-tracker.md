@@ -4,6 +4,9 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 23 — Final Approval, Balance, and Document Generation (SPEC DRAFTED, awaiting developer approval; the spec was revised during the Phase-1 review on 2026-09-25)
+- Unit 22 — Email Notifications (DEFERRED; build-plan block retained, not spec'd)
+- Unit 21 — Workflow-to-Approver Integration (COMPLETE — implemented but UNCOMMITTED on `feature/hr-track`)
 - Unit 20 — HR-to-Employee Data Integration (COMPLETE)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE)
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
@@ -38,6 +41,18 @@ Update this file after every meaningful implementation change.
   validator counting active rows only. Backend **604 tests** and frontend
   **296 tests** green, `tsc` + `npm run lint` clean; no new migration (Unit 17
   already shipped the `status`/`retire_*`/`replaced_by` schema).
+- **Unit 21 — Workflow-to-Approver Integration is COMPLETE** (see "Completed
+  (Unit 21)" below): the last two fixture providers are gone — routing now
+  reads the real HR workflow configuration, tracking reads real workflow rows,
+  and resubmission is a real routing step. Implementation is present on
+  `feature/hr-track` but is **working-tree only (not yet committed)**.
+- **Unit 23 — Final Approval, Balance, and Document Generation (SPEC DRAFTED).**
+  The draft spec was reviewed in Phase 1 (2026-09-25): the old draft's wrong
+  references (HR Unit 12 credit-line, HR Units 8–9 special-leave balance,
+  "delete the fixture balance provider") were removed and decisions D1–D8 were
+  rewritten against what the code actually contains. Awaiting developer
+  approval before implementation; DOCX is explicitly deferred (PDF only, no
+  `python-docx`).
 
 ## Completed (Unit 19)
 
@@ -501,12 +516,74 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **HR track:** build Unit 21 routing (consumes the `current_approver` spine and
-  `active_delegation_for`) on top of the Unit 16+ audit spine (approval/cancel/
-  correction events and application-scoped history from Units 16–19).
-- **Employee + Approver track:** Units 4/5 (Leave Types API, Calendar/Rules API)
-  were listed as deferred in the Unit 13 spec but are **already implemented** by
-  the HR track and integrated on this merged branch.
+- **Unit 22 — Email Notifications (deferred).** Skipped per developer direction on
+  2026-09-24; the build-plan block (§7, lines 724–766) is retained and not yet
+  granular-spec'd. Implemented at a later time — **not** part of the current unit
+  pass. The Unit 22 spec + detailed design remain to be written when taken up.
+  (Do **not** begin Unit 22 now; see the Section-3.6 thread in Unit 23's spec.)
+- **Unit 23 — Final Approval, Balance, and Document Generation (spec drafted).**
+  Spec `context/specs/23-final-approval-balance-and-document-spec.md` revised
+  during the Phase-1 review on 2026-09-25: decisions D1–D8 rewritten against the
+  actual code (deduction inside `decide()`'s transaction from `rules_snapshot`;
+  no ledger row for special leave; restoration stays owned by Unit 18;
+  template-populated ReportLab PDF via `approved/{application_id}/` in storage;
+  owner/HR/approver read-only access; Django-Q2 render task; no new tracking
+  event). Corrections folded in: no fixture balance/document provider is
+  deleted (`LedgerBalanceProvider` is already ledger-backed; `leave/providers/
+  fixture*.py` stays), and the wrong "HR Unit 12" / "HR Units 8–9" references
+  are gone. **DOCX is deferred (PDF only, no `python-docx`).** Awaiting
+  developer approval; on completion mark complete + set Next Up = Unit 24.
+
+## Completed (Unit 21)
+
+- **Spec.** `context/specs/21-workflow-to-approver-integration.md` — decisions
+  D1–D15 (locked in the spec; tracker entry written retrospectively from the
+  verified implementation).
+- **Workflow routing.** `workflows/providers.py::DatabaseWorkflowProvider` +
+  `resolve_applicable_workflow` (scope precedence category/department →
+  category → department → any; tie → earliest `effective_from`; active +
+  effective only); `config/settings/base.py` now sets
+  `WORKFLOW_PROVIDER = "workflows.providers.DatabaseWorkflowProvider"`.
+  `workflow_gate.check_workflow_ready` is no longer a stub — a submission with
+  no applicable workflow or a stage with no active approver fails with
+  `workflow_unavailable` (422, never a 500).
+- **The spine.** `LeaveApplication.current_approver` is the authoritative "who
+  must act now" fact. `decide()` advances it to the next stage's approver on
+  approve; resubmission points it back at the returning stage's configured
+  approver; reassignment/delegation resolve at query time via
+  `acting_approver_id` (delegation → delegate while active, then reassignment
+  assignee, then the stored approver; single-level, no cascade). Routing
+  consumers (`ApprovalListAPIView` pending tab, `ApprovalsCapabilitiesView`,
+  `get_decision_authority`, `get_view_access`) all use acting-approver
+  resolution.
+- **Resubmission.** New `POST /api/v1/leave-applications/{id}/resubmit/`
+  (`leave/views/resubmit.py`): rejected/correction_required → submitted, cycle
+  increments, returning stage re-opened in place, `current_approver` = the
+  stage's configured approver, same reference, validation re-run, audit
+  `application_resubmitted`.
+- **Tracking.** `leave/tracking/database_provider.py::DatabaseTrackingProvider`
+  builds `WorkflowTracking` from real `ApplicationStage`/`ApprovalDecision`/
+  `Reassignment`/`CancellationRequest` rows (status, stages, events, outcomes,
+  resubmission, cancellation blocks) with the D11/D12/Unit 18 contract intact.
+  `config/settings/base.py` now sets
+  `LEAVE_TRACKING_PROVIDER = "leave.tracking.database_provider.DatabaseTrackingProvider"`.
+- **Fixture removal.** `leave/tracking/fixture_provider.py`, `leave/tracking/
+  fixtures/`, and `seed_tracking_scenarios.py` are deleted (working tree);
+  frontend tracking fixtures (provider-independent component-test data) stay.
+- **Seeds.** `seed_approvals_dev` builds idempotent `Workflow`/`WorkflowStage`
+  rows (academic → hod/dean/registrar/dvc; administration → supervisor/hod/
+  registrar/dvc) so its scenarios route through the real provider.
+- **Tests.** New `workflows/tests_routing.py` + reworked `tests_approvals.py`
+  (DatabaseWorkflowProvider resolution, acting-approver routing, spine
+  advance), `leave/tests/test_resubmission.py`, and real-row tracking tests.
+  Verified 2026-09-25: `uv run manage.py test workflows.tests_routing
+  leave.tests.test_tracking_api leave.tests.test_resubmission` →
+  **32 tests OK**; `manage.py check` clean.
+- **Docs.** `backend/docs/workflow-to-approver-routing.md` (spine D2, acting
+  approver D3, workflow resolution D5, resubmit contract D9, tracking event
+  vocabulary D11).
+- **Status:** implemented and uncommitted on `feature/hr-track` (Unit 21 predates
+  this tracker entry). Commit/merge decision is the developer's.
 
 ## Hardening pass — feature/hr-track review (2026-09-21, complete)
 
@@ -587,6 +664,24 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   requires `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
 
 ## Session Notes
+
+- **Unit 21 verified complete + Unit 23 spec revised (2026-09-25):** A Phase-1
+  review confirmed Unit 21 is fully implemented on `feature/hr-track` but
+  **not committed** (working-tree only — `git status` shows the provider swaps,
+  `resubmit.py`, `tests_routing.py`, the tracking-fixture deletions, and
+  `docs/workflow-to-approver-routing.md` as modified/untracked/deleted; 32
+  routing/tracking/resubmit tests pass). The Unit 23 spec draft was rewritten:
+  the old draft referenced non-existent machinery (`create_ledger_row`, a
+  `submission_cycle` ledger column, `leave_type_consumes_annual_entitlement()`,
+  `is_finalised`, `workflows.events._consumers`), wrong HR units (12 = employee
+  dashboard; 8–9 = delegation/reassignment), and a nonexistent "fixture
+  balance/document provider" to delete. Decisions D1–D8 now match the real
+  code: deduction inline in `decide()`'s transaction decided from
+  `rules_snapshot["leave_type"]["deducts_annual_balance"]`; `LedgerBalanceProvider.
+  get_deduction` derives days/FY from the application record; storage
+  `upload_document` hard-wires `leave-documents/{id}/` and needs a minimal
+  extension for the `approved/` prefix; `reportlab` is not installed. DOCX
+  deferred. Awaiting developer approval before implementation.
 
 - **Unit 20 complete (2026-09-24):** HR-to-Employee Data Integration landed.
   The default `LEAVE_RULES_PROVIDER` is now `DatabaseRulesProvider`; the

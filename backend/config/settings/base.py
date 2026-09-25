@@ -101,13 +101,14 @@ LEAVE_RULES_PROVIDER = "leave.providers.database.DatabaseRulesProvider"
 LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
 
 # Leave application tracking (Unit 15). The tracking provider supplies the
-# read-only workflow payload; the fixture provider is replaced by the real
-# workflow-backed provider in Unit 21 (see docs/leave-rules-provider-contract.md).
-LEAVE_TRACKING_PROVIDER = "leave.tracking.fixture_provider.FixtureTrackingProvider"
+# read-only workflow payload from the real workflow tables since Unit 21
+# (see docs/leave-rules-provider-contract.md).
+LEAVE_TRACKING_PROVIDER = "leave.tracking.database_provider.DatabaseTrackingProvider"
 
 # Approver workflow (Unit 16). The workflow provider resolves the stage chain
-# for an application; swap in the real HR-track provider via this setting.
-WORKFLOW_PROVIDER = "workflows.providers.FixtureWorkflowProvider"
+# for an application from the real HR-track Workflow/WorkflowStage configuration
+# (Unit 21); see docs/workflow-to-approver-routing.md.
+WORKFLOW_PROVIDER = "workflows.providers.DatabaseWorkflowProvider"
 
 # Leave cancellation balance (Unit 18). The balance provider answers how many
 # annual days an approved application deducted and records the restoration when

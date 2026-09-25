@@ -316,10 +316,16 @@ def _workflow_block(application: LeaveApplication) -> dict:
         .select_related("assigned_approver")
         .order_by("stage_order")
     )
+    from .services import acting_approver_id, responsible_approver_id
+
+    responsible_id = responsible_approver_id(application)
+    acting_id = acting_approver_id(application)
     stage_payloads = [
         _stage_block(
             stage,
             stage.decisions.order_by("-decided_at").first(),
+            responsible_id,
+            acting_id,
         )
         for stage in stages
     ]
@@ -352,7 +358,17 @@ def _workflow_block(application: LeaveApplication) -> dict:
     }
 
 
-def _stage_block(stage: ApplicationStage, decision: ApprovalDecision | None) -> dict:
+def _stage_block(stage: ApplicationStage, decision: ApprovalDecision | None, responsible_id=None, acting_id=None) -> dict:
+    assigned_name = stage.assigned_approver.get_full_name() or stage.assigned_approver.username
+    acting_for = None
+    approver_name = assigned_name
+    if stage.status == ApplicationStage.Status.PENDING and acting_id:
+        acting_name = _user_name(acting_id)
+        if acting_name:
+            approver_name = acting_name
+        if responsible_id == stage.assigned_approver_id and acting_id != stage.assigned_approver_id:
+            # A delegate covering for the configured approver (D3).
+            acting_for = _user_name(responsible_id)
     return {
         "order": stage.stage_order,
         "role": stage.role,
@@ -360,14 +376,29 @@ def _stage_block(stage: ApplicationStage, decision: ApprovalDecision | None) -> 
         "status": stage.status,
         "submission_cycle": stage.submission_cycle,
         "decision_version": stage.decision_version,
-        "assigned_approver": (
-            stage.assigned_approver.get_full_name()
-            or stage.assigned_approver.username
-        ),
+        "assigned_approver": assigned_name,
+        "approver": approver_name,
+        "acting_for": acting_for,
         "assigned_at": _iso(stage.created_at),
         "decided_at": _iso(decision.decided_at if decision else None),
         "comment": decision.comment if decision else None,
     }
+
+
+def _user_name(pk) -> str | None:
+    if pk is None:
+        return None
+    from users.models import User
+
+    row = (
+        User.objects.filter(pk=pk)
+        .values("first_name", "last_name", "username")
+        .first()
+    )
+    if row is None:
+        return None
+    name = f"{row['first_name']} {row['last_name']}".strip()
+    return name or row["username"]
 
 
 def _current_stage_block(application: LeaveApplication) -> dict | None:
@@ -375,12 +406,20 @@ def _current_stage_block(application: LeaveApplication) -> dict | None:
     if stage is None:
         return None
     next_label = _following_stage_label(application, stage)
+    from .services import acting_approver_id, responsible_approver_id
+
+    responsible = responsible_approver_id(application)
+    acting = acting_approver_id(application)
+    approver_name = _user_name(acting)
+    acting_for = _user_name(responsible) if acting and acting != responsible else None
     return {
         "order": stage.stage_order,
         "role": stage.role,
         "role_label": stage.role_label,
         "is_final": stage.is_final,
         "next_role_label": next_label,
+        "approver": approver_name,
+        "acting_for": acting_for,
     }
 
 

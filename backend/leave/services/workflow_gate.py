@@ -1,18 +1,46 @@
-"""Workflow readiness gate (Unit 14, unit-workflow).
+"""Workflow readiness gate (Unit 21).
 
 Invariant 12.7 requires that a valid, configured workflow exists before an
-application is submitted. Workflows do not exist yet (Units 6/7 are HR-track and
-not merged), so this is a stub that always reports ready, with a ``TODO`` marker
-for the unit that enforces the invariant.
+application is submitted. ``check_workflow_ready`` resolves the applicable HR
+workflow for the employee's category/department and verifies every stage can
+resolve an active approver, raising :class:`WorkflowUnavailableError` with the
+reasons otherwise. Submission maps that error to the ``workflow_unavailable``
+validation code before any draft leaves the employee's hands.
 """
+
+
+class WorkflowUnavailableError(Exception):
+    """No satisfiable workflow exists for the application; carries messages."""
+
+    def __init__(self, messages: list[str]):
+        self.messages = messages
+        super().__init__("; ".join(messages))
 
 
 def check_workflow_ready(application) -> bool:
     """Return True when workflow routing is available for submission.
 
-    TODO(unit-workflow): enforce invariant 12.7 here — a valid configured
-    workflow must exist for the employee's category/department before the
-    application may be submitted; return the workflow (and raise a structured
-    error when missing) instead of ``True``.
+    Raises :class:`WorkflowUnavailableError` (with human-readable messages)
+    when no workflow applies to the employee's category/department or a stage
+    has no active approver.
     """
+    from workflows.providers import WorkflowConfigError, get_workflow_provider
+
+    try:
+        definitions = get_workflow_provider().get_stage_definitions(application)
+    except WorkflowConfigError as exc:
+        raise WorkflowUnavailableError([str(exc)])
+
+    if not definitions:
+        raise WorkflowUnavailableError(
+            ["No approval workflow is configured for submission."]
+        )
+
+    missing = [
+        f"No active approver for the {definition.role_label} stage."
+        for definition in definitions
+        if definition.approver_user_id is None
+    ]
+    if missing:
+        raise WorkflowUnavailableError(missing)
     return True

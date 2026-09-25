@@ -12,6 +12,7 @@ from .views import (
     SupportingDocumentViewSet,
 )
 from .views.me import LeaveSummaryView
+from .views.resubmit import LeaveApplicationResubmitView
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
 app_name = "leave"
@@ -53,6 +54,11 @@ urlpatterns = [
         "leave-applications/<uuid:pk>/submit/",
         LeaveApplicationSubmitView.as_view(),
         name="leave-application-submit",
+    ),
+    path(
+        "leave-applications/<uuid:pk>/resubmit/",
+        LeaveApplicationResubmitView.as_view(),
+        name="leave-application-resubmit",
     ),
     path("", include("leave.tracking.urls")),
     path("", include("leave.cancellations.urls")),

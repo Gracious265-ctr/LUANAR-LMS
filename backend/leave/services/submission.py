@@ -51,8 +51,9 @@ def submit_application(*, user, application_id):
     from ..providers import get_provider
     from ..signals import leave_application_submitted
     from ..validation.pipeline import run_validation
+    from ..validation.types import ValidationIssue
     from .references import next_reference
-    from .workflow_gate import check_workflow_ready
+    from .workflow_gate import WorkflowUnavailableError, check_workflow_ready
 
     with transaction.atomic():
         provider = get_provider()
@@ -83,8 +84,19 @@ def submit_application(*, user, application_id):
         if not result.valid:
             raise ValidationFailedError(result.errors)
 
-        if not check_workflow_ready(app):
-            raise ApplicationNotSubmittableError()
+        try:
+            check_workflow_ready(app)
+        except WorkflowUnavailableError as exc:
+            raise ValidationFailedError(
+                [
+                    ValidationIssue(
+                        code="workflow_unavailable",
+                        field="—",
+                        message=message,
+                    )
+                    for message in exc.messages
+                ]
+            )
 
         snapshot = build_rules_snapshot(result.context)
 
@@ -116,11 +128,11 @@ def submit_application(*, user, application_id):
         except WorkflowAssignmentError as exc:
             raise ValidationFailedError(
                 [
-                    {
-                        "code": "workflow_unavailable",
-                        "message": message,
-                        "field": "—",
-                    }
+                    ValidationIssue(
+                        code="workflow_unavailable",
+                        field="—",
+                        message=message,
+                    )
                     for message in exc.messages
                 ]
             )

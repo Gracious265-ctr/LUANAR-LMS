@@ -37,6 +37,8 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
     if application.status != LeaveApplication.Status.SUBMITTED:
         return Authority(False, "application_closed")
 
+    from .services import acting_approver_id
+
     stage = _current_stage(application)
     if stage is None:
         return Authority(False, "application_closed")
@@ -44,7 +46,7 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
         return Authority(False, "already_decided")
     if _decided_this_cycle(user, application):
         return Authority(False, "already_decided")
-    if stage.assigned_approver_id != user.id:
+    if acting_approver_id(application) != user.id:
         return Authority(False, "not_current_stage")
     return Authority(True, None)
 
@@ -71,6 +73,19 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     no longer ``submitted``. The ``stage`` of such a ``ViewAccess`` is ``None``.
     """
     from leave.cancellations.models import CancellationApprovalStage
+    from .services import acting_approver_id
+
+    live_stage = (
+        application.stages.filter(
+            submission_cycle=application.workflow_chain_cycle,
+            status=ApplicationStage.Status.PENDING,
+        )
+        .first()
+    )
+    if live_stage is not None and acting_approver_id(application) == user.id:
+        return ViewAccess(
+            live_stage.stage_order, live_stage.role, live_stage.role_label, live_stage
+        )
 
     stage = (
         application.stages.filter(

@@ -16,8 +16,17 @@ from leave.services.submission import submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 from users.models import EmployeeProfile
 
-from .models import ApplicationStage, ApprovalDecision
-from .providers import FixtureWorkflowProvider
+from .models import (
+    ApplicationStage,
+    ApprovalDecision,
+    Workflow,
+    WorkflowStage,
+)
+from .providers import (
+    DatabaseWorkflowProvider,
+    WorkflowConfigError,
+    resolve_applicable_workflow,
+)
 from .services import (
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
@@ -100,13 +109,43 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         )
 
 
-class WorkflowProviderFixtureTests(ApprovalBase):
+class WorkflowProviderDatabaseTests(ApprovalBase):
+    """Unit 21 — the real ``DatabaseWorkflowProvider`` (D5)."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        self.admin_workflow = Workflow.objects.create(
+            name="Admin chain",
+            employee_category=EmployeeProfile.Category.ADMINISTRATION,
+            effective_from=today,
+            is_active=True,
+        )
+        for index, role in enumerate(
+            ("supervisor", "hod", "registrar", "dvc"), start=1
+        ):
+            WorkflowStage.objects.create(
+                workflow=self.admin_workflow, order=index, approver_role=role
+            )
+        self.academic_workflow = Workflow.objects.create(
+            name="Academic chain",
+            employee_category=EmployeeProfile.Category.ACADEMIC,
+            effective_from=today,
+            is_active=True,
+        )
+        for index, role in enumerate(("hod", "dean", "registrar", "dvc"), start=1):
+            WorkflowStage.objects.create(
+                workflow=self.academic_workflow, order=index, approver_role=role
+            )
+
     def test_chain_for_administration_starts_with_supervisor(self):
         profile = self.supervisor.employee_profile
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
         app = LeaveApplication(employee=self.supervisor)
-        definitions = FixtureWorkflowProvider().get_stage_definitions(app)
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(app)
         self.assertEqual(
             [d.role for d in definitions],
             ["supervisor", "hod", "registrar", "dvc"],
@@ -117,7 +156,7 @@ class WorkflowProviderFixtureTests(ApprovalBase):
         profile.category = EmployeeProfile.Category.ACADEMIC
         profile.department = "Mathematics"
         profile.save()
-        definitions = FixtureWorkflowProvider().get_stage_definitions(
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
             LeaveApplication(employee=self.employee)
         )
         self.assertEqual(
@@ -126,9 +165,54 @@ class WorkflowProviderFixtureTests(ApprovalBase):
         )
 
     def test_every_definition_resolves_an_active_approver(self):
-        app = LeaveApplication(employee=self.employee)
-        definitions = FixtureWorkflowProvider().get_stage_definitions(app)
+        profile = self.employee.employee_profile
+        profile.category = EmployeeProfile.Category.ADMINISTRATION
+        profile.save()
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=self.employee)
+        )
         self.assertTrue(all(d.approver_user_id is not None for d in definitions))
+
+    def test_no_active_workflow_raises_config_error(self):
+        Workflow.objects.all().delete()
+        profile = self.employee.employee_profile
+        profile.category = EmployeeProfile.Category.ADMINISTRATION
+        profile.save()
+        with self.assertRaises(WorkflowConfigError):
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+
+    def test_exact_scope_wins_over_category_any(self):
+        from django.utils import timezone
+
+        exact = Workflow.objects.create(
+            name="Maths chain",
+            employee_category=EmployeeProfile.Category.ACADEMIC,
+            department="Mathematics",
+            effective_from=timezone.localdate(),
+            is_active=True,
+        )
+        WorkflowStage.objects.create(
+            workflow=exact, order=1, approver_role="supervisor"
+        )
+        profile = self.employee.employee_profile
+        profile.category = EmployeeProfile.Category.ACADEMIC
+        profile.department = "Mathematics"
+        profile.save()
+        resolved = resolve_applicable_workflow(
+            LeaveApplication(employee=self.employee)
+        )
+        self.assertEqual(resolved.pk, exact.pk)
+
+    def test_inactive_workflow_is_not_applicable(self):
+        Workflow.objects.all().update(is_active=False)
+        profile = self.employee.employee_profile
+        profile.category = EmployeeProfile.Category.ADMINISTRATION
+        profile.save()
+        self.assertIsNone(
+            resolve_applicable_workflow(LeaveApplication(employee=self.employee))
+        )
 
 
 class AssignmentTests(ApprovalBase):
@@ -174,8 +258,8 @@ class AssignmentTests(ApprovalBase):
 
         with self.assertRaises(ValidationFailedError) as ctx:
             submit_application(user=self.employee, application_id=app.pk)
-        self.assertEqual(ctx.exception.errors[0]["code"], "workflow_unavailable")
-        self.assertIn("No active user", ctx.exception.errors[0]["message"])
+        self.assertEqual(ctx.exception.errors[0].code, "workflow_unavailable")
+        self.assertIn("No active approver", ctx.exception.errors[0].message)
 
     def test_assign_is_idempotent(self):
         app = self.make_submitted()

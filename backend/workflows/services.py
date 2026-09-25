@@ -273,10 +273,15 @@ def active_delegation_for(approver_user) -> Delegation | None:
     approver move to the delegate while such a delegation is active, and fall
     back to the original approver when none is active (ended or cancelled).
     """
+    return _active_delegation_for_id(approver_user.pk)
+
+
+def _active_delegation_for_id(approver_id: int) -> Delegation | None:
+    """The delegation currently covering an approver, keyed by user id."""
     today = timezone.localdate()
     return (
         Delegation.objects.filter(
-            approver=approver_user,
+            approver_id=approver_id,
             status=Delegation.Status.APPROVED,
             starts_on__lte=today,
         )
@@ -284,6 +289,69 @@ def active_delegation_for(approver_user) -> Delegation | None:
         .order_by("-starts_on")
         .first()
     )
+
+
+def responsible_approver_id(application) -> int | None:
+    """The configured approver who must act now (Unit 21 spine, D2).
+
+    ``LeaveApplication.current_approver`` is authoritative; the current stage's
+    ``assigned_approver`` is a defensive fallback for rows where the spine has
+    not been materialised.
+    """
+    if application.current_approver_id is not None:
+        return application.current_approver_id
+    if application.current_stage_id is None:
+        return None
+    return (
+        ApplicationStage.objects.filter(pk=application.current_stage_id)
+        .values_list("assigned_approver_id", flat=True)
+        .first()
+    )
+
+
+def acting_approver_id(application) -> int | None:
+    """The user entitled to act on the pending application right now (D3).
+
+    The responsible approver acts unless an active delegation names a delegate,
+    in which case the delegate acts. Single-level only: a delegate's own active
+    delegation is never cascaded.
+    """
+    responsible_id = responsible_approver_id(application)
+    if responsible_id is None:
+        return None
+    delegation = _active_delegation_for_id(responsible_id)
+    if delegation is not None and delegation.delegate_id is not None:
+        return delegation.delegate_id
+    return responsible_id
+
+
+def acting_approver_predicate(user) -> Q:
+    """Query predicate selecting applications the user must act on now.
+
+    The user acts on applications currently held by them — except those they
+    have delegated away while an active delegation covers them — and on the
+    applications of every approver whose active delegation currently names the
+    user as delegate. Empty expected when ``user`` is not an approver.
+    """
+    today = timezone.localdate()
+    delegations = Delegation.objects.filter(
+        status=Delegation.Status.APPROVED,
+        starts_on__lte=today,
+        delegate__isnull=False,
+    ).filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today))
+    delegated_approver_ids = list(
+        delegations.values_list("approver_id", flat=True).distinct()
+    )
+    received_approver_ids = list(
+        delegations.filter(delegate=user)
+        .values_list("approver_id", flat=True)
+        .distinct()
+    )
+    own = Q(current_approver=user) & ~Q(
+        current_approver__in=list(delegated_approver_ids)
+    )
+    acting = Q(current_approver__in=list(received_approver_ids))
+    return own | acting
 
 
 def require_decision_reason(decision_reason: object) -> str:
@@ -562,7 +630,7 @@ def assign_workflow(application):
     yields no/ill-formed stages or a stage cannot be resolved to an active user.
     Returns the first (pending) stage.
     """
-    from .providers import get_workflow_provider
+    from .providers import WorkflowConfigError, get_workflow_provider
 
     with transaction.atomic():
         cycle = application.submission_cycle
@@ -570,7 +638,10 @@ def assign_workflow(application):
         if existing is not None:
             return application.current_stage
 
-        definitions = get_workflow_provider().get_stage_definitions(application)
+        try:
+            definitions = get_workflow_provider().get_stage_definitions(application)
+        except WorkflowConfigError as exc:
+            raise WorkflowAssignmentError([str(exc)])
         if not definitions:
             raise WorkflowAssignmentError(["No workflow stages configured."])
         orders = [definition.order for definition in definitions]
@@ -759,6 +830,9 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         if next_stage is not None:
             next_stage.save(update_fields=["status", "decision_version", "updated_at"])
             app.current_stage = next_stage
+            # Unit 21 (D2): the spine follows the stage — the next approver is
+            # the configured approver of the freshly-activated stage.
+            app.current_approver = next_stage.assigned_approver
 
         after_status = app.status
         after_order = (
@@ -766,7 +840,9 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             if app.current_stage_id is not None
             else stage.stage_order
         )
-        app.save(update_fields=["status", "current_stage", "updated_at"])
+        app.save(
+            update_fields=["status", "current_stage", "current_approver", "updated_at"]
+        )
 
         record_audit(
             actor=actor,

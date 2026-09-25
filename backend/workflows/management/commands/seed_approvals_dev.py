@@ -2,12 +2,12 @@
 
 Creates submitted leave applications that flow through the live workflow so the
 approver dashboard has realistic pending/decided items for every approver role.
-Scenario chain used by the fixture workflow provider:
+The chain comes from the real ``Workflow``/``WorkflowStage`` rows seeded by
+``_seed_workflows`` (Unit 21):
 
-* ``employee@test.luanar`` (Administration) → supervisor → hod → registrar → dvc
-* ``employee@test.luanar`` (separate account outside the dean's faculty) is
-  created for the Dean's review-scope boundary; a Mathematics academic maps to
-  hod → dean → registrar → dvc.
+* Administration (employee@test.luanar) → supervisor → hod → registrar → dvc
+* Academic (the separate ``science-employee@test.luanar`` outside the dean's
+  faculty) → hod → dean → registrar → dvc.
 
 Idempotent: once a scenario reference (``LV-<FY>-800NNN``) exists, the command
 keeps the existing applications untouched. Requires ``seed_dev_users`` first.
@@ -54,6 +54,7 @@ class Command(BaseCommand):
             raise CommandError("No active financial year configured.")
 
         self._ensure_second_employee()
+        self._seed_workflows()
 
         prefix = f"LV-{fy_label}-{FIYEAR_PREFIX}"
         if LeaveApplication.objects.filter(
@@ -74,6 +75,56 @@ class Command(BaseCommand):
 
         self._seed_cancellations(fy_label)
         self._seed_documents(fy_label)
+
+    def _seed_workflows(self):
+        """Real ``Workflow``/``WorkflowStage`` rows (Unit 21).
+
+        Idempotent by workflow name; ``effective_from`` defaults to the active
+        financial year's start so the ``DatabaseWorkflowProvider`` treats the
+        chains as live configuration from day one.
+        """
+        from workflows.models import Workflow, WorkflowStage
+
+        from leave.services import active_financial_year
+
+        fy = active_financial_year()
+        effective = (fy.start_date if fy else None) or timezone.localdate()
+
+        definitions = [
+            (
+                "Administration Leave Workflow",
+                EmployeeProfile.Category.ADMINISTRATION,
+                ("supervisor", "hod", "registrar", "dvc"),
+            ),
+            (
+                "Academic Leave Workflow",
+                EmployeeProfile.Category.ACADEMIC,
+                ("hod", "dean", "registrar", "dvc"),
+            ),
+        ]
+        for name, category, roles in definitions:
+            workflow, created = Workflow.objects.get_or_create(
+                name=name,
+                defaults={
+                    "employee_category": category,
+                    "effective_from": effective,
+                    "is_active": True,
+                },
+            )
+            if created:
+                WorkflowStage.objects.bulk_create(
+                    [
+                        WorkflowStage(
+                            workflow=workflow,
+                            order=index,
+                            approver_role=role,
+                        )
+                        for index, role in enumerate(roles, start=1)
+                    ]
+                )
+                self.stdout.write(
+                    self.style.SUCCESS(f"Seeded workflow '{name}'.")
+                )
 
     def _ensure_second_employee(self):
         """An academic outside the Dean's faculty (review-scope boundary)."""

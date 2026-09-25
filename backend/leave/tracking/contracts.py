@@ -5,8 +5,11 @@ spec (section 1). They contain **no Django imports** so the provider interface
 stays decoupled: the fixture provider (now) and the real provider (Unit 20)
 both speak this shape, and the serializers translate it into the API response.
 
-Unit 20 must reconcile this contract with the real Unit 6 workflow model. The
-frontend depends only on the serialized shape, not on these classes.
+Unit 21 reconciled this contract with the real Unit 6/16 workflow model
+(see ``workflows/docs/workflow-provider-contract.md``): the tracking provider
+now serves real ``ApplicationStage``/``ApprovalDecision``/audit rows through
+``DatabaseTrackingProvider``, and the frontend depends only on the serialized
+shape, not on these classes.
 """
 
 from dataclasses import dataclass, field

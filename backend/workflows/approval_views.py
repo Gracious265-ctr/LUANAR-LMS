@@ -47,6 +47,7 @@ from .services import (
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
     ApprovalValidationError,
+    acting_approver_predicate,
     decide,
 )
 
@@ -84,8 +85,9 @@ class ApprovalsCapabilitiesView(APIView):
         pending_count = (
             LeaveApplication.objects.filter(
                 status=LeaveApplication.Status.SUBMITTED,
-                current_stage__assigned_approver=user,
-            ).count()
+            )
+            .filter(acting_approver_predicate(user))
+            .count()
             if is_approver
             else 0
         )
@@ -105,9 +107,8 @@ class ApprovalListAPIView(APIView):
             "employee__employee_profile"
         )
         if tab == "pending":
-            qs = qs.filter(
-                status=LeaveApplication.Status.SUBMITTED,
-                current_stage__assigned_approver=user,
+            qs = qs.filter(status=LeaveApplication.Status.SUBMITTED).filter(
+                acting_approver_predicate(user)
             )
         else:
             # Decided tab: everything the approver ever decided on, but hide a
@@ -117,10 +118,8 @@ class ApprovalListAPIView(APIView):
             qs = qs.filter(
                 approval_decisions__approver=user,
             ).exclude(
-                # A resubmission that landed back with this approver shows in
-                # their Pending tab, not lingering in "Decided by me".
-                current_stage__assigned_approver=user,
-                current_stage__status=ApplicationStage.Status.PENDING,
+                Q(current_stage__status=ApplicationStage.Status.PENDING)
+                & acting_approver_predicate(user),
             ).distinct()
         if q:
             qs = qs.filter(
