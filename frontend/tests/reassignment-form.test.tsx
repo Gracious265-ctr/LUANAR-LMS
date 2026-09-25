@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { ReassignmentForm } from "@/components/hr/reassignment-form";
-import type { Employee } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
 import type { PendingApplication } from "@/lib/reassignments";
 
 vi.mock("@/lib/reassignments-client", async (importOriginal) => {
@@ -16,7 +16,7 @@ vi.mock("@/lib/reassignments-client", async (importOriginal) => {
 
 import { reassignApplication } from "@/lib/reassignments-client";
 
-function makeEmployee(id: number, role: string, name: string): Employee {
+function makeEmployee(id: number, role: UserRole, name: string): Employee {
   return {
     id,
     user_id: id,

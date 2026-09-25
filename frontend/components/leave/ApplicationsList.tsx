@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
-import { DraftCard } from "./DraftCard";
+import { ApplicationCard } from "./ApplicationCard";
 
-export function DraftsList() {
-  const { applications, loading, error, refetch } = useLeaveApplications("draft");
+export function ApplicationsList() {
+  const { applications, loading, error, refetch } = useLeaveApplications();
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -50,9 +50,9 @@ export function DraftsList() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">My Drafts</h2>
+          <h2 className="text-2xl font-bold text-text-primary">My Applications</h2>
           <p className="text-text-secondary text-sm">
-            {applications.length} draft{applications.length !== 1 ? "s" : ""}
+            {applications.length} application{applications.length === 1 ? "" : "s"}
           </p>
         </div>
         <Link
@@ -68,7 +68,7 @@ export function DraftsList() {
         <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-12 text-center">
           <FileText className="h-12 w-12 mx-auto text-text-disabled mb-4" />
           <h3 className="text-lg font-semibold text-text-primary mb-2">
-            No drafts yet
+            No applications yet
           </h3>
           <p className="text-text-secondary text-sm mb-4">
             Start a new leave application to see it here.
@@ -84,7 +84,7 @@ export function DraftsList() {
       ) : (
         <div className="grid gap-4">
           {applications.map((app) => (
-            <DraftCard
+            <ApplicationCard
               key={app.id}
               application={app}
               leaveTypeName={

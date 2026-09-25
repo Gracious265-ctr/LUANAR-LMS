@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { DelegationReview } from "@/components/hr/delegation-review";
 import type { Delegation } from "@/lib/delegations";
-import type { Employee } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -22,7 +22,7 @@ import {
   rejectDelegation,
 } from "@/lib/delegations-client";
 
-function makeEmployee(id: number, role: string, name: string): Employee {
+function makeEmployee(id: number, role: UserRole, name: string): Employee {
   return {
     id,
     user_id: id,

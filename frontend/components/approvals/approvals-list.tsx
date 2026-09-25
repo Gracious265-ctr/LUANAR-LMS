@@ -239,54 +239,54 @@ function TableRow({
   desktop?: boolean;
 }) {
   const decision = row.my_decision;
-  const body = (
-    <>
-      <td className="px-4 py-3 font-medium text-text-primary">{row.reference}</td>
-      <td className="px-4 py-3">
-        <span className="font-medium text-text-primary">{row.employee_name}</span>
-        {desktop && (
-          <span className="mt-0.5 block text-xs text-text-muted">
-            {row.department || "—"}
-          </span>
-        )}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">
-        {row.leave_type.name || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">
-        {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
-      <td className="px-4 py-3 text-text-secondary">
-        {formatDateTime(row.submitted_at) || "—"}
-      </td>
-      {tab === "decided" && (
-        <td className="px-4 py-3">
-          {decision ? (
-            <>
-              <ActionBadge action={decision.action} />
-              <span className="mt-0.5 block text-xs text-text-muted">
-                {decision.decided_at ? formatDateTime(decision.decided_at) : ""}
-              </span>
-            </>
-          ) : (
-            <span className="text-text-muted">—</span>
-          )}
-        </td>
-      )}
-      <td className="px-4 py-3">
-        <StatusBadge status={row.status} />
-      </td>
-      <td className="px-2 py-3">
-        <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-      </td>
-    </>
-  );
 
   if (desktop) {
     return (
-      <tr className="border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
-        <TableLink row={row}>{body}</TableLink>
+      <tr className="relative border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
+        <td className="px-4 py-3 font-medium text-text-primary">
+          <Link
+            href={`/dashboard/approvals/${row.id}`}
+            className="after:absolute after:inset-0 after:content-['']"
+          >
+            {row.reference}
+          </Link>
+        </td>
+        <td className="px-4 py-3">
+          <span className="font-medium text-text-primary">{row.employee_name}</span>
+          <span className="mt-0.5 block text-xs text-text-muted">
+            {row.department || "—"}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-text-secondary">
+          {row.leave_type.name || "—"}
+        </td>
+        <td className="px-4 py-3 text-text-secondary">
+          {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
+        </td>
+        <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
+        <td className="px-4 py-3 text-text-secondary">
+          {formatDateTime(row.submitted_at) || "—"}
+        </td>
+        {tab === "decided" && (
+          <td className="px-4 py-3">
+            {decision ? (
+              <>
+                <ActionBadge action={decision.action} />
+                <span className="mt-0.5 block text-xs text-text-muted">
+                  {decision.decided_at ? formatDateTime(decision.decided_at) : ""}
+                </span>
+              </>
+            ) : (
+              <span className="text-text-muted">—</span>
+            )}
+          </td>
+        )}
+        <td className="px-4 py-3">
+          <StatusBadge status={row.status} />
+        </td>
+        <td className="px-2 py-3">
+          <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
+        </td>
       </tr>
     );
   }
@@ -317,16 +317,6 @@ function TableRow({
       </Link>
     </li>
   );
-}
-
-function TableLink({
-  row,
-  children,
-}: {
-  row: ApprovalListResponse["results"][number];
-  children: React.ReactNode;
-}) {
-  return <Link href={`/dashboard/approvals/${row.id}`}>{children}</Link>;
 }
 
 function SkeletonRows({ count }: { count: number }) {

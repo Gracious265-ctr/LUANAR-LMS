@@ -1,9 +1,20 @@
+import { Clock } from "lucide-react";
+
 import { formatDate } from "@/lib/approvals/format";
 import { STATUS_META } from "@/lib/approvals/labels";
+import type { StatusMeta } from "@/lib/approvals/labels";
 import type { ApprovalReview } from "@/lib/approvals/types";
 
 import { Panel } from "./panel";
 import { StatusBadge } from "./badges";
+
+const FALLBACK_META: StatusMeta = {
+  label: "Submitted",
+  icon: Clock,
+  badgeClass: "bg-surface-secondary text-text-secondary",
+  textClass: "text-text-secondary",
+  dotClass: "bg-text-muted",
+};
 
 export function LeaveHistoryCard({ data }: { data: ApprovalReview }) {
   const history = data.history.leave_history;
@@ -44,7 +55,7 @@ export function LeaveHistoryCard({ data }: { data: ApprovalReview }) {
             </thead>
             <tbody>
               {history.entries.map((entry) => {
-                const meta = STATUS_META[entry.status];
+                const meta = STATUS_META[entry.status] ?? FALLBACK_META;
                 const Icon = meta.icon;
                 return (
                   <tr key={entry.id} className="border-b border-border-default last:border-b-0">

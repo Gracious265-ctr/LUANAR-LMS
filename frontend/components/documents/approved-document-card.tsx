@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileCheck2, Loader2, TriangleAlert, ExternalLink } from "lucide-react";
 
 import {
@@ -11,6 +11,14 @@ import {
 } from "@/lib/documents/approved";
 import { formatSize } from "@/lib/approvals/format";
 import { formatDateTime } from "@/lib/tracking/format";
+
+// The approved document is rendered in the django-q worker after the approval
+// commits, so it can be ready a moment later. While the row reports ``pending``
+// the card re-checks at this cadence until the render finishes (or gives up
+// after ``MAX_POLLS`` attempts so an endpoint that never resolves is not polled
+// forever).
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLLS = 30;
 
 /**
  * The official approved-leave document, as a link to a signed URL.
@@ -29,20 +37,47 @@ export function ApprovedDocumentCard({
   audience?: "employee" | "hr";
 }) {
   const [result, setResult] = useState<ApprovedDocumentResult | null>(null);
+  const inFlight = useRef(false);
+
+  const refetch = useCallback(() => {
+    if (inFlight.current) return;
+    const loader =
+      audience === "hr" ? fetchHRAapprovedDocument : fetchApprovedDocument;
+    inFlight.current = true;
+    loader(applicationId)
+      .then(setResult)
+      .finally(() => {
+        inFlight.current = false;
+      });
+  }, [applicationId, audience]);
 
   useEffect(() => {
     let cancelled = false;
-    const load =
-      audience === "hr"
-        ? fetchHRAapprovedDocument
-        : fetchApprovedDocument;
-    load(applicationId).then((next) => {
+    const loader =
+      audience === "hr" ? fetchHRAapprovedDocument : fetchApprovedDocument;
+    loader(applicationId).then((next) => {
       if (!cancelled) setResult(next);
     });
     return () => {
       cancelled = true;
     };
   }, [applicationId, audience]);
+
+  const pending = result !== null && result.ok && result.data.status === "pending";
+
+  useEffect(() => {
+    if (!pending) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (attempts > MAX_POLLS) {
+        clearInterval(timer);
+        return;
+      }
+      refetch();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [pending, refetch]);
 
   if (!result) {
     return (

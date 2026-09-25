@@ -202,9 +202,14 @@ Update this file after every meaningful implementation change.
 - **Frontend tests.** 3 suites / 41 tests (`tracking-view`, `tracking-format`,
   `tracking-service`). `npm test`: 31 files / 180 tests green; `tsc --noEmit`,
   `npm run lint`, and `npm run build` all clean.
-- **Reconciliation.** The Unit 13 drafts list renders draft rows only (no
-  submitted rows exist), so the in-app entry point to the tracker is the
-  submission-confirmation link, not the drafts list.
+- **Reconciliation.** The "My applications" destination (sidebar + "View my
+  applications" + tracking back-link, `/dashboard/leave/drafts`) now lists
+  **every** application — draft, submitted, approved, rejected,
+  correction_required and cancelled — via `ApplicationsList`/`ApplicationCard`,
+  which replaced the drafts-only `DraftsList`/`DraftCard` (2026-09-25 defect
+  fix: submitted applications were invisible after submission). Draft rows keep
+  Edit/Review/Delete; every non-draft row links to the tracker at
+  `/applications/{id}`.
 
 ## Completed
 
@@ -418,6 +423,14 @@ Update this file after every meaningful implementation change.
     `/api/v1/employees/` (search/ordering, no delete); Django admin
   - Backend: 26 tests passing; frontend: employee list/new/edit pages under
     `/dashboard/hr-admin/employees`; smoke tested
+  - Role-assignment wiring fix (correction inside Unit 2): `role` is writable
+    on `EmployeeSerializer` create/update via `ChoiceField(choices=User.Role.choices)`,
+    defaults to `employee` when omitted/blank, is included in the audit
+    snapshot (role changes record before/after), and is rendered as a Role
+    select on the shared employee form with a `UserRole` type in
+    `frontend/lib/employees.ts`. Spec §API contract and serializer notes
+    updated; backend + frontend tests extended (no migration; no new files
+    beyond tests).
 
 - Unit 1: Project Foundation and Development Contract
   - Repository structure with development branch
@@ -1265,6 +1278,69 @@ Frontend (`frontend/`):
   paginated with the Unit 16 `_Paginator`; `expected_action` concurrency guard
   mirrors Unit 16's stage-version; detail panel silently renders nothing when
   `?cancellation=` does not resolve to an assigned request.
+## Defect Fixes (2026-09-25, employee + approver surfaces)
+
+- **"My applications" hid submitted applications.** The page behind the sidebar's
+  "My Applications" item (`/dashboard/leave/drafts`) only fetched
+  `?status=draft`, so a newly submitted application was invisible to the
+  employee. `DraftsList`/`DraftCard` were replaced by `ApplicationsList`/
+  `ApplicationCard`: the list now calls `getLeaveApplications()` with no status
+  filter (backend already returns all owned statuses) and renders every row —
+  drafts keep Edit/Review/Delete, non-drafts show a status pill, the reference
+  number and a "Track this application" link to `/applications/{id}`. Verified:
+  313 frontend tests (previously 302), `tsc --noEmit`, `eslint`, `next build`.
+- **`<td>` inside `<a>` hydration error on the approvals table.** The desktop
+  `ApprovalsTable` wrapped its `<td>` cells in a `TableLink` (`<a>`), invalid
+  HTML. `approvals-list.tsx` now renders the reference link inside the first
+  `<td>` (matching `FinalizedLeaveTable`) and keeps the whole row clickable via
+  a stretched-link overlay (`relative` row + `after:absolute after:inset-0` on
+  the link); the dead `TableLink` wrapper was removed. A regression test
+  asserts `a td` and `tr > a` never appear. Verified: 314 frontend tests,
+  `tsc --noEmit`, `eslint`, `next build`.
+
+## Defect Fixes (2026-09-25, backend review payload)
+
+- **`GET /api/v1/approvals/{id}/` → 500 `AttributeError: 'FinancialYear' object has no attribute 'label'`** (Approvals page could not open a Registrar/DVC review). `approval_payloads._leave_history_entries` used `year.label` for the financial-year-scoped leave history, but the label is a derivation, not a column (`FinancialYear` stores only `start_date`/`end_date`/`is_active`). Now uses `leave.services.financial_year_label(year)` (e.g. `2026-07-01` → `2026-27`); unchanged fallback to `application.financial_year_label`. Regression test added in `workflows/tests_approvals.ApprovalAPITests.test_detail_review_payload_with_active_financial_year`: creates an active FY, advances the spine to the Registrar stage, and asserts the detail payload returns 200 with `current_financial_year` history excluding the current application. Full backend suite: 727 tests OK (teardown `DROP DATABASE` intermittently fails due to background autovacuum sessions — pre-existing environmental quirk, not a project bug).
+
+## Security Rule (2026-09-25, no self-approval)
+
+- **Approvers can no longer decide on their own applications.** The single
+  source of truth is `workflows.policies.get_decision_authority`, which now
+  returns `Authority(False, "self_application")` whenever
+  `application.employee_id == user.id` (checked before any stage logic), so the
+  rule holds at every stage, across delegations, reassignments and
+  resubmissions. `decide()` raises `ApprovalNotAllowedError("self_application")`
+  → API `403 {error, reason: "self_application"}`; the review payload exposes
+  `can_decide: false` with that reason, and the frontend decision panel shows
+  "You cannot decide on your own application." (new `restrictionLabel` case in
+  `frontend/lib/approvals/labels.ts`).
+- **Same rule for cancellations (Unit 18).** New `SelfDecisionError` in
+  `leave/cancellations/services.py` raised when the decider is the
+  application's employee; `CancellationDecisionAPIView` maps it to
+  `403 {code: "self_application"}`.
+- Tests: service + API for self-approval (`DecisionServiceTests`,
+  `ApprovalAPITests` in `workflows/tests_approvals.py`; `DecideServiceTests`
+  and `ApproverCancellationApiTests` in `leave/tests/test_cancellations.py`),
+  plus a frontend read-only-banner case. Full backend suite 733 tests OK,
+  frontend 315 tests OK, `tsc --noEmit`, `eslint` clean.
+
+## Defect Fix (2026-09-25, draft status crash in Leave history)
+
+- `Cannot read properties of undefined (reading 'icon')` on the approvals
+  detail page: an employee's private **draft** applications leaked into the
+  "Leave history" list and emitted status `"draft"`, which had no `STATUS_META`
+  entry.
+- Backend fix: `workflows/approval_payloads._leave_history_entries` now
+  excludes `LeaveApplication.Status.DRAFT` (drafts are in-progress and private;
+  approvers should only see submitted/terminal leave records). Regression test
+  `ApprovalAPITests.test_leave_history_excludes_drafts`.
+- Frontend hardening: `ApprovalStatus` union + `STATUS_META` now include
+  `"draft"` and `"submitted"`; `LeaveHistoryCard` and `StatusBadge` fall back to
+  a neutral meta for any unknown status instead of crashing. Note: `makeReview`
+  fixture was made to `structuredClone` so nested mutations no longer leak
+  across tests.
+- Verified: backend 734 tests OK, frontend 316 tests OK, `tsc`, `eslint`, and
+  `next build` clean.
 
 ## Defect Fix (2026-09-25, approved document never rendered in development)
 

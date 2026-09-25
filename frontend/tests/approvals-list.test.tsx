@@ -33,6 +33,19 @@ describe("ApprovalsList", () => {
     expect(mockedFetchApprovals).toHaveBeenCalledWith("pending", "", 1);
   });
 
+  it("never nests a <td> inside a link (hydration-safe tables)", async () => {
+    mockedFetchApprovals.mockResolvedValue({
+      ok: true,
+      data: makeListResponse([makeListItem()]),
+    });
+    const { container } = render(<ApprovalsList />);
+
+    await screen.findAllByText("LV-2026-000123");
+
+    expect(container.querySelector("a td")).toBeNull();
+    expect(container.querySelector("tr > a")).toBeNull();
+  });
+
   it("shows the search query in the request (debounced)", async () => {
     mockedFetchApprovals.mockResolvedValue({
       ok: true,

@@ -1,5 +1,5 @@
-import { DraftsList } from "@/components/leave/DraftsList";
+import { ApplicationsList } from "@/components/leave/ApplicationsList";
 
-export default async function DraftsPage() {
-  return <DraftsList />;
+export default async function ApplicationsPage() {
+  return <ApplicationsList />;
 }

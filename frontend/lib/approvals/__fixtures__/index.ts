@@ -153,7 +153,7 @@ const BASE_REVIEW: ApprovalReview = {
 };
 
 export function makeReview(overrides: Partial<ApprovalReview> = {}): ApprovalReview {
-  return { ...BASE_REVIEW, ...overrides };
+  return structuredClone({ ...BASE_REVIEW, ...overrides });
 }
 
 export function makeDecidedReview(): ApprovalReview {

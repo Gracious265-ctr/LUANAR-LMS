@@ -7,7 +7,9 @@ export type ApprovalStatus =
   | "approved"
   | "rejected"
   | "correction_required"
-  | "cancelled";
+  | "cancelled"
+  | "draft"
+  | "submitted";
 
 export type StageStatus =
   | "waiting"

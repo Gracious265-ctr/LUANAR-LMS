@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import {
@@ -16,6 +16,11 @@ vi.mock("@/lib/documents/approved", async (importOriginal) => {
 
 const mockedFetch = vi.mocked(fetchApprovedDocument);
 const mockedFetchHR = vi.mocked(fetchHRAapprovedDocument);
+
+beforeEach(() => {
+  mockedFetch.mockReset();
+  mockedFetchHR.mockReset();
+});
 
 function makeDocument(
   overrides: Partial<ApprovedLeaveDocument> = {}
@@ -60,6 +65,68 @@ describe("ApprovedDocumentCard", () => {
 
     expect(await screen.findByText(/being prepared/i)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /open/i })).not.toBeInTheDocument();
+  });
+
+  it("polls while pending and reveals the link once the render finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      mockedFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          data: makeDocument({
+            status: "pending",
+            available: false,
+            download_url: "",
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, data: makeDocument() });
+      render(<ApprovedDocumentCard applicationId="app-1" />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText(/being prepared/i)).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(screen.getByRole("link", { name: /open/i })).toBeInTheDocument();
+      expect(mockedFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops polling once the document reports ready", async () => {
+    vi.useFakeTimers();
+    try {
+      mockedFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          data: makeDocument({
+            status: "pending",
+            available: false,
+            download_url: "",
+          }),
+        })
+        .mockResolvedValue({ ok: true, data: makeDocument() });
+      render(<ApprovedDocumentCard applicationId="app-1" />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(mockedFetch).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12000);
+      });
+      expect(mockedFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("tells the reader to contact HR when generation failed", async () => {

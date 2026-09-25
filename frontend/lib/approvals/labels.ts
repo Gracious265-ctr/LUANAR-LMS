@@ -2,6 +2,7 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  FileText,
   RotateCcw,
   X,
   XCircle,
@@ -54,6 +55,20 @@ export const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
     textClass: "text-status-cancelled",
     dotClass: "bg-status-cancelled",
   },
+  draft: {
+    label: "Draft",
+    icon: FileText,
+    badgeClass: "bg-surface-secondary text-text-secondary",
+    textClass: "text-text-secondary",
+    dotClass: "bg-text-muted",
+  },
+  submitted: {
+    label: "Submitted",
+    icon: Clock,
+    badgeClass: "bg-surface-secondary text-text-secondary",
+    textClass: "text-text-secondary",
+    dotClass: "bg-text-muted",
+  },
 };
 
 export interface ActionMeta {
@@ -99,6 +114,8 @@ export function restrictionLabel(
   status: ApprovalStatus | null
 ): string {
   switch (reason) {
+    case "self_application":
+      return "You cannot decide on your own application.";
     case "already_decided":
       return "You have already made a decision on this application.";
     case "not_current_stage":
