@@ -199,6 +199,12 @@ class LeaveApplication(models.Model):
     # cancellation was finally approved. Null for every other status.
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
+    # Set once, inside the approval transaction, when the application reaches
+    # its final ``APPROVED`` state (Unit 23b). The generated approved document
+    # states when the leave was approved, so the date has to be recorded rather
+    # than re-derived at render time. Never rewritten afterwards.
+    approved_on = models.DateTimeField(null=True, blank=True)
+
     # Resubmission cycle counter. Starts at 1; increments on every resubmission.
     # All workflow stages and approval decisions for one submission carry this
     # value so a stale stage can never be confused with the live chain.

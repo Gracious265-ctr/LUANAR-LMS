@@ -5,6 +5,9 @@ from audit.models import AuditEntry
 
 from .services import changed_fields, current_actor, record_audit
 
+#: Displayed in place of a person when an entry has no human actor.
+SYSTEM_ACTOR_NAME = "System"
+
 
 class AuditedModelSerializer(serializers.ModelSerializer):
     """ModelSerializer that records an audit entry on create/update.
@@ -110,6 +113,14 @@ class AuditEntrySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_actor_name(self, obj: AuditEntry) -> str:
+        """The human actor's name, or ``System`` for a system-generated entry.
+
+        A null ``actor`` means the action was performed by the system rather
+        than a person (Unit 23b's background document render), which HR should
+        be able to read as such rather than see a blank cell.
+        """
+        if obj.actor_id is None:
+            return SYSTEM_ACTOR_NAME
         return obj.actor.get_full_name()
 
 
@@ -147,6 +158,9 @@ class HRLeaveApplicationSerializer(serializers.Serializer):
         )
 
         data = PendingApplicationSerializer(instance=instance).data
+        # Unit 23b: the audit view gates the approved-document affordance on the
+        # status, and an approved document exists only for an approved leave.
+        data["status"] = instance.status
         data["documents"] = SupportingDocumentSerializer(
             instance.documents.all(), many=True
         ).data

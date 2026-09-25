@@ -39,7 +39,7 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
               >
                 <td className="py-3 pr-4 text-text-primary">
                   <div className="font-medium">
-                    {entry.actor_name || `#${entry.actor}`}
+                    {entry.actor_name || (entry.actor ? `#${entry.actor}` : "System")}
                   </div>
                 </td>
                 <td className="py-3 pr-4">

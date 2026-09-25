@@ -3,7 +3,7 @@ import type { Reassignment } from "./reassignments";
 
 export interface AuditEntry {
   id: number;
-  actor: number;
+  actor: number | null;
   actor_name: string;
   action: string;
   target_type: string;
@@ -20,6 +20,7 @@ export interface AuditEntry {
 export interface FinalizedApplication {
   id: string;
   reference_number: string;
+  status: string;
   employee: number;
   employee_name: string;
   leave_type_name: string;
@@ -69,6 +70,8 @@ export const ACTION_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
   reassigned: "Reassigned",
   submitted: "Submitted",
+  document_generated: "Approved document generated",
+  document_failed: "Document generation failed",
 };
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {

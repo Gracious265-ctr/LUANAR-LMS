@@ -48,6 +48,8 @@ class AuditEntry(models.Model):
         DOCUMENT_REPLACED = "document_replaced", "Document replaced"
         DOCUMENT_REMOVED = "document_removed", "Document removed"
         DOCUMENT_RETIRED = "document_retired", "Document retired"
+        DOCUMENT_GENERATED = "document_generated", "Approved document generated"
+        DOCUMENT_FAILED = "document_failed", "Approved document generation failed"
         CANCELLATION_REQUESTED = "cancellation_requested", "Cancellation requested"
         CANCELLATION_WITHDRAWN = "cancellation_withdrawn", "Application withdrawn"
         CANCELLATION_STAGE_APPROVED = (
@@ -80,7 +82,12 @@ class AuditEntry(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="audit_entries",
-        help_text="The user who performed the action.",
+        null=True,
+        blank=True,
+        help_text=(
+            "The user who performed the action. Null for system-generated "
+            "actions, e.g. an approved-document render (Unit 23b)."
+        ),
     )
     action = models.CharField(max_length=32, choices=Action.choices)
     target_type = models.CharField(

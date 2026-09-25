@@ -8,6 +8,12 @@ from django.conf import settings
 
 MAX_DOCUMENT_SIZE = 10 * 1024 * 1024
 
+#: Storage prefixes. Employee-uploaded supporting documents keep their original
+#: location; the generated approved document lives under its own prefix so the
+#: two artifact families never interleave (Unit 23b D6).
+SUPPORTING_DOCUMENT_PREFIX = "leave-documents/"
+APPROVED_DOCUMENT_PREFIX = "approved/"
+
 ALLOWED_DOCUMENT_CONTENT_TYPES = (
     "application/pdf",
     "application/msword",
@@ -43,12 +49,41 @@ def get_supabase_client():
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 
-def upload_document(file, application_id: str) -> dict:
+def upload_document(
+    file, application_id: str, *, prefix: str = SUPPORTING_DOCUMENT_PREFIX
+) -> dict:
     client = get_supabase_client()
     safe_name = _sanitize_document_name(file.name)
-    path = f"leave-documents/{application_id}/{uuid4().hex}-{safe_name}"
+    path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
     client.storage.from_(settings.SUPABASE_BUCKET).upload(
         path, file.read(), {"content-type": file.content_type}
+    )
+    result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+        path, settings.SUPABASE_SIGNED_URL_EXPIRY
+    )
+    return {"path": path, "url": result["signedURL"]}
+
+
+def upload_bytes(
+    data: bytes,
+    file_name: str,
+    *,
+    prefix: str,
+    application_id: str,
+    content_type: str = "application/pdf",
+) -> dict:
+    """Upload in-memory bytes under ``prefix`` and return ``{path, url}``.
+
+    The generated approved document is rendered to memory rather than through an
+    upload form, so it needs a bytes-friendly sibling of :func:`upload_document`
+    (Unit 23b D6). Path construction is shared, so both writers land under the
+    same ``{prefix}{application_id}/`` shape.
+    """
+    client = get_supabase_client()
+    safe_name = _sanitize_document_name(file_name)
+    path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
+    client.storage.from_(settings.SUPABASE_BUCKET).upload(
+        path, data, {"content-type": content_type}
     )
     result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
         path, settings.SUPABASE_SIGNED_URL_EXPIRY

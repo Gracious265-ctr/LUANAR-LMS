@@ -840,18 +840,32 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             if app.current_stage_id is not None
             else stage.stage_order
         )
+        # Unit 23b (D3): stamp the final approval once, in the same save, so the
+        # document can state when the leave was approved and the date can never
+        # disagree with the status.
+        finalised = after_status == LeaveApplication.Status.APPROVED
+        if finalised and app.approved_on is None:
+            app.approved_on = timezone.now()
         app.save(
-            update_fields=["status", "current_stage", "current_approver", "updated_at"]
+            update_fields=[
+                "status",
+                "current_stage",
+                "current_approver",
+                "approved_on",
+                "updated_at",
+            ]
         )
 
-        if after_status == LeaveApplication.Status.APPROVED:
-            # Unit 25 (D4): the annual-balance deduction is transactional
-            # business state, so it is written inside this transaction and a
-            # failure rolls the approval back. The approved-document half stays
-            # deferred to Unit 23b; only ``record_deduction`` is wired here.
-            from leave.services.finalise import record_deduction
+        if finalised:
+            # Unit 25 (D4) + Unit 23b (D8): the ledger deduction and the
+            # approved-document record are both business consequences of the
+            # final approval, so they are written inside this transaction and a
+            # failure in either rolls the approval back. The render itself is
+            # enqueued on commit, so the document is a retryable derived
+            # artifact rather than part of the atomic unit.
+            from leave.services.finalise import finalise_approved_application
 
-            record_deduction(app)
+            finalise_approved_application(app)
 
         record_audit(
             actor=actor,

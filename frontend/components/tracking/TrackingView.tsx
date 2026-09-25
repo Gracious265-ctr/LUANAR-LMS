@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 import { CancellationSection } from "@/components/cancellations/cancellation-section";
+import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { fetchTracking } from "@/lib/tracking/service";
 import type { TrackingResult } from "@/lib/tracking/types";
 
@@ -120,6 +121,13 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
           applicationId={applicationId}
           documents={data.documents}
         />
+      )}
+
+      {/* The official document only exists once the leave is approved, so the
+          card is mounted only then rather than issuing a request that must
+          404 for every other status. */}
+      {data.status === "approved" && (
+        <ApprovedDocumentCard applicationId={applicationId} />
       )}
 
       <CurrentStatusCard data={data} />

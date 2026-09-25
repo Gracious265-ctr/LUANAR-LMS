@@ -17,10 +17,12 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
+from documents.models import ApprovedLeaveDocument
+from documents.tasks import render_approved_document
 from leave.cancellations.models import LeaveBalanceTransaction
 from leave.cancellations.services import decide_cancellation, submit_cancellation
 from leave.models import ApplicationRevision, LeaveApplication
-from leave.services.finalise import record_deduction
+from leave.services.finalise import finalise_approved_application, record_deduction
 from leave.services.resubmission import resubmit_application
 from leave.services.submission import submit_application
 from leave.tests.stubs import (
@@ -479,3 +481,147 @@ class ReassignmentJourneyTests(EndToEndBase):
         self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
         self.assertEqual(self.deductions(app).count(), 1)
         self.assertEqual(Reassignment.objects.filter(application=app).count(), 1)
+
+
+class ApprovedDocumentJourneyTests(EndToEndBase):
+    """Unit 23b — the document half of the approval, asserted end to end.
+
+    Runs the real decision service, the real finalisation orchestrator and the
+    real render task; only the Supabase client and the Q2 broker are stubbed,
+    because neither is what this journey is about.
+    """
+
+    def approve_and_render(self, app):
+        """Approve the whole chain, then run the render task as a worker would."""
+        self.approve_whole_chain(app)
+        app.refresh_from_db()
+        document = ApprovedLeaveDocument.objects.get(application=app)
+        with mock.patch(
+            "leave.services.storage.get_supabase_client", return_value=self._fake_client()
+        ):
+            render_approved_document(document.pk)
+        document.refresh_from_db()
+        return document
+
+    def _fake_client(self):
+        class _Bucket:
+            def upload(self, path, data, opts):
+                self.data = data
+
+            def create_signed_url(self, path, expiry):
+                return {"signedURL": f"https://signed/{path}"}
+
+        class _Client:
+            def __init__(self):
+                self.storage = self
+                self.bucket = _Bucket()
+
+            def from_(self, bucket):
+                return self.bucket
+
+        return _Client()
+
+    def test_approval_creates_a_pending_document_with_the_approval_stamp(self):
+        app = self.submit()
+        self.approve_whole_chain(app)
+        app.refresh_from_db()
+
+        self.assertIsNotNone(app.approved_on, "the final approval is stamped")
+        document = ApprovedLeaveDocument.objects.get(application=app)
+        self.assertEqual(document.status, ApprovedLeaveDocument.Status.PENDING)
+        self.assertEqual(document.application_id, app.pk)
+
+    def test_the_document_reaches_ready_and_the_owner_can_download_it(self):
+        app = self.submit()
+        document = self.approve_and_render(app)
+
+        self.assertEqual(document.status, ApprovedLeaveDocument.Status.READY)
+        self.assertTrue(document.is_available)
+        self.assertEqual(document.file_name, "approved-leave.pdf")
+        self.assertEqual(document.content_type, "application/pdf")
+        self.assertTrue(document.file_path.startswith(f"approved/{app.pk}/"))
+
+        self.client.force_authenticate(user=self.employee)
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            return_value="https://signed/fresh",
+        ):
+            response = self.client.get(
+                f"/api/v1/approved-leave-documents/by-application/{app.pk}/"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["available"])
+        self.assertEqual(response.data["download_url"], "https://signed/fresh")
+
+    def test_the_render_is_audited_as_a_system_action(self):
+        app = self.submit()
+        self.approve_and_render(app)
+        entry = AuditEntry.objects.get(
+            action=AuditEntry.Action.DOCUMENT_GENERATED,
+            target_id=str(app.pk),
+        )
+        self.assertIsNone(entry.actor, "the worker, not a person, generated it")
+        self.assertEqual(entry.target_type, AuditEntry.TargetType.APPLICATION)
+
+    def test_hr_reads_the_document_through_the_audit_route(self):
+        app = self.submit()
+        document = self.approve_and_render(app)
+        self.client.force_authenticate(user=self.hr)
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            return_value="https://signed/hr",
+        ):
+            response = self.client.get(
+                f"/api/v1/hr/approved-leave-documents/by-application/{app.pk}/"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["download_url"], "https://signed/hr")
+
+    def test_an_unrelated_employee_cannot_reach_the_document(self):
+        from users.models import User
+
+        app = self.submit()
+        document = self.approve_and_render(app)
+        stranger = User.objects.create_user(
+            username="stranger@luanar",
+            email="stranger@luanar",
+            password="pw",
+            role=User.Role.EMPLOYEE,
+        )
+        self.client.force_authenticate(user=stranger)
+        response = self.client.get(
+            f"/api/v1/approved-leave-documents/by-application/{app.pk}/"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_render_failure_leaves_the_approval_and_deduction_intact(self):
+        app = self.submit()
+        self.approve_whole_chain(app)
+        app.refresh_from_db()
+        document = ApprovedLeaveDocument.objects.get(application=app)
+        with mock.patch(
+            "documents.tasks.render_approved_document_pdf",
+            side_effect=RuntimeError("renderer offline"),
+        ):
+            render_approved_document(document.pk)
+
+        document.refresh_from_db()
+        app.refresh_from_db()
+        self.assertEqual(document.status, ApprovedLeaveDocument.Status.FAILED)
+        self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
+        self.assertEqual(self.deductions(app).count(), 1)
+        self.assertTrue(
+            AuditEntry.objects.filter(
+                action=AuditEntry.Action.DOCUMENT_FAILED, target_id=str(app.pk)
+            ).exists()
+        )
+
+    def test_repeated_finalization_reuses_the_same_document(self):
+        app = self.submit()
+        self.approve_whole_chain(app)
+        app.refresh_from_db()
+
+        finalise_approved_application(app)
+        finalise_approved_application(app)
+        self.assertEqual(ApprovedLeaveDocument.objects.filter(application=app).count(), 1)
+        self.assertEqual(self.deductions(app).count(), 1)

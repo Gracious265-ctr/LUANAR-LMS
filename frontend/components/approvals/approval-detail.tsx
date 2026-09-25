@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { CancellationDetailPanel } from "@/components/cancellations/cancellation-detail-panel";
+import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { approvalVerb } from "@/lib/approvals/labels";
 import { fetchApproval } from "@/lib/approvals/service";
 import type {
@@ -165,6 +166,11 @@ export function ApprovalDetail({
         <div className="space-y-6 lg:col-span-2">
           <ApplicationDetailsCard data={data} />
           <DocumentsCard data={data} />
+          {/* An approver reviewing a finalized application can read the same
+              official document the employee sees. */}
+          {data.workflow.state === "approved" && (
+            <ApprovedDocumentCard applicationId={id} />
+          )}
           <ApprovalHistoryTimeline data={data} />
           <LeaveHistoryCard data={data} />
         </div>

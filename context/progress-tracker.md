@@ -4,10 +4,12 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Unit 25 — End-to-End System (COMPLETE — implemented and verified, uncommitted on `feature/hr-track`)
-- Unit 23b — Approved Leave Document (TO DRAFT — split out of Unit 23; blocked on `reportlab` approval)
-- Unit 22 — Email Notifications (DEFERRED; build-plan block retained, not spec'd)
-- Unit 21 — Workflow-to-Approver Integration (COMPLETE — implemented but UNCOMMITTED on `feature/hr-track`)
+- Unit 25 — End-to-End System (COMPLETE — implemented and verified, committed as `6f9474e`)
+- Unit 24 — Complete Audit and Historical Integrity (COMPLETE — committed as `d4860f3`)
+- Unit 23b — Approved Leave Document (COMPLETE — spec approved, `reportlab` approved, 717 backend tests OK, 302 frontend tests OK)
+- Unit 23 — Final Approval, Balance, and Document (COMPLETE — committed as `eb7361d`; its document half was split out and shipped as Unit 23b)
+- Unit 22 — Email Notifications (COMPLETE — committed as `1a64d1e`)
+- Unit 21 — Workflow-to-Approver Integration (COMPLETE)
 - Unit 20 — HR-to-Employee Data Integration (COMPLETE)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE)
 - Unit 11 — HR Finalized Leave + Audit View (COMPLETE)
@@ -517,20 +519,17 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 23b — Approved Leave Document (to draft; split out of Unit 23).** Unit
-  23 was committed as complete but its document half was never built: there is
-  no `ApprovedLeaveDocument` model or migration, no render task, no
-  `enqueue_approved_document_render`, no `approved/{id}/` storage prefix, and no
-  signed-URL endpoint. `leave/services/finalise.py::finalise_approved_application`
-  references all of these and would raise `ImportError` if called. `reportlab` is
-  neither installed nor declared. This unit builds that feature per the deferred
-  design in `context/specs/23-final-approval-balance-and-document-spec.md`
-  (model + migration, ReportLab render, Django-Q2 task enqueued on commit,
-  storage prefix, signed-URL reads, frontend viewer). **Requires explicit
-  developer approval before adding the `reportlab` dependency.** Unit 25 has
-  since wired the balance half and deliberately left this function unwired;
-  `leave/services/exceptions.py` now exists, so the only remaining blockers are
-  the `ApprovedLeaveDocument` model and `enqueue_approved_document_render`.
+- **The build plan is exhausted.** Units 1–25 are all implemented, verified
+  and committed, including Unit 23b (the document half split out of Unit 23).
+  There is no queued next unit; the next step is a planning decision.
+- **Candidates, in the order the work would be worth doing:**
+  1. **Unit 23b D12 carry-over** — document invalidation when a leave is
+     later cancelled (today the document deliberately stays as the historical
+     record of what was approved), and carry-forward of an unused annual
+     balance. Both were explicitly deferred, not forgotten.
+  2. **DOCX output** — needs `python-docx`; deferred with the PDF build.
+  3. **A release/hardening pass** — the feature work is done, so this is the
+     point where a review pass over the whole track earns its cost.
 - **Unit 24 — Complete Audit and Historical Integrity (implemented 2026-09-25;
   committed as `d4860f3`).** Spec
   `context/specs/24-audit-and-historical-integrity-spec.md` — decisions D1–D10,
@@ -638,8 +637,8 @@ Update this file after every meaningful implementation change.
   `LeaveTypeNotResolvableError` only when the snapshot records no decision at
   all — which is what that exception's own docstring describes. Without (c) the
   D4 wiring would have broken three leave types.
-  `finalise_approved_application` (the document half) remains deliberately
-  unwired and raises `ImportError` — that is Unit 23b.
+  `finalise_approved_application` (the document half) was deliberately left
+  unwired in this unit — that is Unit 23b, which has since wired it.
 - **Two widely-reported claims were disproved and deliberately not "fixed":**
   the resubmission `CombinedExpression` JSON crash (Django 6.1 refreshes
   F-expression attributes after save; pinned by
@@ -652,6 +651,87 @@ Update this file after every meaningful implementation change.
   OK**, `npm run typecheck:test` clean, `npm run lint` clean. The trailing
   `destroy_test_db` `OperationalError` is the known environmental teardown issue
   and appears after `OK`.
+
+## Completed (Unit 23b) — Approved Leave Document (2026-09-25)
+
+- **Spec.** `context/specs/23b-approved-leave-document-spec.md` — decisions
+  D1–D12, approved as specced. Developer decision at Phase 1: **`reportlab`
+  approved** as the only new dependency. The spec carries three **amendments
+  recorded during implementation** (D7 application-keyed URLs, D9 nullable audit
+  actor + the choices-migration correction, D10 the real employee surface).
+- **D1 — dependency.** `reportlab>=4.4.0` in `backend/pyproject.toml`; `uv sync`
+  resolved **reportlab 5.0.1** (with `pillow` and `charset-normalizer`
+  transitively). No `python-docx`, no `pypdf`, no font package.
+- **D2 — `ApprovedLeaveDocument`** (`documents/models.py`, migration
+  `documents/0002_approvedleavedocument.py`): OneToOne `application` (PROTECT),
+  `pending`/`ready`/`failed`, file metadata, `approved_on`, `rendered_at`,
+  `error_message`, a state-consistency `CheckConstraint`, a QuerySet/Manager
+  that refuse to delete a `ready` row, and a sanitizing `error_message` writer.
+  **The immutability guard compares against the *persisted* row, not the
+  in-memory one** — a guard reading the instance's own `status` rejected
+  `mark_ready`'s own transition, because `mark_ready` assigns
+  `status = READY` before saving. FK fields compare by `attname` so an untouched
+  relation is not reported as changed.
+- **D3 — `LeaveApplication.approved_on`**, set once inside `decide()`'s
+  existing save so it cannot disagree with the status. Migration
+  `leave/0013_leaveapplication_approved_on.py`.
+- **D4 — one mapping, never a sample.** `documents/services.py::document_values`
+  resolves every catalog key from the persisted application; `FIELD_CATALOG`
+  gains `approved_on` and `remaining_balance` (additive, so
+  `ALLOWED_FIELD_KEYS` accepts them with no serializer change). `remaining_balance`
+  is read from the ledger-backed provider **at render time**, i.e. after the
+  deduction has committed. A key with no value renders blank — a test pins that
+  a missing `EmployeeProfile` yields `""` rather than the catalog's sample.
+- **D5/D11 — render.** `documents/tasks.py::render_approved_document(document_id)`
+  renders with ReportLab, uploads, and flips `pending → ready`; a failure flips
+  to `failed` with a **sanitized** single-line message and is logged in full
+  server-side, never raised into the caller and never rolling back the approval.
+  Idempotent: a `ready` row is a no-op, so a re-render cannot overwrite the
+  artifact of what was approved. `enqueue_approved_document_render` registers on
+  `transaction.on_commit` and swallows an unreachable broker (the approval has
+  already committed). The renderer walks `template.fields`, resolves each key
+  through `document_values`, escapes all text (an injected `<script>` does not
+  reach the PDF), and caps signatures at `MAX_SIGNATURE_AREAS`.
+- **D6 — storage.** `upload_document` gained an optional `prefix` (defaulting to
+  `leave-documents/`, so Unit 18/19 callers are untouched) plus a bytes-friendly
+  `upload_bytes(...)` for the in-memory PDF, both writing `approved/{application_id}/`.
+- **D7 — access.** GET-only, keyed by application id: owner, `IsHRRole` HR, and
+  an assigned approver via `get_view_access`. A stranger gets **404** with a body
+  identical to an unknown id's; a non-HR on the HR route gets 403. `pending` and
+  `failed` report `available: false` with **no signed URL minted**, so the client
+  can say "being prepared" from one response.
+- **D8 — one entry point.** `decide()` now calls `finalise_approved_application`,
+  which calls `record_deduction` and creates the `pending` row in the same
+  transaction; the duplicated `consume_deduction_decision` branch was removed and
+  the enqueue is skipped once the row is `ready`.
+- **D9 — audit.** `DOCUMENT_GENERATED` / `DOCUMENT_FAILED` target
+  `TargetType.APPLICATION`. **`AuditEntry.actor` became nullable** (migration
+  `audit/0008_...`) because a background render has no human actor and
+  attributing it to a person would be a fabrication in the authoritative log;
+  `AuditEntrySerializer` renders a null actor as `System`, and the two HR audit
+  tables fall back to `System` rather than `#null`.
+- **D10 — frontend.** `lib/documents/approved.ts` + two Next proxy routes +
+  `components/documents/approved-document-card.tsx`, a **link to the signed URL
+  only** (no viewer, iframe or proxy). Mounted on the employee tracking view
+  (`/dashboard/applications/[id]`, gated on `status === "approved"` — the
+  `leave/[id]/submitted/` page is a pre-approval confirmation that redirects
+  away for any other status), the HR audit detail, and the approver detail.
+  `pending`/`failed` render an inline status, never a broken link; a 404 renders
+  nothing. The HR detail payload gained `status` so the affordance can be gated.
+- **Tests.** `documents/tests.py` +37 (storage prefixes, value mapping and the
+  no-sample-leak guarantee, PDF totality/escaping, task idempotency and failure
+  isolation, sanitized errors, enqueue-on-commit, the three-reader access
+  matrix, immutability). `backend/tests/test_end_to_end.py` +7 —
+  `ApprovedDocumentJourneyTests` drives the real decision service, the real
+  orchestrator and the real task, stubbing only Supabase and the broker.
+- **Verification:** `check` clean; `makemigrations --check` clean; full backend
+  suite **717 tests OK** (710 + 7; documents app 61). Frontend: `npm test`
+  **302 tests / 50 files OK** (296 + 6), `npm run typecheck:test` clean,
+  `npm run lint` clean. The trailing `destroy_test_db` `OperationalError` is
+  the known environmental teardown issue.
+- **D12 — still out of scope**, deliberately: cancellation invalidation (the
+  document stays as the historical record of what was approved), carry-forward,
+  DOCX, email attachment, version history, `pypdf` read-back.
 
 ## Completed (Unit 22) — Email Notifications (2026-09-25)
 

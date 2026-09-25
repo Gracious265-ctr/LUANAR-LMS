@@ -1,4 +1,5 @@
 import type { ApplicationDetail } from "@/lib/audit";
+import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { AuditActionPill, auditChangesText } from "./audit-meta";
 
 export function ApplicationHistoryView({
@@ -91,11 +92,14 @@ export function ApplicationHistoryView({
         )}
       </div>
 
+      {application.status === "approved" && (
+        <ApprovedDocumentCard applicationId={application.id} audience="hr" />
+      )}
+
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Reassignment history
-        </h3>
-        {application.reassignments.length === 0 ? (
+        </h3>        {application.reassignments.length === 0 ? (
           <p className="text-sm text-text-muted">
             This application has not been reassigned.
           </p>
@@ -139,7 +143,7 @@ export function ApplicationHistoryView({
                 <div className="flex flex-wrap items-center gap-2">
                   <AuditActionPill action={entry.action} />
                   <span className="font-medium text-text-primary">
-                    {entry.actor_name || `#${entry.actor}`}
+                    {entry.actor_name || (entry.actor ? `#${entry.actor}` : "System")}
                   </span>
                   <span className="text-xs text-text-muted">
                     {new Date(entry.created_at).toLocaleString()}

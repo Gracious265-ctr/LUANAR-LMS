@@ -1,3 +1,11 @@
+"""Document configuration and approved-document access views.
+
+The template endpoints are HR-owned configuration (Unit 10). The approved
+document endpoints (Unit 23b D7) are read-only: a signed URL is a bearer
+token, so access control is the only thing standing between a stranger and a
+le employee's official approval letter.
+"""
+
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from rest_framework import permissions, response, status
@@ -5,6 +13,7 @@ from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
+from .models import ApprovedLeaveDocument
 from .serializers import LeaveDocumentTemplateSerializer
 from .services import get_template
 
@@ -55,3 +64,106 @@ class LeaveDocumentTemplateView(APIView):
             detail=changed_fields(before, after),
         )
         return response.Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# Approved documents (Unit 23b D7) — read-only, signed URLs minted per request
+# ---------------------------------------------------------------------------
+
+_NOT_FOUND = {"error": "Approved document not found."}
+
+
+def _approved_document_payload(document) -> dict:
+    """The document's public shape, with a signed URL only when one exists.
+
+    A ``pending`` or ``failed`` row reports its status and
+    ``available: False`` so the client can say "being prepared" from the first
+    response rather than needing a second request to discover there is
+    nothing to open.
+    """
+    from leave.services.storage import signed_document_url
+
+    available = document.status == ApprovedLeaveDocument.Status.READY
+    payload = {
+        "id": str(document.pk),
+        "application": str(document.application_id),
+        "status": document.status,
+        "available": available,
+        "file_name": document.file_name or "",
+        "content_type": document.content_type or "",
+        "file_size": document.file_size or 0,
+        "approved_on": document.approved_on,
+        "rendered_at": document.rendered_at,
+        "created_at": document.created_at,
+        "download_url": "",
+    }
+    if available and document.file_path:
+        # Signed URLs expire, so re-sign from the stored path rather than
+        # handing back the URL captured at render time.
+        payload["download_url"] = signed_document_url(document.file_path)
+    return payload
+
+
+def _approved_document_or_404(user, application_id, *, hr_allowed: bool):
+    """The application's document when ``user`` may read it, else ``None``.
+
+    Keyed by **application** rather than by document: every surface that shows
+    this already holds the application id, so this avoids making three payload
+    serializers carry a document id they would otherwise never use.
+
+    A stranger — authenticated, but neither the owner, HR, nor an approver of
+    the application — gets ``None`` so the response is indistinguishable from
+    an unknown id. A signed URL is a bearer token, so the endpoint must not
+    confirm which applications or documents exist.
+    """
+    from users.models import User
+    from workflows.policies import get_view_access
+
+    document = (
+        ApprovedLeaveDocument.objects.select_related("application")
+        .filter(application_id=application_id)
+        .first()
+    )
+    if document is None:
+        return None
+
+    application = document.application
+    is_owner = application.employee_id == user.id
+    is_hr = getattr(user, "role", None) == User.Role.HR
+    if is_owner or (hr_allowed and is_hr):
+        return document
+    if get_view_access(user, application) is not None:
+        return document
+    return None
+
+
+class ApprovedLeaveDocumentView(APIView):
+    """Read an application's approved document as its owner or an approver.
+
+    GET only. See :func:`_approved_document_or_404` for why an unauthorised
+    caller sees a 404 rather than a 403.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, application_id):
+        document = _approved_document_or_404(
+            request.user, application_id, hr_allowed=True
+        )
+        if document is None:
+            return response.Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
+        return response.Response(
+            _approved_document_payload(document), status=status.HTTP_200_OK
+        )
+
+
+class HRAApprovedLeaveDocumentView(ApprovedLeaveDocumentView):
+    """HR-scoped read of any application's approved document, for the audit trail.
+
+    Same payload and same GET-only contract, but the HR route is not a secret
+    route, so a non-HR caller is refused with a 403 by ``IsHRRole`` rather than
+    being led to believe the document does not exist.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+

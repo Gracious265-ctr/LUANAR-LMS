@@ -27,7 +27,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from django.db.models import QuerySet
+    from documents.models import ApprovedLeaveDocument
 
 from . import exceptions
 from .exceptions import (
@@ -124,25 +124,28 @@ def record_deduction(application):
 # ---------------------------------------------------------------------------
 
 
-def finalise_approved_application(application) -> "QuerySet":
+def finalise_approved_application(application) -> "ApprovedLeaveDocument":
     """Finalise an approved application (D1 and D2), idempotent.
 
     Records the annual-balance deduction (D1) when the leave type consumes it,
-    then creates the ``ApprovedLeaveDocument`` record (D2) with status
+    then ensures an ``ApprovedLeaveDocument`` row (D2) exists with status
     ``pending`` and enqueues the render on commit. Safe to call repeatedly —
     every step is idempotent.
+
+    Called from ``decide()`` inside its transaction, so a failure in either
+    business write rolls the approval back. Only the render is deferred to a
+    task, and it is skipped once the document is ``ready`` so a re-finalise
+    cannot overwrite the artifact of what was approved.
     """
     from documents.models import ApprovedLeaveDocument
+    from documents.services import enqueue_approved_document_render
 
-    if consume_deduction_decision(application):
-        record_deduction(application)
+    record_deduction(application)
 
-    document, created = ApprovedLeaveDocument.objects.get_or_create(
+    document, _created = ApprovedLeaveDocument.objects.get_or_create(
         application=application,
         defaults={"status": ApprovedLeaveDocument.Status.PENDING},
     )
-
-    from documents.services import enqueue_approved_document_render
-
-    enqueue_approved_document_render(document)
+    if document.status != ApprovedLeaveDocument.Status.READY:
+        enqueue_approved_document_render(document)
     return document
