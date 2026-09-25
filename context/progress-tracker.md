@@ -516,8 +516,15 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 24 — Delegation Routing (next to draft).** Next up after Units 22 and 23
-  land; spec not yet written.
+- **Unit 24 — Complete Audit and Historical Integrity (next to draft).** Per the
+  build plan (§Unit 24): connect every significant operation (submission,
+  approval, rejection, correction, resubmission, cancellation, delegation,
+  reassignment, rule/entitlement/workflow changes, document replacement) into
+  the authoritative audit trail, and verify that submitted applications preserve
+  the rules + workflow context that existed at submission time — historical
+  records must not silently change when HR later edits leave rules,
+  entitlements, workflow config, or approver assignments. Depends on Units 11,
+  17, 18, 19, 21, 22, 23 (all now landed). Spec not yet written.
 - **Unit 23 — Final Approval, Balance, and Document Generation (implemented,
   committed as `eb7361d`).** Spec
   `context/specs/23-final-approval-balance-and-document-spec.md` revised during
@@ -726,7 +733,9 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   kept getting "accessed by other users" — sessions owned by roles the `luanar`
   role cannot see; `DROP DATABASE ... WITH (FORCE)` from `luanar` clears it, and
   forcing the drop + run in one chained command avoids the reconnect window.
-  Next build: **Unit 24 — Delegation Routing.**
+  Next build: **Unit 24 — Complete Audit and Historical Integrity** (per the
+  build plan; an earlier note in this session mislabelled it "Delegation
+  Routing" — corrected).
 
 - **Unit 21 verified complete + Unit 23 spec revised (2026-09-25):** A Phase-1
   review confirmed Unit 21 is fully implemented on `feature/hr-track` but
