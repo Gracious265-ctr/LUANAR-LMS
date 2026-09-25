@@ -4,12 +4,22 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import type { Employee } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "academic", label: "Academic" },
   { value: "administration", label: "Administration" },
+];
+
+const ROLES: { value: UserRole; label: string }[] = [
+  { value: "employee", label: "Employee" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "hod", label: "Head of Department" },
+  { value: "dean", label: "Dean" },
+  { value: "registrar", label: "Registrar" },
+  { value: "dvc", label: "Deputy Vice-Chancellor" },
+  { value: "hr", label: "Human Resources" },
 ];
 
 export function EmployeeForm({
@@ -42,6 +52,7 @@ export function EmployeeForm({
           first_name: formData.get("first_name"),
           last_name: formData.get("last_name"),
           email: formData.get("email"),
+          role: formData.get("role"),
           designation: formData.get("designation"),
           department: formData.get("department"),
           category: formData.get("category"),
@@ -119,6 +130,27 @@ export function EmployeeForm({
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="name@luanar.ac.mw"
         />
+      </div>
+
+      <div>
+        <label
+          htmlFor="role"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Role
+        </label>
+        <select
+          id="role"
+          name="role"
+          defaultValue={employee?.role ?? "employee"}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+        >
+          {ROLES.map((role) => (
+            <option key={role.value} value={role.value}>
+              {role.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div>

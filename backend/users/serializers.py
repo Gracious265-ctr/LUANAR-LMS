@@ -43,7 +43,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
         source="user.last_name", required=False, allow_blank=True
     )
     full_name = serializers.CharField(source="user.get_full_name", read_only=True)
-    role = serializers.CharField(source="user.role", read_only=True)
+    role = serializers.ChoiceField(
+        choices=User.Role.choices,
+        source="user.role",
+        required=False,
+        allow_blank=True,
+    )
     is_active = serializers.BooleanField(source="user.is_active", required=False)
 
     class Meta:
@@ -90,6 +95,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def create(self, validated_data: dict) -> EmployeeProfile:
         user_data = validated_data.pop("user", {})
         email = user_data["email"]
+        role = user_data.get("role") or User.Role.EMPLOYEE
 
         with transaction.atomic():
             user = User.objects.filter(
@@ -102,7 +108,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     email=email,
                     first_name=user_data.get("first_name", ""),
                     last_name=user_data.get("last_name", ""),
-                    role=User.Role.EMPLOYEE,
+                    role=role,
                     is_active=user_data.get("is_active", True),
                 )
                 user.set_unusable_password()
@@ -126,6 +132,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 if field in user_data:
                     setattr(user, field, user_data[field])
 
+            if "role" in user_data:
+                user.role = user_data["role"] or User.Role.EMPLOYEE
+
             user.save()
 
             for attr, value in validated_data.items():
@@ -147,6 +156,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
+            "role": user.role,
             "is_active": user.is_active,
             "designation": instance.designation,
             "department": instance.department,

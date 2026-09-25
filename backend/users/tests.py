@@ -4,6 +4,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from audit.models import AuditEntry
 from .models import EmployeeProfile, User
 
 SEED_PASSWORD = "testpass123"
@@ -325,6 +326,96 @@ class EmployeeEndpointTests(TestCase):
         names = [r["first_name"] for r in response.data["results"]]  # type: ignore[index]
         self.assertEqual(names, ["Test", "Zoe"])
 
+    def test_hr_can_assign_role_on_create(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "managed@test.luanar",
+                "first_name": "Managed",
+                "last_name": "Supervisor",
+                "role": User.Role.HOD,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="managed@test.luanar")
+        self.assertEqual(user.role, User.Role.HOD)
+        self.assertEqual(response.data["role"], User.Role.HOD)  # type: ignore[index]
+
+    def test_create_without_role_defaults_to_employee(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "default-role@test.luanar",
+                "first_name": "Default",
+                "last_name": "Role",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="default-role@test.luanar")
+        self.assertEqual(user.role, User.Role.EMPLOYEE)
+        self.assertEqual(response.data["role"], User.Role.EMPLOYEE)  # type: ignore[index]
+
+    def test_create_with_blank_role_defaults_to_employee(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "blank-role@test.luanar",
+                "first_name": "Blank",
+                "last_name": "Role",
+                "role": "",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(email="blank-role@test.luanar")
+        self.assertEqual(user.role, User.Role.EMPLOYEE)
+
+    def test_create_rejects_invalid_role(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "invalid-role@test.luanar",
+                "first_name": "Invalid",
+                "last_name": "Role",
+                "role": "not-a-role",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("role", response.data)  # type: ignore[arg-type]
+        self.assertFalse(
+            User.objects.filter(email="invalid-role@test.luanar").exists()
+        )
+
+    def test_hr_can_update_role(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(self.detail_url, {"role": User.Role.SUPERVISOR})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.employee_user.refresh_from_db()
+        self.assertEqual(self.employee_user.role, User.Role.SUPERVISOR)
+        self.assertEqual(response.data["role"], User.Role.SUPERVISOR)  # type: ignore[index]
+
+    def test_update_without_role_keeps_existing_role(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(self.detail_url, {"designation": "Senior Officer"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.employee_user.refresh_from_db()
+        self.assertEqual(self.employee_user.role, User.Role.EMPLOYEE)
+
+    def test_role_change_is_audited(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(self.detail_url, {"role": User.Role.SUPERVISOR})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        entry = AuditEntry.objects.get(
+            target_type=AuditEntry.TargetType.EMPLOYEE,
+            target_id=str(self.employee_profile.id),
+            action=AuditEntry.Action.UPDATED,
+        )
+        self.assertEqual(entry.detail["before"]["role"], User.Role.EMPLOYEE)
+        self.assertEqual(entry.detail["after"]["role"], User.Role.SUPERVISOR)
+
     def test_hard_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.delete(self.detail_url)
@@ -394,3 +485,62 @@ class EmployeeSerializerAtomicityTests(TestCase):
                 serializer.save()
         profile.refresh_from_db()
         self.assertEqual(profile.designation, "Lecturer")
+
+    def test_create_with_role_rolls_back_user_and_profile_when_audit_fails(self):
+        from unittest import mock
+
+        serializer = self._serializer(
+            data={
+                "email": "rollback-create-role@test.luanar",
+                "first_name": "Roll",
+                "last_name": "Back",
+                "role": User.Role.HOD,
+                "designation": "Lecturer",
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "users.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        self.assertFalse(
+            User.objects.filter(email="rollback-create-role@test.luanar").exists()
+        )
+        self.assertFalse(
+            EmployeeProfile.objects.filter(
+                user__email="rollback-create-role@test.luanar"
+            ).exists()
+        )
+
+    def test_update_with_role_rolls_back_role_and_profile_when_audit_fails(self):
+        from unittest import mock
+
+        employee = User.objects.create_user(
+            username="rollback-update-role@test.luanar",
+            email="rollback-update-role@test.luanar",
+            password="testpass123",
+            first_name="Roll",
+            last_name="Back",
+            role=User.Role.EMPLOYEE,
+        )
+        profile = EmployeeProfile.objects.create(
+            user=employee,
+            designation="Lecturer",
+            department="Computer Science",
+        )
+        serializer = self._serializer(
+            profile,
+            data={"role": User.Role.SUPERVISOR, "designation": "Senior Lecturer"},
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        with mock.patch(
+            "users.serializers.record_audit", side_effect=RuntimeError("audit down")
+        ):
+            with self.assertRaises(RuntimeError):
+                serializer.save()
+        profile.refresh_from_db()
+        employee.refresh_from_db()
+        self.assertEqual(profile.designation, "Lecturer")
+        self.assertEqual(employee.role, User.Role.EMPLOYEE)

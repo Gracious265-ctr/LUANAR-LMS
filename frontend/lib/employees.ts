@@ -2,6 +2,15 @@ import { apiClient } from "./api-client";
 
 export type EmployeeCategory = "academic" | "administration";
 
+export type UserRole =
+  | "employee"
+  | "supervisor"
+  | "hod"
+  | "dean"
+  | "registrar"
+  | "dvc"
+  | "hr";
+
 export interface Employee {
   id: number;
   user_id: number;
@@ -9,7 +18,7 @@ export interface Employee {
   first_name: string;
   last_name: string;
   full_name: string;
-  role: string;
+  role: UserRole;
   designation: string;
   department: string;
   category: EmployeeCategory;
@@ -22,6 +31,7 @@ export interface EmployeeInput {
   email: string;
   first_name: string;
   last_name: string;
+  role?: UserRole;
   designation?: string;
   department?: string;
   category?: EmployeeCategory;
