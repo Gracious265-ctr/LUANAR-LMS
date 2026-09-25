@@ -4,7 +4,9 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Unit 22 — Email Notifications (COMPLETE — backend; frontend untouched)
+- Unit 23 — Final Approval: Balance Deduction & Approved Document (COMPLETE — backend, merged onto `development` via PR #7)
+- Unit 22 — Approval Notifications (COMPLETE — backend, merged onto `development` via PR #6)
+- Unit 21 — Workflow-to-Approver Integration (COMPLETE — backend, open PR pending merge)
 - Unit 20 — HR-to-Employee Data Integration (COMPLETE — backend + frontend)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE — backend + frontend)
 - Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
@@ -19,10 +21,41 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 22 — Email Notifications** connects system events to templated,
-  queryable email via Google SMTP for dev (replaceable with LUANAR
-  institutional SMTP through env). Implemented on `feature/unit-22` from
-  `origin/development`.
+- **Unit 23 — Final Approval: Balance Deduction & Approved Document
+  (COMPLETE — backend).** A finally-approved leave application now (1) debits
+  the annual balance through the existing `LeaveBalanceTransaction` ledger and
+  (2) produces the official approved-leave PDF, stored through the Unit 19
+  storage abstraction and streamed back to authorized readers.
+
+  **Implementation complete (2026-09-25); merged onto `development` (PR #7)
+  after a rebase over the unit-22 merge.** Backend only.
+  `BalanceProvider.record_deduction` (Unit 18 provider
+  interface) is implemented in `leave/cancellations/fixture_balance.py` —
+  exactly one `DEDUCTION` row per application, sized by `working_days`
+  (fallback `calculated_days`), FY from `financial_year_label` (fallback
+  provider lookup), `carry_forward_eligible=False`; the deduct-vs-not decision
+  reads the immutable `rules_snapshot` (invariant 12.5) and never duplicates
+  or rewrites an existing row (protects the seeded 5-day fixture rows).
+  `documents/generator.py` renders the PDF purely from the
+  `LeaveDocumentTemplate` config + the approved application (ReportLab).
+  `documents/finalisation.finalise_approved_application` runs the whole thing
+  in one `transaction.atomic()` — ledger row + document row + storage put roll
+  back together, superseded files are removed best-effort, and `balance.deducted`
+  / `approved_document.generated` audit events are recorded. Wired from
+  `workflows/events.emit_approval_event` on `application_finalised` — routed
+  through the same dispatch seam Unit 22 uses — and gated by
+  a new `APPROVAL_FINALISATION` setting (`"on"` default, `"off"` in `test.py`,
+  `backend/.env.example` added), still returning `None` (no-side-effect
+  event contract preserved beyond the gated side effect). `ApprovedLeaveDocument`
+  model (OneToOne `leave.LeaveApplication`, file metadata + `generated_at`,
+  migration `documents/0002`), read-only admin. Streaming
+  `GET /api/v1/leave-applications/{id}/approved-document/` (owner / workflow
+  member / HR only, 404 otherwise so existence never leaks; `?download=1`
+  attaches). Review payload now includes an `approved_document` pointer block
+  (`id`, `generated_at`, `content_url`). Verified post-rebase: full backend
+  suite green (unit-22's seed weekend-window fix is now merged, so the two
+  formerly-failing seed tests pass too); `manage.py check` clean,
+  `makemigrations --check --dry-run` clean.
 
   **Implementation complete (2026-09-25), backend only.** New `notifications/`
   app: `Notification` model + migration `0001_initial` (spec §1 verbatim —
@@ -720,12 +753,68 @@ Update this file after every meaningful implementation change.
   `frontend/tests/leave-overview.test.ts`. Full backend suite 643 OK (serial +
   `--parallel auto`); frontend 277 OK, tsc/eslint/build clean.
 
+## Completed (Unit 23)
+
+- **Ledger deduction.** `BalanceProvider.record_deduction` implemented in
+  `leave/cancellations/fixture_balance.py`: one `DEDUCTION` `LeaveBalanceTransaction`
+  per approved application (`days = working_days` fallback `calculated_days`,
+  FY from `financial_year_label` fallback provider, `carry_forward_eligible=False`,
+  leave type resolved to the registry with a name-based `get_or_create`
+  fallback for the seeded ids). Decision reads the immutable `rules_snapshot`
+  (invariant 12.5), live rules only as a no-snapshot fallback; existing rows
+  are returned untouched so neither seed fixtures nor repeat finalisation ever
+  duplicate/rewrite the ledger.
+- **PDF generation (`documents/generator.py`).** Pure `generate_approved_document`
+  renders A4 via ReportLab platypus entirely from the singleton
+  `LeaveDocumentTemplate` (header/title/intro/ordered field rows/closing/
+  signature areas/footer — template-driven, no hard-coded layout) and the
+  approved application + `employee_profile`; leave-type name falls back to the
+  rules snapshot when the registry lacks the id.
+- **Finalisation service (`documents/finalisation.py`).**
+  `finalise_approved_application(application_id)` is idempotent: no-ops unless
+  the application is `APPROVED`, deducts, puts the PDF under
+  `approved-leave-documents/{application_id}/{uuid}/{file_name}.pdf` and
+  upserts the one `ApprovedLeaveDocument` per application (superseded stored
+  file removed best-effort). All DB writes in one `transaction.atomic()`; a
+  storage exception rolls ledger + document rows back and cleans the new file.
+  Records `balance.deducted` and `approved_document.generated` audit events
+  (`actor=None`).
+- **Model/admin.** `ApprovedLeaveDocument` (OneToOne → `LeaveApplication`,
+  `file_path/file_name/file_size/content_type/generated_at`),
+  migration `documents/0002_approvedleavedocument`, read-only admin.
+- **Workflow wiring (`workflows/events.py`).**
+  `emit_approval_event(event)` calls `finalise_approved_application` for
+  `application_finalised` events when `APPROVAL_FINALISATION != "off"`; still
+  returns `None` (event contract preserved; the side effect runs post-commit
+  from `workflows/approval.py`'s `transaction.on_commit`).
+- **Settings.** `APPROVAL_FINALISATION` (`"on"` default in `base.py`;
+  `"off"` in `config/settings/test.py` so the rest of the suite stays
+  hermetic; documented in the new `backend/.env.example`). Focused tests
+  re-enable it explicitly.
+- **Access + streaming.** `can_view_approved_document(user, application)` in
+  `workflows/policies.py` (owner / HR role / workflow member /
+  `get_view_access` fallback). `GET /api/v1/leave-applications/{id}/approved-document/`
+  streams the stored PDF via `FileResponse` (`?download=1` → attachment);
+  resolves the application directly instead of `get_object()` so approvers/HR
+  aren't blocked by `IsOwner`, 404 when denied or absent.
+- **Review payload pointer.** `ApprovalDetailSerializer` gains
+  `approved_document: {id, generated_at, content_url}` (null until finalised);
+  request threaded through `_review_payload` context.
+- **Tests (`documents/tests_approved_document.py`).** 16 tests:
+  pipeline final-approve → deduction + document + audit (real decide path via
+  `TransactionTestCase` so post-commit finalisation runs); snapshot controls
+  deduction; idempotent repeat finalisation; `get_leave_balance` reads the
+  ledger (entitlement 21 / used 5 / available 16); review-payload pointer
+  present before/after; streaming access grid + 404s; generator PDF bytes and
+  field-catalog resolution. Rebased onto unit-22 (merged), the formerly-failing
+  seed classes (`workflows.tests_seed_cancellations`,
+  `SeedApprovalsDevTests`) now pass with unit-22's weekend-window fix.
+
 ## Next Up
 
-  Unit 23 — HR Finalized Leave & Approved Document: balance deduction on final
-  approval, approved-document generation from the Unit 10 template, and the
-  post-approval audit aggregation surface. Depends on Units 10, 11, 16, 18, 22
-  (the notification/email hooks this unit added).
+  Unit 24 — Complete Audit and Historical Integrity (spec
+  `context/specs/24-complete-audit-and-historical-integrity.md`). After that,
+  Unit 25 — End-to-End System (`context/specs/25-end-to-end-system.md`).
 
 ## Open Questions
 

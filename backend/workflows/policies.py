@@ -190,6 +190,28 @@ def document_belongs_to_application(
     return document.application_id == application.id
 
 
+def can_view_approved_document(user, application) -> bool:
+    """Return whether ``user`` may stream the official approved-leave PDF.
+
+    True for the employee, every workflow member (approvers in the
+    application's snapshot), HR, and any approver who reached the application
+    (the Unit 16 ``get_view_access`` fallback). Callers respond 404 when this
+    is false, never 403, so existence is not leaked.
+    """
+    if application.employee_id == user.id:
+        return True
+    from users.models import User
+
+    if getattr(user, "role", None) == User.Role.HR:
+        return True
+    from .providers import get_workflow_provider
+
+    member_ids = get_workflow_provider().get_workflow_member_user_ids(application)
+    if user.id in member_ids:
+        return True
+    return get_view_access(user, application) is not None
+
+
 def _already_decided(user, application) -> bool:
     return ApprovalDecision.objects.filter(
         application=application,

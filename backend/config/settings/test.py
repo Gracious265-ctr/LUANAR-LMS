@@ -39,6 +39,11 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 # explicitly via override_settings(NOTIFICATION_DISPATCHER="on").
 NOTIFICATION_DISPATCHER = "off"
 
+# Approval finalisation (Unit 23): keep the whole existing suite free of ledger
+# deduction rows and generated documents. The Unit 23 tests enable finalisation
+# explicitly via override_settings(APPROVAL_FINALISATION="on").
+APPROVAL_FINALISATION = "off"
+
 # Distinct name per parallel session to avoid test-DB deadlocks.
 DATABASES["default"]["TEST"] = {
     "NAME": os.environ.get("TEST_DB_NAME", "test_luanar_leave"),

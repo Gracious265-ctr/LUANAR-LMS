@@ -201,3 +201,10 @@ LEAVE_DOCUMENT_ALLOWED_TYPES = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
 )
+
+# Approval finalisation (Unit 23). Each finally-approved leave application
+# triggers the annual balance deduction and the official approved-leave PDF.
+# This is "on" by default; the test settings turn it "off" so the rest of the
+# suite stays hermetic, and the Unit 23 tests enable it explicitly with
+# override_settings.
+APPROVAL_FINALISATION = env("APPROVAL_FINALISATION", default="on")
