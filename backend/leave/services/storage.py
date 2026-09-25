@@ -46,7 +46,17 @@ def get_supabase_client():
             "Supabase credentials are not configured. "
             "Set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables."
         )
-    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+    url = settings.SUPABASE_URL.rstrip("/")
+    if "/" in url.removeprefix("https://").removeprefix("http://"):
+        raise ValueError(
+            f"SUPABASE_URL must be the bare project URL "
+            f"(https://<project-ref>.supabase.co), but it is "
+            f"{settings.SUPABASE_URL!r}. The dashboard's 'Project URL' field "
+            f"ends in /rest/v1/; copy the API URL's host only. supabase-py "
+            f"appends its own service paths, so a suffixed URL sends Storage "
+            f"requests to PostgREST and fails with an opaque 404."
+        )
+    return create_client(url, settings.SUPABASE_SERVICE_KEY)
 
 
 def upload_document(

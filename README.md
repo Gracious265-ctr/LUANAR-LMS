@@ -70,6 +70,7 @@ cp .env.example .env
 
 # Edit .env with your database credentials if needed
 # Default: postgres://luanar:luanar@localhost:5432/luanar_leave
+# Also set the SUPABASE_* file-storage credentials (see "File Storage" below)
 
 # Install dependencies
 uv sync
@@ -103,16 +104,53 @@ npm run dev
 
 The frontend will be available at http://localhost:3000
 
-### 5. Background Tasks (Optional for Development)
+### 5. Background Tasks
 
 Django-Q2 uses the PostgreSQL database as the broker — no separate Redis service needed.
+
+In development, tasks run **inline**: `config/settings/development.py` sets
+`Q_CLUSTER["sync"] = True`, so `async_task` executes in the approving request
+rather than queueing for a worker. Nothing extra to start, and a generated
+artifact (such as the approved-leave PDF) is ready by the time the request
+returns. Only production needs a supervised worker:
 
 ```bash
 cd backend
 
-# Start the Django-Q2 cluster worker
+# Production / when you want to exercise the real async path
 uv run manage.py qcluster
 ```
+
+`config.settings.test` pins `sync` back to `False`, because the suite asserts
+that a render is *enqueued* and then runs it explicitly.
+
+### 6. File Storage
+
+Supporting documents and generated approved-leave PDFs are stored in Supabase
+Storage. Copy `.env.example` to `.env` and set:
+
+```dotenv
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+SUPABASE_BUCKET=leave-documents
+```
+
+`SUPABASE_URL` must be the **bare project URL — host only, no path**. The
+Supabase dashboard's "Project URL" field ends in `/rest/v1/`, and copying it
+verbatim looks correct but breaks storage: `supabase-py` appends its own
+`/storage/v1/...` paths, so every request is sent to PostgREST and fails with an
+opaque `404` / `PGRST125` that names neither the bucket nor the setting. The
+backend rejects a suffixed URL with an actionable message.
+
+The bucket must already exist in the project (Dashboard → Storage).
+
+`SUPABASE_SERVICE_KEY` is the `service_role` key, which **bypasses row-level
+security**. Keep it in `.env` only — never in `.env.example` or any committed
+file.
+
+Without these the document pipeline cannot store anything: the render task
+records the failure on the document row and the UI reports that the document
+could not be generated. Everything else in the system works without them.
 
 ## Development Users
 

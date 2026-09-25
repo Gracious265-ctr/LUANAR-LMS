@@ -493,3 +493,53 @@ class ActiveDocumentQueryHelperTests(TestCase):
             content_type="application/pdf",
         )
         self.assertEqual(count_supporting_documents(application), 1)
+
+class SupabaseClientConfigTests(TestCase):
+    """``get_supabase_client`` rejects a misconfigured project URL.
+
+    The Supabase dashboard's "Project URL" field ends in ``/rest/v1/``. Copied
+    verbatim into ``SUPABASE_URL`` it looks correct, but ``supabase-py`` appends
+    its own service paths, so every Storage request is sent to PostgREST and
+    fails with an opaque ``404`` / ``PGRST125`` that names neither the bucket nor
+    the setting. The guard turns that into an actionable message.
+    """
+
+    def test_a_url_with_a_path_suffix_is_rejected(self):
+        from django.test import override_settings
+
+        from leave.services.storage import get_supabase_client
+
+        with override_settings(
+            SUPABASE_URL="https://project-ref.supabase.co/rest/v1/",
+            SUPABASE_SERVICE_KEY="service-key",
+        ):
+            with self.assertRaises(ValueError) as ctx:
+                get_supabase_client()
+        message = str(ctx.exception)
+        self.assertIn("SUPABASE_URL", message)
+        self.assertIn("rest/v1", message)
+
+    def test_a_bare_project_url_is_accepted(self):
+        from django.test import override_settings
+
+        from leave.services.storage import get_supabase_client
+
+        for url in (
+            "https://project-ref.supabase.co",
+            "https://project-ref.supabase.co/",
+        ):
+            with self.subTest(url=url):
+                with override_settings(
+                    SUPABASE_URL=url, SUPABASE_SERVICE_KEY="service-key"
+                ):
+                    self.assertIsNotNone(get_supabase_client())
+
+    def test_missing_credentials_are_still_reported_as_such(self):
+        from django.test import override_settings
+
+        from leave.services.storage import get_supabase_client
+
+        with override_settings(SUPABASE_URL="", SUPABASE_SERVICE_KEY=""):
+            with self.assertRaises(ValueError) as ctx:
+                get_supabase_client()
+        self.assertIn("not configured", str(ctx.exception))

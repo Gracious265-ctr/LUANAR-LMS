@@ -13,6 +13,25 @@ def current_actor(serializer) -> User | None:
     return getattr(request, "user", None)
 
 
+#: Displayed in place of a person when an entry has no human actor.
+SYSTEM_ACTOR_NAME = "System"
+
+
+def actor_display_name(actor) -> str:
+    """The display name for an audit entry's actor, or ``System`` when there is none.
+
+    ``AuditEntry.actor`` is nullable by design: an action taken by the system
+    rather than a person (Unit 23b's background document render, whether it
+    succeeded or failed) is recorded with no actor. Every reader of an entry must
+    go through here so a system entry renders as ``System`` instead of raising
+    ``AttributeError`` on ``None`` — the approver review payload did exactly
+    that, which turned one failed document render into a 500 on the review page.
+    """
+    if actor is None:
+        return SYSTEM_ACTOR_NAME
+    return actor.get_full_name() or actor.username
+
+
 def _jsonable(value):
     """Recursively convert values to JSON-field-safe primitives.
 

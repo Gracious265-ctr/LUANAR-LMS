@@ -10,6 +10,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from audit.models import AuditEntry
+from audit.services import actor_display_name
 from leave.models import GradeEntitlement, LeaveApplication, LeaveType, SupportingDocument
 from leave.services import active_financial_year
 
@@ -300,7 +301,10 @@ def _audit_history(application: LeaveApplication) -> list[dict]:
             "id": entry.pk,
             "action": entry.action,
             "occurred_at": _iso(entry.created_at),
-            "actor": entry.actor.get_full_name() or entry.actor.username,
+            # A system-generated entry (e.g. the document render) has no actor;
+            # resolving the name here keeps a null actor from 500-ing the whole
+            # review payload.
+            "actor": actor_display_name(entry.actor),
             "reason": entry.reason,
         }
         for entry in entries

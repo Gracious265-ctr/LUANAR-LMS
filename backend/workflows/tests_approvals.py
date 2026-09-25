@@ -582,6 +582,38 @@ class ApprovalAPITests(ApprovalBase):
             all("assigned_approver" in s and "status" in s for s in stages)
         )
 
+    def test_detail_audit_history_survives_a_system_actor_entry(self):
+        """A system-actor audit entry must not 500 the whole review payload.
+
+        The document render task records its outcome with ``actor=None`` (a
+        system action, per Unit 23b). The review payload used to dereference
+        ``entry.actor`` unconditionally, so one failed render made
+        ``GET /approvals/{id}/`` return 500 for every approver of the
+        application.
+        """
+        app = self.make_submitted()
+        AuditEntry.objects.create(
+            actor=None,
+            action=AuditEntry.Action.DOCUMENT_FAILED,
+            target_type=AuditEntry.TargetType.APPLICATION,
+            target_id=str(app.pk),
+            target_summary=app.reference_number or "",
+            detail={"status": "failed"},
+        )
+
+        response = self.client.get(self.url(f"{app.pk}/"))
+        self.assertEqual(response.status_code, 200)
+        history = response.data["history"]["audit_history"]
+        system_entries = [
+            entry for entry in history if entry["action"] == "document_failed"
+        ]
+        self.assertEqual(len(system_entries), 1)
+        self.assertEqual(system_entries[0]["actor"], "System")
+        # A human entry in the same payload still reads as the person.
+        self.assertTrue(
+            any(entry["actor"] for entry in history if entry["action"] == "submitted")
+        )
+
     def test_detail_404_for_unrelated_user(self):
         app = self.make_submitted()
         employee2 = make_user("employee2@luanar", role=User.Role.EMPLOYEE)

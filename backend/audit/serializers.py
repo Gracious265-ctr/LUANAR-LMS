@@ -3,10 +3,21 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 
-from .services import changed_fields, current_actor, record_audit
+from .services import (
+    SYSTEM_ACTOR_NAME,
+    actor_display_name,
+    changed_fields,
+    current_actor,
+    record_audit,
+)
 
-#: Displayed in place of a person when an entry has no human actor.
-SYSTEM_ACTOR_NAME = "System"
+__all__ = [
+    "AuditedModelSerializer",
+    "AuditEntrySerializer",
+    "FinalizedApplicationListSerializer",
+    "HRLeaveApplicationSerializer",
+    "SYSTEM_ACTOR_NAME",
+]
 
 
 class AuditedModelSerializer(serializers.ModelSerializer):
@@ -119,9 +130,7 @@ class AuditEntrySerializer(serializers.ModelSerializer):
         than a person (Unit 23b's background document render), which HR should
         be able to read as such rather than see a blank cell.
         """
-        if obj.actor_id is None:
-            return SYSTEM_ACTOR_NAME
-        return obj.actor.get_full_name()
+        return actor_display_name(obj.actor)
 
 
 class FinalizedApplicationListSerializer(serializers.Serializer):

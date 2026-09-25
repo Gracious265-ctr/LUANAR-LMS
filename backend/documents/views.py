@@ -6,6 +6,8 @@ token, so access control is the only thing standing between a stranger and a
 le employee's official approval letter.
 """
 
+import logging
+
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from rest_framework import permissions, response, status
@@ -16,6 +18,8 @@ from users.permissions import IsHRRole
 from .models import ApprovedLeaveDocument
 from .serializers import LeaveDocumentTemplateSerializer
 from .services import get_template
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATE_FIELDS = (
     "title",
@@ -80,6 +84,16 @@ def _approved_document_payload(document) -> dict:
     ``available: False`` so the client can say "being prepared" from the first
     response rather than needing a second request to discover there is
     nothing to open.
+
+    Minting the signed URL is enrichment on top of the document row, not the
+    row itself, so a storage problem degrades the payload instead of failing
+    the request. ``available`` is an explicit promise that ``download_url``
+    opens *now*; when a fresh URL cannot be minted the promise is withdrawn
+    rather than served from the render-time URL, which by then has expired and
+    would hand the employee a dead link. The other storage call sites fall back
+    to that stored URL because they are best-effort listings, but this payload
+    is the one the UI keys an "Open" button off, so no button is honest and a
+    broken link is not.
     """
     from leave.services.storage import signed_document_url
 
@@ -100,7 +114,15 @@ def _approved_document_payload(document) -> dict:
     if available and document.file_path:
         # Signed URLs expire, so re-sign from the stored path rather than
         # handing back the URL captured at render time.
-        payload["download_url"] = signed_document_url(document.file_path)
+        try:
+            payload["download_url"] = signed_document_url(document.file_path)
+        except Exception:
+            logger.exception(
+                "Could not sign a download URL for approved document %s; "
+                "reporting it as unavailable rather than failing the request.",
+                document.pk,
+            )
+            payload["available"] = False
     return payload
 
 

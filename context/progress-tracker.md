@@ -1265,3 +1265,175 @@ Frontend (`frontend/`):
   paginated with the Unit 16 `_Paginator`; `expected_action` concurrency guard
   mirrors Unit 16's stage-version; detail panel silently renders nothing when
   `?cancellation=` does not resolve to an assigned request.
+
+## Defect Fix (2026-09-25, approved document never rendered in development)
+
+- **Symptom:** after the final approval, the "Approved leave document" card sat
+  on "Being prepared" for ~90s and then kept showing it forever.
+- **Cause 1 — the development task queue was never drained.**
+  `finalise_approved_application` creates the document row `pending` and defers
+  the render through `enqueue_approved_document_render` →
+  `async_task(...)` on commit. `Q_CLUSTER["sync"]` defaulted to `False`, and
+  development runs only two processes, so nothing ever drained the ORM broker:
+  the message sat in `django_q_ormq` indefinitely and the row never left
+  `pending`. Confirmed against the dev database — queued messages present,
+  zero rows in `django_q_task` (i.e. no task had ever executed), no `qcluster`
+  process running. The client-side 3s × 30 poll in
+  `frontend/components/documents/approved-document-card.tsx` is a safety net
+  for a slow render, not the bug; the render simply never started.
+- **Fix (development-only):** `config/settings/development.py` now sets
+  `Q_CLUSTER = {**Q_CLUSTER, "sync": True}`, so `async_task` runs the task
+  in-process. The render happens on the approval's `on_commit` callback and the
+  document is `ready` before the response is written, so the first poll finds
+  it. The trade — the approving request waits ~1s for the PDF instead of
+  returning immediately — is the right one for a one-page PDF on a dev machine.
+  Production is untouched and still needs a supervised `qcluster`.
+- **`config.settings.test` pins `sync` back to `False`** because that module
+  imports from `development`, and the suite asserts the *enqueue* contract
+  (`EnqueueTests`, and `test_approval_creates_a_pending_document_with_the_approval_stamp`
+  requires a fresh approval to leave a `pending` document). Without the pin,
+  every approval in the suite would render inline and that assertion could not
+  hold. Confirmed the suite still enqueues rather than executes (the `Enqueued
+  [luanar_leave]` log lines remain).
+- **Cause 2 — still open, environmental:** `backend/.env` has no
+  `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`, so
+  `leave.services.storage.get_supabase_client()` raises and the render records
+  a failure instead of storing a PDF. The suite never caught this because every
+  test stubs `get_supabase_client`. The PDF itself renders fine (~2.4 KB in
+  ~1.0s); only the upload fails. **Action required from the developer:** set the
+  `SUPABASE_*` variables. Documented in the README under "File Storage".
+- **Recovery for the already-stuck document:** the two messages left in
+  `django_q_ormq` are that render. Once credentials exist, start
+  `uv run manage.py qcluster` (or run the task once) and the existing document
+  completes. A `failed` row is re-renderable — the task short-circuits only on
+  `ready`.
+- Verified: `documents` + `tests.test_end_to_end` 78 tests OK, full backend
+  suite **734 tests OK**, and a live development-settings probe confirmed the
+  enqueue takes a document `pending → ready` inline (with the storage client
+  stubbed) and leaves `django_q_ormq` untouched. Frontend unchanged, so no
+  frontend verification was required.
+
+## Defect Fix (2026-09-25, approver review 500 on a system-actor audit entry)
+
+- **Symptom:** after the document render failed (missing Supabase credentials),
+  `GET /api/v1/approvals/{id}/` returned **500**
+  `AttributeError: 'NoneType' object has no attribute 'get_full_name'` for every
+  approver of the application — the review page became permanently unopenable.
+- **Cause:** `AuditEntry.actor` is nullable by design, because a system action
+  is recorded with no person. Unit 23b's render task writes both
+  `DOCUMENT_GENERATED` and `DOCUMENT_FAILED` with `actor=None`, but
+  `workflows/approval_payloads._audit_history` resolved the display name as
+  `entry.actor.get_full_name() or entry.actor.username` — dereferencing a
+  nullable field unconditionally. One system audit entry therefore crashed the
+  entire review payload, not just its own row. The audit app's own serializer
+  already handled this correctly; the approver payload duplicated the name
+  resolution and missed the null case, so the convention had drifted in two
+  places.
+- **Fix (single source of truth):** `SYSTEM_ACTOR_NAME` and a new
+  `actor_display_name(actor)` moved to `audit/services.py` (the audit app's
+  shared, non-HTTP layer). `audit.serializers.AuditEntrySerializer.get_actor_name`
+  and `workflows.approval_payloads._audit_history` both resolve through it, so
+  the two readers can no longer disagree. The constant is re-exported from
+  `audit.serializers` so its existing import path keeps working.
+- **Tests:** `ApprovalAPITests.test_detail_audit_history_survives_a_system_actor_entry`
+  records a `DOCUMENT_FAILED` entry with `actor=None` on a submitted
+  application and asserts the review payload returns 200, the entry reads as
+  `System`, and a human entry in the same payload still reads as the person.
+  Confirmed the test reproduces the original traceback when the fix is reverted.
+- Verified: full backend suite **735 tests OK**, `check` clean,
+  `makemigrations --check` clean, and a live probe confirmed
+  `LV-2026-27-000006` (the application that 500'd) now builds its review
+  payload with `('document_failed', 'System')`. Frontend contract unchanged —
+  `AuditHistoryEntry.actor` was already a non-nullable `string`, and the HR views
+  already rendered the same `System` fallback.
+
+## Defect Fix (2026-09-25, `SUPABASE_URL` suffix broke all storage)
+
+- **Symptom:** with valid Supabase credentials in place, the render still failed:
+  `httpx.HTTPStatusError: 404 ... /rest/v1/storage/v1/object/leave-documents/...`,
+  then `AttributeError: 'dict' object has no attribute 'text'` from inside
+  `storage3`'s own error handling — a traceback that named neither the setting
+  nor the bucket.
+- **Cause:** `SUPABASE_URL` was set to the dashboard's "Project URL" value,
+  `https://<ref>.supabase.co/rest/v1/`. `supabase-py` appends its own service
+  paths, so the effective URL became `/rest/v1/storage/v1/...` and every request
+  was routed to PostgREST instead of the Storage API. The project and the
+  `leave-documents` bucket were both fine and untouched — confirmed by probing
+  the bare URL directly (`/auth/v1/health` → 200, `/storage/v1/bucket` → lists
+  the bucket).
+- **Fix:** corrected `backend/.env`, plus a guard in
+  `leave.services.storage.get_supabase_client` that rejects a `SUPABASE_URL`
+  carrying a path and says so explicitly, converting a future copy-paste of the
+  dashboard URL into an actionable error instead of a `storage3` traceback.
+  Trailing-slash-free and trailing-slash bare URLs are both accepted.
+- **Tests:** `SupabaseClientConfigTests` in `leave/tests/test_documents.py`
+  (3 cases) covers the rejected suffixed URL, the accepted bare URL (with and
+  without a trailing slash), and the pre-existing missing-credentials message.
+
+## Test Isolation Fix (2026-09-25, suite depended on absent Supabase credentials)
+
+- Filling in real credentials exposed **12 pre-existing tests that were green
+  only because storage was unconfigured** — they reached the live Supabase API
+  and failed on 400/404. They are not hermetic: they serialize documents without
+  stubbing `get_supabase_client`, so they passed whenever the developer's `.env`
+  had no credentials and broke as soon as it did
+  (`leave.tests.test_documents`, `leave.tests.test_tracking_api`,
+  `audit.tests`). One of them is even named
+  `test_serialization_falls_back_to_stored_url_when_storage_unconfigured`.
+- **Fix:** `config/settings/test.py` now clears `SUPABASE_URL` and
+  `SUPABASE_SERVICE_KEY`. `.env` is read at import time, so without this the
+  suite's behaviour depends on the developer's local environment. The storage
+  paths that assert real behaviour stub the client themselves and are unaffected.
+- Verified: full backend suite **738 tests OK**.
+
+## Defect Fix (2026-09-26, storage misconfiguration 500'd the document read endpoint)
+
+- **Symptom:** `GET /api/v1/approved-leave-documents/by-application/<uuid>/` returned
+  **500** with the new `SUPABASE_URL` guard's `ValueError` in the traceback, from
+  `_approved_document_payload` → `signed_document_url` → `get_supabase_client`.
+- **Cause:** the signed URL is derived data layered on top of the document row,
+  but `documents/views.py` was the **only** storage call site in the codebase
+  without a failure fallback. The other three all degrade — `leave.serializers`
+  and `leave.tracking.serializers` catch `ValueError` and return the stored
+  `file_url`, and `workflows.approval_views` catches broadly. So a storage
+  misconfiguration could never fail the supporting-document or tracking reads,
+  yet took the approved-document read down with it.
+- This was latent rather than new: the guard only converted a previously
+  confusing storage3 traceback into an immediate one, and the same unhandled
+  call would have surfaced any storage outage.
+- **Fix:** the signing call is wrapped; on failure the reason is logged and the
+  payload reports `available: False` with an empty `download_url`, while the
+  status still reads `ready`. Deliberately *not* falling back to the render-time
+  `file_url` the way the other three call sites do: those are best-effort
+  listings, but `available` is the flag the UI keys its "Open" button off, and
+  that stored URL has expired — so no button is honest, a dead link is not. The
+  document's own metadata is still returned, so the page renders normally.
+- **Tests:** `test_a_signing_failure_degrades_the_payload_instead_of_500ing` in
+  `documents/tests.py` covers both a misconfiguration (`ValueError`) and an API
+  failure (`StorageApiError`) across the employee and HR routes, and asserts the
+  error is logged. Full backend suite **739 tests OK**.
+
+## Operational Note (2026-09-26, `.env` is read once at startup)
+
+- After correcting `SUPABASE_URL`, the still-running dev server kept serving the
+  old suffixed value: settings are read at import time, so editing `.env` has no
+  effect until the process restarts. This produced a confusing log where the
+  guard reported a `/rest/v1/` URL that was no longer on disk. **Restart the
+  Django dev server and any `qcluster` worker after changing `.env`.**
+
+## Security (2026-09-25, service_role key committed to `backend/.env.example`)
+
+- `backend/.env.example` was **tracked in git and contained a real Supabase
+  `service_role` key**, present in at least four commits
+  (`75133c2`, `66558ee`, `719efe0`, `4a08bd7`). `.gitignore` covers `.env` but
+  not `.env.example`. A `service_role` key bypasses row-level security and grants
+  full administrative access to the project.
+- **Action required from the developer — the key must be rotated.** It is in
+  history, so editing the file is not sufficient: revoke it in the Supabase
+  dashboard (Settings → API Keys) and issue a new one. History rewriting (e.g.
+  `git filter-repo` / BFG) is a separate decision and was deliberately not done
+  unasked, since it rewrites shared history and needs a force-push.
+- Removed from the working copy and replaced with a placeholder, with comments
+  warning against the dashboard URL suffix, that the bucket must exist, and that
+  the key belongs in `.env` only. `frontend/.env.example` was checked and holds
+  no secrets.

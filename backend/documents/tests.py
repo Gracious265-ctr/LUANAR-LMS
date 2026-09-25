@@ -296,6 +296,7 @@ from django.utils import timezone
 from audit.models import AuditEntry
 from leave.models import LeaveApplication, LeaveType
 from leave.services.storage import upload_bytes, upload_document
+from storage3.exceptions import StorageApiError
 from users.models import User
 
 from .models import ApprovedLeaveDocument, ApprovedLeaveDocumentLockedError
@@ -718,6 +719,34 @@ class ApprovedDocumentAccessTests(TestCase):
         for method in ("post", "put", "patch", "delete"):
             response = getattr(client, method)(self.ready_url, {})
             self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_a_signing_failure_degrades_the_payload_instead_of_500ing(self):
+        """A storage misconfiguration must not take the read endpoint down.
+
+        The signed URL is derived from the document row, so when it cannot be
+        minted the row is still readable. ``available`` goes false and no URL is
+        returned: the alternative is serving the render-time URL, which has since
+        expired and would hand the employee a dead "Open" button.
+        """
+        client = APIClient()
+        client.force_authenticate(user=self.employee)
+        for error in (
+            ValueError("SUPABASE_URL must be the bare project URL"),
+            StorageApiError("Object not found", code="404", status=404),
+        ):
+            with self.subTest(error=type(error).__name__):
+                with mock.patch(
+                    "leave.services.storage.signed_document_url", side_effect=error
+                ):
+                    with self.assertLogs("documents.views", level="ERROR"):
+                        response = client.get(self.ready_url)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertFalse(response.data["available"])
+                self.assertEqual(response.data["download_url"], "")
+                # The document itself is unchanged and still reported as ready;
+                # only the URL is withheld.
+                self.assertEqual(response.data["status"], ApprovedLeaveDocument.Status.READY)
+                self.assertEqual(response.data["file_name"], self.document.file_name)
 
 
 class ReadyDocumentImmutabilityTests(TestCase):
