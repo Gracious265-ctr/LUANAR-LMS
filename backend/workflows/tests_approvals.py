@@ -6,16 +6,26 @@ approvals HTTP API (capabilities, list, detail, decision, documents).
 """
 
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from audit.models import AuditEntry
+from leave.cancellations.models import LeaveBalanceTransaction
 from leave.models import LeaveApplication
+from leave.services.exceptions import ApplicationFinalisationError
 from leave.services.submission import submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 from users.models import EmployeeProfile
 
+from .events import (
+    APPLICATION_FINALISED,
+    DECISION_RECORDED,
+    _consumers,
+    _reset_consumers_for_tests,
+    register_consumer,
+)
 from .models import (
     ApplicationStage,
     ApprovalDecision,
@@ -692,3 +702,188 @@ class ApprovalAPITests(ApprovalBase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["download_url"], "https://storage.example/cached.pdf")
+
+
+def _restore_consumers(previous):
+    """Put the global approval-event bus back as it was found."""
+    _reset_consumers_for_tests()
+    _consumers.extend(previous)
+
+
+class FinalisationWiringTests(ApprovalBase):
+    """Unit 25 — the final approval deducts balance and announces itself (D4, D5).
+
+    Before this unit ``decide()`` only flipped the status to ``APPROVED``. It
+    never touched the annual-balance ledger, the event-kind condition was
+    inverted (a rejection announced ``application_finalised``), and nothing
+    caught either because the assertion on approval covered status alone.
+    """
+
+    def capture_events(self):
+        """Register an event-capturing consumer, restoring the real bus after."""
+        events = []
+        previous = list(_consumers)
+        _reset_consumers_for_tests()
+        register_consumer(events.append)
+        self.addCleanup(_restore_consumers, previous)
+        return events
+
+    def decide_all(self, app, action, *, last_only_patch=None):
+        approvers = (self.supervisor, self.hod, self.registrar, self.dvc)
+        for index, user in enumerate(approvers):
+            is_last = index == len(approvers) - 1
+            if is_last and last_only_patch is not None:
+                with last_only_patch():
+                    result = decide(
+                        application_id=app.pk,
+                        actor=user,
+                        action=action,
+                        expected_version=1,
+                    )
+            else:
+                result = decide(
+                    application_id=app.pk,
+                    actor=user,
+                    action=action,
+                    expected_version=1,
+                )
+            app.refresh_from_db()
+        return app
+
+    def deductions(self, app):
+        return LeaveBalanceTransaction.objects.filter(
+            application=app, type=LeaveBalanceTransaction.Type.DEDUCTION
+        )
+
+    # --- D5: event kinds ------------------------------------------------
+
+    def test_intermediate_approval_emits_decision_recorded(self):
+        app = self.make_submitted()
+        events = self.capture_events()
+        with self.captureOnCommitCallbacks(execute=True):
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action=ApprovalDecision.Action.APPROVE,
+                expected_version=1,
+            )
+        self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
+
+    def test_final_approval_emits_application_finalised(self):
+        app = self.make_submitted()
+        events = self.capture_events()
+        for user in (self.supervisor, self.hod, self.registrar, self.dvc):
+            with self.captureOnCommitCallbacks(execute=True):
+                decide(
+                    application_id=app.pk,
+                    actor=user,
+                    action=ApprovalDecision.Action.APPROVE,
+                    expected_version=1,
+                )
+            app.refresh_from_db()
+        self.assertEqual(
+            [e.kind for e in events],
+            [DECISION_RECORDED] * 3 + [APPLICATION_FINALISED],
+        )
+
+    def test_rejection_emits_decision_recorded_not_finalised(self):
+        """The inverted condition used to file a rejection as finalized."""
+        app = self.make_submitted()
+        events = self.capture_events()
+        with self.captureOnCommitCallbacks(execute=True):
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action=ApprovalDecision.Action.REJECT,
+                comment="Insufficient documentation.",
+                expected_version=1,
+            )
+        self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
+        self.assertNotIn(APPLICATION_FINALISED, [e.kind for e in events])
+
+    def test_correction_required_emits_decision_recorded_not_finalised(self):
+        app = self.make_submitted()
+        events = self.capture_events()
+        with self.captureOnCommitCallbacks(execute=True):
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+                comment="Please attach the medical note.",
+                expected_version=1,
+            )
+        self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
+
+    # --- D4: the deduction ----------------------------------------------
+
+    def test_full_approval_records_exactly_one_deduction(self):
+        app = self.make_submitted()
+        self.decide_all(app, ApprovalDecision.Action.APPROVE)
+        self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
+        deduction = self.deductions(app)
+        self.assertEqual(deduction.count(), 1)
+        entry = deduction.get()
+        self.assertEqual(entry.employee_id, self.employee.id)
+        self.assertEqual(entry.leave_type, app.leave_type_id)
+        self.assertEqual(entry.days, app.working_days)
+        self.assertEqual(entry.financial_year, app.financial_year_label)
+        self.assertTrue(entry.carry_forward_eligible)
+
+    def test_rejection_records_no_deduction(self):
+        app = self.make_submitted()
+        decide(
+            application_id=app.pk,
+            actor=self.supervisor,
+            action=ApprovalDecision.Action.REJECT,
+            comment="Insufficient documentation.",
+            expected_version=1,
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.REJECTED)
+        self.assertEqual(self.deductions(app).count(), 0)
+
+    def test_intermediate_approvals_record_no_deduction_yet(self):
+        app = self.make_submitted()
+        decide(
+            application_id=app.pk,
+            actor=self.supervisor,
+            action=ApprovalDecision.Action.APPROVE,
+            expected_version=1,
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.SUBMITTED)
+        self.assertEqual(self.deductions(app).count(), 0)
+
+    def test_non_deducting_leave_type_records_no_deduction(self):
+        """Compassionate leave does not draw on the annual balance."""
+        app = LeaveApplication.objects.create(
+            employee=self.employee,
+            leave_type_id=4,
+            start_date=EARLIEST_ANNUAL_START,
+            end_date=EARLIEST_ANNUAL_START + timedelta(days=4),  # 5 working days
+            reason="Bereavement",
+        )
+        app = submit_application(user=self.employee, application_id=app.pk)
+        self.decide_all(app, ApprovalDecision.Action.APPROVE)
+        self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
+        self.assertEqual(self.deductions(app).count(), 0)
+
+    def test_deduction_failure_rolls_the_approval_back(self):
+        """D4: the deduction is business state, so a failure undoes the approval."""
+        app = self.make_submitted()
+        with mock.patch(
+            "leave.services.finalise.record_deduction",
+            side_effect=ApplicationFinalisationError("ledger unavailable"),
+        ):
+            with self.assertRaises(ApplicationFinalisationError):
+                self.decide_all(app, ApprovalDecision.Action.APPROVE)
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.SUBMITTED)
+        self.assertEqual(LeaveBalanceTransaction.objects.count(), 0)
+        self.assertEqual(
+            ApprovalDecision.objects.filter(
+                application=app, action=ApprovalDecision.Action.APPROVE
+            ).count(),
+            3,
+            "the three committed stages survive; only the failing one rolls back",
+        )

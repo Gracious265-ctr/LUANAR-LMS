@@ -87,13 +87,18 @@ def record_deduction(application):
     Uses ``get_or_create`` (the same append-only writer Unit 18 uses for
     restorations). The partial unique constraint (``application``,
     ``type='deduction'``) makes the write idempotent and race-safe.
+
+    Returns the ledger row, or ``None`` when the leave type does not draw on
+    the annual balance (compassionate, maternity, paternity) — a clean answer
+    from the snapshot, not an error, so those applications still finalise.
+    ``consume_deduction_decision`` still raises
+    ``LeaveTypeNotResolvableError`` when the snapshot records no decision at
+    all, which is the genuinely unsafe case.
     """
     from leave.cancellations.models import LeaveBalanceTransaction
 
     if not consume_deduction_decision(application):
-        raise LeaveTypeNotResolvableError(
-            f"Leave type does not deduct the annual balance; no ledger row."
-        )
+        return None
 
     days = application.working_days
     financial_year = application.financial_year_label
@@ -106,7 +111,7 @@ def record_deduction(application):
     transaction, created = LeaveBalanceTransaction.objects.get_or_create(
         employee_id=application.employee_id,
         financial_year=financial_year,
-        leave_type_id=application.leave_type_id,
+        leave_type=application.leave_type_id,
         application=application,
         type=LeaveBalanceTransaction.Type.DEDUCTION,
         defaults={"days": days, "carry_forward_eligible": True},

@@ -296,6 +296,47 @@ class FinalizedLeaveApiTests(TestCase):
         self.assertEqual(row["employee_name"], self.employee_user.get_full_name())
         self.assertEqual(row["calculated_days"], 5)
 
+    def test_approved_applications_are_visible_to_hr(self):
+        """Unit 25 D6: an approved application is the finalized record.
+
+        The view used to filter ``SUBMITTED`` only, so HR could not see (nor
+        retrieve) any application that had actually reached its final approval.
+        """
+        self.app.status = LeaveApplication.Status.APPROVED
+        self.app.save(update_fields=["status"])
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["reference_number"], self.app.reference_number
+        )
+        detail = self.client.get(self.detail_url)
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data["reference_number"], self.app.reference_number)
+
+    def test_rejected_and_cancelled_applications_stay_hidden(self):
+        """Unit 25 D6: only in-flight and approved; the audit log covers the rest."""
+        rejected = make_submitted_application(self.employee_user)
+        rejected.status = LeaveApplication.Status.REJECTED
+        rejected.save(update_fields=["status"])
+        cancelled = make_submitted_application(self.employee_user)
+        cancelled.status = LeaveApplication.Status.CANCELLED
+        cancelled.save(update_fields=["status"])
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["reference_number"], self.app.reference_number
+        )
+        for hidden in (rejected, cancelled):
+            self.assertEqual(
+                self.client.get(
+                    f"/api/v1/finalized-leave/{hidden.id}/"
+                ).status_code,
+                status.HTTP_404_NOT_FOUND,
+            )
+
     def test_list_ordered_by_submitted_at_newest_first(self):
         self.client.force_authenticate(user=self.hr_user)
         latest = make_submitted_application(self.other_employee)

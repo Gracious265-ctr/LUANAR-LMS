@@ -844,6 +844,15 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             update_fields=["status", "current_stage", "current_approver", "updated_at"]
         )
 
+        if after_status == LeaveApplication.Status.APPROVED:
+            # Unit 25 (D4): the annual-balance deduction is transactional
+            # business state, so it is written inside this transaction and a
+            # failure rolls the approval back. The approved-document half stays
+            # deferred to Unit 23b; only ``record_deduction`` is wired here.
+            from leave.services.finalise import record_deduction
+
+            record_deduction(app)
+
         record_audit(
             actor=actor,
             action=_audit_action(action),
@@ -868,7 +877,7 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         event = ApprovalEvent(
             kind=(
                 APPLICATION_FINALISED
-                if after_status != LeaveApplication.Status.SUBMITTED
+                if after_status == LeaveApplication.Status.APPROVED
                 else DECISION_RECORDED
             ),
             application_id=str(app.pk),

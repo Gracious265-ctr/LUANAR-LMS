@@ -166,6 +166,22 @@ class ResubmissionServiceTests(StubFlowBaseTests):
             resubmit_application(user=self.owner, application_id=app.pk)
         self.assertGreaterEqual(len(ctx.exception.errors), 1)
 
+    def test_resubmission_audit_detail_is_json_safe(self):
+        import json
+
+        from audit.models import AuditEntry
+
+        app = self.make_rejected()
+        resubmit_application(user=self.owner, application_id=app.pk)
+
+        entry = AuditEntry.objects.get(
+            action=AuditEntry.Action.APPLICATION_RESUBMITTED
+        )
+        json.dumps(entry.detail)
+        self.assertEqual(entry.detail["after"]["submission_cycle"], 2)
+        self.assertIsInstance(entry.detail["after"]["decision_version"], int)
+        self.assertEqual(entry.detail["after"]["decision_version"], 3)
+
     def test_resubmission_freezes_a_new_revision_with_the_diff(self):
         from leave.models import ApplicationRevision
 

@@ -47,11 +47,23 @@ class FinalizedLeaveViewSet(
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
-    """HR-only organization-wide read of submitted (finalized) applications."""
+    """HR-only organization-wide read of in-flight and approved applications.
+
+    Unit 25 (D6): the view previously filtered ``SUBMITTED`` only, so an
+    approved — i.e. actually finalized — application was invisible to HR and
+    ``get_object`` 404'd it. Rejected and cancelled applications stay out; the
+    audit log is the record of those (Unit 24 D1).
+    """
 
     serializer_class = HRLeaveApplicationSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "head", "options"]
+
+    #: The statuses HR treats as "in flight or finalized" (Unit 25 D6).
+    VISIBLE_STATUSES = (
+        LeaveApplication.Status.SUBMITTED,
+        LeaveApplication.Status.APPROVED,
+    )
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -68,7 +80,7 @@ class FinalizedLeaveViewSet(
 
     def get_queryset(self):
         queryset = LeaveApplication.objects.filter(
-            status=LeaveApplication.Status.SUBMITTED
+            status__in=self.VISIBLE_STATUSES
         ).select_related("employee", "current_approver")
         search = self.request.query_params.get("employee")
         if search:
@@ -81,6 +93,6 @@ class FinalizedLeaveViewSet(
 
     def get_object(self):
         obj = super().get_object()
-        if obj.status != LeaveApplication.Status.SUBMITTED:
+        if obj.status not in self.VISIBLE_STATUSES:
             raise Http404("Not found.")
         return obj

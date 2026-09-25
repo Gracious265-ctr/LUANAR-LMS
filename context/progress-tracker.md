@@ -4,7 +4,8 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Unit 23 — Final Approval, Balance, and Document Generation (SPEC DRAFTED, awaiting developer approval; the spec was revised during the Phase-1 review on 2026-09-25)
+- Unit 25 — End-to-End System (COMPLETE — implemented and verified, uncommitted on `feature/hr-track`)
+- Unit 23b — Approved Leave Document (TO DRAFT — split out of Unit 23; blocked on `reportlab` approval)
 - Unit 22 — Email Notifications (DEFERRED; build-plan block retained, not spec'd)
 - Unit 21 — Workflow-to-Approver Integration (COMPLETE — implemented but UNCOMMITTED on `feature/hr-track`)
 - Unit 20 — HR-to-Employee Data Integration (COMPLETE)
@@ -516,18 +517,22 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 25 — End-to-End System (next to draft).** Per the build plan
-  (§Unit 25): verify and finish the complete LUANAR leave-management workflow
-  end to end — HR creates employee → assigns grade → configures leave rules →
-  configures workflow → employee logs in and creates an application → system
-  validates it → reference number generated → supervisor receives and approves →
-  next approver receives → all mandatory stages approve → final approver
-  approves → annual balance updated → approved document generated → emails sent
-  → employee views approved leave → HR sees the finalized record. This is the
-  integration/acceptance unit; it depends on every prior unit (01–24, all landed
-  and now verified together). Spec not yet written.
+- **Unit 23b — Approved Leave Document (to draft; split out of Unit 23).** Unit
+  23 was committed as complete but its document half was never built: there is
+  no `ApprovedLeaveDocument` model or migration, no render task, no
+  `enqueue_approved_document_render`, no `approved/{id}/` storage prefix, and no
+  signed-URL endpoint. `leave/services/finalise.py::finalise_approved_application`
+  references all of these and would raise `ImportError` if called. `reportlab` is
+  neither installed nor declared. This unit builds that feature per the deferred
+  design in `context/specs/23-final-approval-balance-and-document-spec.md`
+  (model + migration, ReportLab render, Django-Q2 task enqueued on commit,
+  storage prefix, signed-URL reads, frontend viewer). **Requires explicit
+  developer approval before adding the `reportlab` dependency.** Unit 25 has
+  since wired the balance half and deliberately left this function unwired;
+  `leave/services/exceptions.py` now exists, so the only remaining blockers are
+  the `ApprovedLeaveDocument` model and `enqueue_approved_document_render`.
 - **Unit 24 — Complete Audit and Historical Integrity (implemented 2026-09-25;
-  uncommitted).** Spec
+  committed as `d4860f3`).** Spec
   `context/specs/24-audit-and-historical-integrity-spec.md` — decisions D1–D10,
   approved before Phase 2. Phase-1 verification against the real code reshaped
   this unit into a **hardening** unit: the build plan's audit-wiring goal is
@@ -568,6 +573,85 @@ Update this file after every meaningful implementation change.
   owner/HR/approver read-only access; Django-Q2 render task; no new tracking
   event). **DOCX was deferred (PDF only, no `python-docx`).** Unit 22 wired the
   real bus this unit's finalisation consumer also uses.
+
+## Completed (Unit 25) — End-to-End System (2026-09-25)
+
+- **Spec.** `context/specs/25-end-to-end-system-spec.md` — decisions D1–D11,
+  approved as specced for Phase 2. Developer decisions at Phase 1: Unit 25 = E2E
+  + **wiring fixes only**, with the approved-document build split out to Unit
+  23b; and **no new third-party dependency** in this unit. No dependency was
+  added.
+- **The E2E suite (D9/D10).** New cross-app package `backend/tests/`
+  (`__init__.py` + `test_end_to_end.py`, 10 tests). It drives the **real**
+  services — including the real `DatabaseWorkflowProvider` over an
+  HR-configured chain created through the audited `/api/v1/workflows/`
+  endpoint — and only touches HTTP where the contract is the thing under test
+  (HR's finalized read, the employee's own list, the D7 edit guard).
+  `EndToEndBase` keeps Unit 22's real email consumer on the bus and adds an
+  event observer, and wraps every decision in
+  `captureOnCommitCallbacks(execute=True)` so the on-commit path actually runs.
+  Journeys: full approval (config → submit → 4 stages → **exactly one
+  deduction** → 4 outbox emails → cycle-1 revision → employee sees `approved` →
+  HR sees the finalized record), repeated-finalization idempotency, the ledger
+  `IntegrityError` guard, one-email-per-decision, rejection, correction →
+  edit → resubmit (cycle-2 revision with a `changes` diff, cycle 1 untouched) →
+  single deduction, submitted-is-not-editable, cancellation restoring the
+  deduction to a net zero, delegation, and reassignment.
+- **The wiring fixes the E2E exposed.**
+  - **D4 — the deduction is now wired.** `workflows/services.py::decide` calls
+    `record_deduction(app)` immediately after the final `app.save()`, inside
+    the same `transaction.atomic()`, so a ledger failure rolls the approval
+    back. Pinned by `FinalisationWiringTests.test_deduction_failure_rolls_the_approval_back`.
+  - **D3 — DB-level idempotency.** `LeaveBalanceTransaction.Meta.constraints`
+    gained the partial `UniqueConstraint(fields=["application"],
+    condition=Q(type="deduction"))` named `one_deduction_per_application` —
+    the constraint `record_deduction`'s docstring already relied on. Migration
+    `leave/0012_leavebalancetransaction_one_deduction_per_application`. This
+    was the unit's **only** schema change.
+  - **D5 — event kind.** The condition was `after_status != SUBMITTED`, which
+    filed a rejection as `application_finalised`; it is now
+    `after_status == LeaveApplication.Status.APPROVED`.
+  - **D6 — HR's finalized view.** `FinalizedLeaveViewSet` now filters
+    `status__in=[SUBMITTED, APPROVED]` via a `VISIBLE_STATUSES` tuple in both
+    `get_queryset` and `get_object`; rejected/cancelled stay hidden (the audit
+    log covers those, Unit 24 D1).
+  - **D7 — the edit guard.** `LeaveApplicationViewSet.EDITABLE_STATUSES` is
+    `(DRAFT, CORRECTION_REQUIRED)`; every other status is still 400. This
+    matches what `LeaveApplicationForm.tsx:20,249-250` already assumed.
+  - **D8 — frontend type.** `LeaveApplication.status` in
+    `frontend/lib/leave-api.ts` widened from `"draft" | "submitted"` to all six
+    backend statuses. No exhaustive switch consumed the narrow union, so this
+    is type-only.
+- **`finalise.py` had to be made importable (enabling, not scope creep).** It was
+  dead code that could not even be imported: it imported a non-existent
+  `leave.services.exceptions` module whose three exception classes were defined
+  **nowhere in the repo**. Three defects were fixed to wire D4:
+  (a) created `backend/leave/services/exceptions.py` with
+  `LeaveTypeNotResolvableError` / `ApplicationFinalisationError` /
+  `DeductionAlreadyRecordedError`; (b) `record_deduction` filtered
+  `leave_type_id=...`, but `LeaveBalanceTransaction.leave_type` is a plain
+  `PositiveIntegerField`, not a FK — corrected to `leave_type=...` (matching
+  Unit 18's `record_restoration`); (c) `record_deduction` **raised** for any
+  non-deducting leave type, which would have made compassionate/maternity/
+  paternity leave impossible to approve. It now returns `None` for a clean
+  "does not consume the annual balance" answer, and still raises
+  `LeaveTypeNotResolvableError` only when the snapshot records no decision at
+  all — which is what that exception's own docstring describes. Without (c) the
+  D4 wiring would have broken three leave types.
+  `finalise_approved_application` (the document half) remains deliberately
+  unwired and raises `ImportError` — that is Unit 23b.
+- **Two widely-reported claims were disproved and deliberately not "fixed":**
+  the resubmission `CombinedExpression` JSON crash (Django 6.1 refreshes
+  F-expression attributes after save; pinned by
+  `test_resubmission_audit_detail_is_json_safe`) and cancellation restoring
+  without a deduction (`_restore_balance` guards on
+  `get_deduction() is None`). The E2E cancellation journey now proves the
+  restoration round-trip instead.
+- **Verification:** `check` clean; `makemigrations --check` clean; full backend
+  suite **673 tests OK** (652 + 21). Frontend: `npm test` **296 tests / 49 files
+  OK**, `npm run typecheck:test` clean, `npm run lint` clean. The trailing
+  `destroy_test_db` `OperationalError` is the known environmental teardown issue
+  and appears after `OK`.
 
 ## Completed (Unit 22) — Email Notifications (2026-09-25)
 

@@ -263,6 +263,11 @@ class LeaveBalanceTransaction(models.Model):
                 condition=models.Q(type="restoration"),
                 name="one_restoration_per_cancellation",
             ),
+            models.UniqueConstraint(
+                fields=["application"],
+                condition=models.Q(type="deduction"),
+                name="one_deduction_per_application",
+            ),
         ]
 
     def __str__(self) -> str:

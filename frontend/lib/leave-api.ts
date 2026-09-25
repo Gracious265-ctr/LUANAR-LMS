@@ -19,7 +19,13 @@ export interface LeaveApplication {
   end_date: string | null;
   calculated_days: number | null;
   reason: string;
-  status: "draft" | "submitted";
+  status:
+    | "draft"
+    | "submitted"
+    | "approved"
+    | "rejected"
+    | "correction_required"
+    | "cancelled";
   reference_number: string | null;
   created_at: string;
   updated_at: string;
