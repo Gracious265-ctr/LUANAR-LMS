@@ -516,23 +516,65 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 22 — Email Notifications (deferred).** Skipped per developer direction on
-  2026-09-24; the build-plan block (§7, lines 724–766) is retained and not yet
-  granular-spec'd. Implemented at a later time — **not** part of the current unit
-  pass. The Unit 22 spec + detailed design remain to be written when taken up.
-  (Do **not** begin Unit 22 now; see the Section-3.6 thread in Unit 23's spec.)
-- **Unit 23 — Final Approval, Balance, and Document Generation (spec drafted).**
-  Spec `context/specs/23-final-approval-balance-and-document-spec.md` revised
-  during the Phase-1 review on 2026-09-25: decisions D1–D8 rewritten against the
+- **Unit 24 — Delegation Routing (next to draft).** Next up after Units 22 and 23
+  land; spec not yet written.
+- **Unit 23 — Final Approval, Balance, and Document Generation (implemented,
+  committed as `eb7361d`).** Spec
+  `context/specs/23-final-approval-balance-and-document-spec.md` revised during
+  the Phase-1 review on 2026-09-25: decisions D1–D8 rewritten against the
   actual code (deduction inside `decide()`'s transaction from `rules_snapshot`;
   no ledger row for special leave; restoration stays owned by Unit 18;
   template-populated ReportLab PDF via `approved/{application_id}/` in storage;
   owner/HR/approver read-only access; Django-Q2 render task; no new tracking
-  event). Corrections folded in: no fixture balance/document provider is
-  deleted (`LedgerBalanceProvider` is already ledger-backed; `leave/providers/
-  fixture*.py` stays), and the wrong "HR Unit 12" / "HR Units 8–9" references
-  are gone. **DOCX is deferred (PDF only, no `python-docx`).** Awaiting
-  developer approval; on completion mark complete + set Next Up = Unit 24.
+  event). **DOCX was deferred (PDF only, no `python-docx`).** Unit 22 wired the
+  real bus this unit's finalisation consumer also uses.
+
+## Completed (Unit 22) — Email Notifications (2026-09-25)
+
+- **Spec.** `context/specs/22-email-notifications-spec.md` — decisions D1–D8
+  (no new tracking event; the real approval-event bus lands here; employee/HR
+  recipients from the persisted stage chain; append-only `NotificationOutbox`
+  reusing the `pending/sent/failed` vocabulary; `EMAIL_BACKEND=console` +
+  `mail.outbox` assertion; audit vocabulary untouched; attachments/digests/HTML
+  out of scope).
+- **Real bus.** `workflows/events.py` keeps `ApprovalEvent` + the
+  `DECISION_RECORDED`/`APPLICATION_FINALISED` constants verbatim and turns the
+  Unit-16 no-op sink into a real registry: private `_consumers` list,
+  `register_consumer` (duplicate registration is a loud `ValueError`),
+  `emit_approval_event` now dispatches to every consumer in registration order
+  with per-consumer failure isolation (a raising consumer can never abort its
+  siblings or the commit), and a test-only `_reset_consumers_for_tests`.
+  `decide()` already emitted via `transaction.on_commit` — no change needed
+  there; the bus now just has something to dispatch to.
+- **Append-only outbox.** `notifications/models.py::NotificationOutbox` (one row
+  per `application`/`kind`/`submission_cycle`/`role_label`, enforced by a unique
+  constraint + `get_or_create`): `NotificationOutboxQuerySet` rejects
+  queryset-wide `update`/`delete` (`NotificationOutboxLockedError`), mirroring
+  the balance-ledger discipline; state moves `pending → sent|failed` only via
+  `mark_sent()`/`mark_failed()` (both idempotent). Migration
+  `notifications/0001_initial`.
+- **Email consumer.** `notifications/services.py::send_decision_email` — the
+  first real bus consumer. Composes subject/body from the persisted
+  `ApprovalEvent` atoms (no templating engine), resolves recipients per the D4
+  matrix (`DECISION_RECORDED` → owner; `APPLICATION_FINALISED` → owner +
+  finalising approver, resolved from the persisted user id — never a role
+  scrape), `get_or_create`s the outbox row (idempotent on re-emit), sends via
+  `django.core.mail.send_mail`, and records `sent`/`failed`. Send failures are
+  isolated: the error is stored on the outbox row and swallowed, never aborting
+  the decision commit. Unresolvable recipient raises
+  `NotificationSeamUnresolvableError`. Registered on the bus via
+  `NotificationsConfig.ready()`.
+- **Tests.** `notifications/tests.py::DecisionEmailBusTest` — 7 tests over the
+  real bus + console outbox: one sent row per decision to the owner,
+  double-emit idempotency (1 row, 1 email), append-only queryset lock,
+  `APPLICATION_FINALISED` owner+approver recipient matrix, send-failure →
+  `failed`, a raising sibling consumer does not abort the commit, and the
+  unresolvable-recipient error.
+- **Verification.** `manage.py check` clean; `makemigrations --check` clean; full
+  backend suite `uv run manage.py test` **636 tests OK** (629 before + 7 new),
+  no regressions from wiring the real bus into `decide()`. No backend linter is
+  configured (`manage.py check` + `test` are the gates). Frontend untouched.
+
 
 ## Completed (Unit 21)
 
@@ -664,6 +706,27 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   requires `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`
 
 ## Session Notes
+
+- **Unit 22 implemented + verified (2026-09-25):** The approval bus is now real
+  and carries the first consumer. Decisions worth flagging: (1) `get_connection()`
+  returns a backend instance that has **no** `.send_mail()` method — the first
+  draft called `connection.send_mail(...)`, every send raised, the consumer
+  swallowed it as `failed`, and `mail.outbox` stayed empty. The fix is the
+  module-level `django.core.mail.send_mail(...)`; the test mocks
+  `notifications.services.send_mail`. (2) The outbox is unique per
+  `(application, kind, submission_cycle, role_label)`, not `(application, kind)`
+  — the persisted `role_label` matters because the same application reaches
+  `DECISION_RECORDED` at each stage role, and a `(application, kind)`-only key
+  would have let a second stage email match the first row and silently drop
+  legitimate per-stage notifications. (3) A raising consumer is swallowed by
+  `emit_approval_event` and cannot abort siblings or the commit; its own
+  `failed` state is the durable record. (4) `NotificationsConfig.ready()`
+  registers the consumer, so registration is idempotent-by-module-load and
+  `register_consumer` still raises loudly on a true duplicate. (5) The test DB
+  kept getting "accessed by other users" — sessions owned by roles the `luanar`
+  role cannot see; `DROP DATABASE ... WITH (FORCE)` from `luanar` clears it, and
+  forcing the drop + run in one chained command avoids the reconnect window.
+  Next build: **Unit 24 — Delegation Routing.**
 
 - **Unit 21 verified complete + Unit 23 spec revised (2026-09-25):** A Phase-1
   review confirmed Unit 21 is fully implemented on `feature/hr-track` but
