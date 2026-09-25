@@ -41,6 +41,7 @@ from leave.cancellations.services import (
     ReasonTooLongError,
     ReasonTooShortError,
     RequestNotPendingError,
+    SelfDecisionError,
     StaleStageVersionError,
     decide_cancellation,
     get_eligibility,
@@ -101,11 +102,11 @@ class CancellationBase(StubProviderMixin, APITestCase):
         )
         return submit_application(user=self.employee, application_id=app.pk)
 
-    def make_approved(self, start=None):
+    def make_approved(self, start=None, employee=None):
         """An approved annual-leave application with a materialised chain."""
         start = start or (TODAY + timedelta(days=15))
         app = LeaveApplication.objects.create(
-            employee=self.employee,
+            employee=employee or self.employee,
             start_date=start,
             end_date=start + timedelta(days=3),
             working_days=5,
@@ -390,6 +391,27 @@ class DecideServiceTests(CancellationBase):
                 request_id=request.pk,
                 decision=DECISION_REJECT,
                 comment="Not mine to decide",
+                stage_version=1,
+                today=TODAY,
+            )
+
+    def test_self_decide_forbidden(self):
+        self.stub.register_employee(self.supervisor)
+        app = self.make_approved(employee=self.supervisor)
+        request = submit_cancellation(
+            user=self.supervisor,
+            application_id=app.pk,
+            reason="Plans changed for the celebration",
+            confirm=True,
+            expected_action="request",
+            today=TODAY,
+        )
+        with self.assertRaises(SelfDecisionError):
+            decide_cancellation(
+                user=self.supervisor,
+                request_id=request.pk,
+                decision=DECISION_APPROVE,
+                comment="",
                 stage_version=1,
                 today=TODAY,
             )
@@ -941,6 +963,27 @@ class ApproverCancellationApiTests(CancellationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["code"], "comment_required")
+
+    def test_self_decision_returns_403_self_application(self):
+        self.stub.register_employee(self.supervisor)
+        app = self.make_approved(employee=self.supervisor)
+        submit_cancellation(
+            user=self.supervisor,
+            application_id=app.pk,
+            reason="Plans changed for the celebration",
+            confirm=True,
+            expected_action="request",
+            today=TODAY,
+        )
+        request = self._open_request(app)
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.post(
+            f"/api/v1/approvals/cancellations/{request.id}/decision/",
+            {"decision": "approve", "comment": "", "stage_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data["code"], "self_application")
 
     def test_unassigned_approver_gets_403(self):
         _, request = self._create_request()

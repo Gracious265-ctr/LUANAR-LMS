@@ -31,6 +31,7 @@ from leave.cancellations.services import (
     NotCurrentApproverError,
     RequestNotFoundError,
     RequestNotPendingError,
+    SelfDecisionError,
     StaleStageVersionError,
     decide_cancellation,
 )
@@ -288,6 +289,7 @@ def _pk(value):
 
 def _reason_message(reason: str) -> str:
     return {
+        "self_application": "You cannot decide on your own application.",
         "application_closed": "This application is closed or not awaiting your decision.",
         "already_decided": "You have already made a decision on this application.",
         "not_current_stage": "This application is not with you right now.",
@@ -460,6 +462,14 @@ class CancellationDecisionAPIView(APIView):
                 {
                     "code": "not_current_approver",
                     "error": "This cancellation is not with you right now.",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        except SelfDecisionError:
+            return Response(
+                {
+                    "code": "self_application",
+                    "error": "You cannot decide on your own cancellation.",
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )

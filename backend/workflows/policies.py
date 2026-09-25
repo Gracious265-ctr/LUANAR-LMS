@@ -20,8 +20,8 @@ from .models import ApplicationStage, ApprovalDecision
 class Authority:
     """Whether ``user`` may decide on the application, with a reason code.
 
-    ``reason`` is one of ``application_closed``, ``already_decided`` or
-    ``not_current_stage`` when ``can_decide`` is false.
+    ``reason`` is one of ``self_application``, ``application_closed``,
+    ``already_decided`` or ``not_current_stage`` when ``can_decide`` is false.
     """
 
     can_decide: bool
@@ -32,8 +32,13 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
     """Grant or deny the ability to decide on ``application``.
 
     Every approval request is checked against the application's *current*
-    live state, so a completed application rejects further decisions.
+    live state, so a completed application rejects further decisions. An
+    approver may never decide on their own application, no matter where the
+    chain is.
     """
+    if application.employee_id == user.id:
+        return Authority(False, "self_application")
+
     if application.status != LeaveApplication.Status.SUBMITTED:
         return Authority(False, "application_closed")
 

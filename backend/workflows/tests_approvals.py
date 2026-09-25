@@ -5,7 +5,7 @@ Covers the workflow provider fixture, stage assignment, the decision service
 approvals HTTP API (capabilities, list, detail, decision, documents).
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -13,7 +13,7 @@ from rest_framework.test import APITestCase
 
 from audit.models import AuditEntry
 from leave.cancellations.models import LeaveBalanceTransaction
-from leave.models import LeaveApplication
+from leave.models import FinancialYear, LeaveApplication
 from leave.services.exceptions import ApplicationFinalisationError
 from leave.services.submission import submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
@@ -110,6 +110,19 @@ class ApprovalBase(StubProviderMixin, APITestCase):
             **ANNUAL,
         )
         return submit_application(user=self.employee, application_id=app.pk)
+
+    def submit_as_approver(self, approver):
+        """Submit a leave application owned by ``approver`` (their own request)."""
+        self.stub.register_employee(approver)
+        start = EARLIEST_ANNUAL_START
+        app = LeaveApplication.objects.create(
+            employee=approver,
+            start_date=start,
+            end_date=start + timedelta(days=3),
+            leave_type_id=1,
+            reason="Own leave",
+        )
+        return submit_application(user=approver, application_id=app.pk)
 
     def stage(self, app, order: int) -> ApplicationStage:
         return ApplicationStage.objects.get(
@@ -419,6 +432,36 @@ class DecisionServiceTests(ApprovalBase):
             )
         self.assertEqual(ctx.exception.reason, "not_current_stage")
 
+    def test_self_approval_is_forbidden(self):
+        app = self.submit_as_approver(self.supervisor)
+        with self.assertRaises(ApprovalNotAllowedError) as ctx:
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action=ApprovalDecision.Action.APPROVE,
+                expected_version=1,
+            )
+        self.assertEqual(ctx.exception.reason, "self_application")
+        self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
+
+    def test_self_approval_is_forbidden_at_any_stage(self):
+        app = self.submit_as_approver(self.hod)
+        decide(
+            application_id=app.pk,
+            actor=self.supervisor,
+            action=ApprovalDecision.Action.APPROVE,
+            expected_version=1,
+        )
+        with self.assertRaises(ApprovalNotAllowedError) as ctx:
+            decide(
+                application_id=app.pk,
+                actor=self.hod,
+                action=ApprovalDecision.Action.APPROVE,
+                expected_version=1,
+            )
+        self.assertEqual(ctx.exception.reason, "self_application")
+        self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 1)
+
     def test_approver_from_earlier_stage_cannot_act_again(self):
         app = self.make_submitted()
         decide(
@@ -560,6 +603,38 @@ class ApprovalAPITests(ApprovalBase):
         response = self.client.get(self.url(""))
         self.assertEqual(response.status_code, 403)
 
+    def test_self_application_decision_returns_403(self):
+        app = self.submit_as_approver(self.supervisor)
+        response = self.client.post(
+            self.url(f"{app.pk}/decision/"),
+            {"action": "approve", "stage_version": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["reason"], "self_application")
+        self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
+
+    def test_self_application_review_shows_restriction(self):
+        app = self.submit_as_approver(self.supervisor)
+        response = self.client.get(self.url(f"{app.pk}/"))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["can_decide"])
+        self.assertEqual(response.data["decision_restriction"], "self_application")
+
+    def test_leave_history_excludes_drafts(self):
+        app = self.make_submitted()
+        LeaveApplication.objects.create(
+            employee=self.employee,
+            status=LeaveApplication.Status.DRAFT,
+            **ANNUAL,
+        )
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.get(self.url(f"{app.pk}/"))
+        self.assertEqual(response.status_code, 200)
+        entries = response.data["history"]["leave_history"]["entries"]
+        statuses = {entry["status"] for entry in entries}
+        self.assertNotIn("draft", statuses)
+
     def test_detail_returns_whitelisted_review_payload(self):
         app = self.make_submitted()
         self.client.force_authenticate(user=self.supervisor)
@@ -581,6 +656,37 @@ class ApprovalAPITests(ApprovalBase):
         self.assertTrue(
             all("assigned_approver" in s and "status" in s for s in stages)
         )
+
+    def test_detail_review_payload_with_active_financial_year(self):
+        FinancialYear.objects.create(
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 6, 30),
+            is_active=True,
+        )
+        app = self.make_submitted()
+        other = self.make_second_submitted()
+        decide(
+            application_id=app.pk,
+            actor=self.supervisor,
+            action=ApprovalDecision.Action.APPROVE,
+            expected_version=1,
+        )
+        decide(
+            application_id=app.pk,
+            actor=self.hod,
+            action=ApprovalDecision.Action.APPROVE,
+            expected_version=1,
+        )
+        self.client.force_authenticate(user=self.registrar)
+
+        response = self.client.get(self.url(f"{app.pk}/"))
+        self.assertEqual(response.status_code, 200)
+        history = response.data["history"]["leave_history"]
+        self.assertTrue(history["available"])
+        self.assertEqual(history["scope"], "current_financial_year")
+        refs = [entry["reference"] for entry in history["entries"]]
+        self.assertIn(other.reference_number, refs)
+        self.assertNotIn(app.reference_number, refs)
 
     def test_detail_audit_history_survives_a_system_actor_entry(self):
         """A system-actor audit entry must not 500 the whole review payload.

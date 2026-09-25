@@ -12,7 +12,7 @@ from decimal import Decimal
 from audit.models import AuditEntry
 from audit.services import actor_display_name
 from leave.models import GradeEntitlement, LeaveApplication, LeaveType, SupportingDocument
-from leave.services import active_financial_year
+from leave.services import active_financial_year, financial_year_label
 
 from .models import ApplicationStage, ApprovalDecision
 
@@ -264,10 +264,14 @@ def _leave_history_scope(view_access, employee_profile, approver_profile):
 
 
 def _leave_history_entries(application: LeaveApplication, scope: str) -> list[dict]:
-    qs = LeaveApplication.objects.filter(employee=application.employee)
+    qs = LeaveApplication.objects.filter(employee=application.employee).exclude(
+        status=LeaveApplication.Status.DRAFT
+    )
     if scope == "current_financial_year":
         year = active_financial_year()
-        label = (year.label if year else application.financial_year_label) or ""
+        label = (
+            financial_year_label(year) if year else application.financial_year_label
+        ) or ""
         if label:
             qs = qs.filter(financial_year_label=label)
     entries = []

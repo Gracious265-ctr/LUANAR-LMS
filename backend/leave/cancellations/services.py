@@ -101,6 +101,10 @@ class NotCurrentApproverError(CancellationError):
     """The user is not the approver of the current pending stage (403)."""
 
 
+class SelfDecisionError(CancellationError):
+    """An approver cannot decide on their own application's cancellation (403)."""
+
+
 class CommentRequiredError(CancellationError):
     """A comment is required for a rejection (400)."""
 
@@ -408,6 +412,8 @@ def decide_cancellation(
         application = LeaveApplication.objects.select_for_update().get(
             pk=request.application_id
         )
+        if application.employee_id == user.id:
+            raise SelfDecisionError()
         request = CancellationRequest.objects.select_for_update().get(pk=request_id)
 
         if request.status != CancellationRequest.Status.PENDING:
