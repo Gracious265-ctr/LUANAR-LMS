@@ -1,12 +1,15 @@
 """Cancellation domain events (Unit 18, section 3.6).
 
-``emit`` is a no-op by default (consistent with Units 16 and 17).
-Future notification apps will subscribe to these events.
+Unit 22 wires ``emit`` to the notification dispatcher so cancellations and
+withdrawals produce emails; ``set_notification_state`` records on the request
+whether the employee-facing notification was delivered.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
+
+from notifications.dispatcher import dispatch
 
 CancellationEventName = Literal[
     "cancellation.requested",
@@ -31,12 +34,16 @@ class CancellationEvent:
 
 
 def emit(event_name: CancellationEventName, payload: dict) -> None:
-    """Deliver a cancellation event to downstream subscribers.
-
-    Currently a no-op so the cancellation flow remains side-effect free.
-    Future units subscribe here for notifications.
-    """
-    return None
+    """Deliver a cancellation event to the notification subscriber."""
+    event = CancellationEvent(
+        event_name=event_name,
+        application_id=payload["application_id"],
+        request_id=payload["request_id"],
+        outcome=payload["outcome"],
+        recipient_user_ids=payload["recipient_user_ids"],
+        payload=payload,
+    )
+    return dispatch("cancellation", event)
 
 
 def set_notification_state(request_id: str, state: str) -> None:

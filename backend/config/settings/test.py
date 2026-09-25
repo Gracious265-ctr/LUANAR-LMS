@@ -34,6 +34,11 @@ PASSWORD_HASHERS = [
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
+# Notifications (Unit 22): keep the whole existing suite free of Notification
+# rows and email side effects. The notification tests enable dispatch
+# explicitly via override_settings(NOTIFICATION_DISPATCHER="on").
+NOTIFICATION_DISPATCHER = "off"
+
 # Distinct name per parallel session to avoid test-DB deadlocks.
 DATABASES["default"]["TEST"] = {
     "NAME": os.environ.get("TEST_DB_NAME", "test_luanar_leave"),

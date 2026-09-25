@@ -12,6 +12,12 @@ from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
 
+from .events import (
+    DelegationEvent,
+    ReassignmentEvent,
+    emit_delegation_event,
+    emit_reassignment_event,
+)
 from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow
 
 
@@ -335,6 +341,17 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             prev_state=Delegation.Status.REQUESTED,
             new_state=delegation.status,
         )
+        transaction.on_commit(
+            lambda: emit_delegation_event(
+                DelegationEvent(
+                    event_name="delegation.approved",
+                    delegation_id=str(delegation.id),
+                    approver_user_id=delegation.approver_id,
+                    delegate_user_id=delegate.pk,
+                    occurred_at=timezone.now(),
+                )
+            )
+        )
     return delegation
 
 
@@ -368,6 +385,17 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             reason=reason,
             prev_state=Delegation.Status.REQUESTED,
             new_state=delegation.status,
+        )
+        transaction.on_commit(
+            lambda: emit_delegation_event(
+                DelegationEvent(
+                    event_name="delegation.rejected",
+                    delegation_id=str(delegation.id),
+                    approver_user_id=delegation.approver_id,
+                    delegate_user_id=None,
+                    occurred_at=timezone.now(),
+                )
+            )
         )
     return delegation
 
@@ -406,6 +434,17 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             reason=reason,
             prev_state=Delegation.Status.APPROVED,
             new_state=delegation.status,
+        )
+        transaction.on_commit(
+            lambda: emit_delegation_event(
+                DelegationEvent(
+                    event_name="delegation.cancelled",
+                    delegation_id=str(delegation.id),
+                    approver_user_id=delegation.approver_id,
+                    delegate_user_id=delegation.delegate_id,
+                    occurred_at=timezone.now(),
+                )
+            )
         )
     return delegation
 
@@ -495,5 +534,17 @@ def reassign_application(
             },
             after={"current_approver": to_approver.get_full_name()},
             reason=reason,
+        )
+        transaction.on_commit(
+            lambda: emit_reassignment_event(
+                ReassignmentEvent(
+                    reassignment_id=str(reassignment.id),
+                    application_id=str(application.id),
+                    from_approver_user_id=reassignment.from_approver_id,
+                    to_approver_user_id=to_approver.pk,
+                    employee_user_id=application.employee_id,
+                    occurred_at=timezone.now(),
+                )
+            )
         )
     return reassignment

@@ -159,8 +159,26 @@ Q_CLUSTER = {
     "orm": "default",
 }
 
-# Email (console backend for development)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email (Unit 22). SMTP settings come entirely from the environment; the
+# development default is Google SMTP, replaced by the institutional LUANAR
+# SMTP server through .env without any code change. Tests keep a locmem
+# backend (config/settings/test.py) so nothing here can send real mail.
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="LUANAR Leave <noreply@luanar.ac.mw>"
+)
+
+# Notifications (Unit 22). Domain events (submit/approval/cancellation/
+# delegation/reassignment) are routed through a lightweight dispatcher that is
+# "on" by default; tests set it to "off" so the rest of the suite stays
+# hermetic and the notification tests enable it explicitly with
+# override_settings.
+NOTIFICATION_DISPATCHER = env("NOTIFICATION_DISPATCHER", default="on")
 
 # Supabase Storage
 SUPABASE_URL = env("SUPABASE_URL", default="")

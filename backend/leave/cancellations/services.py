@@ -609,6 +609,7 @@ def _audit_and_emit(
         lambda: emit(
             event_name,
             {
+                **payload,
                 "application_id": str(application.id),
                 "request_id": str(payload["cancellation_request_id"]),
                 "outcome": outcome,
