@@ -372,3 +372,79 @@ Two independent traps:
   render stub-consistent balances.
 
 ---
+
+## Unit 24: Django admin inline formsets are defensive by default (`get_formset`, `DeleteProtectedModelForm`)
+
+### Symptom
+`test_workflow_inline_stage_creation_records_event` first raised
+`inlineformset_factory() got an unexpected keyword argument 'change'`, then —
+after dropping the kwarg — silently saved **zero** stages: `formset.is_valid()`
+was True, the single extra form had non-empty `changed_data`, but
+`formset.save(commit=False)` returned `[]` with no audit event.
+
+### Root cause
+1. `InlineModelAdmin.get_formset(self, request, obj=None, **kwargs)` forwards
+   **all** kwargs to `inlineformset_factory`; there is no `change=` kwarg, and
+   `obj` is passed positionally.
+2. The returned form class is Django's `DeleteProtectedModelForm`, whose
+   `has_changed()` returns `False` for a new inline row when the acting user
+   lacks the inline model's add permission (`can_add`):
+   ```python
+   def has_changed(self):
+       if not can_add and self.instance._state.adding:
+           return False
+       return super().has_changed()
+   ```
+   `save_new_objects` skips every "unchanged" extra form, so nothing persists.
+   The plain `make_user()` fixture user has no Django object permissions.
+
+### What to look for
+- `is_valid()` True + `errors`/`non_form_errors` empty but `save()` creates
+  nothing → check `form.has_changed()` vs `form.changed_data` on the real
+  (wrapped) form class — introspection of the MRO shows
+  `DeleteProtectedModelForm`.
+- The inline formset prefix is the **parent FK related_name**
+  (`WorkflowStage.workflow` uses `related_name="stages"` → prefix `stages`),
+  not `workflowstage_set`.
+
+### Fix
+Grant the acting user the add permission before exercising the formset
+(`self.hr.user_permissions.add(Permission.objects.get(codename="add_workflowstage"))`),
+drive the formset with the `stages-*` management prefix, and call
+`inline.get_formset(request, obj=workflow)` without a `change` kwarg. The
+`AuditedModelAdmin.save_formset` mixin then records
+`workflows.workflowstage.created` with the created instance as target.
+
+---
+
+## Unit 24: reassignment timeline summary empty when users have no full names
+
+### Symptom
+`HistoricalIntegrityTests.test_reassignment_updates_spine_but_not_stage_snapshot`
+failed with `'' != 'Reassigned to dean@test.luanar'`: the reassigned event had
+kind `reassignment` but `summary` was `""` and `metadata` had **no**
+`before`/`after` keys.
+
+### Root cause
+`reassign_application` calls `record_config_change(..., before={..., "current_approver": ""}, after={..., "current_approver": to_approver.get_full_name()})`.
+`make_user`/`make_approver_chain` never set `first_name`/`last_name`, so
+`get_full_name()` returns `""` and **both** sides of the diff are identical →
+`changed_fields` emits an empty diff → the `before`/`after` metadata is never
+stored, and `_timeline_summary` (which builds the human sentence from that
+metadata) returns `""`. (Incidentally, `AuditEvent` targets are GenericFKs —
+no DB FK cascade — so the trail **survives** target deletion; the "parent
+delete purges events" test expectation was simply wrong.)
+
+### What to look for
+- A diff-based `record_config_change` event whose metadata lacks
+  before/after even though semantically something changed (both values stringify
+  equal, e.g. `""`).
+- Tests asserting on `get_full_name()` should give fixture users names; expect
+  empty diffs whenever stub users have no first/last names.
+
+### Fix
+Name the approver-chain users in the Unit 24 fixtures (`first_name`/`last_name`
+saved per user) before asserting `"Reassigned to {full_name}"`, and assert the
+cascade test now expects the events to **survive** `app.delete()`.
+
+---

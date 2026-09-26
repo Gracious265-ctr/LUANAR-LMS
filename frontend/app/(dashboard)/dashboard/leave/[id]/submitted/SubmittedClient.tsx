@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { type LeaveApplication, getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
+import type { TimelineEntry } from "@/lib/leave-history";
 import { SubmissionConfirmation } from "@/components/leave/submission-confirmation";
+import { TimelineView } from "@/components/leave/timeline-view";
 
 export function SubmittedClient({ applicationId }: { applicationId: string }) {
   const router = useRouter();
   const [application, setApplication] = useState<LeaveApplication | null>(null);
   const [leaveTypeName, setLeaveTypeName] = useState("");
+  const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
@@ -32,6 +35,22 @@ export function SubmittedClient({ applicationId }: { applicationId: string }) {
         setError(err instanceof Error ? err.message : "Failed to load application")
       );
   }, [applicationId, router]);
+
+  useEffect(() => {
+    if (redirecting) return;
+    let cancelled = false;
+    fetch(`/api/applications/${applicationId}/history`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data: { entries: TimelineEntry[] }) => {
+        if (!cancelled) setEntries(data.entries);
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applicationId, redirecting]);
 
   if (redirecting) {
     return (
@@ -56,21 +75,33 @@ export function SubmittedClient({ applicationId }: { applicationId: string }) {
   }
 
   return (
-    <SubmissionConfirmation
-      application={{
-        id: application.id,
-        reference_number: application.reference_number,
-        status: application.status,
-        submitted_at: application.submitted_at,
-        working_days: application.working_days,
-        calendar_days: application.calendar_days,
-        leave_type: {
-          id: application.leave_type_id ?? 0,
-        },
-        start_date: application.start_date,
-        end_date: application.end_date,
-      }}
-      leaveTypeName={leaveTypeName}
-    />
+    <div className="space-y-6">
+      <SubmissionConfirmation
+        application={{
+          id: application.id,
+          reference_number: application.reference_number,
+          status: application.status,
+          submitted_at: application.submitted_at,
+          working_days: application.working_days,
+          calendar_days: application.calendar_days,
+          leave_type: {
+            id: application.leave_type_id ?? 0,
+          },
+          start_date: application.start_date,
+          end_date: application.end_date,
+        }}
+        leaveTypeName={leaveTypeName}
+      />
+
+      <section className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">
+          Activity
+        </h3>
+        <TimelineView
+          entries={entries}
+          emptyMessage="No recorded activity for this application yet."
+        />
+      </section>
+    </div>
   );
 }

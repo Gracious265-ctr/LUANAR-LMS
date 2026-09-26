@@ -204,17 +204,10 @@ def remove_document(*, application_id, document_id, actor) -> None:
         editing_allowed(application)
         document = _active_document_or_404(application, document_id)
 
-        if application.status == LeaveApplication.Status.DRAFT:
-            _remove_stored_file_best_effort(document)
-            document.delete()
-        else:
-            _retire(
-                document=document,
-                actor=actor,
-                reason=SupportingDocument.RetireReason.REMOVED,
-                replaced_by=None,
-            )
-
+        # The audit event is written before the row is deleted/retired: the
+        # draft path calls ``document.delete()`` which nulls ``pk`` on the
+        # in-memory object, and recording after it would store ``object_id``
+        # as ``None`` and orphan the event from the application trail.
         record_event(
             actor=actor,
             action=ACTION_DOCUMENT_REMOVED,
@@ -226,6 +219,17 @@ def remove_document(*, application_id, document_id, actor) -> None:
                 "file_name": document.file_name,
             },
         )
+
+        if application.status == LeaveApplication.Status.DRAFT:
+            _remove_stored_file_best_effort(document)
+            document.delete()
+        else:
+            _retire(
+                document=document,
+                actor=actor,
+                reason=SupportingDocument.RetireReason.REMOVED,
+                replaced_by=None,
+            )
 
 
 def replace_document(*, application_id, document_id, actor, file) -> SupportingDocument:

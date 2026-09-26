@@ -13,6 +13,7 @@ from .views import (
 )
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 from .views.my_leave import MyLeaveOverviewView, MyLeaveTypesView
+from .views.history import ApplicationHistoryView, MyLeaveHistoryView
 from .views.resubmission import (
     ApplicationResubmissionView,
     ApplicationResubmitView,
@@ -58,6 +59,11 @@ urlpatterns = [
         "leave/my/overview/",
         MyLeaveOverviewView.as_view(),
         name="leave-my-overview",
+    ),
+    path(
+        "leave/my/history/",
+        MyLeaveHistoryView.as_view(),
+        name="leave-my-history",
     ),
     path(
         "leave/my/leave-types/",
@@ -111,6 +117,11 @@ urlpatterns = [
         "applications/<uuid:pk>/resubmission/",
         ApplicationResubmissionView.as_view(),
         name="application-resubmission",
+    ),
+    path(
+        "applications/<uuid:pk>/history/",
+        ApplicationHistoryView.as_view(),
+        name="application-history",
     ),
     path(
         "applications/<uuid:pk>/resubmission/documents/",

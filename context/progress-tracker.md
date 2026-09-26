@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 24 — Complete Audit & Historical Integrity (COMPLETE — backend + frontend, open PR)
 - Unit 23 — Final Approval: Balance Deduction & Approved Document (COMPLETE — backend, merged onto `development` via PR #7)
 - Unit 22 — Approval Notifications (COMPLETE — backend, merged onto `development` via PR #6)
 - Unit 21 — Workflow-to-Approver Integration (COMPLETE — backend, open PR pending merge)
@@ -21,11 +22,51 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 23 — Final Approval: Balance Deduction & Approved Document
-  (COMPLETE — backend).** A finally-approved leave application now (1) debits
-  the annual balance through the existing `LeaveBalanceTransaction` ledger and
-  (2) produces the official approved-leave PDF, stored through the Unit 19
-  storage abstraction and streamed back to authorized readers.
+- **Unit 24 — Complete Audit & Historical Integrity (COMPLETE — backend +
+  frontend).** The application history is append-only and complete: audit
+  events can no longer be mutated or purged by mistake, HR-config admin edits
+  are all recorded, and HR and employees read one unified chronological
+  timeline per application instead of the ad-hoc reassignment/audit lists.
+
+  **Implementation complete (2026-09-26).** Spec absorbs Unit 12 (employee
+  dashboard recent activity). Draft-path document removal now records the
+  audit event **before** the document row/target is retired or deleted
+  (`leave/services/documents.py`), closing the draft object_id-lost bug.
+  Append-only enforcement: `ImmutableAuditQuerySet` + `AuditEventManager` +
+  `save()`/`delete()` guards in `audit/models.py` (trails survive target
+  deletion by design — GenericFKs, no DB cascade). New `AuditedModelAdmin`
+  (`audit/admin.py`) records created/updated/deleted through
+  `save_model`/`delete_model`/`save_formset` (inline adds/deletes included),
+  snapshotting **from the DB** (the admin form mutates the in-memory instance
+  before `save_model`); applied to the six HR-config admins (`WorkflowAdmin`,
+  `LeaveType`, `LeaveRule`, `GradeEntitlement`, `FinancialYear`,
+  `PublicHoliday`). New timeline service `audit.services.application_timeline`
+  renders `AuditEvent` rows targeting an application or its related
+  SupportingDocuments / CancellationRequests / Revisions into
+  `{kind, action, action_label, occurred_at, actor, target_type,
+  state_transition, summary, metadata, stage_order, resubmission_number}`
+  entries (kinds submission | workflow_assignment | decision | revision |
+  cancellation | document | reassignment | finalisation | audit); delegation
+  events stay out of per-app timelines (HR-wide feed only). Endpoints
+  `GET /api/v1/applications/<uuid>/history/` (owner / reached approver / HR,
+  drafts owner-only, fail-closed 404) and `GET /api/v1/leave/my/history/`
+  (own applications + timelines, empty trails omitted) in
+  `leave/views/history.py`. Frontend: `lib/leave-history.ts` + proxy routes
+  (`/api/applications/<id>/history`, `/api/leave/my/history`), shared
+  `components/leave/timeline-view.tsx`, dashboard Recent Activity card fed by
+  `my/history` (top 8 entries, each linking to the full tracking page), and
+  both the HR per-application page (`hr-admin/audit/applications/<id>`) and the
+  employee submitted page (`leave/<id>/submitted`) render the shared
+  TimelineView; `lib/audit.ts` label maps extended for the timeline action
+  codes. **Verified:** full backend suite 739 OK (708 baseline + 31 new tests
+  in `audit/tests_unit24.py`), `manage.py check` clean,
+  `makemigrations --check --dry-run` clean; frontend 291 vitest OK (new
+  `tests/timeline-view.test.tsx`, updated `application-history-view.test.tsx`),
+  `tsc --noEmit` clean, `eslint` 0 errors (one pre-existing warning), `next
+  build` clean. Notable debugging (Django admin inline formsets,
+  empty-diff reassignment summaries) recorded in `troubleshooting-notes.md`.
+
+  ---
 
   **Implementation complete (2026-09-25); merged onto `development` (PR #7)
   after a rebase over the unit-22 merge.** Backend only.

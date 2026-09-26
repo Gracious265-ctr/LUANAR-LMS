@@ -1,9 +1,20 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Calendar, Clock, FileText, ShieldCheck } from "lucide-react";
 
 import type { Capabilities } from "@/lib/approvals/types";
 import { apiClient } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/auth";
+import type {
+  ApplicationTimeline,
+  TimelineEntry,
+} from "@/lib/leave-history";
+import {
+  getMyLeaveHistory,
+  type TimelineApplication,
+} from "@/lib/leave-history";
+import { TimelineGlyph } from "@/components/leave/timeline-view";
+import { formatDateTime } from "@/lib/tracking/format";
 import {
   formatIsoDate,
   getLeaveOverview,
@@ -11,6 +22,11 @@ import {
 } from "@/lib/leave-overview";
 
 const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
+
+interface RecentItem {
+  application: TimelineApplication;
+  entry: TimelineEntry;
+}
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -20,9 +36,10 @@ export default async function DashboardPage() {
   }
 
   const showApprovals = APPROVER_ROLES.includes(user.role);
-  const [overview, capabilities] = await Promise.all([
+  const [overview, capabilities, recent] = await Promise.all([
     safeGetOverview(),
     showApprovals ? safeGetCapabilities() : Promise.resolve(null),
+    safeGetRecentActivity(),
   ]);
 
   return (
@@ -126,15 +143,76 @@ export default async function DashboardPage() {
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Recent Activity
         </h3>
-        <div className="text-center py-8 text-text-muted">
-          <p>No recent activity to display.</p>
-          <p className="text-sm mt-1">
-            Your leave applications and approvals will appear here.
-          </p>
-        </div>
+        {recent.length === 0 ? (
+          <div className="text-center py-8 text-text-muted">
+            <p>No recent activity to display.</p>
+            <p className="text-sm mt-1">
+              Your leave applications and approvals will appear here.
+            </p>
+          </div>
+        ) : (
+          <ol className="space-y-4">
+            {recent.map((item) => (
+              <li
+                key={`${item.application.id}:${item.entry.id}`}
+                className="flex gap-3"
+              >
+                <span className="mt-0.5 shrink-0">
+                  <TimelineGlyph kind={item.entry.kind} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <p className="text-sm font-medium text-text-primary">
+                      {item.entry.action_label}
+                    </p>
+                    <span className="text-xs text-text-muted">
+                      {formatDateTime(item.entry.occurred_at)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    <Link
+                      href={`/applications/${item.application.id}`}
+                      className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                    >
+                      {item.application.reference_number ||
+                        "#" + item.application.id.slice(0, 8)}
+                    </Link>
+                    {item.entry.summary ? ` · ${item.entry.summary}` : ""}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * The employee's own most recent timeline activity (Unit 24). Flattens every
+ * application's timeline, keeps the newest eight entries, and drops
+ * applications whose trails are empty.
+ */
+async function safeGetRecentActivity(): Promise<RecentItem[]> {
+  let histories: ApplicationTimeline[];
+  try {
+    histories = await getMyLeaveHistory();
+  } catch {
+    return [];
+  }
+  const items: RecentItem[] = [];
+  for (const history of histories) {
+    for (const entry of history.entries) {
+      items.push({ application: history.application, entry });
+    }
+  }
+  items.sort(
+    (a, b) =>
+      new Date(b.entry.occurred_at).getTime() -
+      new Date(a.entry.occurred_at).getTime()
+  );
+  return items.slice(0, 8);
 }
 
 async function safeGetOverview(): Promise<LeaveOverview | null> {
