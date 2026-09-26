@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 22 — Email Notifications (COMPLETE — backend; frontend untouched)
 - Unit 20 — HR-to-Employee Data Integration (COMPLETE — backend + frontend)
 - Unit 19 — Supporting Document Lifecycle (COMPLETE — backend + frontend)
 - Unit 18 — Leave Cancellation (COMPLETE — backend + frontend)
@@ -18,36 +19,51 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- **Unit 20 — HR-to-Employee Data Integration** replaces the placeholder
-  fixture rules provider with a real database-backed provider so the employee
-  experience reflects the actual HR-track record: HR creates an employee →
-  assigns grade/department/category → the system resolves entitlement and
-  balance → the employee sees their correct profile, entitlement and balance
-  on the dashboard.
+- **Unit 22 — Email Notifications** connects system events to templated,
+  queryable email via Google SMTP for dev (replaceable with LUANAR
+  institutional SMTP through env). Implemented on `feature/unit-22` from
+  `origin/development`.
 
-  **Implementation complete (2026-09-24).** Backend: `DatabaseRulesProvider`
-  (`leave/providers/database.py`) implements the full `RulesProvider` contract
-  over `EmployeeProfile`, `GradeEntitlement`, effective-dated `LeaveRule`,
-  `FinancialYear` and the ledger; `LEAVE_RULES_PROVIDER` now points at it.
-  Structured `LeaveRule.eligibility_rules` (D7 vocabulary — gender /
-  min_service / grade_range / employee_category) + `EmployeeProfile.gender`
-  (`M`/`F`) carry what the eligibility validator enforces (free-text
-  `eligibility` remains display-only). New authenticated-only (non-HR)
-  endpoints `GET /api/v1/leave/my/overview/` and
-  `GET /api/v1/leave/my/leave-types/` back the dashboard. Seed commands
-  (`seed_dev_users`, `seed_approvals_dev`) share idempotent defaults via
-  `leave/defaults.py` (entitlement bands A–C 21 / D–G 24 / H–U 30, built-in
-  leave types with rules + eligibility, financial year covering today) and
-  now run against the real provider. Frontend: `lib/leave-overview.ts` +
-  `/api/leave/my/overview` + `/api/leave/leave-types` Next proxies,
-  `lib/services/leaveTypes.ts` real fetch (replaces the Unit-4 mock), and the
-  dashboard now shows the real employee record (grade, designation,
-  department, category, gender, appointment date, financial year,
-  entitlement/used/available) instead of hard-coded stat cards, with the
-  "Awaiting My Approval" card fed by the real `approvals/capabilities` count.
-  Verified: backend full suite 643 OK (serial + `--parallel auto`),
-  `makemigrations --check` clean; frontend 277 tests OK, `tsc --noEmit`
-  clean, `eslint` clean, `npm run build` clean.
+  **Implementation complete (2026-09-25), backend only.** New `notifications/`
+  app: `Notification` model + migration `0001_initial` (spec §1 verbatim —
+  channel/status enums, event_type, recipient FK, email_to/subject/body,
+  attempts/error, application_id/target_object_id UUID correlators, ordering
+  `-created_at`, index `(status, created_at)`). `send_notification(...)`
+  persists one row per active user with an email and enqueues
+  `notifications.tasks.deliver_notification` via django-q2 (no Redis — Postgres
+  ORM broker); optional `send_sync_callbacks` observes rows. Task is
+  idempotent, `select_for_update` + `attempts += 1`, flips SENT/`sent_at` or
+  FAILED/`error` with `fail_silently=False`, and guards empty SMTP credentials
+  with a clear FAILED error. `notifications/templates.py` holds 13 builders
+  keyed by event type (subject + plain text + minimal HTML).
+  `dispatcher.dispatch(kind, event)` resolves `settings.NOTIFICATION_DISPATCHER`
+  (`"off"`/`"on"`/dotted path, default `"on"`, tests `"off"`), always returns
+  `None` so the Unit 16 side-effect-free emit contract holds. `subscribers.py`
+  maps approval / cancellation / delegation / reassignment and the submission
+  signal to recipients per spec §Recipients. Wiring: `workflows/events.py`
+  adds `DelegationEvent`/`ReassignmentEvent` dataclasses + `emit_*`
+  dispatchers; `leave/cancellations/events.py::emit` dispatches and still
+  honours `set_notification_state` (via a sync callback that flips
+  `employee_notification_state` sent/failed after delivery);
+  `workflows/approval.py` enriches the payload with
+  `approver`/`comment`/`decision_id`; delegation approve/reject/cancel and
+  `reassign_application` emit on commit. Depth-1 HR surface: view-only
+  `NotificationAdmin` + `GET /api/v1/notifications/?status=failed`
+  (IsAuthenticated + `IsHRRole`) + serializer. Settings: base.py SMTP env
+  block with Google defaults + `DEFAULT_FROM_EMAIL`
+  `"LUANAR Leave <noreply@luanar.ac.mw>"`; `.env.example` email block; test.py
+  keeps locmem backend + `NOTIFICATION_DISPATCHER = "off"`. **Verified:** full
+  scoped suite `notifications workflows users leave` 642 OK (serial
+  `--parallel 1`), `manage.py check` clean, `makemigrations --check` clean,
+  frontend untouched.
+  **Pre-existing seed fix included (out of scope, approved):** the
+  `seed_approvals_dev._cancellation_scenarios` windows were calendar-offset
+  time bombs — a single-day demo that lands on a Saturday breaks the seed for
+  everyone (e.g. a Friday anchor +8d lands on Saturday). Now a week-end-opening
+  window shifts to the next working day and side-steps already-claimed
+  same-employee windows; the `today+14`/`today+12` windows asserted verbatim by
+  `workflows/tests_seed_cancellations.py` are returned exactly as computed.
+  See `troubleshooting-notes.md`.
 
 ## Completed (Unit 11)
 
@@ -706,13 +722,10 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-  Unit 21 — Workflow-to-Approver Integration: connect HR workflow
-  configuration to real submitted applications (resolve the applicable
-  workflow, route to the correct responsible approver, sequential progression,
-  mandatory stages, department/faculty routing, delegated approvers and
-  reassigned applications). Removes hard-coded development workflows; verify
-  against the existing approvals API (Unit 16) and assignment policy. Depends
-  on HR Units 6–9 and Employee/Approver Units 14–17.
+  Unit 23 — HR Finalized Leave & Approved Document: balance deduction on final
+  approval, approved-document generation from the Unit 10 template, and the
+  post-approval audit aggregation surface. Depends on Units 10, 11, 16, 18, 22
+  (the notification/email hooks this unit added).
 
 ## Open Questions
 
@@ -744,6 +757,28 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Unit 22 email notifications complete (2026-09-25):** backend-only (frontend
+  untouched per spec — the depth-1 API failure list is served, not consumed).
+  See Current Goal. Out of scope (spec §5): django-q2 `Scheduler` re-attempt for
+  FAILED rows — FAILED rows stay visible to HR via admin/API until Unit 24's
+  audit surface (a periodic retry can plug in there). Two Django 6.1 gotchas
+  recorded in `troubleshooting-notes.md`:
+  `django.test.utils.captureOnCommitCallbacks` is now a
+  `TransactionTestCase.captureOnCommitCallbacks` **classmethod** (the old
+  module-level import is gone), and the seed date time bomb noted below.
+- **Seed date time bomb (2026-09-25, fixed in unit-22):**
+  `workflows/management/commands/seed_approvals_dev.py::_cancellation_scenarios`
+  computed demo windows from fixed day-offsets with no weekend guard, so on a
+  Friday anchor the `starts(8, 0)` "tomorrow" demo opened on Saturday →
+  `submit_application` rejected it (`start_date: A weekend …` + `end_date: This
+  date range contains no working days.`), failing `SeedApprovalsDevTests` and
+  `SeedCancellationsTest` for the entire suite. Fix: week-end-opening windows
+  shift to the next working day and nudge past already-claimed same-employee
+  windows; the `today+14` / academic `today+12` windows pinned by
+  `workflows/tests_seed_cancellations.py` are returned exactly. Brute-forced
+  all 7 anchor weekdays — green except the pre-existing pinned-offset anchors
+  that were already invalid. Applied to the unit-22 PR after approval (it was
+  reproduced on the pristine base first, so it is genuinely pre-existing).
 - **Troubleshooting log introduced (2026-09-23):** added
   `context/troubleshooting-notes.md` — a standing log of errors, root causes,
   and fixes. Mandate recorded in `context/AGENTS.md`: every error/bug/debugging

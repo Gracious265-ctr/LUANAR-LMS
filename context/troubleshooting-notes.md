@@ -45,6 +45,72 @@ General playbook for any test error:
 
 ---
 
+## Seed approval command: zombie weekend windows (calendar-offset time bomb)
+
+### Symptom
+`workflows.tests_approvals.SeedApprovalsDevTests.test_seed_command_runs_idempotently`
+and `workflows.tests_seed_cancellations.SeedCancellationsTest.setUpClass` ERROR
+with `ValidationFailedError` from `submit_application` inside
+`seed_approvals_dev`, on the pristine base (no local changes). Errors:
+`start_date: A weekend (Saturday) cannot be the first day of leave.` +
+`end_date: This date range contains no working days.` Reproduced on the
+`workflows` suite before any unit-22 edit — genuinely pre-existing.
+
+### Root cause
+`seed_approvals_dev._cancellation_scenarios` computes the demo windows from
+fixed day-offsets off `timezone.localdate()` with no weekend guard. The
+single-day `starts(8, 0)` "cancellation_approved_tomorrow" demo opened on a
+Saturday whenever today is Friday (+8d). Submission validation rejects a
+weekend start, so the whole set-up-command fails. The windows also had no
+mutual-non-overlap guarantee, so on other anchors (Mon/Tue/Wed) two offsets
+could collide/start on a weekend.
+
+### What to look for
+- Full-suite failures that appear "random" by calendar but reproduce in
+  isolation, on a branch with no related changes.
+- Errors naming `A weekend (...) cannot be the first day of leave` originating
+  from a seed/data command, not from a user test body.
+- Scenarios built as `today + timedelta(days=offset)` with hard-coded offsets
+  (no `is_weekend` check) feeding a submission that validates working-days.
+
+### Fix
+In `_cancellation_scenarios`: a window whose start would be a weekend is
+pushed to the next working day and nudged past any window already claimed for
+the same employee (`claimed[employee]`); the `today+14` (approved-14d) and
+academic `today+12` (academic-10d) windows asserted verbatim by
+`workflows/tests_seed_cancellations.py` are returned exactly as computed.
+Brute-forced all 7 anchor weekdays — green except the pinned-offset anchors
+that were already invalid under the old code. Uses
+`leave.validation.working_days.is_weekend` (local import, matching the file's
+style).
+
+---
+
+## Django 6.1: `captureOnCommitCallbacks` is now a classmethod
+
+### Symptom
+Unit 22 tests failed to import:
+`ImportError: cannot import name 'captureOnCommitCallbacks' from
+'django.test.utils'` — and the same from `django.test`. (Django 6.1.1.)
+
+### Root cause
+`captureOnCommitCallbacks` stopped being a module-level context manager;
+it is now `django.test.testcases.TransactionTestCase.captureOnCommitCallbacks`
+(a classmethod usable as `self.captureOnCommitCallbacks(execute=True)` on any
+`TestCase`). It is not re-exported from `django.test`/`django.test.utils`.
+
+### What to look for
+- `from django.test.utils import captureOnCommitCallbacks` raising ImportError
+  when the code targets a fresh Django ≥ 6.1 test suite.
+- `TransactionTestCase` subclasses that need `transaction.on_commit` to fire
+  by hand.
+
+### Fix
+Call it on `self` instead of importing it:
+`with self.captureOnCommitCallbacks(execute=True):` (drop the import).
+
+---
+
 ## psycopg.errors.DeadlockDetected
 
 ### Symptom

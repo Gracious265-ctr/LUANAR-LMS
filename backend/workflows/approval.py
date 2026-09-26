@@ -93,7 +93,12 @@ def decide(
                     action=action,
                     cycle=application.submission_cycle,
                     occurred_at=timezone.now(),
-                    payload={"status": application.status},
+                    payload={
+                        "status": application.status,
+                        "approver": actor.get_full_name() or actor.username,
+                        "comment": normalized,
+                        "decision_id": str(decision.id),
+                    },
                 )
             )
         )

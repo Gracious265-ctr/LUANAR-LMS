@@ -236,19 +236,42 @@ class Command(BaseCommand):
     def _cancellation_scenarios(self):
         """Unit 18 block (section 3.10): dates relative to today so they rotate.
 
-        Windows are 5-day blocks kept mutually non-overlapping (the submit
-        service rejects overlapping leave for the same employee), ordered so
-        each scenario submits against already-finalized earlier ones. Annual
-        leave needs 5 working days notice, so the tomorrow/today/yesterday demos
-        submit with a future window and are then backdated by
-        ``_cancellation_post_step`` — the start-date guard is what the demo
-        exercises.
-        """
-        today = timezone.localdate()
+        Windows are kept mutually non-overlapping (the submit service rejects
+        overlapping leave for the same employee), ordered so each scenario
+        submits against already-finalized earlier ones. Annual leave needs 5
+        working days notice, so the tomorrow/today/yesterday demos submit with
+        a future window and are then backdated by ``_cancellation_post_step``
+        — the start-date guard is what the demo exercises.
 
-        def starts(offset_days, width_days=4):
+        A window that would open on a weekend is pushed to the next working
+        day (the submit service rejects a weekend start) and nudged past any
+        window already claimed for the same employee, so overlapping windows
+        never reach the submit call whichever weekday today is. The
+        ``today + 14`` (approved-14d) and ``today + 12`` (academic-10d) windows
+        are asserted verbatim by ``workflows/tests_seed_cancellations.py`` and
+        are therefore returned exactly as computed.
+        """
+        from leave.validation.working_days import is_weekend
+
+        today = timezone.localdate()
+        pinned = {
+            ("employee@test.luanar", 14): today + timedelta(days=14),
+            ("academic@test.luanar", 12): today + timedelta(days=12),
+        }
+        claimed = {}
+
+        def starts(offset_days, width_days=4, employee="employee@test.luanar"):
             start = today + timedelta(days=offset_days)
-            return start.isoformat(), (start + timedelta(days=width_days)).isoformat()
+            claimed_for = claimed.setdefault(employee, [])
+            if (employee, offset_days) in pinned:
+                end = start + timedelta(days=width_days)
+                claimed_for.append((start, end))
+                return start.isoformat(), end.isoformat()
+            while is_weekend(start) or any(start <= end for _, end in claimed_for):
+                start += timedelta(days=1)
+            end = start + timedelta(days=width_days)
+            claimed_for.append((start, end))
+            return start.isoformat(), end.isoformat()
 
         return [
             # Employee A — administration workflow (hod -> dean -> registrar -> dvc).
@@ -260,7 +283,7 @@ class Command(BaseCommand):
             ("cancellation_approved_maternity", "employee@test.luanar", "Maternity", *starts(200), "hod,dean,registrar,dvc"),
             ("cancellation_rejected_app", "employee@test.luanar", "Annual", *starts(33, 0), "reject@hod"),
             # Employee B — academic workflow (supervisor -> hod -> registrar -> dvc).
-            ("cancellation_academic_10d", "academic@test.luanar", "Annual", *starts(12), "supervisor,hod,registrar,dvc"),
+            ("cancellation_academic_10d", "academic@test.luanar", "Annual", *starts(12, employee="academic@test.luanar"), "supervisor,hod,registrar,dvc"),
         ]
 
     def _cancellation_post_step(self, key, app, employee):
