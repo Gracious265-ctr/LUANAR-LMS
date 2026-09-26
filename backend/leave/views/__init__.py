@@ -13,6 +13,9 @@ from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
+from documents.models import ApprovedLeaveDocument
+from workflows.policies import can_view_approved_document
+
 from ..models import (
     FinancialYear,
     GradeEntitlement,
@@ -34,6 +37,7 @@ from ..serializers import (
 )
 from ..services import documents, normalize_grade, resolve_grade_entitlement
 from ..services.working_days import calculate_working_days
+from ..storage import get_storage_backend
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +241,37 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
         days = calculate_working_days(start, end)
         return Response({"days": days})
+
+    @action(detail=True, methods=["get"], url_path="approved-document")
+    def approved_document(self, request, *args, **kwargs):
+        """Stream the official approved-leave PDF for this application.
+
+        Visible to the employee, workflow members and HR only (Unit 23);
+        anything else is 404 so existence is never leaked. Mirrors the Unit 19
+        ``content`` action — the application is resolved directly rather than
+        through ``get_object`` so the ``IsOwner`` scoping never blocks
+        approvers and HR.
+        """
+        application = LeaveApplication.objects.filter(id=self.kwargs["pk"]).first()
+        if (
+            application is None
+            or not can_view_approved_document(request.user, application)
+        ):
+            raise Http404(
+                "No approved document matches the given query."
+            )
+        document = ApprovedLeaveDocument.objects.filter(
+            application=application
+        ).first()
+        if document is None:
+            raise Http404("No approved document matches the given query.")
+        stream = get_storage_backend().open(document.file_path)
+        return FileResponse(
+            stream,
+            content_type=document.content_type,
+            as_attachment=bool(request.query_params.get("download")),
+            filename=document.file_name,
+        )
 
 
 class LeaveDocumentConfigView(APIView):

@@ -18,7 +18,7 @@ from ..models import (
     LeaveBalanceTransaction,
     LeaveType,
 )
-from ..providers import get_provider
+from .. import providers
 from .balance import BalanceProvider, DeductionInfo
 
 GENERATED_LEAVE_TYPE_NAMES = {
@@ -55,7 +55,7 @@ class FixtureBalanceProvider(BalanceProvider):
                 leave_type_id=ledger_row.leave_type_id,
             )
 
-        provider = get_provider()
+        provider = providers.get_provider()
         today = timezone.localdate()
         rules = provider.get_leave_type_rules(
             leave_type_id, application.start_date or today
@@ -97,6 +97,64 @@ class FixtureBalanceProvider(BalanceProvider):
             days=ledger_row.days,
             financial_year=ledger_row.financial_year,
             leave_type_id=ledger_row.leave_type_id,
+        )
+
+    def record_deduction(
+        self, application: LeaveApplication
+    ) -> LeaveBalanceTransaction | None:
+        """Create/return the single DEDUCTION ledger row for an approved
+        application.
+
+        ``None`` when the leave type does not deduct annual leave. The deciding
+        flag is read from the immutable ``rules_snapshot`` (invariant 12.5) —
+        configuration changes after submission never alter the record; a legacy
+        row with no snapshot falls back to the live rules provider so an
+        approved application is never silently left undeducted. An existing
+        deduction row is returned untouched (the Unit 18 fixtures seed one for
+        the cancellation scenarios), so a repeat finalisation never duplicates
+        or rewrites the ledger.
+        """
+        snapshot = application.rules_snapshot or {}
+        snapshot_flag = (snapshot.get("leave_type") or {}).get(
+            "deducts_annual_balance"
+        )
+        if snapshot_flag is None:
+            provider = providers.get_provider()
+            rules = provider.get_leave_type_rules(
+                application.leave_type_id, application.start_date or timezone.localdate()
+            )
+            deducts = bool(rules is not None and rules.deducts_annual_balance)
+        else:
+            deducts = bool(snapshot_flag)
+        if not deducts:
+            return None
+
+        existing = LeaveBalanceTransaction.objects.filter(
+            application=application,
+            type=LeaveBalanceTransaction.Type.DEDUCTION,
+        ).first()
+        if existing is not None:
+            return existing
+
+        financial_year = application.financial_year_label
+        if not financial_year:
+            provider = providers.get_provider()
+            fiscal = provider.get_financial_year_for(
+                application.start_date or timezone.localdate()
+            )
+            financial_year = fiscal.label if fiscal else ""
+        if not financial_year:
+            return None
+
+        days = application.working_days or application.calculated_days or 0
+        return LeaveBalanceTransaction.objects.create(
+            employee=application.employee,
+            financial_year=financial_year,
+            leave_type=_resolve_leave_type(application),
+            application=application,
+            type=LeaveBalanceTransaction.Type.DEDUCTION,
+            days=Decimal(str(days)),
+            carry_forward_eligible=False,
         )
 
     def record_restoration(

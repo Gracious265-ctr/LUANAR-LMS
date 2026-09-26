@@ -10,6 +10,7 @@ import logging
 
 from rest_framework import serializers
 
+from documents.models import ApprovedLeaveDocument
 from leave.models import SupportingDocument
 from leave.providers import get_provider
 from leave.providers.base import LeaveBalanceUnavailableError
@@ -97,6 +98,7 @@ class ApprovalDetailSerializer(serializers.Serializer):
             },
             "balance": balance,
             "leave_history": get_leave_history(view_access, application),
+            "approved_document": self._approved_document(application),
             "documents": [
                 {
                     "id": str(document.id),
@@ -170,6 +172,20 @@ class ApprovalDetailSerializer(serializers.Serializer):
                 for revision in revisions
                 if revision.revision_number > 1
             ],
+        }
+
+    def _approved_document(self, application) -> dict | None:
+        document = ApprovedLeaveDocument.objects.filter(
+            application=application
+        ).first()
+        if document is None:
+            return None
+        return {
+            "id": str(document.id),
+            "generated_at": _iso(document.generated_at),
+            "content_url": self.context["request"].build_absolute_uri(
+                f"/api/v1/leave-applications/{application.id}/approved-document/"
+            ),
         }
 
     def _balance(self, application) -> dict:

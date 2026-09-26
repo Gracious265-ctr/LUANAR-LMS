@@ -19,6 +19,7 @@ from leave.models import (
     LeaveApplication,
     LeaveBalanceTransaction,
 )
+from leave.validation.working_days import is_weekend
 from workflows.management.commands.seed_approvals_dev import (
     FINANCIAL_YEAR_LABEL,
     FIRST_RESERVED_SUFFIX,
@@ -30,6 +31,15 @@ CANCEL_SLOT_BASE = len(SCENARIOS)
 
 def _ref(slot: int) -> str:
     return f"LV-{FINANCIAL_YEAR_LABEL}-{FIRST_RESERVED_SUFFIX + slot:06d}"
+
+
+def _pinned_start(offset_days: int):
+    """The seed's pinned ``today + offset`` window, weekend-shifted like the
+    command does so a Saturday/Sunday anchor never breaks the scenario."""
+    start = timezone.localdate() + timedelta(days=offset_days)
+    while is_weekend(start):
+        start += timedelta(days=1)
+    return start
 
 
 class SeedCancellationsTest(TestCase):
@@ -75,7 +85,7 @@ class SeedCancellationsTest(TestCase):
     def test_approved_14d_carries_5_day_deduction_and_request_action(self):
         app = self.approved_14d
         self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
-        self.assertEqual(app.start_date, self.today + timedelta(days=14))
+        self.assertEqual(app.start_date, _pinned_start(14))
         deduction = LeaveBalanceTransaction.objects.get(
             application=app, type=LeaveBalanceTransaction.Type.DEDUCTION
         )
@@ -127,7 +137,7 @@ class SeedCancellationsTest(TestCase):
     def test_academic_app_has_open_request_at_stage_1_of_2(self):
         app = self.academic_10d
         self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
-        self.assertEqual(app.start_date, self.today + timedelta(days=12))
+        self.assertEqual(app.start_date, _pinned_start(12))
         self.assertTrue(
             LeaveBalanceTransaction.objects.filter(
                 application=app, type=LeaveBalanceTransaction.Type.DEDUCTION

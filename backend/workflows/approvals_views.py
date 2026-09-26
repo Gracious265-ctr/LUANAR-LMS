@@ -29,9 +29,9 @@ from .policies import get_view_access
 from .approval import decide
 
 
-def _review_payload(application, user, view_access) -> dict:
+def _review_payload(application, user, view_access, request) -> dict:
     return ApprovalDetailSerializer(
-        application, context={"user": user, "view_access": view_access}
+        application, context={"user": user, "view_access": view_access, "request": request}
     ).data
 
 
@@ -153,7 +153,7 @@ class ApprovalDetailView(APIView):
         application = _load_application(application_id)
         view_access = _view_access_or_404(request.user, application)
         return Response(
-            _review_payload(application, request.user, view_access)
+            _review_payload(application, request.user, view_access, request)
         )
 
 
@@ -201,7 +201,7 @@ class ApprovalDecisionView(APIView):
 
         application = _load_application(application.id)
         view_access = _view_access_or_404(request.user, application)
-        return Response(_review_payload(application, request.user, view_access))
+        return Response(_review_payload(application, request.user, view_access, request))
 
 
 class ApprovalDocumentDownloadView(APIView):

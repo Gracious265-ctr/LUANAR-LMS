@@ -5,11 +5,20 @@ deducted and no email is sent by any decision here). Unit 22 routes every
 event through the notification dispatcher (see ``notifications/dispatcher.py``);
 the dataclass contracts are unchanged and every ``emit_*`` function still
 returns ``None`` so the side-effect-free event contract holds.
+
+Unit 23 finalises a finally-approved application: the annual-leave balance
+deduction and the official approved-leave PDF are produced in
+``documents.finalisation.finalise_approved_application``, called here for
+``application_finalised`` events only. It is gated by
+``settings.APPROVAL_FINALISATION`` (``"on"`` by default, ``"off"`` in the test
+settings) so the rest of the suite stays free of ledger rows and stored files.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
+
+from django.conf import settings
 
 from notifications.dispatcher import dispatch
 
@@ -56,7 +65,12 @@ class ReassignmentEvent:
 
 def emit_approval_event(event: ApprovalEvent) -> None:
     """Deliver an approval event to the notification subscriber."""
-    return dispatch("approval", event)
+    dispatch("approval", event)
+    if event.kind == "application_finalised" and _finalisation_enabled():
+        from documents.finalisation import finalise_approved_application
+
+        finalise_approved_application(event.application_id)
+    return None
 
 
 def emit_delegation_event(event: DelegationEvent) -> None:
@@ -67,3 +81,7 @@ def emit_delegation_event(event: DelegationEvent) -> None:
 def emit_reassignment_event(event: ReassignmentEvent) -> None:
     """Deliver a reassignment event to the notification subscriber."""
     return dispatch("reassignment", event)
+
+
+def _finalisation_enabled() -> bool:
+    return (getattr(settings, "APPROVAL_FINALISATION", "on") or "on").strip() != "off"
