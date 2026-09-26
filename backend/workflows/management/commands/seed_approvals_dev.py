@@ -249,7 +249,10 @@ class Command(BaseCommand):
         never reach the submit call whichever weekday today is. The
         ``today + 14`` (approved-14d) and ``today + 12`` (academic-10d) windows
         are asserted verbatim by ``workflows/tests_seed_cancellations.py`` and
-        are therefore returned exactly as computed.
+        are returned exactly as computed on a working-day anchor; when the
+        anchor itself is a weekend (Saturday/Sunday), they too shift to the
+        next working day so the seed never breaks — the test asserts the same
+        shifted dates.
         """
         from leave.validation.working_days import is_weekend
 
@@ -264,6 +267,9 @@ class Command(BaseCommand):
             start = today + timedelta(days=offset_days)
             claimed_for = claimed.setdefault(employee, [])
             if (employee, offset_days) in pinned:
+                if is_weekend(start):
+                    while is_weekend(start):
+                        start += timedelta(days=1)
                 end = start + timedelta(days=width_days)
                 claimed_for.append((start, end))
                 return start.isoformat(), end.isoformat()

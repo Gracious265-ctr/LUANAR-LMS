@@ -846,6 +846,22 @@ Update this file after every meaningful implementation change.
 
 ## Session Notes
 
+- **Unit 23 rebase over unit-22 (2026-09-26):** after unit-22 merged into
+  `development`, PR #7 reported "cannot merge automatically". Rebased
+  `feature/unit-23` onto `origin/development` (`56286e0`). Three textual
+  conflicts resolved: `config/settings/test.py` (keep both
+  `NOTIFICATION_DISPATCHER="off"` and `APPROVAL_FINALISATION="off"`),
+  `workflows/events.py` (unit-22's dispatcher kept; unit-23's
+  `finalise_approved_application` hooked onto the same `application_finalised`
+  seam after the `dispatch("approval", event)` call, still gated by
+  `APPROVAL_FINALISATION` and returning `None`), and the tracker (units 22+23
+  phase/goal/next-up merged). Then two real pre-existing bugs surfaced with the
+  suite finally run start-to-finish in one process: the pinned `today+14`/`+12`
+  seed windows still broke on a Saturday anchor, and
+  `fixture_balance.get_deduction`'s import-time `get_provider` binding ignored
+  the test stub depending on import order. Both fixed (see
+  `troubleshooting-notes.md`); full backend suite 708 OK, `check` +
+  `makemigrations --check` clean.
 - **Unit 22 email notifications complete (2026-09-25):** backend-only (frontend
   untouched per spec — the depth-1 API failure list is served, not consumed).
   See Current Goal. Out of scope (spec §5): django-q2 `Scheduler` re-attempt for

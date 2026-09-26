@@ -18,7 +18,7 @@ from ..models import (
     LeaveBalanceTransaction,
     LeaveType,
 )
-from ..providers import get_provider
+from .. import providers
 from .balance import BalanceProvider, DeductionInfo
 
 GENERATED_LEAVE_TYPE_NAMES = {
@@ -55,7 +55,7 @@ class FixtureBalanceProvider(BalanceProvider):
                 leave_type_id=ledger_row.leave_type_id,
             )
 
-        provider = get_provider()
+        provider = providers.get_provider()
         today = timezone.localdate()
         rules = provider.get_leave_type_rules(
             leave_type_id, application.start_date or today
@@ -119,7 +119,7 @@ class FixtureBalanceProvider(BalanceProvider):
             "deducts_annual_balance"
         )
         if snapshot_flag is None:
-            provider = get_provider()
+            provider = providers.get_provider()
             rules = provider.get_leave_type_rules(
                 application.leave_type_id, application.start_date or timezone.localdate()
             )
@@ -138,7 +138,7 @@ class FixtureBalanceProvider(BalanceProvider):
 
         financial_year = application.financial_year_label
         if not financial_year:
-            provider = get_provider()
+            provider = providers.get_provider()
             fiscal = provider.get_financial_year_for(
                 application.start_date or timezone.localdate()
             )

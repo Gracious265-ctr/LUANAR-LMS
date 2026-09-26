@@ -84,6 +84,47 @@ that were already invalid under the old code. Uses
 `leave.validation.working_days.is_weekend` (local import, matching the file's
 style).
 
+**Follow-up (2026-09-26, exposed by the unit-23 rebase):** the pinned
+`today+14` / academic `today+12` windows were themselves still a time bomb —
+on a **Saturday/Sunday anchor** they land on a weekend and the seed dies at
+`starts(14)` (`cancellation_approved_14d`). The first fix only weekended
+the *unpinned* offsets. Now `starts()` weekend-shifts the pinned windows too
+and `workflows/tests_seed_cancellations.py` asserts the same shifted dates via
+a `_pinned_start(offset)` helper, so all 7 anchor weekdays finally pass.
+
+---
+
+## Unit 23: `fixture_balance.get_deduction` ignored the stub (import-time binding)
+
+### Symptom
+`leave.tests.test_cancellation.EligibilityTests.test_approved_future_returns_request`
+failed only when `documents.tests_approved_document` ran **before** it in the
+same process (`estimated_restoration_days` 0 != 5); green in isolation and
+green in the reverse order. Full suite failed at exactly that pair boundary.
+
+### Root cause
+`leave/cancellations/fixture_balance.py` did `from ..providers import
+get_provider` at module-import time. `StubProviderMixin.use_stub()` patches the
+module attribute `leave.providers.get_provider`, which does **not** rebind a
+name already imported into another module. Whether `get_deduction` saw the
+stub or the real `DatabaseRulesProvider` therefore depended on *when*
+`leave.cancellations.fixture_balance` was first imported in the process. Unit-23
+added `documents.tests_approved_document` (first-ever importer of
+`fixture_balance` before the cancellation suite), flipping the binding to the
+real provider, whose `get_leave_type_rules` returned `None` for the untested
+DB → `get_deduction` → `None` → estimate 0.
+
+### What to look for
+- A test pair whose pass/fail flips with ordering but both pass individually.
+- `from X import y` where a mixin patches `X.y`: patch the call site, not the
+  origin, or call through the module (`import X; X.y()`).
+
+### Fix
+`fixture_balance.py` now resolves the provider through the module at call time
+(`from .. import providers` + `providers.get_provider()`), so
+`use_stub()`'s patch of `leave.providers.get_provider` applies regardless of
+import order. Full suite 708 OK, both orders green.
+
 ---
 
 ## Django 6.1: `captureOnCommitCallbacks` is now a classmethod
