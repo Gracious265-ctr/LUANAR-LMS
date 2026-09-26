@@ -1,10 +1,13 @@
 import type { ApplicationDetail } from "@/lib/audit";
-import { AuditActionPill, auditChangesText } from "./audit-meta";
+import type { TimelineEntry } from "@/lib/leave-history";
+import { TimelineView } from "@/components/leave/timeline-view";
 
 export function ApplicationHistoryView({
   application,
+  entries = [],
 }: {
   application: ApplicationDetail;
+  entries?: TimelineEntry[];
 }) {
   return (
     <div className="space-y-6">
@@ -93,65 +96,9 @@ export function ApplicationHistoryView({
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          Reassignment history
+          Timeline
         </h3>
-        {application.reassignments.length === 0 ? (
-          <p className="text-sm text-text-muted">
-            This application has not been reassigned.
-          </p>
-        ) : (
-          <ul className="space-y-3 text-sm">
-            {application.reassignments.map((reassignment) => (
-              <li
-                key={reassignment.id}
-                className="rounded-md border border-border-default px-4 py-3"
-              >
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                  <span className="font-medium text-text-primary">
-                    {reassignment.to_approver_name}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(reassignment.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <div className="mt-1 text-text-secondary">
-                  {reassignment.reason}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          Audit trail
-        </h3>
-        {application.audit_entries.length === 0 ? (
-          <p className="text-sm text-text-muted">
-            No recorded events for this application.
-          </p>
-        ) : (
-          <ol className="relative space-y-4 border-l border-border-default pl-5">
-            {application.audit_entries.map((entry) => (
-              <li key={entry.id} className="relative text-sm">
-                <span className="absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full bg-brand-primary" />
-                <div className="flex flex-wrap items-center gap-2">
-                  <AuditActionPill action={entry.action} />
-                  <span className="font-medium text-text-primary">
-                    {entry.actor_name || `#${entry.actor}`}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(entry.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <div className="mt-1 text-text-secondary">
-                  {auditChangesText(entry)}
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
+        <TimelineView entries={entries} />
       </div>
     </div>
   );

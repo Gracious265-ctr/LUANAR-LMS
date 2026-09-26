@@ -4,12 +4,37 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 
+class ImmutableAuditQuerySet(models.QuerySet):
+    """QuerySet where bulk writes on the append-only table are impossible."""
+
+    def update(self, *args, **kwargs):
+        raise RuntimeError("Audit events are immutable.")
+
+    def delete(self):
+        raise RuntimeError("Audit events are immutable.")
+
+
+class AuditEventManager(models.Manager):
+    """Manager that makes bulk writes on an append-only table impossible."""
+
+    def get_queryset(self):
+        return ImmutableAuditQuerySet(self.model, using=self._db)
+
+    def update(self, *args, **kwargs):
+        raise RuntimeError("Audit events are immutable.")
+
+    def delete(self):
+        raise RuntimeError("Audit events are immutable.")
+
+
 class AuditEvent(models.Model):
     """An immutable, append-only record of a state change in the LMS.
 
     Used by Unit 14 submission and later units (approvals, reassignments,
     corrections) to write a thin history trail: what changed, by whom, from
-    which state to which, with a small metadata payload.
+    which state to which, with a small metadata payload. Rows are never
+    updated or deleted through the ORM (Unit 24); a parent row's database
+    cascade still removes an event when the parent genuinely goes away.
     """
 
     actor = models.ForeignKey(
@@ -35,11 +60,21 @@ class AuditEvent(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = AuditEventManager()
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["content_type", "object_id"], name="audit_target_idx"),
         ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise RuntimeError("Audit events are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise RuntimeError("Audit events are immutable.")
 
     def __str__(self) -> str:
         return f"AuditEvent({self.action} -> {self.new_state or '—'})"

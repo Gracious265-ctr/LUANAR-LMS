@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet
 
+from audit.admin import AuditedModelAdmin
+
 from .models import Delegation, Reassignment, Workflow, WorkflowStage
 from .services import validate_workflow_for_activation
 
@@ -79,7 +81,7 @@ class WorkflowAdminForm(forms.ModelForm):
 
 
 @admin.register(Workflow)
-class WorkflowAdmin(admin.ModelAdmin):
+class WorkflowAdmin(AuditedModelAdmin):
     form = WorkflowAdminForm
     list_display = (
         "name",

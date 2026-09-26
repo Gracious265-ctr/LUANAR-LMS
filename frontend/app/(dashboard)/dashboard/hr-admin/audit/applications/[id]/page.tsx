@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { ApplicationHistoryView } from "@/components/hr/application-history-view";
 import { getCurrentUser } from "@/lib/auth";
 import { getFinalizedApplication } from "@/lib/audit";
+import { getApplicationTimeline, type TimelineEntry } from "@/lib/leave-history";
 
 export default async function AuditApplicationDetailPage({
   params,
@@ -28,6 +29,15 @@ export default async function AuditApplicationDetailPage({
     notFound();
   }
 
+  let entries: TimelineEntry[] = [];
+  try {
+    const timeline = await getApplicationTimeline(id);
+    entries = timeline.entries;
+  } catch {
+    // The finalized detail is the source of truth for the summary; keep the
+    // history section empty rather than failing the whole page.
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -47,7 +57,7 @@ export default async function AuditApplicationDetailPage({
         </p>
       </div>
 
-      <ApplicationHistoryView application={application} />
+      <ApplicationHistoryView application={application} entries={entries} />
     </div>
   );
 }

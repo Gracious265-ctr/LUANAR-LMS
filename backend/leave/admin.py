@@ -2,6 +2,8 @@ from django import forms
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 
+from audit.admin import AuditedModelAdmin
+
 from .models import (
     FinancialYear,
     GradeEntitlement,
@@ -41,7 +43,7 @@ class GradeEntitlementAdminForm(forms.ModelForm):
 
 
 @admin.register(GradeEntitlement)
-class GradeEntitlementAdmin(admin.ModelAdmin):
+class GradeEntitlementAdmin(AuditedModelAdmin):
     form = GradeEntitlementAdminForm
     list_display = ("grade_start", "grade_end", "days", "effective_from")
     search_fields = ("grade_start", "grade_end")
@@ -53,14 +55,14 @@ class GradeEntitlementAdmin(admin.ModelAdmin):
 
 
 @admin.register(LeaveType)
-class LeaveTypeAdmin(admin.ModelAdmin):
+class LeaveTypeAdmin(AuditedModelAdmin):
     list_display = ("name", "code")
     search_fields = ("name", "code")
     ordering = ("name",)
 
 
 @admin.register(LeaveRule)
-class LeaveRuleAdmin(admin.ModelAdmin):
+class LeaveRuleAdmin(AuditedModelAdmin):
     list_display = (
         "leave_type",
         "max_duration_days",
@@ -103,7 +105,7 @@ class FinancialYearAdminForm(forms.ModelForm):
 
 
 @admin.register(FinancialYear)
-class FinancialYearAdmin(admin.ModelAdmin):
+class FinancialYearAdmin(AuditedModelAdmin):
     form = FinancialYearAdminForm
     list_display = ("start_date", "end_date", "is_active")
     list_filter = ("is_active",)
@@ -144,7 +146,7 @@ class PublicHolidayAdminForm(forms.ModelForm):
 
 
 @admin.register(PublicHoliday)
-class PublicHolidayAdmin(admin.ModelAdmin):
+class PublicHolidayAdmin(AuditedModelAdmin):
     form = PublicHolidayAdminForm
     list_display = ("name", "date")
     search_fields = ("name",)
