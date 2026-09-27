@@ -35,7 +35,8 @@ approvals/rejections/corrections/cancellations.
 
 - **The `audit` app becomes the authoritative reusable audit log.** A single
   generic `AuditEntry` model (`actor`, `action`, `target_type`, `target_id`,
-  `target_summary`, `detail` JSON with before/after values, `reason`,
+  `target_summary`, `detail` JSON (a before/after diff for configuration and
+  state changes; a flat payload for some actions), `reason`,
   `created_at`) plus a `record_audit(...)` service. Reusing one audit log avoids
   duplicating an audit implementation per domain (code-standards: no duplicate
   implementations, one authoritative business rule). This is the foundation
@@ -208,8 +209,12 @@ Work in the following order; verify each backend step before frontend work begin
   - `target_id` CharField (the polymorphic id — digits for int pks, uuid text
     for `LeaveApplication`).
   - `target_summary` CharField (human-readable target description).
-  - `detail` JSONField (`null=True, blank=True`) — `{"before": {...}, "after":
-    {...}}` limited to the changed fields; `"before": null` on creates.
+  - `detail` JSONField (`null=True, blank=True`) — **free-form**, not always a
+    diff. Configuration and state changes use `{"before": {...}, "after":
+    {...}}` limited to the changed fields, with `"before": null` on creates; other
+    actions store a flat payload instead (`document_generated` records the file,
+    `stage_skipped` records the stages the self-approval check bypassed). Readers
+    must not assume the diff shape — see "Superseded" below.
   - `reason` TextField (`blank=True, default=""`).
   - `created_at` DateTimeField (`auto_now_add`).
   - `Meta.ordering = ["-created_at"]` + index on `("target_type",
@@ -376,3 +381,36 @@ in the existing transaction (create/update serializers already run inside
   authoritative.
 - Admin mutations are outside the audited path in this unit (the API is the
   authoritative mutation surface); document this boundary in the tracker.
+
+## Superseded (2026-09-26) — `detail` is not always a before/after diff
+
+This spec, the model `help_text`, and the TypeScript `AuditEntry` type all stated
+that `detail` is a `{"before": ..., "after": ...}` diff. That was true of the
+configuration and state-change callers, but not of the field as a whole:
+`documents/tasks.py` writes a flat payload for `document_generated`, and
+`workflows/services.py` writes one for `stage_skipped`.
+
+`auditChangesText()` believed all three sources and did
+`Object.keys(entry.detail.after)` unguarded, so any audit page containing a
+`document_generated` or `stage_skipped` row died with
+`TypeError: Cannot convert undefined or null to object` — the whole HR audit view,
+not one row. The rows had been there all along; the view was simply never opened
+against a database containing them.
+
+Fixed in three places, because the wrong contract was recorded in all three:
+
+* `auditChangesText()` sniffs the shape — a non-null object `after` is a diff and
+  renders as `field: old → new`; anything else is summarised as `key: value`. Long
+  values are capped and the entry-level reason is only appended when the payload
+  does not carry its own, so `stage_skipped` does not print its reason twice.
+* `AuditEntry.detail` is typed `Record<string, unknown> | null`, not a fixed diff.
+* The model `help_text` now says free-form, with the two counter-examples
+  (`audit/migrations/0010_auditentry_detail_helptext.py`).
+
+Covered by five cases in `frontend/tests/audit-entries-table.test.tsx`, including
+the two real payload shapes, an empty `detail`, and an `after: null`.
+
+The general lesson, recorded here because it is the second time in this codebase
+that a guard designed to isolate failures hid a defect: the notification composer's
+`except Exception` swallowed a `FieldError` and the mail silently never sent. A
+catch-all is not a substitute for a test that asserts on the real payload.

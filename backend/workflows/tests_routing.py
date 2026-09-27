@@ -32,7 +32,14 @@ from users.models import EmployeeProfile
 
 from .models import ApprovalDecision, ApplicationStage, Delegation, Reassignment
 from .policies import get_decision_authority
-from .services import acting_approver_id, active_delegation_for, decide, reassign_application
+from .services import (
+    acting_approver_id,
+    acting_approver_identity,
+    acting_approver_map,
+    active_delegation_for,
+    decide,
+    reassign_application,
+)
 
 User = get_user_model()
 
@@ -237,6 +244,91 @@ class ReassignmentRoutingTests(RoutingBase):
         self.assertEqual(decision.approver_id, self.dean.id)
         app.refresh_from_db()
         self.assertEqual(app.current_stage.stage_order, 2)
+
+    def test_reassigning_away_from_a_delegated_approver_hands_over_cleanly(self):
+        """The old cover no longer applies once the spine has moved.
+
+        Reassignment is a spine write and delegation is a query-time overlay, so
+        pointing the spine at someone else takes the application out of the
+        original approver's delegation entirely.
+        """
+        self.delegation_for(self.supervisor, self.dean)
+        app = self.make_submitted()
+        self.assertEqual(acting_approver_id(app), self.dean.id)
+
+        reassign_application(
+            application=app, to_approver=self.hod, actor=self.hr, reason="Escalate"
+        )
+        app.refresh_from_db()
+
+        self.assertEqual(app.current_approver_id, self.hod.id)
+        self.assertEqual(acting_approver_id(app), self.hod.id)
+        self.assertIn(str(app.pk), self.pending_ids(self.hod))
+        self.assertNotIn(str(app.pk), self.pending_ids(self.dean))
+        self.assertNotIn(str(app.pk), self.pending_ids(self.supervisor))
+
+    def test_reassigning_to_an_away_approver_leaves_their_delegate_acting(self):
+        """Documented consequence, not an accident: the overlay wins.
+
+        Reassigning to an approver with active cover moves the spine to them, but
+        ``acting_approver_id`` then hands the application to *their* delegate.
+        The intervention is recorded and the approver owns it on paper while
+        someone else acts — which is why the pending queue reports the acting
+        approver alongside the responsible one.
+        """
+        self.delegation_for(self.hod, self.dvc)
+        app = self.make_submitted()
+
+        reassign_application(
+            application=app, to_approver=self.hod, actor=self.hr, reason="Escalate"
+        )
+        app.refresh_from_db()
+
+        self.assertEqual(app.current_approver_id, self.hod.id)
+        self.assertEqual(acting_approver_id(app), self.dvc.id)
+        self.assertTrue(get_decision_authority(self.dvc, app).can_decide)
+        self.assertFalse(get_decision_authority(self.hod, app).can_decide)
+        self.assertIn(str(app.pk), self.pending_ids(self.dvc))
+        self.assertNotIn(str(app.pk), self.pending_ids(self.hod))
+
+    def test_the_acting_approver_map_matches_the_single_row_resolver(self):
+        """The bulk resolver the queue uses must agree with ``acting_approver_id``."""
+        self.delegation_for(self.supervisor, self.dean)
+        delegated = self.make_submitted()
+        # Plain rows: the resolver only reads the spine, and the stub entitlement
+        # balance will not fund a second real submission. ``registrar`` has no
+        # cover, so it stands in for the undelegated case.
+        covered = self._pending_row(self.supervisor)
+        plain = self._pending_row(self.registrar)
+        unassigned = self._pending_row(None)
+        rows = [delegated, covered, plain, unassigned]
+
+        resolved = acting_approver_map(rows)
+
+        self.assertEqual(
+            resolved[delegated.pk], (self.dean.id, self.dean.get_full_name())
+        )
+        # The same cover applies to any application the supervisor holds.
+        self.assertEqual(
+            resolved[covered.pk], (self.dean.id, self.dean.get_full_name())
+        )
+        self.assertEqual(
+            resolved[plain.pk], (self.registrar.id, self.registrar.get_full_name())
+        )
+        self.assertNotIn(unassigned.pk, resolved)
+        for app in rows:
+            self.assertEqual(
+                acting_approver_identity(app)[0], acting_approver_id(app)
+            )
+
+    def _pending_row(self, approver):
+        return LeaveApplication.objects.create(
+            employee=self.employee,
+            current_approver=approver,
+            status=LeaveApplication.Status.SUBMITTED,
+            end_date=EARLIEST_ANNUAL_START + timedelta(days=3),
+            **ANNUAL,
+        )
 
 
 class WorkflowGateTests(StubProviderMixin, TestCase):

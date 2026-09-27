@@ -174,13 +174,48 @@ class StubRulesProvider:
         )
 
 
+def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | None:
+    """The lowest-id active user holding ``role``, optionally not ``exclude``.
+
+    Mirrors ``workflows.providers._first_active_user_id`` plus the applicant's
+    own id, so a stubbed chain never resolves a stage to the applicant — a
+    configuration ``assign_workflow`` now rejects outright.
+    """
+    from django.contrib.auth import get_user_model
+
+    qs = get_user_model().objects.filter(role=role, is_active=True)
+    if exclude is not None:
+        qs = qs.exclude(id=exclude)
+    return qs.order_by("id").values_list("id", flat=True).first()
+
+
+def register_chain_approvers(
+    stub, *roles: str, prefix: str = "approver"
+) -> dict[str, object]:
+    """Register one distinct active approver per role and return them by role.
+
+    Submission-focused tests only care about what submission does, not about who
+    approves. Rather than repeating four ``register_approver`` calls in every
+    ``setUp``, they call this to obtain a chain the product would accept.
+    """
+    chain = roles or ("supervisor", "hod", "registrar", "dvc")
+    approvers = {
+        role: make_user(f"{prefix}-{role}@test.luanar", role=role) for role in chain
+    }
+    for role, user in approvers.items():
+        stub.workflow.register_approver(role, user)
+    return approvers
+
+
 class StubWorkflowProvider:
     """Controllable in-memory workflow provider (Unit 16).
 
-    Mirrors the ``WorkflowProvider`` protocol. Roles not registered with an
-    explicit approver fall back to the application's own employee, so existing
-    submission tests keep passing without extra setup; approval tests register
-    real approver users per role.
+    Mirrors the ``WorkflowProvider`` protocol. A role registered with
+    :meth:`register_approver` uses that user. An unregistered role resolves to
+    the lowest-id active user holding it, or — when no such user exists — to a
+    lazily created filler approver for that role. Either way the stage never
+    resolves to the applicant, which ``assign_workflow`` now rejects outright,
+    so the double only ever produces chains the product would accept.
     """
 
     def __init__(self):
@@ -189,12 +224,28 @@ class StubWorkflowProvider:
         self.strict = False
         self.cancellation_roles = ("supervisor", "hod")
         self.block_cancellation = False
+        self._fillers: dict[str, int] = {}
 
     def set_chain(self, *roles: str) -> None:
         self.default_chain = tuple(roles)
 
     def register_approver(self, role: str, user) -> None:
         self.approvers[role] = user.id
+
+    def _filler_approver_id(self, role: str) -> int:
+        """A stable, non-applicant approver for an otherwise unstaffed role."""
+        from django.db import IntegrityError, transaction
+
+        if role not in self._fillers:
+            try:
+                with transaction.atomic():
+                    user = make_user(f"stub-filler-{role}@test.luanar", role=role)
+            except IntegrityError:
+                user = get_user_model().objects.get(
+                    username=f"stub-filler-{role}@test.luanar"
+                )
+            self._fillers[role] = user.id
+        return self._fillers[role]
 
     def get_stage_definitions(self, application):
         from workflows.models import STAGE_ROLE_LABELS
@@ -204,7 +255,11 @@ class StubWorkflowProvider:
         for order, role in enumerate(self.default_chain, start=1):
             approver_id = self.approvers.get(role)
             if approver_id is None and not self.strict:
-                approver_id = application.employee_id
+                approver_id = _active_user_id_for_role(
+                    role, exclude=application.employee_id
+                )
+                if approver_id is None:
+                    approver_id = self._filler_approver_id(role)
             definitions.append(
                 StageDefinition(
                     order=order,

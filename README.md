@@ -249,14 +249,15 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/workflows/` | Create a workflow with its ordered approval stages (draft unless `effective_from` is sent; activating/scheduling validates approver availability and scope conflicts) |
 | GET | `/api/v1/workflows/{id}/` | Retrieve one workflow with its stages |
 | PATCH | `/api/v1/workflows/{id}/` | Update a workflow (replaces its stage list; `effective_from`/`is_active` may be sent with the same activation validation) |
-| GET | `/api/v1/delegations/` | List delegation requests (HR-only, paginated, newest first; `state=` and `approver=` search filters) |
+| GET | `/api/v1/delegations/` | List delegation requests (paginated, newest first; `state=` and `approver=` search filters). HR sees every request; an approver sees only the delegations they are a party to |
 | POST | `/api/v1/delegations/` | Create a delegation request (approver self-service forces `approver` to the authenticated user; HR can create on behalf) |
-| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR-only) |
+| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR sees any; an approver sees only their own, otherwise 404) |
+| GET | `/api/v1/delegations/candidates/` | Active approver-role users the caller may nominate as delegate, excluding the caller (approver self-service; avoids opening the HR-only employee list) |
 | POST | `/api/v1/delegations/{id}/approve/` | HR approves (mandatory `decision_reason` and `delegate`; rejects period overlap with an approved delegation) |
 | POST | `/api/v1/delegations/{id}/reject/` | HR rejects with a mandatory `decision_reason` |
 | POST | `/api/v1/delegations/{id}/cancel/` | HR cancels a scheduled/active approved delegation with a mandatory `decision_reason` |
-| GET | `/api/v1/reassignments/pending/` | Intervention queue: submitted applications, newest first, with employee, leave type, dates/days, reference, and `current_approver` (HR-only) |
-| POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver` and records history (HR-only) |
+| GET | `/api/v1/reassignments/pending/` | Intervention queue: submitted applications, newest first, with employee, leave type, dates/days, reference, `current_approver`, and the `acting_approver` / `is_delegated` that Unit 21 routing makes authoritative (HR-only) |
+| POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver`, records history, and emails both affected approvers on commit (HR-only) |
 | GET | `/api/v1/reassignments/` | Reassignment history, paginated newest first; `application=<uuid>` filter (HR-only) |
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |

@@ -171,6 +171,15 @@ class Delegation(models.Model):
                 | models.Q(ends_on__gte=models.F("starts_on")),
                 name="delegation_ends_on_gte_starts_on",
             ),
+            # The service-level ``open_request_exists`` check gives the friendly
+            # 400, but it is a bare SELECT ... EXISTS and two concurrent requests
+            # for the same approver could both pass it. This partial unique
+            # index is the database backstop that closes the race.
+            models.UniqueConstraint(
+                fields=["approver"],
+                condition=models.Q(status="requested"),
+                name="one_open_request_per_approver",
+            ),
         ]
 
     @property
@@ -277,6 +286,13 @@ class ApplicationStage(models.Model):
         # (Unit 18). The application leaves the approver queues and any decision
         # on it returns 409.
         CANCELLED = "cancelled", "Cancelled"
+        # A configured stage that was never activated because its resolved
+        # approver is the applicant themself. An employee who is also an
+        # approver must never be the approver of record for their own leave, so
+        # the stage is bypassed and the application moves to the next approver
+        # in the sequence. The row is kept so the chain stays contiguous and the
+        # snapshot keeps recording the workflow as HR configured it.
+        SKIPPED = "skipped", "Skipped — applicant is the approver"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",

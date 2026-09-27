@@ -32,6 +32,7 @@ export function PendingApplicationsTable({
             <th className="py-3 pr-4">Leave type</th>
             <th className="py-3 pr-4">Dates</th>
             <th className="py-3 pr-4">Current approver</th>
+            <th className="py-3 pr-4">Acting for them</th>
             <th className="py-3" />
           </tr>
         </thead>
@@ -68,6 +69,25 @@ export function PendingApplicationsTable({
                 ) : (
                   <span className="inline-block rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
                     Unassigned
+                  </span>
+                )}
+              </td>
+              <td className="py-3 pr-4">
+                {app.is_delegated ? (
+                  /* Spelled out rather than a bare name: reassigning to someone
+                     who is away does not move the work to them, and this is the
+                     one place HR can see that before acting. */
+                  <span className="inline-flex flex-col gap-0.5">
+                    <span className="inline-block w-fit rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
+                      {app.acting_approver_name}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      cover for {app.current_approver_name}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-text-muted">
+                    {app.acting_approver ? "—" : ""}
                   </span>
                 )}
               </td>

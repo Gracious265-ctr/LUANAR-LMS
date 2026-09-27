@@ -36,7 +36,7 @@ that owns the action. Verified call sites:
 | Approval / rejection / correction | `workflows/services.py:847` | `APPROVED` / `REJECTED` / `CORRECTION_REQUESTED` |
 | Resubmission | `leave/services/resubmission.py:124` | `APPLICATION_RESUBMITTED` |
 | Cancellation (request / withdraw / stage / approve / reject) | `leave/cancellations/services.py:277,352,544,587` | `CANCELLATION_*` |
-| Delegation (create / approve / reject / cancel) | `workflows/services.py:390` | `CREATED` / `UPDATED` / `CANCELLED` |
+| Delegation (create / approve / reject / cancel) | create `workflows/serializers.py`; decisions `workflows/services.py:382` | `CREATED` / `APPROVED` / `REJECTED` / `CANCELLED` |
 | Reassignment | `workflows/services.py:603` | `REASSIGNED` |
 | Rule / entitlement / financial-year / public-holiday / workflow / leave-type changes | `audit/serializers.py:41-68` (`AuditedModelSerializer`) | `CREATED` / `UPDATED` |
 | Document add / replace / remove / retire | `leave/documents/services.py:83,114,124,168` | `DOCUMENT_*` |

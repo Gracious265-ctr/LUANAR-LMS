@@ -27,6 +27,7 @@ from .stubs import (
     EARLIEST_ANNUAL_START,
     StubProviderMixin,
     make_user,
+    register_chain_approvers,
 )
 
 
@@ -35,6 +36,7 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
         self.stub = self.use_stub()
         self.user = make_user()
         self.stub.register_employee(self.user)
+        register_chain_approvers(self.stub)
 
     def draft(self, **kwargs):
         defaults = dict(
@@ -220,6 +222,7 @@ class ApplicationRevisionIntegrityTests(StubProviderMixin, TestCase):
         self.stub = self.use_stub()
         self.user = make_user()
         self.stub.register_employee(self.user)
+        register_chain_approvers(self.stub)
         app = LeaveApplication.objects.create(
             employee=self.user,
             leave_type_id=1,
@@ -263,6 +266,7 @@ class SubmissionSignalTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
+        register_chain_approvers(self.stub)
         app = LeaveApplication.objects.create(
             employee=user,
             leave_type_id=1,
@@ -292,6 +296,7 @@ class ConcurrentSubmissionTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
+        register_chain_approvers(self.stub)
 
         app_a = LeaveApplication.objects.create(
             employee=user,

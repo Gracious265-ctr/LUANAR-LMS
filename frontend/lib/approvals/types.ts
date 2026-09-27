@@ -16,7 +16,8 @@ export type StageStatus =
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_requested";
+  | "correction_requested"
+  | "skipped";
 
 export interface ApprovalCapabilities {
   is_approver: boolean;

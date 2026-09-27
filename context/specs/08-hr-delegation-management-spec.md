@@ -58,6 +58,13 @@ Create the HR daily approval-delegation administration experience (build-plan
   timestamps. The full audit app is Unit 24 and notifications are Unit 22 —
   neither is introduced now.
 
+> **Superseded 2026-09-26** by the follow-ups below. Both later units have
+> landed, so the two deferrals above are now closed: creation is audited
+> (`CREATED`), every lifecycle event emails, and the approver-side request form
+> exists both as the "Cover" tab of `/dashboard/approvals` and as its own
+> `/dashboard/cover` page, which is what the sidebar links to for approver-or-HR
+> roles. Detail lives at `/dashboard/cover/[id]`, read-only.
+
 - **States.** Explicit `status` choice
   (`requested`/`approved`/`rejected`/`cancelled`) is the persistent truth, plus
   a derived read-only `state` for the UI that tightens `approved` by the
@@ -133,14 +140,17 @@ list shows approver, delegate, period, and state badges.
 ## API contract
 
 Namespace: `/api/v1/delegations/`. Authentication required on all endpoints.
-List/create/retrieve are HR-only (`IsHRRole`) **plus** self-service create for
-approvers; actions (approve/reject/cancel) are HR-only.
+Create and `candidates` are open to approvers and HR. List/retrieve are open to
+HR (everything) and approvers (only the delegations they are a party to — the
+queryset is scoped, so someone else's delegation is a **404**, not a 403 that
+would confirm it exists). Actions (approve/reject/cancel) remain HR-only.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/delegations/` | List delegations (HR-only, paginated, newest first; filters `state=`, `approver=` search) |
+| GET | `/api/v1/delegations/` | List delegations (HR: all; approver: own only. Paginated, newest first; filters `state=`, `approver=` search) |
 | POST | `/api/v1/delegations/` | Create a delegation request (approver self-service or HR on behalf) |
-| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR-only) |
+| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR: any; approver: own only, else 404) |
+| GET | `/api/v1/delegations/candidates/` | Active approver-role users the caller may nominate as delegate, excluding the caller |
 | POST | `/api/v1/delegations/{id}/approve/` | HR approves (mandatory `decision_reason` + `delegate`) |
 | POST | `/api/v1/delegations/{id}/reject/` | HR rejects (mandatory `decision_reason`) |
 | POST | `/api/v1/delegations/{id}/cancel/` | HR cancels an approved delegation (mandatory `decision_reason`) |

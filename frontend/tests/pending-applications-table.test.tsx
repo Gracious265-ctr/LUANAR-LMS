@@ -17,6 +17,20 @@ const unassigned: PendingApplication = {
   submitted_at: "2026-09-18T10:00:00Z",
   current_approver: null,
   current_approver_name: "",
+  acting_approver: null,
+  acting_approver_name: "",
+  is_delegated: false,
+};
+
+const delegated: PendingApplication = {
+  ...unassigned,
+  id: "app-2",
+  reference_number: "LUANAR-2026-0002",
+  current_approver: 3,
+  current_approver_name: "Jane Dean",
+  acting_approver: 5,
+  acting_approver_name: "Bob HOD",
+  is_delegated: true,
 };
 
 describe("PendingApplicationsTable", () => {
@@ -34,6 +48,33 @@ describe("PendingApplicationsTable", () => {
     expect(screen.getByText("Annual")).toBeInTheDocument();
     expect(screen.getByText("2026-10-01 → 2026-10-05")).toBeInTheDocument();
     expect(screen.getByText("Jane Dean")).toBeInTheDocument();
+  });
+
+  it("shows the acting delegate and who they cover for", () => {
+    /* Reassigning to an approver who is away moves the spine but not the work,
+       so the queue has to name both sides or the intervention reads as a no-op. */
+    render(<PendingApplicationsTable applications={[delegated]} />);
+
+    expect(screen.getByText("Bob HOD")).toBeInTheDocument();
+    expect(screen.getByText("cover for Jane Dean")).toBeInTheDocument();
+  });
+
+  it("shows no acting-approver column value when nobody is covering", () => {
+    render(
+      <PendingApplicationsTable
+        applications={[
+          {
+            ...unassigned,
+            current_approver: 3,
+            current_approver_name: "Jane Dean",
+            acting_approver: 3,
+            acting_approver_name: "Jane Dean",
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText(/cover for/)).not.toBeInTheDocument();
   });
 
   it("shows Unassigned when there is no current approver", () => {

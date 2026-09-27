@@ -19,6 +19,7 @@ import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correcti
 import pending_first_stage from "@/lib/tracking/__fixtures__/pending_first_stage.json";
 import pending_mid_workflow from "@/lib/tracking/__fixtures__/pending_mid_workflow.json";
 import pending_with_delegate from "@/lib/tracking/__fixtures__/pending_with_delegate.json";
+import pending_with_skipped_stage from "@/lib/tracking/__fixtures__/pending_with_skipped_stage.json";
 import rejected_at_stage_2 from "@/lib/tracking/__fixtures__/rejected_at_stage_2.json";
 import resubmitted_after_correction from "@/lib/tracking/__fixtures__/resubmitted_after_correction.json";
 import resubmitted_after_rejection from "@/lib/tracking/__fixtures__/resubmitted_after_rejection.json";
@@ -28,6 +29,8 @@ const fixtures: Record<string, TrackingResponse> = {
   "pending_first_stage": pending_first_stage as unknown as TrackingResponse,
   "pending_mid_workflow": pending_mid_workflow as unknown as TrackingResponse,
   "pending_with_delegate": pending_with_delegate as unknown as TrackingResponse,
+  "pending_with_skipped_stage":
+    pending_with_skipped_stage as unknown as TrackingResponse,
   "approved": approved as unknown as TrackingResponse,
   "rejected_at_stage_2": rejected_at_stage_2 as unknown as TrackingResponse,
   "correction_required_at_stage_3":
@@ -152,6 +155,23 @@ describe("TrackingView · statuses", () => {
     expect(stepper.getByText("Stage 4")).toBeInTheDocument();
     expect(stepper.getAllByText("Not yet reached")).toHaveLength(3);
     expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
+    expect(stepCount()).toBe(1);
+  });
+
+  it("explains a stage skipped because the flow starts after the applicant", async () => {
+    mockOk(fixtures.pending_with_skipped_stage);
+    renderView();
+    const stepper = within(await screen.findByLabelText("Approval progress"));
+
+    expect(stepper.getAllByRole("listitem")).toHaveLength(4);
+    expect(
+      stepper.getByText(
+        "Skipped — the approval flow starts after your stage",
+      )
+    ).toBeInTheDocument();
+    expect(stepper.getByText("Test Employee")).toBeInTheDocument();
+    expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
+    expect(stepper.getAllByText("Not yet reached")).toHaveLength(1);
     expect(stepCount()).toBe(1);
   });
 

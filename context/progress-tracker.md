@@ -1513,3 +1513,372 @@ Frontend (`frontend/`):
   warning against the dashboard URL suffix, that the bucket must exist, and that
   the key belongs in `.env` only. `frontend/.env.example` was checked and holds
   no secrets.
+
+## Business Rule Addition (2026-09-26, applicant is never the approver of record)
+
+Units 16/21 hardening, prompted by the fact that `get_decision_authority`
+refused self-approval but routing never prevented it: an employee who also
+held an approver role *was* assigned their own application, and simply saw a
+read-only screen with no route onward.
+
+- **Rule.** The application starts after the applicant's *last* stage in the
+  chain, and never travels back down the queue: every stage at or before that
+  position is bypassed, including lower-level stages whose approver is not the
+  applicant (the sole exception to invariant 12.3, now documented there). Given
+  `supervisor → HOD → Registrar`, a Supervisor's application starts at the HOD,
+  the HOD's starts at the Registrar — not at the Supervisor — and a Registrar's
+  has no later approver. Delegation does not satisfy the rule — the *configured*
+  approver is compared, not the acting one.
+- **A bypassed stage confers no access.** `get_view_access` excluded only
+  `waiting`, so an approver whose stage was skipped could still open the
+  application by URL. `skipped` is now excluded too: the application never
+  reached them, so they have nothing to decide and nothing to read.
+- **Unroutable chains are refused up front.** A role resolves to exactly one
+  approver (lowest-id active holder), so if there is **no stage after the
+  applicant's last one**, nobody is left to sign the application off. Such a
+  submission is refused with `workflow_unavailable` (422) and never leaves the
+  employee. This came out of a real dev case: `registrar@test.luanar` is the only
+  Registrar and Registrar is the last administration stage, so their own leave
+  had no valid final approver.
+- **The advance-time 409 is defence in depth, and its remedy is not a
+  reassignment.** `reassign_application` only moves `current_approver` (Unit 21
+  D8, spine-only), so it can never reach the blocked *later* stage — an
+  application routed under the old rules, or whose workflow changed afterwards,
+  has no in-product escape. The message says so instead of promising a
+  reassignment that cannot work, and the approver dialog shows it as a permanent
+  block with no Reload button.
+- **One check.** `workflows.policies.is_self_application` (now accepting a
+  `User` or a bare id) is the single authoritative predicate. `services
+  .is_self_approver` delegates to it, and it backs `get_decision_authority`,
+  `reassign_application` (Unit 9) and the cancellation guard (Unit 18), so the
+  three inline comparisons that predated this are gone.
+- **Both routing points.** `select_activatable_stage_index` resolves the chain
+  at assignment (so a leading self match is bypassed before the employee ever
+  sees the app), and `_next_activatable_stage` re-resolves on every advance,
+  which is what protects applications submitted before this rule existed.
+  No backfill or data repair: existing rows are corrected by the advance path
+  when they next move.
+- **New state, not a hidden one.** `ApplicationStage.Status.SKIPPED` and
+  `AuditEntry.Action.STAGE_SKIPPED`; the audit detail lists the bypassed
+  orders and where the application went, each tagged `applicant_is_approver` or
+  `before_applicant_stage`, with the deciding approver as `actor` (or the system
+  on automatic routing). Tracking reports state `skipped`
+  (spec 21 D11), and both the tracking stepper and the approver timeline show
+  it neutrally with the reason. The approver review payload's
+  `next_role_label` now resolves the same way, so the approve dialog no longer
+  advertises the applicant's own stage as "next".
+- **Test double.** `StubWorkflowProvider` used to fall back to the application
+  employee as the approver of unregistered roles — a configuration the product
+  now rejects outright. It resolves the lowest-id active user of the role, or a
+  lazily created filler approver, and `register_chain_approvers` was added for
+  submission-focused tests.
+- **Tests:** new `workflows/tests_self_approval.py` (29 cases: leading and
+  mid-chain skips, the `supervisor → HOD → Registrar` examples for both the HOD
+  and the Supervisor, a plain employee still starting at stage 1, consecutive
+  skips, audit contents per stage, submission refused when nothing follows the
+  applicant, the 409 defence-in-depth path with its rollback, delegation,
+  reassignment, legacy-row authority, tracking and review payload) plus frontend
+  cases for the skipped badge in both surfaces, a `pending_with_skipped_stage`
+  tracking fixture, and the blocked-decision dialog. Two older tests in
+  `workflows/tests_approvals.py` that hand-built a self stage at assignment time
+  were re-pointed at the states that can still exist (a bypassed stage, and the
+  runtime guard). Full backend suite **768 tests OK**; frontend **321 tests OK**,
+  `tsc` and `eslint` clean.
+
+## Business Rule Addition (2026-09-26, configured public holidays count as non-working everywhere)
+
+Asked to confirm that public holidays set by HR actually reach the leave-day
+calculations. They reached the validation pipeline but **not** the two paths
+outside it, so a configured holiday could show up in one number on screen and
+not the other.
+
+- **The bug.** `leave/services/working_days.py::calculate_working_days()` was
+  still the Unit-13 weekend-only stub (`TODO(unit-5)`), and it was the function
+  writing `LeaveApplication.calculated_days` on every draft create/update and
+  backing `POST /leave-applications/preview-days/`. The row therefore carried two
+  day columns that could disagree: `working_days` (holiday-aware, frozen at
+  submission) and `calculated_days` (weekends only). `LeaveReviewSummary` falls
+  back to `calculated_days` when no validation result is loaded, and
+  `WorkingDaysPreview` promises "Excludes weekends and public holidays" — so the
+  UI could state a rule the backend was not applying.
+- **One counting rule.** `calculate_working_days()` now reads holidays through
+  the configured `LEAVE_RULES_PROVIDER` and delegates the counting itself to the
+  pipeline's `leave/validation/working_days.count_working_days()`. The
+  `holidays=` / `provider=` keyword seams keep it unit-testable, and the
+  provider import is function-local because `leave.providers.database` imports
+  `leave.services`. A holiday landing on a weekend is excluded once, not twice.
+- **Every calculation surface is now holiday-aware:** draft `calculated_days`,
+  the `preview-days` response (which also reports `holidays_excluded` so the
+  number is explainable), the frozen `working_days`, `rules_snapshot["holidays"]`,
+  the max-duration and balance checks, the working-day notice requirement, and
+  the ledger deduction. Cancellation still mirrors the original deduction rather
+  than recounting, which is correct: it restores what was charged.
+- **The dev approvals seeder** now skips public holidays when picking a start
+  date, so a seeded application can never begin on a day validation rejects.
+- **Tests.** New `leave/tests/test_public_holiday_calculations.py` (26 cases)
+  drives the **real** `PublicHoliday` table through the real
+  `DatabaseRulesProvider` — no stubbed holiday source — covering the counter
+  (boundaries, weekend collision, holiday-only ranges, reversed/missing), the
+  preview endpoint, the draft preview agreeing with the validated count,
+  submission freezing the reduced count into `working_days` and the snapshot,
+  finalisation deducting the reduced days, holidays configured *after* submission
+  not re-cutting the ledger, the validation payload and balance projection, a
+  start date on a holiday, and a holiday inside the notice window. Full backend
+  suite **794 tests OK**, `check` clean, no migration drift.
+- **Still not done (unchanged, and out of scope here):** the `PublicHoliday`
+  table has **no seed data** — `leave/management/` is empty and there is no
+  command, fixture, or data migration, so out of the box
+  `get_public_holidays()` returns `{}` and nothing changes until HR creates rows
+  through the admin or `POST /api/v1/public-holidays/`. LUANAR's actual holiday
+  calendar is organization-specific data, not something to invent in code;
+  architecture.md still carries "Public-holiday data source and fallback | TBD".
+  Also untouched: no scope/optionality/substitute-day fields on the model, no
+  employee-facing holiday list (HR-only viewset), and `carry_forward_eligible`
+  remains a dead flag with no carry-forward computation.
+
+### Follow-up: setting a holiday did not reach drafts already saved
+
+Reported as "public holidays are not working when they are set". The counting fix
+above was correct, but a real draft in dev (`2026-10-13..2026-10-16`, with
+`2026-10-15 Mothers' Day` configured) still showed **4** stored days where the
+correct answer is **3**.
+
+- **Cause.** `LeaveApplication.calculated_days` is denormalized and was only ever
+  written by the draft create/update path, so it was as fresh as the employee's
+  last *edit*. Configuring a holiday changed the answer for dates the employee had
+  already chosen without touching their draft, and the stored preview — the value
+  `LeaveReviewSummary` falls back to when no validation result is loaded — kept the
+  pre-holiday number.
+- **Fix.** `leave/holiday_refresh.py` (wired through `LeaveConfig.ready()`) has a
+  `pre_save` receiver that stashes a holiday's previous date and a `post_save`
+  receiver that re-counts the `draft` / `correction_required` applications whose
+  range covers the old or new date. Signal receivers rather than view logic, so the
+  Django admin **and** `POST /api/v1/public-holidays/` are both covered, and a
+  *moved* holiday repairs the range it left as well as the one it joined. It writes
+  with a queryset `update()` — the column is derived, and `LeaveApplication.save`
+  carries signals the employee's own edits own.
+- **Submitted and approved applications are never recounted** (invariant 12.5):
+  their count was frozen at submission and their ledger already moved.
+- **Tests:** 6 more cases in `leave/tests/test_public_holiday_calculations.py`
+  (refresh on set, a holiday outside every draft, a moved holiday repairing both
+  ranges, a submitted application staying frozen, the HR endpoint path firing it,
+  and a dateless draft left alone). Full backend suite **800 tests OK**. The one
+  stale dev draft was repaired and all five dev applications now agree with the
+  live calendar.
+
+---
+
+## Delegation follow-ups (2026-09-26)
+
+Delegations were already end-to-end for HR (Unit 8) and enforced at decision time
+(Unit 21): `acting_approver_id` hands a pending application to the delegate while
+a delegation is active, with 60 backend and 18 frontend tests around it. This pass
+closed the four remaining gaps. **827 backend tests / 340 frontend tests OK.**
+
+### 1. Approver request UI — the self-service API had no screen
+
+`create` has been self-service since Unit 8, but every delegation route in the
+frontend lived under `/dashboard/hr-admin/**` and `app/api/hr/**`, so an approver
+could not request cover, see their own request, or learn whether it was approved.
+- New **"Cover" tab** on `/dashboard/approvals`, gated by `canRequestCover(role)`
+  so a plain employee never sees it. Holds `CoverRequestForm` (no approver field —
+  the backend forces the caller) and the approver's own rows.
+- The sidebar had no approver-reachable entry at all: the only `Delegations`
+  item sat inside `showHR`, so an approver had to already be on `/dashboard/approvals`
+  to discover the tab. Added a **"Request Cover"** item for approver-or-HR roles
+  pointing at a dedicated `/dashboard/cover` page that renders the same panel.
+  A dedicated route rather than `?view=cover` on the approvals page, because
+  `usePathname()` never sees a query string — the item could not have highlighted,
+  and it would have double-highlighted with the existing Approvals item. The tab
+  stays for in-context use and the approvals page still honours `?view=cover`.
+  HR gets both items: the management list and their own cover page.
+- New read-only page `/dashboard/cover/[id]`, reusing `DelegationReview`
+  with a new `readOnly` prop so an approver sees the record and HR's decision
+  reason but never the approve/reject/cancel controls. `DelegationTable` and
+  `DelegationReview` both take `baseHref` / `backHref` instead of hardcoding the
+  HR path. Both pages share one `loadCoverData()` server loader so the two entry
+  points cannot drift.
+- **New `GET /api/v1/delegations/candidates/`.** `EmployeeViewSet` is `IsHRRole`,
+  so an approver could not list colleagues to nominate. Rather than open the HR
+  employee list to every approver, this returns only `{id, full_name, role}` for
+  active approvers, minus the caller.
+- The list/retrieve **queryset is now scoped** for non-HR callers to
+  `approver=user | delegate=user`, which makes the detail page a 404 for someone
+  else's delegation instead of leaking its existence through a 403.
+- The create proxy moved off the misleading `/api/hr/delegations` to
+  `/api/delegations` (the common caller is not HR). The three HR decisions keep
+  their `hr`-namespaced proxies.
+
+### 2. Concurrency hardening
+
+- `reject_delegation` and `cancel_delegation` re-read the row under
+  `select_for_update()` and re-check state; previously only `approve` did, so a
+  stale in-memory instance could overwrite a decision that had already landed.
+- `approve_delegation`'s overlap check was a pre-check *before* the lock. It now
+  re-runs under the lock, and the new `_lock_for_decision` locks the **approver
+  row before the delegation row** — a single lock order, so two concurrent
+  decisions for one approver cannot interleave or deadlock. Locking the delegation
+  alone was never enough for approve, because the overlap check reads the
+  approver's *other* approved rows.
+- New DB backstop `one_open_request_per_approver`: a partial unique index on
+  `(approver) WHERE status = 'requested'`. The `open_request_exists` `SELECT ...
+  EXISTS` remains for the friendly 400; the index is what makes two concurrent
+  requests impossible. `DelegationSerializer.create` catches the resulting
+  `IntegrityError` inside a savepoint and returns the same 400.
+
+### 3. Delegation notifications
+
+`NotificationOutbox.application` was a non-null FK to `LeaveApplication`, so a
+delegation was structurally unable to produce an email.
+- `application` is now nullable and a nullable `workflows.Delegation` FK was
+  added, with a `one_notification_subject` check that exactly one is set, and two
+  *partial* unique constraints — one per subject family — so idempotency never
+  collides across them and PostgreSQL's NULL handling stays useful.
+- New `notifications/delegations.py` sends one mail **per party**, with
+  `role_label` naming which side the row concerns (`approver` / `delegate`): a
+  request mails only a nominated delegate, an approval or cancellation mails both
+  sides, a rejection mails the approver plus the nominee. Recipients are resolved
+  from ids already on the row — never a role scrape.
+- Emitted through `transaction.on_commit` from the same transaction as the
+  decision, so a rolled-back decision mails nobody; failures record `failed` on
+  the outbox row and are swallowed.
+
+### 4. Audit on create
+
+`DelegationSerializer` was a plain `ModelSerializer`, so a request was invisible to
+the audit trail until HR decided on it — and a request never decided on left no
+trace at all. Creation now records `CREATED` in the same transaction as the row.
+Spec 24 claimed this was already wired and described the actions as
+`CREATED / UPDATED / CANCELLED`; the code writes `CREATED / APPROVED / REJECTED /
+CANCELLED` and the table has been corrected.
+
+### Tests
+- `workflows/tests.py::DelegationConcurrencyTests` (new, 5 cases): stale-instance
+  re-checks for reject and cancel, a delegation that ends under the lock, an
+  overlap that appears under the lock, and the approver-before-delegation lock
+  order.
+- `workflows/tests.py::DelegationEndpointTests`: the list/retrieve rule is now
+  "scoped, not HR-only" (own rows visible, someone else's a 404, employee 403, HR
+  sees all), plus the `candidates` endpoint and the DB-level one-open-request
+  constraint.
+- `notifications/tests_delegations.py` (new, 22 cases): the recipient matrix,
+  per-party outbox rows, idempotency, failure isolation, append-only rows, the
+  on-commit guarantee, and the three decision services plus both create paths
+  emitting.
+- `audit/tests.py`: create is audited, and a failed action still writes none.
+- `cover-request-form`, `approvals-workspace`, `delegation-review` (read-only),
+  `delegation-table` (`baseHref`), and `delegation-access` frontend tests.
+
+### Notes
+- `next build` caught a real bundling bug: `delegation-table.tsx` imported a *value*
+  from the server-only `@/lib/delegations`, dragging `next/headers` into the client
+  bundle once the table was rendered inside the client-side workspace. The helpers
+  now come from `@/lib/delegations-client`, which is the split the spec already
+  asked for.
+
+---
+
+## Reassignment follow-ups (2026-09-26)
+
+Reassignment (Unit 9) shipped complete: model, service, HR-only API, admin, the
+two-panel HR screen, and its own tests. The audit that followed was about the
+three things spec 09 explicitly deferred and that **no later unit ever picked
+up** — so "fully implemented" meant closing those, not rewriting the feature.
+**848 backend tests / 344 frontend tests OK.**
+
+### 1. Nobody was ever told
+
+Spec 09 said "email for reassignment is Unit 22". Unit 22 covers
+`DECISION_RECORDED` and `APPLICATION_FINALISED` and never mentions
+reassignment, so the deferral had no owner. A reassignment moved an application
+between two people's queues and told neither — the replacement approver only
+found out by opening their pending list.
+
+`notifications/reassignments.py` now mails both sides on commit, reusing the
+delegation discipline verbatim: the **replacement** learns they own a pending
+application they did not ask for, the **previous** approver learns it was taken
+off them before they acted. An *initial* assignment (`from_approver is None`)
+mails only the new approver, because nobody lost a queue that never existed.
+
+The employee is deliberately not mailed. Unit 15 already renders the
+reassignment on their tracking timeline as a `reassigned` event with HR's reason
+as the comment, so an email would only repeat it — and spec 09's own note that
+the internal reason "belongs to later track" is satisfied there, not here.
+
+`NotificationOutbox` gained a **third subject family** (`reassignment`) instead
+of reusing `application`. That was forced, not stylistic: the application
+constraint is unique per `(application, kind, cycle, role)` and an application
+can be reassigned several times in one submission cycle, so an application-keyed
+row would make every reassignment after the first silently match the first and
+send nothing. `workflows/tests.py` and
+`notifications/tests_reassignments.py::test_two_reassignments_of_one_application_both_notify`
+pin it.
+
+### 2. The intervention queue was lying about who held the application
+
+Spec 09 assumed "pending" meant the responsible approver acts, and wrote
+`current_approver` into the queue. That was true when written and stopped being
+true in Unit 21, because delegation is a *query-time overlay* on the spine that
+reassignment writes:
+
+```
+responsible = current_approver   ← reassignment moves this
+acting      = that approver's active delegate, else responsible
+```
+
+So HR's queue showed "Jane Dean" for an application Bob HOD was actually
+deciding. Reassigning it to a third approver looked like it worked while the
+same delegate kept acting — a successful-looking intervention that quietly did
+nothing. The behaviour is correct (Bob *is* meant to be handling Jane's queue),
+but it was invisible at the only place HR could act on it.
+
+`GET /api/v1/reassignments/pending/` now reports `acting_approver`,
+`acting_approver_name` and `is_delegated` next to `current_approver`, and both
+the queue table and the reassignment form name the delegate and who they cover
+for. Resolution is bulked via `acting_approver_map()` — one delegation pass plus
+one user-name pass for the whole page instead of two per row, with
+`acting_approver_identity()` as the single-row equivalent and a test asserting
+the two agree.
+
+### 3. The interaction was correct but unpinned
+
+Three routing tests now fix the semantics in both directions: reassigning *away*
+from a delegated approver hands over cleanly (the old cover no longer matches the
+moved spine), and reassigning *to* an away approver leaves their delegate acting.
+The second is documented as intended rather than left to look accidental.
+
+### 4. A real bug the new tests caught
+
+`compose_body` reached for `application.leave_type.name` and
+`_load_reassignment` did `select_related("application__leave_type")`.
+`LeaveApplication.leave_type_id` is a **soft integer reference, not an FK** (the
+FK upgrade is an integration-track concern), so both were wrong. The
+consumer-level `except Exception` swallowed the `FieldError` and the mail simply
+never sent — which is exactly the failure mode that guard exists for, and also
+why it must not be the only thing watching. Fixed with the same `LeaveType`
+lookup the pending-queue serializer uses.
+
+Worth keeping in mind: a bug in any notification composer is now silent by
+design. The mitigation is a test that asserts on the rendered body, not just the
+outbox row's existence.
+
+### 5. Audit view crash on flat `detail` payloads (found in review)
+
+Opening the HR audit view against the dev database threw
+`TypeError: Cannot convert undefined or null to object` and took the whole page
+down, not one row.
+
+`auditChangesText()` did `Object.keys(entry.detail.after)` unguarded, assuming
+every `detail` is a `{"before", "after"}` diff. The field is free-form JSON, and
+two actions write a flat payload: `document_generated` (the file) and
+`stage_skipped` (the stages the self-approval check bypassed). Four dev rows had
+that shape, so the page could never render.
+
+The wrong contract was recorded in **three** places, which is why it survived:
+`components/hr/audit-meta.tsx`, the `AuditEntry` TypeScript type, and the model
+`help_text` — plus spec 11. All four now say free-form, and the renderer sniffs
+the shape instead of assuming it. A flat payload summarises as `key: value` with
+long values capped; the entry-level reason is only appended when the payload has
+no `reason` key of its own, so `stage_skipped` does not print it twice.
+
+**848 backend / 348 frontend tests OK.**

@@ -23,7 +23,11 @@ from users.models import User
 
 from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
 
-from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
+from leave.tests.stubs import (
+    EARLIEST_ANNUAL_START,
+    StubProviderMixin,
+    register_chain_approvers,
+)
 
 from .admin import AuditEntryAdmin
 from .models import AuditEntry, AuditEntryLockedError
@@ -705,9 +709,25 @@ class AuditWiringTests(StubProviderMixin, TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            AuditEntry.objects.filter(target_type="delegation").count(), 0
+        # The request itself is audited on create; the *decision* must not be.
+        actions = set(
+            AuditEntry.objects.filter(target_type="delegation").values_list(
+                "action", flat=True
+            )
         )
+        self.assertEqual(actions, {"created"})
+
+    def test_delegation_create_is_audited(self):
+        dean = make_user(User.Role.DEAN, "dean-audit3@audit.test")
+        hod = make_user(User.Role.HOD, "hod-audit3@audit.test")
+        delegation_id = self._create_delegation(dean, hod)
+
+        created = self._entry_for("delegation", delegation_id)
+        self.assertEqual(created.action, "created")
+        # HR created this on the dean's behalf, so HR is the actor.
+        self.assertEqual(created.actor, self.hr_user)
+        self.assertEqual(created.detail["after"]["status"], "requested")
+        self.assertEqual(created.detail["after"]["delegate_id"], hod.pk)
 
     def test_reassignment_is_audited(self):
         employee = make_user(User.Role.EMPLOYEE, "emp-re-assign@audit.test")
@@ -756,6 +776,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
     def test_submit_is_audited_with_reference_number(self):
         employee = make_user(User.Role.EMPLOYEE, "emp-submit@audit.test")
         self.stub.register_employee(employee)
+        register_chain_approvers(self.stub)
         self.client.force_authenticate(user=employee)
         app = LeaveApplication.objects.create(
             employee=employee,

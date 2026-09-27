@@ -1,8 +1,9 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
+from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
@@ -10,12 +11,44 @@ from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow, Wor
 from .services import (
     ReassignmentError,
     StageSequenceError,
+    acting_approver_identity,
+    delegation_summary,
     is_approver_user,
     normalize_stage_sequence,
     open_request_exists,
     reassign_application,
     validate_workflow_for_activation,
 )
+
+
+def _record_delegation_created_audit(delegation: Delegation) -> None:
+    """Audit a delegation request the moment it exists.
+
+    The other three delegation actions are audited by
+    ``workflows.services._record_delegation_audit``; creation is a serializer
+    concern, so it is recorded here in the same transaction. Without it a
+    request would appear in the trail only once HR decided on it, and a request
+    that was never decided would leave no trace at all.
+    """
+    if delegation.requested_by_id is None:
+        return
+    record_audit(
+        actor=delegation.requested_by,
+        action=AuditEntry.Action.CREATED,
+        target_type=AuditEntry.TargetType.DELEGATION,
+        target_id=delegation.pk,
+        target_summary=delegation_summary(delegation),
+        detail=changed_fields(
+            {},
+            {
+                "status": delegation.status,
+                "delegate_id": delegation.delegate_id,
+                "starts_on": delegation.starts_on,
+                "ends_on": delegation.ends_on,
+            },
+        ),
+        reason=delegation.request_reason,
+    )
 
 
 class WorkflowStageSerializer(serializers.ModelSerializer):
@@ -274,9 +307,23 @@ class DelegationSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data: dict) -> Delegation:
+        from notifications.delegations import DELEGATION_REQUESTED, notify_delegation
+
         request = self.context.get("request")
         validated_data["requested_by"] = getattr(request, "user", None)
-        return super().create(validated_data)
+        try:
+            # The nested atomic block is a savepoint: a lost race against
+            # ``one_open_request_per_approver`` rolls back cleanly instead of
+            # poisoning the outer transaction, so the friendly 400 survives.
+            with transaction.atomic():
+                delegation = super().create(validated_data)
+                _record_delegation_created_audit(delegation)
+                notify_delegation(delegation.pk, DELEGATION_REQUESTED)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"approver": "This approver already has an open delegation request."}
+            )
+        return delegation
 
 
 class DelegationActionSerializer(serializers.Serializer):
@@ -363,7 +410,15 @@ class ReassignmentSerializer(serializers.ModelSerializer):
 
 
 class PendingApplicationSerializer(serializers.Serializer):
-    """Read-only representation of one pending (submitted) leave application."""
+    """Read-only representation of one pending (submitted) leave application.
+
+    Reports both the *responsible* approver (the ``current_approver`` spine) and
+    the *acting* approver (Unit 21 routing: the active delegate when one covers
+    them). HR has to see the difference, because reassigning an application to
+    an approver who is themselves away moves the spine without changing who
+    actually acts — the queue would otherwise read as a successful intervention
+    that quietly did nothing.
+    """
 
     def to_representation(self, instance: LeaveApplication) -> dict:
         leave_type_name = ""
@@ -378,6 +433,11 @@ class PendingApplicationSerializer(serializers.Serializer):
                 if leave_type is not None:
                     leave_type_name = leave_type.name
         current = instance.current_approver
+        acting_id, acting_name = self._acting_approver(instance)
+        if current is None:
+            is_delegated = acting_id is not None
+        else:
+            is_delegated = acting_id is not None and acting_id != current.pk
         return {
             "id": instance.id,
             "reference_number": instance.reference_number or "",
@@ -391,4 +451,21 @@ class PendingApplicationSerializer(serializers.Serializer):
             "submitted_at": instance.submitted_at,
             "current_approver": current.pk if current else None,
             "current_approver_name": current.get_full_name() if current else "",
+            "acting_approver": acting_id,
+            "acting_approver_name": acting_name,
+            "is_delegated": is_delegated,
         }
+
+    def _acting_approver(
+        self, instance: LeaveApplication
+    ) -> tuple[int | None, str]:
+        """``(acting_approver_id, acting_approver_name)`` for one application.
+
+        Prefers the page-level map the intervention queue resolves in bulk, so a
+        whole page costs one delegation query plus one user query instead of two
+        per row, and falls back to resolving this one application directly.
+        """
+        resolved = self.context.get("acting_approver_map")
+        if resolved is not None and instance.pk in resolved:
+            return resolved[instance.pk]
+        return acting_approver_identity(instance)

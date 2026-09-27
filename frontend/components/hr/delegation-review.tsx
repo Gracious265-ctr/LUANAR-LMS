@@ -30,18 +30,27 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 export function DelegationReview({
   delegation,
   employees,
+  readOnly = false,
+  backHref = "/dashboard/hr-admin/delegations",
+  title = "Review delegation request",
 }: {
   delegation: Delegation;
+  /** Only used for the approve panel's delegate picker; ignored when readOnly. */
   employees: Employee[];
+  /** Approver-side view: show the record, never the HR decision controls. */
+  readOnly?: boolean;
+  backHref?: string;
+  title?: string;
 }) {
   const router = useRouter();
   const [kind, setKind] = useState<DecisionKind>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const showApproveReject = delegation.state === "requested";
+  const showApproveReject = !readOnly && delegation.state === "requested";
   const showCancel =
-    delegation.state === "scheduled" || delegation.state === "active";
+    !readOnly &&
+    (delegation.state === "scheduled" || delegation.state === "active");
   const delegates = approverRolePeople(employees).filter(
     (employee) => employee.id !== delegation.approver
   );
@@ -114,16 +123,14 @@ export function DelegationReview({
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/hr-admin/delegations"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to delegations
         </Link>
         <div className="mt-2 flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-text-primary">
-            Review delegation request
-          </h2>
+          <h2 className="text-2xl font-bold text-text-primary">{title}</h2>
           <span
             className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
           >

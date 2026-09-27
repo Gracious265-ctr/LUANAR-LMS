@@ -3,6 +3,11 @@
 These are the single source of truth for *who may decide* and *who may view*
 an application. The API consults them; the decision service enforces them
 under row locks; tests pin every case in spec table 5-D.
+
+:func:`is_self_application` is the one authoritative applicant-identity check.
+It is shared by the decision guard, the HR reassignment validation (Unit 9) and
+the cancellation guard (Unit 18) so the rule exists in a single place, and it is
+the predicate the workflow-stage skip logic keys off.
 """
 
 from __future__ import annotations
@@ -28,15 +33,37 @@ class Authority:
     reason: str | None = None
 
 
+def is_self_application(user, application: LeaveApplication) -> bool:
+    """Whether ``user`` is the applicant who owns ``application``.
+
+    The single authoritative applicant check. ``LeaveApplication.employee`` is a
+    direct FK to the user model, so the comparison is on ``employee_id``.
+
+    ``user`` may be a loaded ``User`` or a bare user id: stage assignment
+    compares resolved ``StageDefinition.approver_user_id`` values before any
+    user row is loaded, so both call styles are supported.
+
+    Used to keep an approver from ever being the approver of record for their
+    own leave: HR reassignment refuses it (Unit 9), a cancellation decision
+    refuses it (Unit 18), :func:`get_decision_authority` refuses it, and stage
+    assignment skips the stage that would resolve to the applicant.
+    """
+    if user is None or application is None:
+        return False
+    user_id = user if isinstance(user, int) else user.pk
+    return application.employee_id == user_id
+
+
 def get_decision_authority(user: User, application: LeaveApplication) -> Authority:
     """Grant or deny the ability to decide on ``application``.
 
     Every approval request is checked against the application's *current*
     live state, so a completed application rejects further decisions. An
     approver may never decide on their own application, no matter where the
-    chain is.
+    chain is. This check is independent of stage assignment: it holds even in
+    a state where assignment logic was bypassed.
     """
-    if application.employee_id == user.id:
+    if is_self_application(user, application):
         return Authority(False, "self_application")
 
     if application.status != LeaveApplication.Status.SUBMITTED:
@@ -70,8 +97,10 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     """The application's stage the user can review, or ``None`` (404).
 
     The user must be the assigned approver of at least one stage (of the live
-    submission cycle) that is not ``waiting`` — i.e. the application must have
-    reached them, or they must already have decided on it.
+    submission cycle) that is neither ``waiting`` nor ``skipped`` — i.e. the
+    application must have reached them, or they must already have decided on it.
+    A ``skipped`` stage was bypassed precisely so that its approver is not on the
+    path (invariant 12.3 sole exception), so it confers no access.
 
     Unit 18: a Supervisor or HOD assigned to a cancellation stage may also read
     the approved application's review payload, even though the application is
@@ -97,7 +126,14 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
             assigned_approver=user,
             submission_cycle=application.workflow_chain_cycle,
         )
-        .exclude(status=ApplicationStage.Status.WAITING)
+        .exclude(
+            status__in=(
+                ApplicationStage.Status.WAITING,
+                # A bypassed stage is not a stage the application reached: its
+                # approver was removed from the path, so they get no access.
+                ApplicationStage.Status.SKIPPED,
+            )
+        )
         .first()
     )
     if stage is not None:

@@ -4,6 +4,7 @@ from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.forms.models import inlineformset_factory
 from django.utils import timezone
@@ -1139,6 +1140,131 @@ class DelegationServiceTests(TestCase):
         self.assertEqual(ctx.exception.field, "decision_reason")
 
 
+class DelegationConcurrencyTests(TestCase):
+    """Every decision re-validates under the approver lock, not just approve.
+
+    ``approve`` was the only action that re-read the row under
+    ``select_for_update``; ``reject`` and ``cancel`` trusted the caller's copy.
+    These pin the re-check that makes a stale in-memory instance harmless.
+    """
+
+    def setUp(self):
+        self.hr = make_active_user(User.Role.HR, "hr-conc@test.luanar")
+        self.dean = make_active_user(User.Role.DEAN, "dean-conc@test.luanar")
+        self.hod = make_active_user(User.Role.HOD, "hod-conc@test.luanar")
+        self.today = timezone.localdate()
+
+    def test_reject_rechecks_a_stale_instance_under_lock(self):
+        delegation = make_delegation(self.dean, self.today)
+        stale = Delegation.objects.get(pk=delegation.pk)
+        reject_delegation(delegation, self.hr, {"decision_reason": "First"})
+
+        with self.assertRaises(DelegationActionError) as ctx:
+            reject_delegation(stale, self.hr, {"decision_reason": "Second"})
+        self.assertEqual(ctx.exception.field, "detail")
+        fresh = Delegation.objects.get(pk=delegation.pk)
+        self.assertEqual(fresh.decision_reason, "First")
+
+    def test_cancel_rechecks_a_stale_instance_under_lock(self):
+        delegation = make_delegation(
+            self.dean,
+            self.today,
+            status=Delegation.Status.APPROVED,
+            delegate=self.hod,
+        )
+        stale = Delegation.objects.get(pk=delegation.pk)
+        cancel_delegation(delegation, self.hr, {"decision_reason": "First"})
+
+        with self.assertRaises(DelegationActionError) as ctx:
+            cancel_delegation(stale, self.hr, {"decision_reason": "Second"})
+        self.assertEqual(ctx.exception.field, "detail")
+        fresh = Delegation.objects.get(pk=delegation.pk)
+        self.assertEqual(fresh.decision_reason, "First")
+
+    def test_cancel_rechecks_a_delegation_that_ended_under_lock(self):
+        delegation = make_delegation(
+            self.dean,
+            self.today,
+            ends_on=self.today,
+            status=Delegation.Status.APPROVED,
+            delegate=self.hod,
+        )
+        stale = Delegation.objects.get(pk=delegation.pk)
+        # The period lapses between the caller's read and the lock. Patching the
+        # clock is the only way to age a row the constraint would otherwise
+        # forbid (ends_on may never precede starts_on).
+        with mock.patch(
+            "workflows.services.timezone.localdate",
+            return_value=self.today + timedelta(days=1),
+        ):
+            with self.assertRaises(DelegationActionError) as ctx:
+                cancel_delegation(stale, self.hr, {"decision_reason": "Too late"})
+        self.assertIn("completed", ctx.exception.message)
+        self.assertEqual(
+            Delegation.objects.get(pk=delegation.pk).status,
+            Delegation.Status.APPROVED,
+        )
+
+    def test_approve_rechecks_an_overlap_that_appeared_under_lock(self):
+        """The pre-check is a fast path; the locked re-check is authoritative."""
+        delegation = make_delegation(self.dean, self.today)
+        approved = make_delegation(
+            self.dean,
+            self.today + timedelta(days=2),
+            status=Delegation.Status.APPROVED,
+            delegate=self.hod,
+        )
+        # Slip an approved overlapping row in after the pre-check has run.
+        original = find_conflicting_delegation
+
+        def racing_conflict(*args, **kwargs):
+            Delegation.objects.filter(pk=approved.pk).update(
+                starts_on=self.today, ends_on=None
+            )
+            return original(*args, **kwargs)
+
+        with mock.patch(
+            "workflows.services.find_conflicting_delegation",
+            side_effect=racing_conflict,
+        ):
+            with self.assertRaises(DelegationActionError) as ctx:
+                approve_delegation(
+                    delegation, self.hr, {"delegate": self.hod, "decision_reason": "ok"}
+                )
+        self.assertEqual(ctx.exception.field, "detail")
+        self.assertIn("overlaps", ctx.exception.message)
+        self.assertEqual(
+            Delegation.objects.get(pk=delegation.pk).status,
+            Delegation.Status.REQUESTED,
+        )
+
+    def test_approve_locks_the_approver_row_before_the_delegation(self):
+        """A consistent lock order is what keeps two decisions from deadlocking."""
+        delegation = make_delegation(self.dean, self.today)
+        order: list[str] = []
+        real_user_lock = User.objects.select_for_update
+        real_delegation_lock = Delegation.objects.select_for_update
+
+        with mock.patch.object(
+            User.objects,
+            "select_for_update",
+            side_effect=lambda *a, **k: (
+                order.append("approver") or real_user_lock(*a, **k)
+            ),
+        ), mock.patch.object(
+            Delegation.objects,
+            "select_for_update",
+            side_effect=lambda *a, **k: (
+                order.append("delegation") or real_delegation_lock(*a, **k)
+            ),
+        ):
+            approve_delegation(
+                delegation, self.hr, {"delegate": self.hod, "decision_reason": "ok"}
+            )
+
+        self.assertEqual(order, ["approver", "delegation"])
+
+
 class DelegationEndpointTests(TestCase):
     """Delegation request creation, HR decisions, and filtering via the API."""
 
@@ -1283,14 +1409,72 @@ class DelegationEndpointTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("approver", response.json())
 
-    def test_list_and_retrieve_are_hr_only(self):
-        self._delegation()
+    def test_list_and_retrieve_are_scoped_to_the_approver(self):
+        mine = self._delegation()
+        other_approver = User.objects.create_user(
+            username="registrar@test.luanar",
+            email="registrar@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Reg",
+            last_name="Registrar",
+            role=User.Role.REGISTRAR,
+        )
+        theirs = make_delegation(
+            other_approver, timezone.localdate(), delegate=self.hod
+        ).pk
+        # An approver sees the delegations they are a party to...
         self.client.force_authenticate(user=self.dean)
-        self.assertEqual(self.client.get(self.list_url).status_code, status.HTTP_403_FORBIDDEN)
-        self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["results"][0]["id"], mine)
+        self.assertEqual(
+            self.client.get(f"/api/v1/delegations/{mine}/").status_code,
+            status.HTTP_200_OK,
+        )
+        # ...but somebody else's is a 404, not a 403 that would confirm it exists.
+        self.assertEqual(
+            self.client.get(f"/api/v1/delegations/{theirs}/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        # HR still sees everything.
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()["count"], 2)
+
+    def test_list_denies_a_plain_employee(self):
+        self._delegation()
+        self.client.force_authenticate(user=self.employee)
+        self.assertEqual(self.client.get(self.list_url).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_candidates_lists_active_approvers_excluding_self(self):
+        self.client.force_authenticate(user=self.dean)
+        response = self.client.get("/api/v1/delegations/candidates/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.json()["candidates"]
+        names = {row["id"] for row in rows}
+        self.assertNotIn(self.dean.id, names)
+        self.assertIn(self.hod.id, names)
+        self.assertNotIn(self.employee.id, names)
+        for row in rows:
+            self.assertEqual(set(row), {"id", "full_name", "role"})
+
+    def test_candidates_denies_a_plain_employee(self):
+        self.client.force_authenticate(user=self.employee)
+        self.assertEqual(
+            self.client.get("/api/v1/delegations/candidates/").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_one_open_request_per_approver_is_enforced_by_the_database(self):
+        """The service check is a bare EXISTS; the partial unique index is the
+        backstop that makes two concurrent requests for one approver impossible."""
+        self._delegation()
+        with self.assertRaises(IntegrityError):
+            # Nested atomic = savepoint, so the test transaction survives.
+            with transaction.atomic():
+                make_delegation(self.dean, timezone.localdate())
 
     def test_list_filters_by_state_and_searches_approver(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -1881,6 +2065,78 @@ class ReassignmentEndpointTests(TestCase):
         )
         self.assertIsNone(payload["current_approver"])
         self.assertEqual(payload["current_approver_name"], "")
+
+    def test_pending_reports_the_acting_approver_when_cover_is_active(self):
+        """HR must see who actually holds the application, not only the spine.
+
+        Reassigning an application to an approver who is themselves away moves
+        ``current_approver`` without changing who acts, so a queue that reported
+        only the responsible approver would read as a successful intervention
+        that quietly did nothing.
+        """
+        app = make_application(
+            self.employee_user, approver=self.dean, ref="DELEG-001"
+        )
+        Delegation.objects.create(
+            approver=self.dean,
+            delegate=self.hod,
+            starts_on=timezone.localdate(),
+            ends_on=timezone.localdate() + timedelta(days=30),
+            requested_by=self.dean,
+            status=Delegation.Status.APPROVED,
+        )
+        self.client.force_authenticate(user=self.hr_user)
+        results = self.client.get(self._pending_url()).json()["results"]
+        payload = next(r for r in results if r["reference_number"] == "DELEG-001")
+
+        self.assertEqual(payload["current_approver"], self.dean.pk)
+        self.assertEqual(payload["acting_approver"], self.hod.pk)
+        self.assertEqual(
+            payload["acting_approver_name"], self.hod.get_full_name()
+        )
+        self.assertTrue(payload["is_delegated"])
+
+    def test_pending_reports_the_responsible_approver_when_no_cover(self):
+        make_application(self.employee_user, approver=self.dean, ref="NOCOV-001")
+        self.client.force_authenticate(user=self.hr_user)
+        results = self.client.get(self._pending_url()).json()["results"]
+        payload = next(r for r in results if r["reference_number"] == "NOCOV-001")
+
+        self.assertEqual(payload["acting_approver"], self.dean.pk)
+        self.assertEqual(payload["acting_approver_name"], self.dean.get_full_name())
+        self.assertFalse(payload["is_delegated"])
+
+    def test_pending_ignores_cover_that_has_not_started_or_has_ended(self):
+        make_application(self.employee_user, approver=self.dean, ref="WINDOW-001")
+        today = timezone.localdate()
+        for label, starts_on, ends_on in (
+            ("future", today + timedelta(days=5), today + timedelta(days=30)),
+            ("ended", today - timedelta(days=30), today - timedelta(days=1)),
+        ):
+            Delegation.objects.create(
+                approver=self.dean,
+                delegate=self.hod,
+                starts_on=starts_on,
+                ends_on=ends_on,
+                requested_by=self.dean,
+                status=Delegation.Status.APPROVED,
+            )
+        self.client.force_authenticate(user=self.hr_user)
+        results = self.client.get(self._pending_url()).json()["results"]
+        payload = next(r for r in results if r["reference_number"] == "WINDOW-001")
+
+        self.assertEqual(payload["acting_approver"], self.dean.pk)
+        self.assertFalse(payload["is_delegated"])
+
+    def test_pending_acting_approver_is_none_when_unassigned(self):
+        make_application(self.employee_user, ref="NONEACT-001")
+        self.client.force_authenticate(user=self.hr_user)
+        results = self.client.get(self._pending_url()).json()["results"]
+        payload = next(r for r in results if r["reference_number"] == "NONEACT-001")
+
+        self.assertIsNone(payload["acting_approver"])
+        self.assertEqual(payload["acting_approver_name"], "")
+        self.assertFalse(payload["is_delegated"])
 
     # --- Create (reassign) ---
 

@@ -173,6 +173,22 @@ export function makeDecidedReview(): ApprovalReview {
   });
 }
 
+/** The applicant held the HOD role, so that stage was bypassed at stage 2. */
+export function makeSelfApprovalReview(): ApprovalReview {
+  return makeReview({
+    workflow: {
+      ...BASE_REVIEW.workflow,
+      current_stage: { order: 3, role: "registrar", role_label: "Registrar", is_final: false, next_role_label: "DVC" },
+      stages: [
+        STAGES[0],
+        { ...STAGES[1], status: "skipped", assigned_approver: "Chikondi Mbewe" },
+        { ...STAGES[2], status: "pending" },
+        STAGES[3],
+      ],
+    },
+  });
+}
+
 export function makeListItem(
   overrides: Partial<ApprovalListItem> = {}
 ): ApprovalListItem {

@@ -1,10 +1,14 @@
 import Link from "next/link";
 
+// The type comes from the server-safe module, but the helpers must come from
+// the client-safe one: this table is rendered inside the client-side approvals
+// workspace, and `@/lib/delegations` re-exports the API client, which reads
+// `next/headers` and cannot cross into the browser bundle.
 import type { Delegation } from "@/lib/delegations";
 import {
   delegationStateBadgeClass,
   delegationStateLabel,
-} from "@/lib/delegations";
+} from "@/lib/delegations-client";
 
 function periodLabel(delegation: Delegation): string {
   return delegation.ends_on
@@ -14,8 +18,13 @@ function periodLabel(delegation: Delegation): string {
 
 export function DelegationTable({
   delegations,
+  baseHref = "/dashboard/hr-admin/delegations",
+  emptyHint = "Create a delegation request when an approver will be unavailable so HR can route their approvals to a delegate.",
 }: {
   delegations: Delegation[];
+  /** Where a row's name links to — the approver's own view lives elsewhere. */
+  baseHref?: string;
+  emptyHint?: string;
 }) {
   if (delegations.length === 0) {
     return (
@@ -23,10 +32,7 @@ export function DelegationTable({
         <p className="text-base font-medium text-text-primary">
           No delegations found
         </p>
-        <p className="mt-1 text-sm">
-          Create a delegation request when an approver will be unavailable so HR
-          can route their approvals to a delegate.
-        </p>
+        <p className="mt-1 text-sm">{emptyHint}</p>
       </div>
     );
   }
@@ -50,7 +56,7 @@ export function DelegationTable({
             >
               <td className="py-3 pr-4">
                 <Link
-                  href={`/dashboard/hr-admin/delegations/${delegation.id}`}
+                  href={`${baseHref}/${delegation.id}`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {delegation.approver_name}

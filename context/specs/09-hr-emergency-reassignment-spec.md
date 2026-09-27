@@ -73,6 +73,12 @@ track — see the boundary note below).
   in Unit 21. This unit directly sets the responsible approver and records the
   intervention; it does not reach into delegation logic.
 
+  > **Superseded 2026-09-26.** Unit 21 did land, and it made this boundary a
+  > correctness problem rather than a clean separation: because delegation is a
+  > *query-time overlay* on top of the spine this unit writes, reassigning to an
+  > approver with active cover changes the record without changing who acts. The
+  > intervention queue now reports the acting approver for exactly that reason.
+
 - **Employee-facing visibility of the new approver is a later-track concern.**
   Unit 9 makes `current_approver` available on reassignment/pending payloads so
   the boundarary is real, but the employee "who is my approver now" view (with
@@ -81,6 +87,11 @@ track — see the boundary note below).
 - **No notifications and no audit app here.** Email for reassignment is Unit 22
   and the aggregated audit view is Unit 24. The `Reassignment` row itself is the
   preserved history for this unit.
+
+> **Superseded 2026-09-26.** Both deferrals above have since landed, and one
+> assumption this unit made is no longer true. See "Follow-ups (2026-09-26)" at
+> the end of this file for the reassignment email, the delegation-aware
+> intervention queue, and the tests that pin their interaction.
 
 - **No seeding.** Reassignment starts empty; the seeded per-role users and any
   `submitted` applications created through the leave UI (or tests) provide the
@@ -325,3 +336,66 @@ Work in the following order; verify each backend step before frontend work begin
 - Cross-track note: adding the nullable `current_approver` FK to the merged
   `LeaveApplication` is additive and does not change the Unit 13 serializer
   contract, but the other developer should be aware before merging.
+
+## Follow-ups (2026-09-26)
+
+Unit 9 shipped every deliverable above, so the audit that followed was about the
+three things this spec explicitly deferred and that no later unit picked up.
+
+### 1. Reassignment email — the deferral to Unit 22 never happened
+
+Unit 22 covers `DECISION_RECORDED` and `APPLICATION_FINALISED` only; it never
+mentions reassignment. So a reassignment silently moved an application between
+two people's queues and told neither. Both are now notified on commit, through
+`notifications/reassignments.py`, on the same discipline as the delegation path:
+
+* the **replacement** learns they now own a pending application they did not ask
+  for, and the **previous** approver learns it was taken off them before they
+  acted;
+* an *initial* assignment (`from_approver is None`) mails only the new approver —
+  nobody lost a queue that never existed;
+* the **employee is deliberately not mailed**: they already see the reassignment
+  on their tracking timeline as a `reassigned` event (Unit 15, which resolves the
+  HR reason as the event comment), so the only thing an email would add is a
+  repeat of it.
+
+`NotificationOutbox` gained a **third subject family**, `reassignment`, rather
+than hanging these rows off `application`. The application family's constraint is
+unique per `(application, kind, cycle, role)`, and an application can be
+reassigned several times in one submission cycle — so an application-keyed row
+would have made every reassignment after the first silently idempotent-suppress
+against the first. See `notifications/migrations/0003_notificationoutbox_reassignment.py`.
+
+### 2. The intervention queue now reports the *acting* approver
+
+`GET /api/v1/reassignments/pending/` gained `acting_approver`,
+`acting_approver_name` and `is_delegated` alongside the existing
+`current_approver`. This unit wrote the queue assuming "pending" meant the
+responsible approver acts, which was true when it was written and stopped being
+true in Unit 21.
+
+Without it, HR's queue showed "Jane Dean" for an application that Bob HOD was
+actually deciding, and reassigning it to a *third* approver looked like it
+worked while the same delegate kept acting. The HR queue and the reassignment
+form both now name the delegate and who they are covering for.
+
+Resolution is bulked through `acting_approver_map()` so the queue stays a fixed
+number of queries — one delegation pass plus one user-name pass for the whole
+page, not two per row. `acting_approver_identity()` is the single-row equivalent
+for callers off-queue, and a test asserts the two agree.
+
+### 3. Tests pinning the interaction
+
+The behaviour above was correct but unpinned, so it read as an accident:
+
+* `workflows/tests_routing.py` — reassigning *away* from a delegated approver
+  hands over cleanly (the old cover no longer matches the moved spine);
+  reassigning *to* an away approver leaves their delegate acting; and the bulk
+  resolver agrees with `acting_approver_id` row for row.
+* `workflows/tests.py` — the pending payload reports the delegate, respects
+  delegation windows that have not started or have ended, and reports `None` for
+  an unassigned application.
+* `notifications/tests_reassignments.py` — the recipient matrix, idempotency,
+  two-reassignments-of-one-application, failure isolation, the on-commit
+  boundary, a rejected reassignment emitting nothing, and the two new
+  exactly-one-subject constraints.

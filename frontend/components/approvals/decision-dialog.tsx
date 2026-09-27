@@ -54,6 +54,7 @@ function DecisionDialogInner({
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -105,6 +106,8 @@ function DecisionDialogInner({
     setBusy(true);
     setError("");
     setFieldError("");
+    setConflict(false);
+    setBlocked(false);
     try {
       const result = await postDecision(app.id, {
         action: kind,
@@ -115,6 +118,11 @@ function DecisionDialogInner({
         onSubmitted(result.data);
       } else if (result.kind === "conflict") {
         setConflict(true);
+        setError(result.message);
+      } else if (result.kind === "blocked") {
+        // Permanent: there is no approver left for this application, so the
+        // dialog offers no Refresh and the approver simply cannot decide.
+        setBlocked(true);
         setError(result.message);
       } else if (result.kind === "forbidden") {
         setError(result.message);
@@ -232,9 +240,22 @@ function DecisionDialogInner({
             {error && !fieldError && !conflict && (
               <div
                 role="alert"
-                className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
+                className={cn(
+                  "mt-4 rounded-md p-3 text-sm",
+                  blocked
+                    ? "bg-status-pending-subtle text-status-pending"
+                    : "bg-status-rejected-subtle text-status-rejected"
+                )}
               >
                 {error}
+                {blocked && (
+                  <p className="mt-1 text-xs">
+                    Reloading will not help. This application&apos;s final stage
+                    resolves to the applicant, so Human Resources must change the
+                    applicant&apos;s approver role or the workflow before it can be
+                    decided.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -256,7 +277,7 @@ function DecisionDialogInner({
           <div className="mt-5 flex items-center gap-3">
             <button
               type="submit"
-              disabled={busy || !validatedConfirm}
+              disabled={busy || blocked || !validatedConfirm}
               className={cn(
                 "inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 font-medium focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
                 meta.buttonClass

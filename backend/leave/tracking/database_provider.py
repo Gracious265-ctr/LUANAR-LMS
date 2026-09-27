@@ -10,7 +10,8 @@ never the current workflow configuration).
 Event type vocabulary is pinned to the frontend ``EVENT_ICONS`` set:
 ``submitted``, ``approved``, ``rejected``, ``correction_requested``,
 ``resubmitted``, ``reassigned``. Stage states stay ``approved | awaiting |
-rejected | returned | upcoming``.
+rejected | returned | skipped | upcoming`` (``skipped`` marks a stage bypassed
+because the applicant was the only active approver for it).
 """
 
 from datetime import datetime
@@ -184,6 +185,8 @@ class DatabaseTrackingProvider(TrackingProvider):
             return "rejected"
         if stage.status == ApplicationStage.Status.CORRECTION_REQUESTED:
             return "returned"
+        if stage.status == ApplicationStage.Status.SKIPPED:
+            return "skipped"
         return "upcoming"
 
     def _acting_approver(self, acting_id, responsible_id, users) -> TrackedApprover | None:

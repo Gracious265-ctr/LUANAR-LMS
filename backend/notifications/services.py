@@ -20,8 +20,9 @@ from django.core.mail import send_mail
 
 from workflows.events import APPLICATION_FINALISED, ApprovalEvent
 
-#: The domain this notification belongs to (kept in the body/subject for now).
-_LEAVE_DOMAIN = "luanar.ac.mw"
+#: The domain these notifications belong to (kept in the body/subject for now).
+#: Shared with :mod:`notifications.delegations` so both mail paths agree.
+LEAVE_DOMAIN = "luanar.ac.mw"
 
 
 def compose_subject(event: ApprovalEvent) -> str:
@@ -96,7 +97,7 @@ def send_decision_email(event: ApprovalEvent) -> None:
         send_mail(
             subject=row.subject,
             message=row.body,
-            from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{_LEAVE_DOMAIN}",
+            from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{LEAVE_DOMAIN}",
             recipient_list=recipients,
             fail_silently=False,
         )

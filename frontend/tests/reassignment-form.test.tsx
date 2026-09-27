@@ -53,6 +53,9 @@ const application: PendingApplication = {
   submitted_at: "2026-09-18T10:00:00Z",
   current_approver: null,
   current_approver_name: "",
+  acting_approver: null,
+  acting_approver_name: "",
+  is_delegated: false,
 };
 
 describe("ReassignmentForm", () => {
@@ -109,6 +112,45 @@ describe("ReassignmentForm", () => {
       "Jane Dean",
       "Bob HOD",
     ]);
+  });
+
+  it("warns when the current approver is away and their delegate is acting", () => {
+    /* The cover overlay is applied at query time, so reassigning back to the
+       named approver would leave their delegate acting. Stated before submit. */
+    render(
+      <ReassignmentForm
+        employees={employees}
+        application={{
+          ...application,
+          current_approver: 3,
+          current_approver_name: "Jane Dean",
+          acting_approver: 5,
+          acting_approver_name: "Bob HOD",
+          is_delegated: true,
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText(/Bob HOD is currently acting as delegate for Jane Dean/)
+    ).toBeInTheDocument();
+  });
+
+  it("shows no cover warning when nobody is delegating", () => {
+    render(
+      <ReassignmentForm
+        employees={employees}
+        application={{
+          ...application,
+          current_approver: 3,
+          current_approver_name: "Jane Dean",
+          acting_approver: 3,
+          acting_approver_name: "Jane Dean",
+        }}
+      />
+    );
+
+    expect(screen.queryByText(/acting as delegate/)).not.toBeInTheDocument();
   });
 
   it("excludes the current approver from the options", () => {

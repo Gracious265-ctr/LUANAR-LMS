@@ -69,31 +69,82 @@ export function auditEditHref(entry: AuditEntry): string | null {
   }
 }
 
-/** A short, human-readable summary of an entry's changed fields (or reason). */
-export function auditChangesText(entry: AuditEntry): string {
-  if (!entry.detail) {
-    return entry.reason || "\u2014";
-  }
-  const after = entry.detail.after;
-  const changes = Object.keys(after);
-  if (changes.length === 0) {
-    return entry.reason || "\u2014";
-  }
-  const before = entry.detail.before ?? {};
-  const parts = changes.map((field) => {
-    const oldValue = before[field];
-    const newValue = after[field];
-    const display =
-      oldValue !== undefined
-        ? `${formatAuditValue(oldValue)} \u2192 ${formatAuditValue(newValue)}`
-        : formatAuditValue(newValue);
-    return `${field}: ${display}`;
-  });
-  if (entry.reason) {
-    parts.push(`Reason: ${entry.reason}`);
-  }
-  if (parts.length <= 2) {
+const MAX_PAIRS = 2;
+/** Keeps one fat value (a JSON blob in a flat payload) from wrecking the cell. */
+const MAX_VALUE_CHARS = 80;
+
+function truncate(value: string): string {
+  return value.length > MAX_VALUE_CHARS
+    ? `${value.slice(0, MAX_VALUE_CHARS - 1)}\u2026`
+    : value;
+}
+
+function joinPairs(parts: string[]): string {
+  if (parts.length <= MAX_PAIRS) {
     return parts.join(", ");
   }
-  return parts.slice(0, 2).join(", ") + ` (+${parts.length - 2} more)`;
+  return `${parts.slice(0, MAX_PAIRS).join(", ")} (+${parts.length - MAX_PAIRS} more)`;
+}
+
+/** A `{"before": ..., "after": ...}` diff, or null when `detail` is not one. */
+function asDiff(
+  detail: Record<string, unknown>
+): { before: Record<string, unknown>; after: Record<string, unknown> } | null {
+  const { before, after } = detail;
+  if (after === null || typeof after !== "object" || Array.isArray(after)) {
+    return null;
+  }
+  return {
+    before:
+      before !== null && typeof before === "object" && !Array.isArray(before)
+        ? (before as Record<string, unknown>)
+        : {},
+    after: after as Record<string, unknown>,
+  };
+}
+
+/** A short, human-readable summary of an entry's changed fields (or reason). */
+export function auditChangesText(entry: AuditEntry): string {
+  const detail = entry.detail;
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+    return entry.reason || "\u2014";
+  }
+
+  const diff = asDiff(detail);
+  if (diff) {
+    const changes = Object.keys(diff.after);
+    if (changes.length === 0) {
+      return entry.reason || "\u2014";
+    }
+    const parts = changes.map((field) => {
+      const oldValue = diff.before[field];
+      const newValue = diff.after[field];
+      const display =
+        oldValue !== undefined
+          ? `${formatAuditValue(oldValue)} \u2192 ${formatAuditValue(newValue)}`
+          : formatAuditValue(newValue);
+      return `${field}: ${display}`;
+    });
+    if (entry.reason) {
+      parts.push(`Reason: ${entry.reason}`);
+    }
+    return joinPairs(parts);
+  }
+
+  // Flat payload shape. `detail` is a free-form JSON bag, not always a diff:
+  // `document_generated` records the file, `stage_skipped` the bypassed stages.
+  // Reading those as a diff threw on `Object.keys(undefined)` and took the
+  // whole audit page down, so they are summarised instead.
+  const parts = Object.entries(detail).map(
+    ([key, value]) => `${key}: ${truncate(formatAuditValue(value))}`
+  );
+  if (parts.length === 0) {
+    return entry.reason || "\u2014";
+  }
+  // Only add the entry-level reason when the payload has none of its own, so
+  // `stage_skipped` does not print its reason twice.
+  if (entry.reason && !("reason" in detail)) {
+    parts.push(`Reason: ${truncate(entry.reason)}`);
+  }
+  return joinPairs(parts);
 }

@@ -60,6 +60,9 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
   const showApprovals = APPROVER_ROLES.includes(user.role);
   const showDepartment = HOD_AND_ABOVE.includes(user.role);
   const showHR = user.role === HR_ROLE;
+  // HR may also hold a delegation, matching the backend's approver-or-HR rule
+  // for the cover endpoints, even though it is not in APPROVER_ROLES.
+  const showCover = showApprovals || showHR;
 
   const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -77,6 +80,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           user={user}
           showApprovals={showApprovals}
           showDepartment={showDepartment}
+          showCover={showCover}
           showHR={showHR}
         />
 
@@ -96,6 +100,7 @@ const Sidebar = memo(function Sidebar({
   user,
   showApprovals,
   showDepartment,
+  showCover,
   showHR,
 }: {
   open: boolean;
@@ -104,6 +109,7 @@ const Sidebar = memo(function Sidebar({
   user: User;
   showApprovals: boolean;
   showDepartment: boolean;
+  showCover: boolean;
   showHR: boolean;
 }) {
   return (
@@ -139,6 +145,15 @@ const Sidebar = memo(function Sidebar({
           open={open}
         />
         {showApprovals && <ApprovalsNavItem open={open} />}
+        {showCover && (
+          <Option
+            Icon={UserCheck}
+            title="Request Cover"
+            href="/dashboard/cover"
+            currentPath={currentPath}
+            open={open}
+          />
+        )}
         {showDepartment && (
           <Option
             Icon={Users}

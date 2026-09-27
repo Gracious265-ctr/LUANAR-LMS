@@ -53,12 +53,21 @@ export function approverRolePeople(employees: Employee[]): Employee[] {
   );
 }
 
+/**
+ * Create a delegation request.
+ *
+ * Posts to the un-namespaced proxy: a request is normally raised by the
+ * approver themselves (self-service), and only HR raises one on another's
+ * behalf. The backend decides which — it forces `approver` to the caller
+ * unless the caller is HR, and ignores any `approver` sent by a non-HR user.
+ */
 export async function createDelegation(
   input: DelegationInput
 ): Promise<Delegation> {
-  return proxyPost<Delegation>("/api/hr/delegations", input);
+  return proxyPost<Delegation>("/api/delegations", input);
 }
 
+// The three decisions stay HR-only, so they keep the hr-namespaced proxies.
 export async function approveDelegation(
   id: number | string,
   body: { delegate: number; decision_reason: string }

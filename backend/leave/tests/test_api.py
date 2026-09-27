@@ -13,6 +13,7 @@ from .stubs import (
     EARLIEST_ANNUAL_START,
     StubProviderMixin,
     make_user,
+    register_chain_approvers,
 )
 
 
@@ -115,6 +116,7 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         self.client = APIClient()
         self.user = make_user()
         self.stub.register_employee(self.user)
+        register_chain_approvers(self.stub)
         self.client.force_authenticate(user=self.user)
 
     def draft(self, **kwargs):

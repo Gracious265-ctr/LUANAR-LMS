@@ -28,6 +28,11 @@ const STATE_MARKER: Record<
     markerClass: "border-2 border-border-strong bg-surface-card",
     iconClass: "text-text-muted",
   },
+  skipped: {
+    icon: Minus,
+    markerClass: "border-2 border-border-strong bg-surface-muted",
+    iconClass: "text-text-muted",
+  },
 };
 
 export function ApprovalHistoryTimeline({ data }: { data: ApprovalReview }) {
@@ -89,6 +94,10 @@ export function ApprovalHistoryTimeline({ data }: { data: ApprovalReview }) {
                     ) : stage.status === "pending" ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-semibold text-status-pending">
                         Awaiting your decision
+                      </span>
+                    ) : stage.status === "skipped" ? (
+                      <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                        Skipped — the approval flow starts after the applicant
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">

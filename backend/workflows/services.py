@@ -21,6 +21,7 @@ from .models import (
     Reassignment,
     Workflow,
 )
+from .policies import is_self_application
 
 
 class WorkflowAssignmentError(Exception):
@@ -291,6 +292,91 @@ def _active_delegation_for_id(approver_id: int) -> Delegation | None:
     )
 
 
+def acting_approver_identity(
+    application,
+) -> tuple[int | None, str]:
+    """``(acting_approver_id, name)`` for a single application.
+
+    The display-name counterpart of :func:`acting_approver_id`, for payloads
+    that must show HR *who is actually holding* the application and not only
+    the responsible approver the spine names.
+    """
+    acting_id = acting_approver_id(application)
+    if acting_id is None:
+        return None, ""
+    user = User.objects.filter(pk=acting_id).first()
+    return acting_id, (user.get_full_name() if user is not None else "")
+
+
+def acting_approver_map(
+    applications,
+) -> dict:
+    """``{application_id: (acting_approver_id, name)}`` for a page of rows.
+
+    The bulk counterpart of :func:`acting_approver_identity`: two queries for
+    the whole page (one delegation pass, one user-name pass) instead of two per
+    application. Only applications with a resolvable responsible approver appear
+    in the map, so callers fall back to the single-row resolver for the rest.
+    """
+    responsible: dict = {}
+    for application in applications:
+        approver_id = responsible_approver_id(application)
+        if approver_id is not None:
+            responsible[application.pk] = approver_id
+
+    delegations = active_delegations_for_ids(set(responsible.values()))
+    user_ids = set(responsible.values()) | {
+        delegation.delegate_id
+        for delegation in delegations.values()
+        if delegation.delegate_id is not None
+    }
+    names = {
+        user.pk: user.get_full_name() for user in User.objects.filter(pk__in=user_ids)
+    }
+
+    resolved: dict = {}
+    for application_id, approver_id in responsible.items():
+        delegation = delegations.get(approver_id)
+        if delegation is not None and delegation.delegate_id is not None:
+            resolved[application_id] = (
+                delegation.delegate_id,
+                names.get(delegation.delegate_id, ""),
+            )
+        else:
+            resolved[application_id] = (approver_id, names.get(approver_id, ""))
+    return resolved
+
+
+def active_delegations_for_ids(
+    approver_ids: list[int] | set[int] | tuple[int, ...],
+) -> dict[int, Delegation]:
+    """The active delegation covering each of ``approver_ids``, keyed by user id.
+
+    The batched twin of :func:`_active_delegation_for_id`, for callers that
+    resolve a whole page of applications at once (HR's intervention queue) and
+    would otherwise pay one delegation query per row. Overlapping delegations
+    cannot happen per approver — the one-open-cover rule plus the approve-time
+    overlap check make the newest active row the only one — so a single pass
+    with ``-starts_on`` ordering resolves the same winner per approver.
+    """
+    if not approver_ids:
+        return {}
+    today = timezone.localdate()
+    delegations = (
+        Delegation.objects.filter(
+            approver_id__in=approver_ids,
+            status=Delegation.Status.APPROVED,
+            starts_on__lte=today,
+        )
+        .filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today))
+        .order_by("-starts_on")
+    )
+    resolved: dict[int, Delegation] = {}
+    for delegation in delegations:
+        resolved.setdefault(delegation.approver_id, delegation)
+    return resolved
+
+
 def responsible_approver_id(application) -> int | None:
     """The configured approver who must act now (Unit 21 spine, D2).
 
@@ -364,7 +450,7 @@ def require_decision_reason(decision_reason: object) -> str:
     return reason
 
 
-def _delegation_summary(delegation: Delegation) -> str:
+def delegation_summary(delegation: Delegation) -> str:
     approver = delegation.approver.get_full_name()
     delegate = (
         delegation.delegate.get_full_name()
@@ -392,14 +478,41 @@ def _record_delegation_audit(
         action=action,
         target_type=AuditEntry.TargetType.DELEGATION,
         target_id=delegation.pk,
-        target_summary=_delegation_summary(delegation),
+        target_summary=delegation_summary(delegation),
         detail=changed_fields(before, after),
         reason=reason,
     )
 
 
+def _overlap_message(delegation: Delegation, conflict: Delegation) -> str:
+    """Human-readable conflict naming the other delegate and their period."""
+    return (
+        f"This period overlaps an approved delegation for "
+        f"{delegation.approver.get_full_name()} delegated to "
+        f"{conflict.delegate.get_full_name()} "
+        f"({conflict.starts_on.isoformat()} to "
+        f"{(conflict.ends_on or 'open-ended')})."
+    )
+
+
+def _lock_for_decision(delegation: Delegation) -> Delegation:
+    """Re-read ``delegation`` under lock, serialising decisions per approver.
+
+    Locking the approver row *before* the delegation row gives every decision
+    for one approver the same lock order, so two concurrent decisions cannot
+    interleave (and cannot deadlock against each other). Locking the delegation
+    alone would not be enough for ``approve``: the overlap check reads the
+    approver's *other* approved rows, which an approver-scoped lock is what
+    actually serialises.
+    """
+    User.objects.select_for_update().filter(pk=delegation.approver_id).first()
+    return Delegation.objects.select_for_update().get(pk=delegation.pk)
+
+
 def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
     """Approve a requested delegation with a concrete delegate and reason."""
+    from notifications.delegations import DELEGATION_APPROVED, notify_delegation
+
     if delegation.status != Delegation.Status.REQUESTED:
         raise DelegationActionError(
             "detail", "Only a requested delegation can be approved."
@@ -412,24 +525,27 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             "delegate",
             "Select an active user with an approver role as the delegate.",
         )
+    # Cheap pre-check purely for a fast, friendly error on the common case; the
+    # authoritative re-check happens under the approver lock below.
     conflict = find_conflicting_delegation(
         delegation.pk, delegation.approver_id, delegation.starts_on, delegation.ends_on
     )
     if conflict is not None:
-        raise DelegationActionError(
-            "detail",
-            f"This period overlaps an approved delegation for "
-            f"{delegation.approver.get_full_name()} delegated to "
-            f"{conflict.delegate.get_full_name()} "
-            f"({conflict.starts_on.isoformat()} to "
-            f"{(conflict.ends_on or 'open-ended')}).",
-        )
+        raise DelegationActionError("detail", _overlap_message(delegation, conflict))
     with transaction.atomic():
-        delegation = Delegation.objects.select_for_update().get(pk=delegation.pk)
+        delegation = _lock_for_decision(delegation)
         if delegation.status != Delegation.Status.REQUESTED:
             raise DelegationActionError(
                 "detail", "Only a requested delegation can be approved."
             )
+        conflict = find_conflicting_delegation(
+            delegation.pk,
+            delegation.approver_id,
+            delegation.starts_on,
+            delegation.ends_on,
+        )
+        if conflict is not None:
+            raise DelegationActionError("detail", _overlap_message(delegation, conflict))
         delegation.delegate = delegate
         delegation.status = Delegation.Status.APPROVED
         delegation.decision_reason = reason
@@ -451,17 +567,25 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             reason=reason,
             before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
+        notify_delegation(delegation.pk, DELEGATION_APPROVED)
     return delegation
 
 
 def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
     """Reject a requested delegation with a mandatory reason."""
+    from notifications.delegations import DELEGATION_REJECTED, notify_delegation
+
     if delegation.status != Delegation.Status.REQUESTED:
         raise DelegationActionError(
             "detail", "Only a requested delegation can be rejected."
         )
     reason = require_decision_reason(data.get("decision_reason"))
     with transaction.atomic():
+        delegation = _lock_for_decision(delegation)
+        if delegation.status != Delegation.Status.REQUESTED:
+            raise DelegationActionError(
+                "detail", "Only a requested delegation can be rejected."
+            )
         delegation.status = Delegation.Status.REJECTED
         delegation.decision_reason = reason
         delegation.decided_by = actor
@@ -481,11 +605,14 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             reason=reason,
             before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
+        notify_delegation(delegation.pk, DELEGATION_REJECTED)
     return delegation
 
 
 def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
     """Cancel a scheduled or active approved delegation."""
+    from notifications.delegations import DELEGATION_CANCELLED, notify_delegation
+
     if delegation.status != Delegation.Status.APPROVED:
         raise DelegationActionError(
             "detail", "Only an approved delegation can be cancelled."
@@ -496,6 +623,16 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
         )
     reason = require_decision_reason(data.get("decision_reason"))
     with transaction.atomic():
+        delegation = _lock_for_decision(delegation)
+        # The caller's copy can go stale between the pre-check and this lock.
+        if delegation.status != Delegation.Status.APPROVED:
+            raise DelegationActionError(
+                "detail", "Only an approved delegation can be cancelled."
+            )
+        if delegation.state == "ended":
+            raise DelegationActionError(
+                "detail", "A completed delegation cannot be cancelled."
+            )
         delegation.status = Delegation.Status.CANCELLED
         delegation.decision_reason = reason
         delegation.decided_by = actor
@@ -515,6 +652,7 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             reason=reason,
             before={"status": Delegation.Status.APPROVED},
         )
+        notify_delegation(delegation.pk, DELEGATION_CANCELLED)
     return delegation
 
 
@@ -539,6 +677,173 @@ def require_reassignment_reason(reason: object) -> str:
             "reason", "A reassignment reason is required."
         )
     return reason
+
+
+class SelfApprovalBlockedError(Exception):
+    """No approver in the remaining chain may act because it is the applicant.
+
+    Raised when every remaining stage of a chain would resolve to the applicant
+    themself, so there is nobody left to route to. The mandatory stage cannot be
+    skipped (invariant 12.3) and the applicant must never approve their own
+    leave, so the operation that would have handed the application to them is
+    refused and rolled back instead. HR must correct the workflow configuration
+    or reassign the application.
+    """
+
+    def __init__(self, messages: list[str]):
+        self.messages = messages
+        super().__init__("; ".join(messages))
+
+
+def is_self_approver(user_id: int | None, application: LeaveApplication) -> bool:
+    """Whether ``user_id`` is the applicant who owns ``application``.
+
+    A thin id-based wrapper over the authoritative
+    :func:`workflows.policies.is_self_application`, for the call sites that hold
+    a user id (a resolved ``StageDefinition.approver_user_id``) rather than a
+    loaded ``User``.
+    """
+    return is_self_application(user_id, application)
+
+
+def applicant_stage_positions(application: LeaveApplication, definitions) -> list[int]:
+    """The positions in ``definitions`` whose approver is the applicant.
+
+    An employee may hold more than one approver role, so this is a list: the
+    application's path has to clear the applicant's *last* one.
+    """
+    return [
+        index
+        for index, definition in enumerate(definitions)
+        if is_self_approver(definition.approver_user_id, application)
+    ]
+
+
+def select_activatable_stage_index(application: LeaveApplication, definitions) -> int:
+    """Index of the first stage in ``definitions`` that may be activated.
+
+    An employee who is also an approver must never be the approver of record
+    for their own leave. A role resolves to exactly one approver (the lowest-id
+    active user holding it), so a self-match cannot be replaced by another
+    candidate within the stage.
+
+    The applicant's stages are removed from the path, and so is everything before
+    them: the application starts at the first stage *after* the applicant's last
+    one and never travels backwards down the queue. Given
+    ``supervisor -> HOD -> Registrar``:
+
+    * a supervisor's application starts at the HOD;
+    * the HOD's own application starts at the Registrar, never at the
+      Supervisor, because the Supervisor sits below the applicant;
+    * a Registrar's application has no stage after them, so it is not routed at
+      all (:class:`SelfApprovalBlockedError`).
+
+    Bypassed stages are materialised as ``skipped`` so the chain stays contiguous
+    and the snapshot keeps recording the workflow as HR configured it
+    (invariant 12.5).
+
+    Returns the index of the first activatable stage.
+    Raises :class:`SelfApprovalBlockedError` when the applicant holds the last
+    stage, so the caller refuses the operation rather than routing an application
+    that nobody can sign off.
+    """
+    if not definitions:
+        return 0
+    positions = applicant_stage_positions(application, definitions)
+    if not positions:
+        return 0
+    start = positions[-1] + 1
+    if start >= len(definitions):
+        held = ", ".join(
+            definitions[index].role_label for index in positions
+        )
+        if len(positions) == len(definitions):
+            raise SelfApprovalBlockedError(
+                [
+                    "This approval workflow resolves every stage to the applicant "
+                    f"themself ({held}). An approver cannot approve their own "
+                    "leave application, and a mandatory stage cannot be skipped. "
+                    "Human Resources must appoint another active holder of one of "
+                    "these roles, or correct the workflow configuration."
+                ]
+            )
+        raise SelfApprovalBlockedError(
+            [
+                f"The applicant is the approver for the {held} stage, which is "
+                "the last stage of this workflow, so there is no later approver "
+                "to take the application. An approver cannot approve their own "
+                "leave application, and a mandatory stage cannot be skipped. "
+                "Human Resources must appoint the applicant to a different "
+                "approver role, or change the workflow's final stage, before this "
+                "application can be submitted."
+            ]
+        )
+    return start
+
+
+def record_skipped_stages_audit(
+    application: LeaveApplication,
+    skipped_stages,
+    activated_stage=None,
+    actor=None,
+) -> None:
+    """Audit the stages bypassed because they would resolve to the applicant.
+
+    ``actor`` is ``None`` when the skip happens automatically while routing, so
+    the entry identifies the acting user as the system rather than a person; it
+    is the deciding approver when the chain advances past a match.
+    """
+    if not skipped_stages:
+        return
+    skipped = list(skipped_stages)
+    applicant_orders = {
+        stage.stage_order
+        for stage in skipped
+        if is_self_approver(stage.assigned_approver_id, application)
+    }
+    applicant_labels = ", ".join(
+        stage.role_label
+        for stage in skipped
+        if stage.stage_order in applicant_orders
+    )
+    routed_to = (
+        activated_stage.role_label if activated_stage is not None else None
+    )
+    record_audit(
+        actor=actor,
+        action=AuditEntry.Action.STAGE_SKIPPED,
+        target_type=AuditEntry.TargetType.APPLICATION,
+        target_id=application.pk,
+        target_summary=application.reference_number,
+        detail={
+            "reason": "applicant_is_the_approver",
+            "applicant_stage_orders": sorted(applicant_orders),
+            "skipped_stages": [
+                {
+                    "order": stage.stage_order,
+                    "role": stage.role,
+                    "role_label": stage.role_label,
+                    "assigned_approver_id": stage.assigned_approver_id,
+                    "skip_reason": (
+                        "applicant_is_approver"
+                        if stage.stage_order in applicant_orders
+                        else "before_applicant_stage"
+                    ),
+                }
+                for stage in skipped
+            ],
+            "activated_stage_order": (
+                activated_stage.stage_order if activated_stage is not None else None
+            ),
+            "activated_role_label": routed_to,
+        },
+        reason=(
+            f"The applicant is the approver for the {applicant_labels} stage, so "
+            "the application starts after it"
+            + (f" at the {routed_to} stage." if routed_to else ".")
+            + " Stages at or below the applicant are bypassed."
+        ),
+    )
 
 
 def reassign_application(
@@ -575,7 +880,7 @@ def reassign_application(
             "to_approver",
             "The application is already assigned to this approver.",
         )
-    if to_approver.pk == application.employee_id:
+    if is_self_approver(to_approver.pk, application):
         raise ReassignmentError(
             "to_approver",
             "A pending application cannot be assigned to its own applicant.",
@@ -614,6 +919,10 @@ def reassign_application(
                 ),
                 reason=reason,
             )
+        # Both approvers' queues just changed; tell them once this is durable.
+        from notifications.reassignments import notify_reassignment
+
+        notify_reassignment(reassignment.pk)
     return reassignment
 
 
@@ -623,7 +932,14 @@ def assign_workflow(application):
     Runs idempotently: if the current submission cycle already has stages, the
     existing live stage is returned unchanged. Otherwise the workflow provider's
     stage definitions are validated and bulk-created with exactly one ``pending``
-    stage (the first), and ``application.current_stage`` is pointed at it.
+    stage, and ``application.current_stage`` is pointed at it.
+
+    An employee who is also an approver is never assigned their own
+    application: any leading stage resolving to the applicant is materialised
+    as ``skipped`` and the first stage with a different approver is activated
+    instead (see :func:`select_activatable_stage_index`). When no such stage
+    exists the submission is refused, because a mandatory stage cannot be
+    skipped (invariant 12.3).
 
     Raises :class:`WorkflowAssignmentError` (responsibility of the caller to map
     to a submisable ``ValidationFailedError``-style failure) when the provider
@@ -648,41 +964,59 @@ def assign_workflow(application):
         if sorted(orders) != list(range(1, len(definitions) + 1)):
             raise WorkflowAssignmentError(["Workflow stages must be ordered 1..N."])
 
-        stages = []
-        for index, definition in enumerate(definitions):
+        approvers = []
+        for definition in definitions:
             if definition.approver_user_id is None:
                 raise WorkflowAssignmentError(
                     [f"No active user for the {definition.role_label} stage."]
                 )
             try:
-                approver = User.objects.get(pk=definition.approver_user_id)
+                approvers.append(User.objects.get(pk=definition.approver_user_id))
             except User.DoesNotExist:
                 raise WorkflowAssignmentError(
                     [f"No active user for the {definition.role_label} stage."]
                 )
-            stages.append(
-                ApplicationStage(
-                    application=application,
-                    submission_cycle=cycle,
-                    stage_order=definition.order,
-                    role=definition.role,
-                    role_label=definition.role_label,
-                    assigned_approver=approver,
-                    status=(
-                        ApplicationStage.Status.PENDING
-                        if index == 0
-                        else ApplicationStage.Status.WAITING
-                    ),
-                    is_final=index == len(definitions) - 1,
-                )
+
+        try:
+            active_index = select_activatable_stage_index(application, definitions)
+        except SelfApprovalBlockedError as exc:
+            raise WorkflowAssignmentError(exc.messages)
+
+        last_index = len(definitions) - 1
+        stages = [
+            ApplicationStage(
+                application=application,
+                submission_cycle=cycle,
+                stage_order=definition.order,
+                role=definition.role,
+                role_label=definition.role_label,
+                assigned_approver=approver,
+                status=_initial_stage_status(index, active_index),
+                is_final=index == last_index,
             )
+            for index, (definition, approver) in enumerate(
+                zip(definitions, approvers)
+            )
+        ]
 
         ApplicationStage.objects.bulk_create(stages)
-        first = stages[0]
+        record_skipped_stages_audit(
+            application, stages[:active_index], activated_stage=stages[active_index]
+        )
+        first = stages[active_index]
         application.current_stage = first
         application.current_approver = first.assigned_approver
         application.save(update_fields=["current_stage", "current_approver", "updated_at"])
         return first
+
+
+def _initial_stage_status(index: int, active_index: int) -> str:
+    """The status a freshly materialised stage starts in."""
+    if index < active_index:
+        return ApplicationStage.Status.SKIPPED
+    if index == active_index:
+        return ApplicationStage.Status.PENDING
+    return ApplicationStage.Status.WAITING
 
 
 class ApprovalNotFoundError(Exception):
@@ -707,6 +1041,57 @@ class ApprovalValidationError(ValueError):
     def __init__(self, errors: dict):
         self.errors = errors
         super().__init__(str(errors))
+
+
+def _next_activatable_stage(application, decided_stage):
+    """The stage to activate after ``decided_stage`` was approved.
+
+    Walks forward through the remaining chain and returns
+    ``(next_stage, skipped_stages)``. A stage whose approver is the applicant is
+    bypassed and returned in ``skipped_stages`` so the caller can mark and audit
+    it; the walk continues in case a later stage has a valid approver.
+
+    Raises ``ApprovalValidationError`` when the chain simply ends (a pre-existing
+    malformed chain) and :class:`SelfApprovalBlockedError` when stages remain but
+    every one of them resolves to the applicant — there is then nobody who may
+    act, and a mandatory stage cannot be dropped (invariant 12.3).
+    """
+    remaining = list(
+        ApplicationStage.objects.select_for_update()
+        .filter(
+            application=application,
+            submission_cycle=application.workflow_chain_cycle,
+            stage_order__gt=decided_stage.stage_order,
+        )
+        .order_by("stage_order")
+    )
+    if not remaining:
+        raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
+
+    skipped = []
+    for candidate in remaining:
+        if (
+            candidate.status == ApplicationStage.Status.SKIPPED
+            or is_self_approver(candidate.assigned_approver_id, application)
+        ):
+            skipped.append(candidate)
+            continue
+        return candidate, skipped
+
+    raise SelfApprovalBlockedError(
+        [
+            "This application cannot be advanced: every remaining approval "
+            "stage ("
+            + ", ".join(stage.role_label for stage in remaining)
+            + ") resolves to the applicant themself, so no approver is left to "
+            "sign it off. An approver cannot approve their own leave "
+            "application, and a mandatory stage cannot be skipped. Human "
+            "Resources must appoint the applicant to a different approver role, "
+            "or change the workflow, before this application can be decided. "
+            "Reassigning the current approver will not help, because the "
+            "blocked stage is a later one that reassignment does not reach."
+        ]
+    )
 
 
 def decide(*, application_id, actor, action: str, comment: str = "", expected_version: int):
@@ -800,22 +1185,13 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
 
         stage.decision_version = before_version + 1
         next_stage = None
+        skipped_stages = []
         if action == ApprovalDecision.Action.APPROVE:
             stage.status = ApplicationStage.Status.APPROVED
             if stage.is_final:
                 app.status = LeaveApplication.Status.APPROVED
             else:
-                next_stage = (
-                    ApplicationStage.objects.select_for_update()
-                    .filter(
-                        application=app,
-                        submission_cycle=app.workflow_chain_cycle,
-                        stage_order=stage.stage_order + 1,
-                    )
-                    .first()
-                )
-                if next_stage is None:
-                    raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
+                next_stage, skipped_stages = _next_activatable_stage(app, stage)
                 next_stage.status = ApplicationStage.Status.PENDING
         elif action == ApprovalDecision.Action.REJECT:
             stage.status = ApplicationStage.Status.REJECTED
@@ -827,6 +1203,13 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         # Persist the decided stage first so a single ``pending`` stage always
         # exists at any one moment (enforced by the partial unique constraint).
         stage.save(update_fields=["status", "decision_version", "updated_at"])
+        if skipped_stages:
+            for skipped in skipped_stages:
+                skipped.status = ApplicationStage.Status.SKIPPED
+            ApplicationStage.objects.bulk_update(skipped_stages, ["status"])
+            record_skipped_stages_audit(
+                app, skipped_stages, activated_stage=next_stage, actor=actor
+            )
         if next_stage is not None:
             next_stage.save(update_fields=["status", "decision_version", "updated_at"])
             app.current_stage = next_stage

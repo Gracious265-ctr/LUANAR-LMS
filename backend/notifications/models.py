@@ -1,13 +1,15 @@
 """Append-only notification outbox (Unit 22, D2/D5).
 
-Each row is one decision email — the delivery record for a single
-``(application, kind, submission_cycle, role_label)`` notification.
+Each row is one email — the delivery record for a single subject/party pair:
+a leave decision (``application``), a delegation lifecycle event
+(``delegation``), or a reassignment (``reassignment``).
 
 * **Append-only** — queryset-wide ``update``/``delete`` are rejected, mirroring
   the balance-ledger discipline. Row state moves ``pending → sent|failed`` only
   through the model's own transition methods, never through the queryset.
-* **Idempotent** — the unique constraint means a re-emitted event (after a
-  reconnect or replay) matches the existing row and never sends a second email.
+* **Idempotent** — a partial unique constraint per subject family means a
+  re-emitted event (after a reconnect or replay) matches the existing row and
+  never sends a second email.
 * **Same vocabulary** — state values ``pending`` / ``sent`` / ``failed`` reuse
   the delivery vocabulary already pinned in Unit 18's
   ``CancellationRequest.NotificationState``; nothing new is invented.
@@ -44,17 +46,51 @@ class NotificationOutboxManager(models.Manager.from_queryset(NotificationOutboxQ
 
 
 class NotificationOutbox(models.Model):
-    """One email notification record for one decision, cycle and stage role."""
+    """One email notification record for one decision, cycle and stage role.
+
+    Exactly one subject is set per row: ``application`` for a leave decision,
+    ``delegation`` for a delegation lifecycle event, or ``reassignment`` for an
+    HR intervention. A row therefore always has one authoritative thing to point
+    at, and the subject families are constrained separately so idempotency never
+    collides across them.
+
+    A reassignment needs its own subject rather than riding on ``application``:
+    an application can be reassigned several times in one submission cycle, and
+    the application constraint is unique per ``(application, kind, cycle, role)``,
+    so a second reassignment would silently match the first row and send nothing.
+    """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         "leave.LeaveApplication",
         on_delete=models.PROTECT,
         related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+    )
+    delegation = models.ForeignKey(
+        "workflows.Delegation",
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+    )
+    reassignment = models.ForeignKey(
+        "workflows.Reassignment",
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
     )
     kind = models.CharField(max_length=32, db_index=True)
     submission_cycle = models.PositiveSmallIntegerField(default=1)
-    role_label = models.CharField(max_length=32, default="")
+    role_label = models.CharField(
+        max_length=32,
+        default="",
+        help_text="Who the row concerns: the stage role for a decision email, "
+        "'approver' / 'delegate' for a delegation email, or 'from_approver' / "
+        "'to_approver' for a reassignment email.",
+    )
     recipient_email = models.EmailField()
     subject = models.CharField(max_length=200, default="")
     body = models.TextField(default="")
@@ -76,10 +112,45 @@ class NotificationOutbox(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        application__isnull=False,
+                        delegation__isnull=True,
+                        reassignment__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=False,
+                        reassignment__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=True,
+                        reassignment__isnull=False,
+                    )
+                ),
+                name="one_notification_subject",
+            ),
+            # Partial so the nullable columns stay meaningful: a delegation or
+            # reassignment row can never collide with an application row, and
+            # PostgreSQL skips NULLs, so each family is unique only among its
+            # own subject.
             models.UniqueConstraint(
                 fields=["application", "kind", "submission_cycle", "role_label"],
+                condition=models.Q(application__isnull=False),
                 name="one_outbox_row_per_application_kind_cycle_role",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["delegation", "kind", "role_label"],
+                condition=models.Q(delegation__isnull=False),
+                name="one_outbox_row_per_delegation_kind_role",
+            ),
+            models.UniqueConstraint(
+                fields=["reassignment", "kind", "role_label"],
+                condition=models.Q(reassignment__isnull=False),
+                name="one_outbox_row_per_reassignment_kind_role",
+            ),
         ]
 
     def __str__(self) -> str:

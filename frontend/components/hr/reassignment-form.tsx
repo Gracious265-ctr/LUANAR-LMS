@@ -63,10 +63,22 @@ export function ReassignmentForm({
             : ""}
         </p>
         <p className="mt-0.5 text-xs text-text-muted">
-          {application.start_date ?? "\u2014"}
+          {application.start_date ?? "—"}
           {application.end_date ? ` → ${application.end_date}` : ""} · Current
           approver: {application.current_approver_name || "Unassigned"}
         </p>
+        {application.is_delegated && (
+          /* Stated before the select, not after: cover is a query-time overlay,
+             so handing this to the named approver would leave their delegate
+             acting and the intervention would appear to do nothing. */
+          <p className="mt-2 rounded-md bg-status-pending-subtle px-3 py-2 text-xs text-status-pending">
+            {application.acting_approver_name} is currently acting as delegate
+            for {application.current_approver_name}. Reassigning moves the record
+            to your chosen approver; if you choose{" "}
+            {application.current_approver_name}, their delegate keeps acting.
+          </p>
+        )}
+
       </div>
 
       <div>

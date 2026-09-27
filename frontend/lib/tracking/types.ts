@@ -10,6 +10,7 @@ export type StageState =
   | "awaiting"
   | "rejected"
   | "returned"
+  | "skipped"
   | "upcoming";
 
 export type EventType =

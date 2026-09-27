@@ -18,6 +18,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from workflows.models import STAGE_ROLE_LABELS, ApplicationStage
+from workflows.policies import is_self_application
 
 from ..models import LeaveApplication
 from .events import (
@@ -412,7 +413,7 @@ def decide_cancellation(
         application = LeaveApplication.objects.select_for_update().get(
             pk=request.application_id
         )
-        if application.employee_id == user.id:
+        if is_self_application(user, application):
             raise SelfDecisionError()
         request = CancellationRequest.objects.select_for_update().get(pk=request_id)
 

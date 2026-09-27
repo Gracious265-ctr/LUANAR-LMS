@@ -232,4 +232,66 @@ describe("DelegationReview", () => {
       unmount();
     }
   });
+
+  describe("read-only (approver-side) view", () => {
+    it("shows the record but none of the HR decision controls", () => {
+      // Even a requested delegation, which is exactly when HR gets buttons.
+      render(
+        <DelegationReview
+          delegation={base}
+          employees={employees}
+          readOnly
+          backHref="/dashboard/cover"
+          title="Delegation"
+        />
+      );
+
+      expect(screen.getByText("Attending a conference")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Delegation" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Approve" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Reject" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Cancel delegation" })
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides cancel on an active delegation too", () => {
+      render(
+        <DelegationReview
+          delegation={{
+            ...base,
+            state: "active",
+            status: "approved",
+            delegate: 5,
+            delegate_name: "Bob HOD",
+          }}
+          employees={employees}
+          readOnly
+        />
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Cancel delegation" })
+      ).not.toBeInTheDocument();
+    });
+
+    it("links back to the approver's own cover view", () => {
+      render(
+        <DelegationReview
+          delegation={base}
+          employees={employees}
+          readOnly
+          backHref="/dashboard/cover"
+        />
+      );
+
+      expect(
+        screen.getByRole("link", { name: /Back to delegations/ }).getAttribute("href")
+      ).toBe("/dashboard/cover");
+    });
+  });
 });

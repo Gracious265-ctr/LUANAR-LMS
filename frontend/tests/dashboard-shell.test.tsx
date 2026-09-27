@@ -81,6 +81,45 @@ describe("DashboardShell", () => {
     expect(link).toHaveAttribute("href", "/dashboard/hr-admin/audit");
   });
 
+  it("shows Request Cover for an approver but not for an employee", () => {
+    const { unmount } = render(
+      <DashboardShell user={mockApproverUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    expect(screen.getByRole("link", { name: "Request Cover" })).toHaveAttribute(
+      "href",
+      "/dashboard/cover"
+    );
+    unmount();
+
+    render(
+      <DashboardShell user={mockUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    expect(
+      screen.queryByRole("link", { name: "Request Cover" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the HR Delegations item and adds Request Cover for HR", () => {
+    render(
+      <DashboardShell user={mockHRUser}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    // HR gets both: the management list and their own cover page.
+    expect(screen.getByRole("link", { name: "Delegations" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/delegations"
+    );
+    expect(screen.getByRole("link", { name: "Request Cover" })).toBeInTheDocument();
+  });
+
   it("renders a sign-out control", () => {
     render(
       <DashboardShell user={mockUser}>

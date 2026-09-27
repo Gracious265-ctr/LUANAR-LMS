@@ -28,6 +28,68 @@ describe("AuditEntriesTable", () => {
     expect(screen.getByText("days: 20 → 25")).toBeInTheDocument();
   });
 
+  it("renders a flat detail payload without throwing", () => {
+    /* `detail` is a free-form JSON bag. `document_generated` and
+       `stage_skipped` write a flat payload, not a {before, after} diff, and
+       reading those as a diff threw on Object.keys(undefined), taking the whole
+       audit page down. Regression test for that crash. */
+    const flat: AuditEntry = {
+      ...baseEntry,
+      action: "document_generated",
+      target_type: "application",
+      target_id: "app-1",
+      target_summary: "LUANAR-2026-0001",
+      detail: {
+        document_id: "11",
+        file_name: "approved-leave.pdf",
+        file_size: 2438,
+      },
+    };
+
+    expect(() => render(<AuditEntriesTable entries={[flat]} />)).not.toThrow();
+    expect(screen.getByText(/document_id: 11/)).toBeInTheDocument();
+    expect(screen.getByText(/file_name: approved-leave\.pdf/)).toBeInTheDocument();
+  });
+
+  it("renders a stage_skipped payload and does not repeat its reason", () => {
+    const skipped: AuditEntry = {
+      ...baseEntry,
+      action: "stage_skipped",
+      target_type: "application",
+      target_summary: "LUANAR-2026-0002",
+      detail: {
+        reason: "applicant_is_the_approver",
+        applicant_stage_orders: [1],
+        skipped_stages: [{ order: 1, role: "supervisor" }],
+      },
+      reason: "",
+    };
+
+    expect(() => render(<AuditEntriesTable entries={[skipped]} />)).not.toThrow();
+    const cell = screen.getByText(/reason: applicant_is_the_approver/);
+    expect(cell.textContent?.match(/applicant_is_the_approver/g)).toHaveLength(1);
+  });
+
+  it("falls back to the reason when detail is an empty object", () => {
+    render(
+      <AuditEntriesTable
+        entries={[{ ...baseEntry, detail: {}, reason: "Nothing changed." }]}
+      />
+    );
+
+    expect(screen.getByText("Nothing changed.")).toBeInTheDocument();
+  });
+
+  it("survives a detail whose after is null", () => {
+    const odd: AuditEntry = {
+      ...baseEntry,
+      detail: { before: { a: 1 }, after: null },
+      reason: "Recorded without a diff.",
+    };
+
+    expect(() => render(<AuditEntriesTable entries={[odd]} />)).not.toThrow();
+  });
+
   it("renders a reason when the entry has no field changes", () => {
     render(
       <AuditEntriesTable

@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from leave.models import LeaveApplication
 from leave.services.submission import submit_application
+from leave.services.working_days import holidays_in_range
 from users.models import EmployeeProfile, User
 
 FIYEAR_PREFIX = "800"
@@ -219,13 +220,18 @@ class Command(BaseCommand):
         del pending_supervisor, pending_hod, pending_registrar, pending_dean
 
     def _suitable_start(self, user, seq: int) -> date:
-        """A working day giving >= 5 working days' notice from today."""
+        """A working day giving >= 5 working days' notice from today.
+
+        Public holidays are skipped as well as weekends, so a seeded application
+        never starts on a day the validation pipeline would reject.
+        """
         today = timezone.localdate()
+        holidays = holidays_in_range(today + timedelta(days=1), today + timedelta(days=60))
         candidate = today
         count = 0
         while True:
             candidate += timedelta(days=1)
-            if candidate.weekday() >= 5:
+            if candidate.weekday() >= 5 or candidate in holidays:
                 continue
             count += 1
             if count >= 6 + (seq % 2):  # stagger scenarios a little

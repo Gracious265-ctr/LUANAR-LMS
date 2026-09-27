@@ -432,16 +432,31 @@ def _current_stage_block(application: LeaveApplication) -> dict | None:
 
 
 def _following_stage_label(application: LeaveApplication, stage) -> str | None:
+    """The role label of the stage that will actually receive the application.
+
+    Resolved the same way ``decide`` advances the chain, so a stage whose
+    approver is the applicant is not advertised as the next stage: the label
+    names the next stage with a valid approver instead.
+    """
+    from .services import is_self_approver
+
     following = (
         ApplicationStage.objects.filter(
             application=application,
             submission_cycle=application.workflow_chain_cycle,
-            stage_order=stage.stage_order + 1,
+            stage_order__gt=stage.stage_order,
         )
-        .only("role_label")
-        .first()
+        .exclude(status=ApplicationStage.Status.SKIPPED)
+        .order_by("stage_order")
     )
-    return following.role_label if following else None
+    return next(
+        (
+            candidate.role_label
+            for candidate in following
+            if not is_self_approver(candidate.assigned_approver_id, application)
+        ),
+        None,
+    )
 
 
 def _my_decision_block(application: LeaveApplication, user) -> dict | None:

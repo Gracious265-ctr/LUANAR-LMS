@@ -477,6 +477,28 @@ The employee identity must come from the authenticated backend identity, not fro
 
 An application can move to the next stage only after the current stage has completed its required action.
 
+**Sole exception — the applicant's own position in the queue.** An employee who
+also holds an approver role must never be the approver of record for their own
+leave. Routing therefore **starts after the applicant's last stage** in the chain
+and never travels backwards: every stage at or before that position is bypassed,
+including lower-level stages whose approver is not the applicant, and only the
+stages after it are ever activated. Given `supervisor → HOD → Registrar`, a
+Supervisor's application starts at the HOD, the HOD's starts at the Registrar
+(never at the Supervisor), and a Registrar's has no later approver. Routing is
+strictly forward-only and never restarts. Bypassed stages are kept in the chain as
+`skipped` — they never confer review access on their approver, because the
+application never reached them — and are recorded in the audit log as
+`STAGE_SKIPPED` with the reason per stage (`applicant_is_approver` or
+`before_applicant_stage`).
+
+Because a role resolves to a single approver, an application whose **configured
+final stage** resolves to the applicant — that is, there is no stage after the
+applicant's last one — can never be signed off by anyone. Such an
+application is not routed at all: submission is refused with `workflow_unavailable`
+(422) and the request never leaves the employee. The advance-time refusal (409
+`workflow_unavailable`) remains only as defence in depth for applications routed
+before this rule, or whose workflow changed after submission.
+
 ---
 
 ### 12.4 Balance Integrity
@@ -486,6 +508,8 @@ An application can move to the next stage only after the current stage has compl
 Annual leave is deducted only after final approval.
 
 Approved cancellation must restore the applicable deducted annual-leave days.
+
+**A charged leave day is a working day: weekends and configured public holidays are never charged.** There is one counting rule in the product — Saturdays, Sundays, and any date HR has configured as a public holiday are not working days — reached both by the validation pipeline at submission and by `leave/services/working_days.calculate_working_days()` for the draft preview and the `preview-days` endpoint. The resulting count is **frozen at submission** (invariant 12.5): holidays HR configures afterwards never re-cut an application that is already in flight, and cancellation restores exactly the days that were deducted rather than recounting. The one thing a holiday change *must* reach is an application still in the employee's hands: `calculated_days` is denormalized, so configuring a holiday re-counts the editable drafts it covers rather than waiting for the employee to re-save.
 
 ---
 

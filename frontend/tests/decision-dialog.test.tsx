@@ -104,6 +104,31 @@ describe("DecisionDialog", () => {
     expect(onReloadRequest).toHaveBeenCalled();
   });
 
+  it("shows a blocked message with no Reload when no approver remains", async () => {
+    mockedPostDecision.mockResolvedValue({
+      ok: false,
+      kind: "blocked",
+      message:
+        "This application cannot be advanced: every remaining approval stage (Registrar) resolves to the applicant themself.",
+      reason: "workflow_unavailable",
+    });
+    const onReloadRequest = vi.fn();
+    renderDialog("approve", { onReloadRequest });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Approved$/ }));
+
+    expect(
+      await screen.findByText(/every remaining approval stage \(Registrar\)/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Reloading will not help/)
+    ).toBeInTheDocument();
+    // A refresh cannot resolve it, so no Reload affordance is offered and the
+    // decision cannot be retried.
+    expect(screen.queryByRole("button", { name: "Reload" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Approved$/ })).toBeDisabled();
+  });
+
   it("shows field errors for a 400 response", async () => {
     mockedPostDecision.mockResolvedValue({
       ok: false,

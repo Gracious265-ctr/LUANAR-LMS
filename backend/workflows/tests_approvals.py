@@ -45,6 +45,7 @@ from .services import (
     assign_workflow,
     decide,
 )
+from .policies import get_decision_authority
 
 User = get_user_model()
 
@@ -445,12 +446,17 @@ class DecisionServiceTests(ApprovalBase):
         self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
 
     def test_self_approval_is_forbidden_at_any_stage(self):
+        """An approver's own application starts after their stage, and they are
+        refused if a live stage still points at them (invariant 12.3)."""
         app = self.submit_as_approver(self.hod)
-        decide(
-            application_id=app.pk,
-            actor=self.supervisor,
-            action=ApprovalDecision.Action.APPROVE,
-            expected_version=1,
+        self.assertEqual(
+            self.stage(app, 1).status, ApplicationStage.Status.SKIPPED
+        )
+        self.assertEqual(
+            get_decision_authority(self.supervisor, app).reason, "not_current_stage"
+        )
+        self.assertEqual(
+            get_decision_authority(self.hod, app).reason, "self_application"
         )
         with self.assertRaises(ApprovalNotAllowedError) as ctx:
             decide(
@@ -460,7 +466,7 @@ class DecisionServiceTests(ApprovalBase):
                 expected_version=1,
             )
         self.assertEqual(ctx.exception.reason, "self_application")
-        self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 1)
+        self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
 
     def test_approver_from_earlier_stage_cannot_act_again(self):
         app = self.make_submitted()
@@ -614,12 +620,11 @@ class ApprovalAPITests(ApprovalBase):
         self.assertEqual(response.data["reason"], "self_application")
         self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
 
-    def test_self_application_review_shows_restriction(self):
+    def test_self_application_review_is_not_reachable(self):
+        """The applicant's own stage is bypassed, so it grants no review access."""
         app = self.submit_as_approver(self.supervisor)
         response = self.client.get(self.url(f"{app.pk}/"))
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.data["can_decide"])
-        self.assertEqual(response.data["decision_restriction"], "self_application")
+        self.assertEqual(response.status_code, 404)
 
     def test_leave_history_excludes_drafts(self):
         app = self.make_submitted()

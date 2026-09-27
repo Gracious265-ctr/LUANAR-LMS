@@ -31,8 +31,8 @@ class TrackedStage:
     """One stage of the workflow snapshot the application was submitted with.
 
     ``state`` is one of ``approved | awaiting | rejected | returned |
-    upcoming``. ``approver`` is ``None`` until the stage has been resolved to an
-    approver.
+    skipped | upcoming``. ``approver`` is ``None`` until the stage has been
+    resolved to an approver.
     """
 
     order: int

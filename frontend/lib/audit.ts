@@ -9,10 +9,13 @@ export interface AuditEntry {
   target_type: string;
   target_id: string;
   target_summary: string;
-  detail: {
-    before: Record<string, unknown> | null;
-    after: Record<string, unknown>;
-  } | null;
+  /**
+   * Free-form JSON. Configuration and state changes write a
+   * `{"before": {...}, "after": {...}}` diff, but other actions write a flat
+   * payload instead (`document_generated` records the file, `stage_skipped`
+   * records the bypassed stages), so consumers must not assume the diff shape.
+   */
+  detail: Record<string, unknown> | null;
   reason: string;
   created_at: string;
 }

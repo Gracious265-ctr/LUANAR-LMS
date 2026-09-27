@@ -41,6 +41,7 @@ class AuditEntry(models.Model):
         REJECTED = "rejected", "Rejected"
         CANCELLED = "cancelled", "Cancelled"
         REASSIGNED = "reassigned", "Reassigned"
+        STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
         SUBMITTED = "submitted", "Submitted"
         CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
@@ -106,7 +107,13 @@ class AuditEntry(models.Model):
     detail = models.JSONField(
         null=True,
         blank=True,
-        help_text='Optional {"before": {...}, "after": {...}} of the changed fields.',
+        help_text=(
+            'Optional free-form JSON about the change. Configuration and state '
+            'changes use {"before": {...}, "after": {...}}; other actions store '
+            'a flat payload instead (e.g. a generated document, the stages a '
+            "self-approval check bypassed), so readers must not assume the diff "
+            "shape."
+        ),
     )
     reason = models.TextField(
         blank=True,

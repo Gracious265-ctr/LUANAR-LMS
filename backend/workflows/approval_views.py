@@ -48,6 +48,7 @@ from .services import (
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
     ApprovalValidationError,
+    SelfApprovalBlockedError,
     acting_approver_predicate,
     decide,
 )
@@ -200,6 +201,16 @@ class ApprovalDecisionAPIView(APIView):
                 {
                     "error": "This application has already been decided. Refresh to see the latest state.",
                     "reason": "stage_changed",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except SelfApprovalBlockedError as exc:
+            # The approval would have to go to the applicant themself. The
+            # decision is rolled back; HR must correct the workflow.
+            return Response(
+                {
+                    "error": " ".join(exc.messages),
+                    "reason": "workflow_unavailable",
                 },
                 status=status.HTTP_409_CONFLICT,
             )

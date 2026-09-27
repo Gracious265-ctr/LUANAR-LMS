@@ -32,7 +32,7 @@ from ..serializers import (
 )
 from ..services import normalize_grade, resolve_grade_entitlement
 from ..services.storage import delete_document
-from ..services.working_days import calculate_working_days
+from ..services.working_days import calculate_working_days, holidays_in_range
 from .documents import SupportingDocumentViewSet
 
 logger = logging.getLogger(__name__)
@@ -276,4 +276,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         days = calculate_working_days(start, end)
-        return Response({"days": days})
+        # Weekends and configured public holidays are excluded; the count says
+        # how many public holidays were dropped so the UI can explain the number.
+        holidays = holidays_in_range(start, end) if start <= end else {}
+        return Response({"days": days, "holidays_excluded": len(holidays)})

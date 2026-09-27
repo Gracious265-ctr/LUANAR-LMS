@@ -20,7 +20,7 @@ export type DecisionResult =
   | { ok: true; data: DecisionBriefing }
   | {
       ok: false;
-      kind: "validation" | "forbidden" | "conflict" | "not_found" | "error";
+      kind: "validation" | "forbidden" | "conflict" | "blocked" | "not_found" | "error";
       message: string;
       reason?: string | null;
       fields?: Record<string, string>;
@@ -103,11 +103,26 @@ export async function postDecision(
     const data = await readJson(res);
 
     if (res.status === 409) {
+      const reason = (data.reason as string) || "stage_changed";
+      // `workflow_unavailable` is not a stale read: no approver remains for the
+      // application, so reloading will never unblock this decision. It is a
+      // blocked state, not a conflict, and must not offer a Refresh that
+      // cannot help.
+      if (reason === "workflow_unavailable") {
+        return {
+          ok: false,
+          kind: "blocked",
+          message:
+            (data.error as string) ||
+            "This application has no approver available: the only remaining approver is the applicant themself.",
+          reason,
+        };
+      }
       return {
         ok: false,
         kind: "conflict",
         message: (data.error as string) || "This application has changed since you opened it.",
-        reason: (data.reason as string) || "stage_changed",
+        reason,
       };
     }
     if (res.status === 403) {
