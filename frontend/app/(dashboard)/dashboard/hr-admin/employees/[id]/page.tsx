@@ -9,6 +9,11 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
+import { listTeams } from "@/lib/teams";
+import type { TeamOption } from "@/lib/employees";
+
+const TEAMS_ERROR =
+  "Teams could not be loaded, so this employee's team cannot be changed. Reload the page to try again.";
 
 export default async function EmployeeDetailPage({
   params,
@@ -38,6 +43,14 @@ export default async function EmployeeDetailPage({
     gradeOptions = gradeOptionsFromEntitlements(entitlements.results);
   } catch {
     // Manual grade entry remains available if entitlements cannot be loaded.
+  }
+
+  let teams: TeamOption[] = [];
+  let teamsError = "";
+  try {
+    teams = await listTeams();
+  } catch {
+    teamsError = TEAMS_ERROR;
   }
 
   return (
@@ -76,6 +89,8 @@ export default async function EmployeeDetailPage({
           endpoint={`/api/hr/employees/${employee.id}`}
           method="PATCH"
           gradeOptions={gradeOptions}
+          teams={teams}
+          teamsError={teamsError}
         />
       </div>
     </div>

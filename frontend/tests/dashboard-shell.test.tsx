@@ -10,11 +10,13 @@ const mockUser = {
   full_name: "Test Employee",
 };
 
+// An approver position is held as data, so this account's own role stays
+// `employee` while the server reports it as an approver.
 const mockApproverUser = {
   id: 2,
-  email: "supervisor@test.luanar",
-  role: "supervisor",
-  full_name: "Test Supervisor",
+  email: "staff@test.luanar",
+  role: "employee",
+  full_name: "Test Approver",
 };
 
 const mockHRUser = {
@@ -24,24 +26,38 @@ const mockHRUser = {
   full_name: "Test HR",
 };
 
+/**
+ * Renders the shell with the approver access the layout already resolved on
+ * the server, so the sidebar is settled on the first paint and no read is
+ * repeated in the browser.
+ */
+function renderShell(
+  user: (typeof mockUser),
+  approver: { isApprover: boolean; pendingApprovals?: number } = {
+    isApprover: false,
+  }
+) {
+  return render(
+    <DashboardShell
+      user={user}
+      isApprover={approver.isApprover}
+      pendingApprovals={approver.pendingApprovals ?? 0}
+    >
+      <div>Test content</div>
+    </DashboardShell>
+  );
+}
+
 describe("DashboardShell", () => {
   it("renders the user's name and role", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(screen.getAllByText("Test Employee").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Employee").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders Dashboard nav item for all roles", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("My Applications")).toBeInTheDocument();
@@ -50,43 +66,33 @@ describe("DashboardShell", () => {
     expect(screen.queryByText("Account")).not.toBeInTheDocument();
   });
 
-  it("does not show Approvals for employee role", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+  it("hides Approvals from a caller the server does not call an approver", () => {
+    renderShell(mockUser);
 
     expect(screen.queryByText("Approvals")).not.toBeInTheDocument();
   });
 
-  it("shows Approvals for supervisor role", () => {
-    render(
-      <DashboardShell user={mockApproverUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+  it("shows Approvals to an approver whose account role is plain employee", () => {
+    renderShell(mockApproverUser, { isApprover: true });
 
     expect(screen.getByText("Approvals")).toBeInTheDocument();
   });
 
+  it("badges Approvals with the pending count the layout resolved", () => {
+    renderShell(mockApproverUser, { isApprover: true, pendingApprovals: 4 });
+
+    expect(screen.getByTestId("approvals-pending-count")).toHaveTextContent("4");
+  });
+
   it("shows the Audit View item for HR role", () => {
-    render(
-      <DashboardShell user={mockHRUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockHRUser);
 
     const link = screen.getByRole("link", { name: "Audit View" });
     expect(link).toHaveAttribute("href", "/dashboard/hr-admin/audit");
   });
 
-  it("shows Request Cover for an approver but not for an employee", () => {
-    const { unmount } = render(
-      <DashboardShell user={mockApproverUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+  it("shows Request Cover to an approver but not to an ordinary employee", () => {
+    const { unmount } = renderShell(mockApproverUser, { isApprover: true });
 
     expect(screen.getByRole("link", { name: "Request Cover" })).toHaveAttribute(
       "href",
@@ -94,11 +100,7 @@ describe("DashboardShell", () => {
     );
     unmount();
 
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(
       screen.queryByRole("link", { name: "Request Cover" })
@@ -106,11 +108,7 @@ describe("DashboardShell", () => {
   });
 
   it("keeps the HR Delegations item and adds Request Cover for HR", () => {
-    render(
-      <DashboardShell user={mockHRUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockHRUser, { isApprover: true });
 
     // HR gets both: the management list and their own cover page.
     expect(screen.getByRole("link", { name: "Delegations" })).toHaveAttribute(
@@ -120,22 +118,27 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: "Request Cover" })).toBeInTheDocument();
   });
 
-  it("renders a sign-out control", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
+  it("offers HR the Teams and Roles items", () => {
+    renderShell(mockHRUser, { isApprover: true });
+
+    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/teams"
     );
+    expect(screen.getByRole("link", { name: "Roles" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/roles"
+    );
+  });
+
+  it("renders a sign-out control", () => {
+    renderShell(mockUser);
 
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
   it("does not render a theme toggle", () => {
-    render(
-      <DashboardShell user={mockUser}>
-        <div>Test content</div>
-      </DashboardShell>
-    );
+    renderShell(mockUser);
 
     expect(
       screen.queryByRole("button", { name: /theme|dark mode/i })

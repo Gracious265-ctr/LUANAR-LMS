@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import type { Workflow } from "@/lib/workflows";
 import {
-  approverRoleLabel,
   workflowCategoryLabel,
   workflowStateBadgeClass,
   workflowStateLabel,
@@ -74,7 +73,7 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
               </td>
               <td className="py-3 pr-4 text-text-secondary">
                 {workflow.stages
-                  .map((stage) => approverRoleLabel(stage.approver_role))
+                  .map((stage) => stage.approver_role_label)
                   .join(" → ")}
               </td>
               <td className="py-3 text-right">

@@ -20,8 +20,8 @@ vi.mock("next/navigation", () => ({
 import { createDelegation } from "@/lib/delegations-client";
 
 const candidates: DelegateCandidate[] = [
-  { id: 5, full_name: "Bob HOD", role: "hod" },
-  { id: 6, full_name: "Rita Registrar", role: "registrar" },
+  { id: 5, full_name: "Bob HOD", role: "approver" },
+  { id: 6, full_name: "Rita Registrar", role: "approver" },
 ];
 
 describe("CoverRequestForm", () => {

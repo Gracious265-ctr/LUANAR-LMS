@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User
+from workflows.testing import create_user_with_role, grant_approver_role, make_team
 
 SEED_PASSWORD = "testpass123"
 
@@ -208,13 +209,13 @@ class EmployeeEndpointTests(TestCase):
         )
 
     def test_create_existing_email_without_profile_links_user(self):
-        supervisor = User.objects.create_user(
+        supervisor = create_user_with_role(
             username="supervisor@test.luanar",
             email="supervisor@test.luanar",
             password=SEED_PASSWORD,
             first_name="Test",
             last_name="Supervisor",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
         )
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
@@ -326,7 +327,12 @@ class EmployeeEndpointTests(TestCase):
         names = [r["first_name"] for r in response.data["results"]]  # type: ignore[index]
         self.assertEqual(names, ["Test", "Zoe"])
 
-    def test_hr_can_assign_role_on_create(self):
+    def test_hr_can_assign_approver_access_on_create(self):
+        """``role`` grants access to the approval desk, not a place in a chain.
+
+        Which position the person approves in is a separate fact, carried by the
+        team they are placed on — see ``test_hr_can_place_employee_on_a_team``.
+        """
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
@@ -334,13 +340,84 @@ class EmployeeEndpointTests(TestCase):
                 "email": "managed@test.luanar",
                 "first_name": "Managed",
                 "last_name": "Supervisor",
-                "role": User.Role.HOD,
+                "role": User.Role.APPROVER,
             },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(email="managed@test.luanar")
-        self.assertEqual(user.role, User.Role.HOD)
-        self.assertEqual(response.data["role"], User.Role.HOD)  # type: ignore[index]
+        self.assertEqual(user.role, User.Role.APPROVER)
+        self.assertEqual(response.data["role"], User.Role.APPROVER)  # type: ignore[index]
+
+    def test_hr_can_place_employee_on_a_team(self):
+        team = make_team("Science team", ("supervisor", "hod"))
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "placed@test.luanar",
+                "first_name": "Placed",
+                "last_name": "Employee",
+                "team": team.pk,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        profile = EmployeeProfile.objects.get(user__email="placed@test.luanar")
+        self.assertEqual(profile.team, team)
+        self.assertEqual(response.data["team"], team.pk)  # type: ignore[index]
+        self.assertEqual(response.data["team_name"], "Science team")  # type: ignore[index]
+
+    def test_approver_roles_reports_the_positions_a_person_holds(self):
+        """The employee list answers "who can approve for this person".
+
+        The two facts are separate: granting an approver role shows up here
+        while the system ``role`` stays ``employee``, because access to the
+        approval desk is not the same as a place in a chain.
+        """
+        self.client.force_authenticate(user=self.hr_user)
+        self.assertEqual(
+            self.client.get(self.detail_url).data["approver_roles"], []
+        )
+
+        grant_approver_role(self.employee_user, "dean")
+
+        response = self.client.get(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["approver_roles"], ["dean"]  # type: ignore[index]
+        )
+        self.employee_user.refresh_from_db()
+        self.assertEqual(self.employee_user.role, User.Role.EMPLOYEE)
+
+    def test_a_hr_created_employee_is_inactive_so_holds_no_approver_roles(self):
+        """A brand-new employee account cannot approve anything yet.
+
+        HR-created employees start inactive, and an inactive user is not an
+        approver regardless of any holding, so the reported roles stay empty.
+        """
+        grant_approver_role(self.hr_user, "dean")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "pending@test.luanar",
+                "first_name": "Pend",
+                "last_name": "Ing",
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.data["is_active"])  # type: ignore[index]
+        self.assertEqual(response.data["approver_roles"], [])  # type: ignore[index]
+
+    def test_placing_an_employee_on_a_team_is_audited(self):
+        team = make_team("Audit team", ("supervisor",))
+        self.client.force_authenticate(user=self.hr_user)
+        self.client.patch(self.detail_url, {"team": team.pk})
+        entry = AuditEntry.objects.get(
+            target_type=AuditEntry.TargetType.EMPLOYEE,
+            target_id=str(self.employee_profile.id),
+            action=AuditEntry.Action.UPDATED,
+        )
+        self.assertEqual(entry.detail["after"]["team"], team.pk)
 
     def test_create_without_role_defaults_to_employee(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -391,11 +468,15 @@ class EmployeeEndpointTests(TestCase):
 
     def test_hr_can_update_role(self):
         self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(self.detail_url, {"role": User.Role.SUPERVISOR})
+        response = self.client.patch(
+            self.detail_url, {"role": User.Role.APPROVER}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.employee_user.refresh_from_db()
-        self.assertEqual(self.employee_user.role, User.Role.SUPERVISOR)
-        self.assertEqual(response.data["role"], User.Role.SUPERVISOR)  # type: ignore[index]
+        self.assertEqual(self.employee_user.role, User.Role.APPROVER)
+        self.assertEqual(  # type: ignore[index]
+            response.data["role"], User.Role.APPROVER
+        )
 
     def test_update_without_role_keeps_existing_role(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -406,7 +487,9 @@ class EmployeeEndpointTests(TestCase):
 
     def test_role_change_is_audited(self):
         self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(self.detail_url, {"role": User.Role.SUPERVISOR})
+        response = self.client.patch(
+            self.detail_url, {"role": User.Role.HR}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.EMPLOYEE,
@@ -414,7 +497,7 @@ class EmployeeEndpointTests(TestCase):
             action=AuditEntry.Action.UPDATED,
         )
         self.assertEqual(entry.detail["before"]["role"], User.Role.EMPLOYEE)
-        self.assertEqual(entry.detail["after"]["role"], User.Role.SUPERVISOR)
+        self.assertEqual(entry.detail["after"]["role"], User.Role.HR)
 
     def test_hard_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -494,7 +577,7 @@ class EmployeeSerializerAtomicityTests(TestCase):
                 "email": "rollback-create-role@test.luanar",
                 "first_name": "Roll",
                 "last_name": "Back",
-                "role": User.Role.HOD,
+                "role": User.Role.APPROVER,
                 "designation": "Lecturer",
             }
         )
@@ -531,7 +614,7 @@ class EmployeeSerializerAtomicityTests(TestCase):
         )
         serializer = self._serializer(
             profile,
-            data={"role": User.Role.SUPERVISOR, "designation": "Senior Lecturer"},
+            data={"role": User.Role.APPROVER, "designation": "Senior Lecturer"},
             partial=True,
         )
         serializer.is_valid(raise_exception=True)

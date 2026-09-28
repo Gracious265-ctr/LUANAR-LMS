@@ -18,7 +18,7 @@ from typing import Any
 from leave.models import LeaveApplication
 from users.models import EmployeeProfile, User
 
-from .models import ApplicationStage, ApprovalDecision
+from .models import ApplicationStage, ApprovalDecision, ApproverRole
 
 
 @dataclass(frozen=True)
@@ -85,12 +85,56 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
 
 @dataclass(frozen=True)
 class ViewAccess:
-    """A viewable application resolved for one approver."""
+    """A viewable application resolved for one approver.
+
+    ``history_scope`` is the approver role's configured leave-history scope,
+    resolved from the stage's ``role_ref`` (falling back to a lookup by the
+    snapshotted code for rows written before roles became data). Carrying it
+    here keeps the role out of every caller's hands: display always uses
+    ``role_label``, the snapshot, and never the live role.
+    """
 
     stage_order: int
     role: str
     role_label: str
     stage: ApplicationStage | None = None
+    history_scope: str | None = None
+
+
+def _role_for_stage(stage: ApplicationStage):
+    """The live :class:`ApproverRole` a stage was materialised from, or ``None``.
+
+    Prefers the snapshotted FK. Rows written before roles became data have a
+    null ``role_ref``, so the snapshotted ``role`` code is looked up instead —
+    still reading the *stage*, never a live stage of a running application.
+    """
+    from .models import ApproverRole
+
+    if stage.role_ref_id is not None:
+        return stage.role_ref
+    if not stage.role:
+        return None
+    return ApproverRole.objects.filter(code=stage.role).first()
+
+
+def _history_scope_for(stage: ApplicationStage | None) -> str | None:
+    """The history scope an in-flight stage is judged by: its own snapshot.
+
+    Read from ``ApplicationStage.history_scope`` rather than from the live role,
+    so an in-flight application keeps the breadth it was submitted under even if
+    HR later widens or narrows the role. Falls back to the live role only for
+    rows written before the snapshot existed (blank ``history_scope``), and to
+    the narrowest scope when neither is available — a missing scope can never
+    widen an approver's view.
+    """
+    if stage is None:
+        return None
+    if stage.history_scope:
+        return stage.history_scope
+    role = _role_for_stage(stage)
+    if role is None:
+        return ApproverRole.HistoryScope.CURRENT_FINANCIAL_YEAR
+    return role.history_scope
 
 
 def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | None:
@@ -102,9 +146,9 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     A ``skipped`` stage was bypassed precisely so that its approver is not on the
     path (invariant 12.3 sole exception), so it confers no access.
 
-    Unit 18: a Supervisor or HOD assigned to a cancellation stage may also read
-    the approved application's review payload, even though the application is
-    no longer ``submitted``. The ``stage`` of such a ``ViewAccess`` is ``None``.
+    Unit 18: an approver assigned to a cancellation stage may also read the
+    approved application's review payload, even though the application is no
+    longer ``submitted``. The ``stage`` of such a ``ViewAccess`` is ``None``.
     """
     from leave.cancellations.models import CancellationApprovalStage
     from .services import acting_approver_id
@@ -118,7 +162,11 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     )
     if live_stage is not None and acting_approver_id(application) == user.id:
         return ViewAccess(
-            live_stage.stage_order, live_stage.role, live_stage.role_label, live_stage
+            live_stage.stage_order,
+            live_stage.role,
+            live_stage.role_label,
+            live_stage,
+            _history_scope_for(live_stage),
         )
 
     stage = (
@@ -137,7 +185,13 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         .first()
     )
     if stage is not None:
-        return ViewAccess(stage.stage_order, stage.role, stage.role_label, stage)
+        return ViewAccess(
+            stage.stage_order,
+            stage.role,
+            stage.role_label,
+            stage,
+            _history_scope_for(stage),
+        )
 
     cancellation_stage = (
         CancellationApprovalStage.objects.filter(
@@ -149,11 +203,18 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         .first()
     )
     if cancellation_stage is not None:
+        # A cancellation stage carries only the snapshotted role code and label,
+        # so the scope has to be looked up by that code. A role HR has since
+        # renamed still resolves, because the code is the snapshot's own value.
+        from .models import ApproverRole
+
+        role = ApproverRole.objects.filter(code=cancellation_stage.role).first()
         return ViewAccess(
             cancellation_stage.order,
             cancellation_stage.role,
             cancellation_stage.role_label,
             None,
+            role.history_scope if role is not None else None,
         )
     return None
 
@@ -165,22 +226,36 @@ def get_leave_history_scope(
 ) -> tuple[bool, str]:
     """Resolve the leave-history subset visible to an approver.
 
-    Returns ``(available, scope)`` where ``scope`` is ``all`` or
-    ``current_financial_year``. Availability is conditional for HOD (same
-    department) and Dean (same faculty/school); Registrar and DVC are always
-    limited to the current financial year.
+    Returns ``(available, scope)``, where ``scope`` is the subset the caller
+    should read. Availability and breadth are HR's per-role decision, read from
+    the role the stage was materialised with — not from a role name:
+
+    ``all``                    every application.
+    ``same_department``        only employees in the applicant's department, and
+                               only when the approver is in that department.
+    ``same_faculty``           likewise, on faculty.
+    ``current_financial_year`` only the current financial year.
+    ``none``                   nothing.
+
+    A stage whose role cannot be resolved at all (a role deleted outside the
+    product, say) falls back to the narrowest sensible reading — the current
+    financial year — so a missing role can never widen an approver's view.
     """
     if view_access is None:
         return (False, "current_financial_year")
-    if view_access.role == "supervisor":
+    scope = view_access.history_scope or ApproverRole.HistoryScope.CURRENT_FINANCIAL_YEAR
+    if scope == ApproverRole.HistoryScope.NONE:
+        return (False, "none")
+    if scope == ApproverRole.HistoryScope.ALL:
         return (True, "all")
-    if view_access.role == "hod":
+    if scope == ApproverRole.HistoryScope.SAME_DEPARTMENT:
         same = _same_profile_field(employee_profile, approver_profile, "department")
         return (same, "all")
-    if view_access.role == "dean":
+    if scope == ApproverRole.HistoryScope.SAME_FACULTY:
         same = _same_profile_field(employee_profile, approver_profile, "faculty")
         return (same, "all")
     return (True, "current_financial_year")
+
 
 
 def _same_profile_field(employee, approver, field: str) -> bool:

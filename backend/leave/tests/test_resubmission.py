@@ -61,19 +61,19 @@ class StubFlowBaseTests(StubProviderMixin, TestCase):
         )
         self.supervisor = make_user(
             "resub.supervisor@luanar",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
         self.hod = make_user(
             "resub.hod@luanar",
-            role=User.Role.HOD,
+            role="hod",
             first_name="Hady",
             last_name="Od",
         )
         self.registrar = make_user(
             "resub.registrar@luanar",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rej",
             last_name="Registrar",
         )

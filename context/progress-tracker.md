@@ -4,6 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Unit 26 — HR-Managed Approver Roles and Teams (COMPLETE — implemented and verified, **working-tree only, not yet committed**)
 - Unit 25 — End-to-End System (COMPLETE — implemented and verified, committed as `6f9474e`)
 - Unit 24 — Complete Audit and Historical Integrity (COMPLETE — committed as `d4860f3`)
 - Unit 23b — Approved Leave Document (COMPLETE — spec approved, `reportlab` approved, 717 backend tests OK, 302 frontend tests OK)
@@ -23,6 +24,12 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
+- **Unit 26 — HR-Managed Approver Roles and Teams is COMPLETE** (see
+  "Completed (Unit 26)" at the end of this file). Approver roles are now HR
+  configuration instead of role names baked into the code, and approval
+  routing is team-based. It landed beyond the build plan (which ends at Unit
+  25) from a direct feature request, so it has **no spec file** — the
+  authority is the feature prompt plus this section.
 - Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are merged
   onto `development`, and the HR track's next build **Unit 11 — Finalized Leave +
   Audit View** is complete (depends on the submitted applications Unit 13 provides).
@@ -532,9 +539,13 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
+- **Unit 26 is the newest work and is uncommitted.** Review and commit it
+  before starting anything else; the working tree currently holds all of
+  Units 26's backend and frontend changes.
 - **The build plan is exhausted.** Units 1–25 are all implemented, verified
   and committed, including Unit 23b (the document half split out of Unit 23).
-  There is no queued next unit; the next step is a planning decision.
+  Unit 26 came from a feature request rather than the plan. There is no
+  queued next unit; the next step is a planning decision.
 - **Candidates, in the order the work would be worth doing:**
   1. **Unit 23b D12 carry-over** — document invalidation when a leave is
      later cancelled (today the document deliberately stays as the historical
@@ -1988,3 +1999,188 @@ regression.
 
 `.gitignore` now excludes `storage/*.sql`, `*.dump` and `*.sql.gz`: the
 dump is untracked and holds password hashes, so it must never be committed.
+
+## Completed (Unit 26) — HR-Managed Approver Roles and Teams (2026-09-28)
+
+Built from a direct feature request (prompt kept at `/tmp/opencode/feature_prompt.txt`),
+not from `context/specs/` — the build plan ends at Unit 25, so **no spec file
+exists for this unit**. The prompt plus this section are the authority.
+
+**The defect it fixes.** "Who can approve what" was a list of role *names*
+hard-coded in both stacks: `hod`, `dvc`, `registrar`, `auditor`, `clerk`,
+`principal`, `vice_principal`, `bursar`, `dean`. `User.role` doubled as both
+the thing that decides which screens an account can reach *and* the thing that
+decides its place in an approval chain, so HR could not add a position, rename
+one, or scope one to a group of people. Routing also ignored teams entirely,
+so any holder of a code could decide for any applicant in a department.
+
+**Backend — configuration as data.** `workflows/models.py` gains
+`ApproverRole` (`code`, `label`, `description`, `history_scope`,
+`is_institution_wide`, `handles_cancellation`, `is_active`), `Campus`,
+`Team` (`campus`, `workflow`, `stage_roles` m2m), `TeamMember` and
+`RoleAssignment`; `users.EmployeeProfile` gains a nullable `team`. Two
+uniqueness constraints carry the routing invariant: `teammember_team_user_unique`
+and `teammember_team_role_unique`, plus `roleassignment_user_role_unique`. FKs
+onto a role are `PROTECT`, so configuration cannot be orphaned. Migrations
+`workflows/0010`, `0011` (backfills the nine hard-coded codes as `ApproverRole`
+rows, retired, so historical stages keep rendering) and `0012`; `users/0005`,
+`0006` — the last narrows `User.role` to `employee | approver | hr`.
+
+**Backend — one definition of "is an approver".** `is_approver_user()` in
+`workflows/services.py` replaces every former role-name check: a person is an
+approver when they hold at least one **active** role, as a `TeamMember` or a
+`RoleAssignment`. Retiring a role therefore retires the approver status it
+conferred, which is why retirement exists instead of deletion.
+`approver_role_codes_for()` / `approver_role_labels_for()` describe a person by
+the roles they hold, sorted for stability so a single-label surface does not
+reshuffle between reads.
+
+**Backend — team-scoped resolution.** `workflows/providers.py::resolve_stage_approver`
+is the single resolution algorithm: the team member holding the role wins;
+failing that, an institution-wide role must have exactly one active holder;
+otherwise the configuration is incomplete and the submission is refused with an
+error naming the role, the team, and what HR must do. No fallback approver
+exists, so invariant 12.7 still holds.
+
+**Backend — endpoints.** `/api/v1/approver-roles/` (list with
+`?include_inactive=1`, create, patch, and `DELETE` → **retire**, refused with
+409 naming every blocker while an active workflow, a team, or a holder needs
+the role), `/api/v1/role-assignments/` (filtered `?role=`), `/api/v1/teams/`,
+`/api/v1/team-members/`, `/api/v1/campuses/`. Every mutation is audited.
+`/api/v1/approvals/capabilities/` reports the caller's real reach
+(`is_approver`, `is_hr`, `can_request_cover`, `can_approve`, `pending_count`, …)
+so the frontend stops inferring it.
+
+**Frontend — the same removal, on the other side.** `UserRole` is now
+`employee | approver | hr`; `Employee` gained `approver_roles`, `team`, and
+`team_name`; `WorkflowStage.approver_role` is an open-ended `string` with
+`approver_role_label` as the display fallback. Every hard-coded role map is
+gone from `app/`, `components/`, and `lib/` — a grep for the nine codes now
+matches only the approval and cancellation `__fixtures__`, which are
+deliberate historical-workflow snapshots. The workflow builder's stage picker is
+a live role list seeded from the first available role, and it preserves an
+unknown or retired code rather than dropping a stage's approver.
+
+**Frontend — new HR surfaces.** Roles: list (including retired, with the
+usage blockers that would stop a retirement), create, edit, retire, and
+institution-wide holder add/remove. Teams: list, create, edit, campus
+creation, and member add/remove constrained to the team's `stage_roles`. Both
+are linked from the HR admin index and the sidebar. `api-client.ts` gained
+`apiClientUrl` so reference-data reads follow DRF's absolute `next` links
+rather than silently stopping at page 1 — the same bug class as the employee
+list.
+
+**Frontend — access is asked, not inferred.** `lib/approvals/capabilities.ts`
+loads the caller's reach server-side; the approvals queue, the cover pages, the
+sidebar's Approvals item, and the dashboard's pending count all read it and
+**fail closed** when it cannot be read. The dead `/dashboard/department` nav
+item is gone.
+
+**Three bugs the verification pass caught, all now fixed.**
+
+1. **`next build` failed outright.** `approver-roles-client.ts` re-exported
+   `HISTORY_SCOPES` from the server-side `lib/approver-roles.ts`, dragging
+   `next/headers` into the browser bundle — *"You're importing a module that
+   depends on `next/headers`… in the Pages Router."* A client component cannot
+   read a constant from a module that also reads the API client, so the
+   scopes moved to the import-free `lib/approver-role-scopes.ts` that both
+   modules re-export. `typecheck:test` never saw it; only the build did.
+2. **The holder picker hid valid candidates.** `RoleAssignmentForm` inferred a
+   role's existing holders from `Employee.approver_roles`, which is an
+   aggregate over team membership *and* institution-wide grants and so cannot
+   say which a person has. It now takes the role's actual assignments. A test
+   pins the case that motivated it: somebody holding a code only on a team is
+   still offered the institution-wide grant.
+3. **`CampusForm` read a field it never rendered.** It submitted
+   `description` from a form that had no such input, so the value was always
+   `""`. The input now exists.
+
+**Verification.** `makemigrations --check` clean; full backend suite **992 tests
+OK** (including 23 dedicated migration tests for the backfill, and new
+`tests_roles.py` / `tests_teams.py` / `tests_migrations.py` plus shared
+`workflows/testing.py` helpers). Frontend: `tsc`, `tsc -p tsconfig.test.json`,
+and `eslint` clean; **63 files / 421 tests** pass (new:
+`approver-access`, `approver-reference-data`, `approver-role-form`,
+`approver-role-scopes`, `approver-role-table`, `campus-form`,
+`role-assignment-form`, `team-form`, `team-member-list`); `next build` compiles
+and registers all eight new HR routes.
+
+**Context updated alongside.** `architecture.md` §5.1 (the new tables), §6.3
+(rewritten — the two-layer system-role/approver-role model, replacing the
+hard-coded Supervisor→HOD→Registrar→DVC list), §7 (stages resolve a role *code*
+against the registry, with the retirement and snapshot consequences), and a new
+invariant **12.11 Approver-Role Identity**.
+
+**Still open.** The tree is uncommitted. The Team form's workflow picker reads
+only the first page of `listWorkflows()` — harmless at current volumes, but it
+should use an exhaustive list like the role and employee pickers do.
+
+---
+
+## Loading the system fast — where the time was actually going
+
+The complaint was "the frontend takes too long." Measuring first, before
+touching anything, split the answer in two: a genuine backend problem on the
+Roles screen, and a set of avoidable request waterfalls across the dashboard.
+Everything else was already fast.
+
+**The Roles screen was one query per role, per field.** `is_in_use` and `usage`
+are the same fact asked for twice, and the usage clauses each name a blocker —
+the active workflows that have a stage for the role, the active teams that hold
+it, the institution-wide assignments outstanding against it. Computing that per
+role made `/api/v1/approver-roles/` run **69 queries for six roles** and grow
+with every role HR ever added. It took 171–229 ms and was the slowest endpoint
+in the admin.
+
+It is now one pass. `role_usage_map()` in `workflows/services.py` reads the
+three blocker sets for *all* roles at once, and `ApproverRoleSerializer`
+computes the map once per request and caches it on the serializer context, so
+`is_in_use` reads from the same computation instead of re-deriving it. Six
+roles now cost **four queries, 34–38 ms** — and the count no longer moves when
+roles are added. `_role_usage()` still exists for the single-role paths and
+delegates to the batch, so there is one definition of "in use", not two.
+
+Two tests in `workflows/tests_roles.py` pin this: one asserts the exact query
+count of the list endpoint, the other adds four roles and asserts the count has
+not moved. A test that only checked the first screenful would have passed
+against the old code, because six roles happened to be all the fixtures had.
+
+**The dashboard asked the same question repeatedly, then again in the browser.**
+Three fixes, all about not doing work twice:
+
+1. The layout fetched the current user, and the dashboard page fetched them
+   *again*. `getCurrentUser` is now wrapped in React `cache`, so one request
+   renders both, and the two reads run in parallel rather than in sequence.
+2. `loadApprovalCapabilities` is cached the same way. It was the pattern behind
+   the pending-approvals count, the sidebar's Approvals item, and the approvals
+   page all re-asking the server on first paint, once per component.
+3. The layout now *passes* `isApprover` and `pendingApprovals` down to
+   `DashboardShell` as props instead of letting it fetch capabilities again
+   client-side on every mount. The server already knows both; the browser was
+   being asked to go and re-learn them.
+
+The roles, teams, and approvals pages had their independent reads moved into
+`Promise.all` as well. The roles and teams pages keep per-resource error
+messaging, so a failed reference-data call still names itself instead of blanking
+the screen.
+
+**Verification.** Backend **994 tests OK** (`workflows` alone: 386).
+Frontend: `tsc`, `tsc -p tsconfig.test.json`, `eslint` clean; **63 files / 424
+tests** pass (the two extra are the capability-prop tests for
+`DashboardShell` and `ApprovalsNavItem`, which now assert the shell issues no
+requests of its own). `next build` compiles.
+
+**Production, warm, best of three:** `/dashboard` 216 ms, `/dashboard/approvals`
+345 ms, `/dashboard/hr-admin/employees` 259 ms, `/dashboard/hr-admin/roles` 329
+ms, `/dashboard/hr-admin/teams` 352 ms. Every screen a user actually waits on
+is now a few hundred milliseconds of mostly network-and-Django time.
+
+**One thing that was not a code problem, recorded so it is not re-investigated.**
+`/dashboard/hr-admin/employees` hung in `next dev` — no response headers after
+60 s, forever, while every neighbouring route answered in under two seconds and
+the same route answered in 206 ms under `next start`. It was not this branch:
+stashing the one file changed in that route did not help, and the route's
+dependencies compile fine in a production build. It was a corrupted Turbopack
+cache. `rm -rf frontend/.next` and a restart fixed it, after which the route
+loads normally. If a single route ever hangs with no headers while its siblings
+are fine, clear `.next` before reading any code.

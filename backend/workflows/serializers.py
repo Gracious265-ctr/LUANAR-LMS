@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from audit.models import AuditEntry
@@ -7,16 +8,41 @@ from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
-from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow, WorkflowStage
+from .models import (
+    ApproverRole,
+    Campus,
+    Delegation,
+    Reassignment,
+    RoleAssignment,
+    Team,
+    TeamMember,
+    Workflow,
+    WorkflowStage,
+)
 from .services import (
     ReassignmentError,
     StageSequenceError,
+    _role_usage,
     acting_approver_identity,
+    add_team_member,
+    create_campus,
+    update_campus,
+    approver_role_codes_for,
+    approver_role_labels_for,
+    role_usage_map,
+    create_approver_role,
+    create_role_assignment,
+    create_team,
+    deactivate_approver_role,
     delegation_summary,
+    _resolve_stage_role,
     is_approver_user,
     normalize_stage_sequence,
     open_request_exists,
     reassign_application,
+    team_stage_roles,
+    update_approver_role,
+    update_team,
     validate_workflow_for_activation,
 )
 
@@ -51,17 +77,58 @@ def _record_delegation_created_audit(delegation: Delegation) -> None:
     )
 
 
+class ApproverRoleCodeField(serializers.Field):
+    """An approver role addressed by its stable ``code``.
+
+    Workflow payloads have always identified a stage's role by code
+    (``"hod"``), and that stays the wire contract so saved forms and the HR
+    picker keep working. The *storage* is now an ``ApproverRole`` row, so this
+    field resolves the code to that row on the way in and echoes the code on the
+    way out.
+
+    An integer is accepted as a primary key too, which keeps ad-hoc API calls
+    working, but code is the documented form.
+    """
+
+    default_error_messages = {
+        "does_not_exist": "No approver role with code '{code}'.",
+        "inactive": '"{label}" is deactivated. Reactivate it in Roles, or pick an active role.',
+    }
+
+    def to_representation(self, value: ApproverRole) -> str:
+        return value.code
+
+    def to_internal_value(self, data) -> ApproverRole:
+        if isinstance(data, bool) or not isinstance(data, (str, int)):
+            self.fail("does_not_exist", code=data)
+        code = data
+        if isinstance(data, int) or (isinstance(data, str) and data.isdigit()):
+            role = ApproverRole.objects.filter(pk=int(data)).first()
+        else:
+            role = ApproverRole.objects.filter(code=str(data).strip()).first()
+        if role is None:
+            self.fail("does_not_exist", code=code)
+        if not role.is_active:
+            self.fail("inactive", label=role.label)
+        return role
+
+
 class WorkflowStageSerializer(serializers.ModelSerializer):
-    """One step in a workflow's approval sequence."""
+    """One step in a workflow's approval sequence.
+
+    ``approver_role`` is an :class:`ApproverRole` identified by its ``code``,
+    with the label echoed alongside so a workflow is readable without a second
+    lookup.
+    """
+
+    approver_role = ApproverRoleCodeField()
+    approver_role_label = serializers.CharField(
+        source="approver_role.label", read_only=True
+    )
 
     class Meta:
         model = WorkflowStage
-        fields = ["id", "order", "approver_role"]
-
-    def validate_approver_role(self, value: str) -> str:
-        if value not in APPROVER_ROLE_CODES:
-            raise serializers.ValidationError("Select a valid approver role.")
-        return value
+        fields = ["id", "order", "approver_role", "approver_role_label"]
 
     def validate_order(self, value: int) -> int:
         if value is None or value < 1:
@@ -165,9 +232,11 @@ class WorkflowSerializer(AuditedModelSerializer):
             "department": instance.department,
             "effective_from": instance.effective_from,
             "is_active": instance.is_active,
+            # Role *codes*, not ids, so the audit entry stays readable years
+            # after the role is renamed or the row is hard to resolve.
             "stages": list(
                 instance.stages.order_by("order").values_list(
-                    "approver_role", flat=True
+                    "approver_role__code", flat=True
                 )
             ),
         }
@@ -200,7 +269,21 @@ class WorkflowSerializer(AuditedModelSerializer):
     def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:
         workflow.stages.all().delete()
         for stage in normalize_stage_sequence(stages):
-            WorkflowStage.objects.create(workflow=workflow, **stage)
+            # The normalized payload carries a role *code*; the column is a FK,
+            # so resolve it to the row before writing.
+            role = _resolve_stage_role(stage["approver_role"])
+            if role is None:
+                raise serializers.ValidationError(
+                    {
+                        "approver_role": (
+                            f"Approver role '{stage['approver_role']}' is missing "
+                            "or deactivated."
+                        )
+                    }
+                )
+            WorkflowStage.objects.create(
+                workflow=workflow, approver_role=role, order=stage["order"]
+            )
 
 
 class DelegationSerializer(serializers.ModelSerializer):
@@ -254,6 +337,18 @@ class DelegationSerializer(serializers.ModelSerializer):
         return obj.approver.get_full_name()
 
     def get_approver_role(self, obj: Delegation) -> str:
+        """The approver's primary role code, from the role graph.
+
+        ``User.role`` is only employee/approver/hr, so it cannot name the
+        position somebody approves in. The first active holding supplies the
+        label, falling back to the system role for HR and for a user whose
+        holdings have all been removed.
+        """
+        codes = [
+            code for code in approver_role_codes_for(obj.approver)
+        ]
+        if codes:
+            return codes[0]
         return obj.approver.role
 
     def get_delegate_name(self, obj: Delegation) -> str:
@@ -469,3 +564,340 @@ class PendingApplicationSerializer(serializers.Serializer):
         if resolved is not None and instance.pk in resolved:
             return resolved[instance.pk]
         return acting_approver_identity(instance)
+
+
+class ApproverRoleSerializer(serializers.ModelSerializer):
+    """One HR-managed approver role.
+
+    Reads expose the derived ``is_in_use`` and ``usage`` so the Roles list can
+    say *why* a role cannot be deactivated without HR cross-referencing other
+    screens. Writes never go through the model directly: ``create``/
+    ``update``/``destroy`` delegate to the transactional services so the audit
+    trail and the in-use guard are impossible to bypass from the API.
+    """
+
+    is_in_use = serializers.SerializerMethodField()
+    usage = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ApproverRole
+        fields = [
+            "id",
+            "code",
+            "label",
+            "description",
+            "is_active",
+            "history_scope",
+            "handles_cancellation",
+            "is_institution_wide",
+            "is_in_use",
+            "usage",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["code", "is_in_use", "usage", "created_at", "updated_at"]
+
+    def _usage_for(self, instance: ApproverRole) -> list[str]:
+        """The usage clauses for ``instance``, computed once for the request.
+
+        ``is_in_use`` and ``usage`` expose the same fact, and the Roles screen
+        asks for it for every role at once. Computing it per field, per role,
+        made the list cost one query per blocker per role; this resolves the
+        whole page in three queries and reads the result from the shared
+        serializer context on every subsequent field.
+        """
+        cache = self.context.get("role_usage")
+        if cache is None:
+            siblings = getattr(self.parent, "instance", None)
+            subjects = list(siblings) if getattr(self.parent, "many", False) else [self.instance]
+            cache = role_usage_map(subjects)
+            self.context["role_usage"] = cache
+        return cache.get(instance.pk, [])
+
+    def get_is_in_use(self, instance: ApproverRole) -> bool:
+        return bool(self._usage_for(instance))
+
+    def get_usage(self, instance: ApproverRole) -> list[str]:
+        return self._usage_for(instance)
+
+    def create(self, validated_data: dict) -> ApproverRole:
+        return create_approver_role(
+            actor=self.context["actor"], data=dict(validated_data)
+        )
+
+    def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
+        return update_approver_role(
+            role=instance, actor=self.context["actor"], data=dict(validated_data)
+        )
+
+    def destroy(self, instance: ApproverRole) -> None:
+        """Deactivate rather than delete.
+
+        Roles are referenced by workflow stages, team memberships, and every
+        historical stage snapshot, so hard deletion is never safe. A role also
+        cannot be deactivated while it is still in use, so this doubles as the
+        retire action and surfaces that refusal to the caller.
+        """
+        deactivate_approver_role(role=instance, actor=self.context["actor"])
+
+
+class ApproverRoleWriteSerializer(serializers.Serializer):
+    """Create/update payload for a role; ``code`` is fixed by the seeds."""
+
+    code = serializers.SlugField(max_length=50)
+    label = serializers.CharField(max_length=80)
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    # Read-only on purpose. Retirement is the DELETE verb, which runs the
+    # in-use guard; accepting is_active here would let a PATCH retire a role
+    # that an active workflow, team, or holder still depends on.
+    is_active = serializers.BooleanField(read_only=True)
+    history_scope = serializers.ChoiceField(
+        choices=ApproverRole.HistoryScope.choices, required=False
+    )
+    handles_cancellation = serializers.BooleanField(required=False, default=False)
+    is_institution_wide = serializers.BooleanField(required=False, default=False)
+
+    def validate_code(self, value: str) -> str:
+        cleaned = slugify(value)
+        if not cleaned:
+            raise serializers.ValidationError(
+                "The role code must be made of letters, numbers, or hyphens."
+            )
+        if cleaned != value:
+            raise serializers.ValidationError(
+                f'Use lowercase letters, numbers, and hyphens only, like "{cleaned}".'
+            )
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        """Reject a code that already exists, including a retired one.
+
+        The unique index covers retired roles too, and that is deliberate:
+        application stages snapshot the code, so reusing "dean" for a different
+        purpose would rewrite the meaning of every historical decision. Catching
+        it here turns what would otherwise be a database error into a message HR
+        can act on.
+        """
+        if self.instance is not None:
+            return attrs
+        code = attrs.get("code")
+        if code and ApproverRole.objects.filter(code=code).exists():
+            raise serializers.ValidationError(
+                {
+                    "code": [
+                        f'The code "{code}" is already used by another role. '
+                        "Role codes appear in historical application stages, so "
+                        "they cannot be reused, even after a role is retired."
+                    ]
+                }
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> ApproverRole:
+        return create_approver_role(
+            actor=self.context["actor"], data=dict(validated_data)
+        )
+
+    def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
+        return update_approver_role(
+            role=instance, actor=self.context["actor"], data=dict(validated_data)
+        )
+
+
+class RoleAssignmentSerializer(serializers.ModelSerializer):
+    """A person's institution-wide role holding."""
+
+    # Not filtered on is_active: the service rejects an inactive account with a
+    # sentence HR can act on, which beats DRF's "Invalid pk ... does not exist".
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    role = serializers.PrimaryKeyRelatedField(
+        queryset=ApproverRole.objects.all()
+    )
+    user_name = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoleAssignment
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "role",
+            "role_label",
+            "created_at",
+        ]
+        read_only_fields = ["created_at"]
+        # Held to the same rule as team memberships: the service owns uniqueness
+        # so the error says who already holds the role.
+        validators: list = []
+
+    def get_user_name(self, instance: RoleAssignment) -> str:
+        return instance.user.get_full_name() or instance.user.username
+
+    def get_role_label(self, instance: RoleAssignment) -> str:
+        return instance.role.label
+
+    def validate(self, attrs: dict) -> dict:
+        role = attrs.get("role")
+        if role is not None and not role.is_institution_wide:
+            raise serializers.ValidationError(
+                {
+                    "role": f'"{role.label}" is a team role, not an '
+                    "institution-wide role. Add this person to the team that "
+                    "uses it instead."
+                }
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> RoleAssignment:
+        return create_role_assignment(
+            user=validated_data["user"],
+            role=validated_data["role"],
+            actor=self.context["actor"],
+        )
+
+
+class TeamMemberSerializer(serializers.ModelSerializer):
+    """One person's role on one team."""
+
+    # As with institution-wide holdings, inactive accounts reach
+    # :func:`add_team_member` so the reason they cannot be staffed is explained.
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    # Code-keyed, like a workflow stage: HR staffs a team by naming the role,
+    # not by looking up a primary key. Echoing the code keeps the payload in the
+    # vocabulary the rest of the configuration API speaks.
+    role = ApproverRoleCodeField()
+    user_name = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamMember
+        fields = ["id", "team", "user", "user_name", "role", "role_label", "created_at"]
+        read_only_fields = ["created_at"]
+        # Declaring ``validators`` switches off the automatic
+        # UniqueTogetherValidator. One member per role per team is enforced by
+        # :func:`add_team_member` instead, which names the current holder —
+        # "The fields team, role must make a unique set" is not an answer an HR
+        # user can act on.
+        validators: list = []
+
+    def get_user_name(self, instance: TeamMember) -> str:
+        return instance.user.get_full_name() or instance.user.username
+
+    def get_role_label(self, instance: TeamMember) -> str:
+        return instance.role.label
+
+    def create(self, validated_data: dict) -> TeamMember:
+        return add_team_member(
+            team=validated_data["team"],
+            user=validated_data["user"],
+            role=validated_data["role"],
+            actor=self.context["actor"],
+        )
+
+
+class TeamSerializer(serializers.ModelSerializer):
+    """A team: the routing unit HR assigns people to."""
+
+    campus = serializers.PrimaryKeyRelatedField(
+        queryset=Campus.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
+    campus_name = serializers.CharField(source="campus.name", read_only=True)
+    # Active chains only: a team pointing at a retired workflow routes nothing,
+    # and the applicant would hit a configuration error at submission.
+    workflow = serializers.PrimaryKeyRelatedField(
+        queryset=Workflow.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
+    workflow_name = serializers.CharField(source="workflow.name", read_only=True)
+    # Source is the real related name; without it DRF finds no attribute and
+    # silently renders an empty list, which reads as "this team has no members".
+    members = TeamMemberSerializer(many=True, read_only=True, source="memberships")
+    stage_roles = serializers.SerializerMethodField()
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Team
+        fields = [
+            "id",
+            "name",
+            "code",
+            "description",
+            "campus",
+            "campus_name",
+            "workflow",
+            "workflow_name",
+            "is_active",
+            "stage_roles",
+            "member_count",
+            "members",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "code",
+            "stage_roles",
+            "member_count",
+            "members",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_stage_roles(self, instance: Team) -> list[dict]:
+        return [
+            {"id": role.pk, "label": role.label, "code": role.code}
+            for role in team_stage_roles(instance)
+        ]
+
+    def get_member_count(self, instance: Team) -> int:
+        return instance.memberships.count()
+
+    def create(self, validated_data: dict) -> Team:
+        return create_team(actor=self.context["actor"], data=dict(validated_data))
+
+    def update(self, instance: Team, validated_data: dict) -> Team:
+        return update_team(
+            team=instance, actor=self.context["actor"], data=dict(validated_data)
+        )
+
+
+class CampusSerializer(serializers.ModelSerializer):
+    """HR-maintained campus reference data, used to scope teams."""
+
+    class Meta:
+        model = Campus
+        fields = ["id", "name", "code", "description", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_code(self, value: str) -> str:
+        cleaned = slugify(value)
+        if not cleaned:
+            raise serializers.ValidationError(
+                "The campus code must be made of letters, numbers, or hyphens."
+            )
+        if cleaned != value:
+            raise serializers.ValidationError(
+                f'Use lowercase letters, numbers, and hyphens only, like "{cleaned}".'
+            )
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        if self.instance is not None:
+            return attrs
+        code = attrs.get("code")
+        if code and Campus.objects.filter(code=code).exists():
+            raise serializers.ValidationError(
+                {"code": [f'The campus code "{code}" is already in use.']}
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> Campus:
+        return create_campus(actor=self.context["actor"], data=dict(validated_data))
+
+    def update(self, instance: Campus, validated_data: dict) -> Campus:
+        return update_campus(
+            campus=instance, actor=self.context["actor"], data=dict(validated_data)
+        )

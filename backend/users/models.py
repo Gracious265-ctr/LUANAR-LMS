@@ -4,15 +4,19 @@ from django.db import models
 
 
 class User(AbstractUser):
-    """Custom user model with role-based access control."""
+    """Custom user model with role-based access control.
+
+    ``role`` is a *system access level*, not a place in an approval chain. The
+    three values answer only "what can this account reach in the product":
+    an ordinary employee's own leave, HR's administration back office, or the
+    approval desk. Who actually approves an application, and in what order, is
+    HR-managed ``Team``/``ApproverRole`` data — see
+    ``workflows.services.is_approver_user``.
+    """
 
     class Role(models.TextChoices):
         EMPLOYEE = "employee", "Employee"
-        SUPERVISOR = "supervisor", "Supervisor"
-        HOD = "hod", "Head of Department"
-        DEAN = "dean", "Dean"
-        REGISTRAR = "registrar", "Registrar"
-        DVC = "dvc", "Deputy Vice-Chancellor"
+        APPROVER = "approver", "Approver"
         HR = "hr", "Human Resources"
 
     role = models.CharField(
@@ -62,6 +66,18 @@ class EmployeeProfile(models.Model):
     )
     grade = models.CharField(max_length=20, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
+    team = models.ForeignKey(
+        "workflows.Team",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="members",
+        help_text=(
+            "The team this employee belongs to. The team selects the approval "
+            "workflow applied to their leave; blank means the employee cannot "
+            "submit until HR assigns them to a team."
+        ),
+    )
 
     def __str__(self) -> str:
         return f"{self.user.get_full_name()} ({self.department or 'No department'})"

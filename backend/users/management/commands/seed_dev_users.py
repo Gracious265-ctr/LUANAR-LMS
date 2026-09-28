@@ -32,7 +32,7 @@ USERS = [
         "email": "supervisor@test.luanar",
         "first_name": "Test",
         "last_name": "Supervisor",
-        "role": User.Role.SUPERVISOR,
+        "role": User.Role.APPROVER,
         "profile": {
             "department": "Bunda College",
             "designation": "Lecturer",
@@ -47,7 +47,7 @@ USERS = [
         "email": "hod@test.luanar",
         "first_name": "Test",
         "last_name": "HOD",
-        "role": User.Role.HOD,
+        "role": User.Role.APPROVER,
         "profile": {
             "department": "Bunda College",
             "designation": "Head of Department",
@@ -62,7 +62,7 @@ USERS = [
         "email": "dean@test.luanar",
         "first_name": "Test",
         "last_name": "Dean",
-        "role": User.Role.DEAN,
+        "role": User.Role.APPROVER,
         "profile": {
             "department": "Faculty of Agriculture",
             "designation": "Dean",
@@ -77,7 +77,7 @@ USERS = [
         "email": "registrar@test.luanar",
         "first_name": "Test",
         "last_name": "Registrar",
-        "role": User.Role.REGISTRAR,
+        "role": User.Role.APPROVER,
         "profile": {
             "department": "Central Administration",
             "designation": "University Registrar",
@@ -92,7 +92,7 @@ USERS = [
         "email": "dvc@test.luanar",
         "first_name": "Test",
         "last_name": "DVC",
-        "role": User.Role.DVC,
+        "role": User.Role.APPROVER,
         "profile": {
             "department": "Central Administration",
             "designation": "Deputy Vice-Chancellor",
@@ -121,7 +121,12 @@ USERS = [
 
 
 class Command(BaseCommand):
-    help = "Seed development test users (one per role)"
+    help = (
+        "Seed development test users. The former per-level accounts "
+        "(supervisor/hod/dean/registrar/dvc) all have User.role=approver now: "
+        "which approval roles a person holds is seeded by seed_approvals_dev as "
+        "TeamMember/RoleAssignment rows, not by the user row."
+    )
 
     def handle(self, *args, **options):
         created_count = 0

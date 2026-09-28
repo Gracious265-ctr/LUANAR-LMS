@@ -29,6 +29,7 @@ from leave.models import LeaveApplication, SupportingDocument
 from leave.services.resubmission import resubmit_application
 from leave.services.submission import submit_application
 from workflows.models import ApprovalDecision
+from workflows.testing import create_user_with_role
 from workflows.services import decide
 
 from .stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
@@ -53,16 +54,16 @@ class TrackingEndpointTests(StubProviderMixin, TestCase):
         )
         self.supervisor = make_user(
             "track.supervisor@luanar",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
         self.hod = make_user(
-            "track.hod@luanar", role=User.Role.HOD, first_name="Hady", last_name="Od"
+            "track.hod@luanar", role="hod", first_name="Hady", last_name="Od"
         )
         self.registrar = make_user(
             "track.registrar@luanar",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rej",
             last_name="Registrar",
         )
@@ -174,10 +175,10 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_supervisor_approver_gets_404(self):
-        supervisor = User.objects.create_user(
+        supervisor = create_user_with_role(
             username="supervisor@test.luanar",
             password="testpass123",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
         )
         app = self.make_app()
         self.client.force_authenticate(user=supervisor)

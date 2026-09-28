@@ -28,6 +28,7 @@ from notifications.reassignments import (
 )
 from workflows.models import Reassignment
 from workflows.services import ReassignmentError, reassign_application
+from workflows.testing import make_approver
 
 User = get_user_model()
 
@@ -51,8 +52,8 @@ class ReassignmentEmailTests(TestCase):
     def setUp(self):
         self.hr = make_user(User.Role.HR, "hr@notify.test")
         self.employee = make_user(User.Role.EMPLOYEE, "emp@notify.test")
-        self.dean = make_user(User.Role.DEAN, "dean@notify.test")
-        self.hod = make_user(User.Role.HOD, "hod@notify.test")
+        self.dean = make_approver("dean", username="dean@notify.test")
+        self.hod = make_approver("hod", username="hod@notify.test")
 
     def _app(self, approver=None) -> LeaveApplication:
         return LeaveApplication.objects.create(
@@ -233,8 +234,8 @@ class ReassignmentOutboxWiringTests(TestCase):
     def setUp(self):
         self.hr = make_user(User.Role.HR, "hr-wire@notify.test")
         self.employee = make_user(User.Role.EMPLOYEE, "emp-wire@notify.test")
-        self.dean = make_user(User.Role.DEAN, "dean-wire@notify.test")
-        self.hod = make_user(User.Role.HOD, "hod-wire@notify.test")
+        self.dean = make_approver("dean", username="dean-wire@notify.test")
+        self.hod = make_approver("hod", username="hod-wire@notify.test")
 
     def _app(self, approver=None) -> LeaveApplication:
         return LeaveApplication.objects.create(

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { CoverPanel } from "@/components/approvals/cover-panel";
-import { getCurrentUser } from "@/lib/auth";
+import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, loadCoverData } from "@/lib/delegations";
 
 export const metadata = {
@@ -16,12 +16,7 @@ export const metadata = {
  * `?view=cover` query on the approvals page could not do.
  */
 export default async function CoverPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-  if (!canRequestCover(user.role)) {
+  if (!canRequestCover(await loadApprovalCapabilities())) {
     redirect("/dashboard");
   }
 

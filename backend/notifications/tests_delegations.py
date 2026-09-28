@@ -30,6 +30,7 @@ from notifications.delegations import (
 from notifications.models import NotificationOutbox, NotificationOutboxLockedError
 from workflows.models import Delegation
 from workflows.services import DelegationActionError
+from workflows.testing import make_approver
 
 User = get_user_model()
 
@@ -48,8 +49,8 @@ def make_user(role, email) -> User:
 class DelegationEmailTests(TestCase):
     def setUp(self):
         self.hr = make_user(User.Role.HR, "hr@notify.test")
-        self.dean = make_user(User.Role.DEAN, "dean@notify.test")
-        self.hod = make_user(User.Role.HOD, "hod@notify.test")
+        self.dean = make_approver("dean", username="dean@notify.test")
+        self.hod = make_approver("hod", username="hod@notify.test")
         self.today = timezone.localdate()
 
     def _delegation(self, **overrides) -> Delegation:
@@ -194,8 +195,8 @@ class DelegationOutboxWiringTests(TestCase):
 
     def setUp(self):
         self.hr = make_user(User.Role.HR, "hr-wire@notify.test")
-        self.dean = make_user(User.Role.DEAN, "dean-wire@notify.test")
-        self.hod = make_user(User.Role.HOD, "hod-wire@notify.test")
+        self.dean = make_approver("dean", username="dean-wire@notify.test")
+        self.hod = make_approver("hod", username="hod-wire@notify.test")
         self.today = timezone.localdate()
 
     def _requested(self) -> Delegation:

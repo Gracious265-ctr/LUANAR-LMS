@@ -29,6 +29,7 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
             <th className="py-3 pr-4">Designation</th>
             <th className="py-3 pr-4">Category</th>
             <th className="py-3 pr-4">Grade</th>
+            <th className="py-3 pr-4">Team</th>
             <th className="py-3 pr-4">Status</th>
             <th className="py-3 text-right">Actions</th>
           </tr>
@@ -58,6 +59,9 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
                 {CATEGORY_LABELS[employee.category] || employee.category}
               </td>
               <td className="py-3 pr-4 text-text-secondary">{employee.grade || "—"}</td>
+              <td className="py-3 pr-4 text-text-secondary">
+                {employee.team_name || "—"}
+              </td>
               <td className="py-3 pr-4">
                 <span
                   className={

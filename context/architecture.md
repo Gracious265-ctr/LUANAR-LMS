@@ -172,8 +172,14 @@ Examples:
 | --------------------------------------- | -------- |
 | Employee records                        | Database |
 | Employee roles                          | Database |
+| Employee team membership                | Database |
 | Employee grades                         | Database |
 | Grade entitlement configuration         | Database |
+| Approver-role definitions (HR-managed)  | Database |
+| Campuses                                | Database |
+| Teams (workflow + campus scoped)        | Database |
+| Team memberships (role held by person)  | Database |
+| Institution-wide role assignments       | Database |
 | Leave applications                      | Database |
 | Leave types                             | Database |
 | Leave-type rules                        | Database |
@@ -182,6 +188,7 @@ Examples:
 | Leave balances/history                  | Database |
 | Workflow definitions                    | Database |
 | Workflow stages                         | Database |
+| Stage approver-role references          | Database |
 | Assigned approvers                      | Database |
 | Approval decisions                      | Database |
 | Approval comments                       | Database |
@@ -285,33 +292,42 @@ An employee must not be able to submit an application on behalf of another emplo
 
 ### 6.3 Role-Based Access
 
-Access is controlled by the user's assigned system role and organizational scope.
+Access is controlled by two separate things, and conflating them was the defect this model replaces.
 
-Primary roles include:
+**1. System role** — what an account may reach. Exactly three values, and nothing else:
 
-* Employee
-* Supervisor
-* HOD
-* Dean
-* Registrar
-* DVC
-* HR
+* `employee` — own applications and personal leave information
+* `approver` — the approver queue, review, delegation, and cover surfaces
+* `hr` — organization-wide administrative/configuration access according to HR permissions
 
-Permissions must be enforced by the backend.
+`User.role` is a reachability label. It is **not** a place in an approval chain, and a person's authority to approve a given application is never derived from it.
 
-Examples:
+**2. Approver role** — a position in an approval chain, maintained by HR as configuration (`ApproverRole`: `code`, `label`, `description`, `history_scope`, `is_institution_wide`, `handles_cancellation`). Approver roles are open-ended: HR defines the codes. No role is privileged in code.
 
-| Role       | Access Principle                                                                  |
-| ---------- | --------------------------------------------------------------------------------- |
-| Employee   | Own applications and personal leave information                                   |
-| Supervisor | Applications assigned to the supervisor and permitted employee information        |
-| HOD        | Applications within the HOD's department                                          |
-| Dean       | Applications within the applicable academic/faculty scope                         |
-| Registrar  | Applications within the Registrar's authorized scope                              |
-| DVC        | Applications reaching the configured DVC stage                                    |
-| HR         | Organization-wide administrative/configuration access according to HR permissions |
+An approver role is held in exactly one of two places:
 
-The frontend may hide unavailable actions for usability, but hiding a UI element is **not** an authorization mechanism.
+| Holding                | Model                 | Scope                                                        |
+| ---------------------- | --------------------- | ------------------------------------------------------------ |
+| Team membership        | `TeamMember`          | One role per person, one person per role, within a `Team`'s `stage_roles` |
+| Institution-wide grant | `RoleAssignment`      | One holder for a role marked `is_institution_wide`             |
+
+A `Team` binds a group of people to a workflow (`team.workflow`, `null` = institution-wide workflow) and optionally to a `Campus`, which scopes reporting and history. `EmployeeProfile.team` places an employee on a team, so routing is per-employee rather than per-category guesswork.
+
+Access principles:
+
+| Principal                                  | Access Principle                                                                 |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| Employee                                   | Own applications and personal leave information                                  |
+| Holder of an approver role                 | Only the applications whose current stage names a role they hold                |
+| Institution-wide holder                     | Decides for any applicant whose stage reaches that role and whose team has no member holding it |
+| Holder of a role marked `handles_cancellation` | Decides cancellation requests, not only stage approvals                      |
+| HR                                         | Organization-wide administrative/configuration access                            |
+
+**Resolution is the backend's, per applicant, at submission time** (`resolve_stage_approver`): the team member holding the role wins; failing that, an institution-wide role must have exactly one active holder; otherwise the configuration is incomplete and the submission is refused with an error that names the role and what HR must do.
+
+A person is an approver when they hold at least one **active** approver role (`is_approver_user`). Retiring a role therefore retires the approver status it conferred, which is why roles are retired rather than deleted.
+
+**The frontend must ask, not infer.** The surfaces that need to know (`/approvals`, `/dashboard/approvals`, `/dashboard/cover`, the sidebar, the dashboard's pending count) read the backend's `GET /api/v1/approvals/capabilities/`, and fail closed when it cannot be read. The frontend may hide unavailable actions for usability, but hiding a UI element is **not** an authorization mechanism.
 
 The backend must independently verify every protected operation.
 
@@ -364,6 +380,13 @@ Supervisor → HOD → Registrar → DVC
 ```
 
 Different employee categories may use different configured workflows.
+
+A stage names an approver role by `code`, resolved at submission time against the `ApproverRole` registry — not against a list in code. Consequences that the implementation must honour:
+
+* A role code this build has never seen is legitimate; it is a row HR added, and it must round-trip untouched.
+* A stage carries an `approver_role_label` snapshot so a decision, an application stage record, and a cancellation record still read correctly after a role is renamed or retired.
+* A retired role cannot be activated into a workflow, and an application already inside a chain continues on the role it was routed to.
+* When a stage's role has no resolver for a given applicant, the submission is refused (`workflow_unavailable`, 422) rather than routed to a fallback. See §12.7 and §6.3.
 
 ---
 
@@ -558,6 +581,19 @@ Applications, approvals, balances, workflow decisions, and audit records must re
 **Significant workflow, administrative, and decision-making actions must produce an auditable record.**
 
 The audit record must identify the actor, action, timestamp, and relevant previous/new state or reason where applicable.
+
+---
+
+### 12.11 Approver-Role Identity
+
+**An approver role is never deleted, and no historical record may be left unrenderable because HR changed the configuration.**
+
+* A role is retired, never removed: the API exposes retirement (`DELETE` → `is_active=False`), and the foreign keys that reference it are `PROTECT`.
+* Retirement is refused while an active workflow, a team, or a holder still needs the role, and the refusal names each blocker. Configured state is never left dangling.
+* Renaming a role must not rewrite the past. Stages, decisions, and cancellations keep the code and label they were routed with.
+* A team has at most one member per role and each person holds at most one role on a team (`(team, role)` and `(team, user)` are unique), and at most one institution-wide holding per person per role (`(user, role)` is unique). Both halves are what make "who approves this" resolvable to a single person.
+* Ambiguity is refused, never guessed: a stage that resolves to two or more institution-wide holders, or to none, aborts the submission and says which role and which team HR must fix.
+* A retired role confers no approver status, and a stage naming it cannot be activated.
 
 ---
 

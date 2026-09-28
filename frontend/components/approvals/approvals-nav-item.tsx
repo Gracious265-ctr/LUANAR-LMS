@@ -3,29 +3,31 @@
 import { ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
-import { fetchCapabilities } from "@/lib/approvals/service";
 import { cn } from "@/lib/utils";
 
-export function ApprovalsNavItem({ open }: { open: boolean }) {
+/**
+ * The Approvals entry, shown only to somebody the server says is an approver.
+ *
+ * The answer arrives as a prop from the dashboard layout, which has already
+ * read the caller's capabilities while rendering. It used to fetch them itself
+ * from the browser after hydration, which put an extra round trip on every
+ * navigation and left the badge showing a hard-coded zero whenever the parent
+ * did supply the answer.
+ */
+export function ApprovalsNavItem({
+  open,
+  isApprover,
+  pendingCount = 0,
+}: {
+  open: boolean;
+  isApprover: boolean;
+  /** The caller's pending count, when the layout read it. */
+  pendingCount?: number;
+}) {
   const pathname = usePathname();
-  const [caps, setCaps] = useState<{
-    is_approver: boolean;
-    pending_count: number;
-  } | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    fetchCapabilities().then((next) => {
-      if (live) setCaps(next);
-    });
-    return () => {
-      live = false;
-    };
-  }, [pathname]);
-
-  if (caps !== null && !caps.is_approver) return null;
+  if (!isApprover) return null;
 
   const isSelected =
     pathname === "/dashboard/approvals" ||
@@ -34,6 +36,9 @@ export function ApprovalsNavItem({ open }: { open: boolean }) {
   return (
     <Link
       href="/dashboard/approvals"
+      // Collapsed, the label span is not rendered, so the icon alone would
+      // leave the link with no accessible name.
+      aria-label="Approvals"
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
         isSelected
@@ -54,12 +59,12 @@ export function ApprovalsNavItem({ open }: { open: boolean }) {
           Approvals
         </span>
       )}
-      {open && caps !== null && caps.pending_count > 0 && (
+      {open && pendingCount > 0 && (
         <span
           data-testid="approvals-pending-count"
           className="ml-auto mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-primary px-1.5 text-[11px] font-semibold leading-none text-white"
         >
-          {caps.pending_count > 99 ? "99+" : caps.pending_count}
+          {pendingCount > 99 ? "99+" : pendingCount}
         </span>
       )}
     </Link>

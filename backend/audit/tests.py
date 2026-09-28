@@ -22,6 +22,7 @@ from leave.models import (
 from users.models import User
 
 from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
+from workflows.testing import make_approver
 
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
@@ -176,7 +177,7 @@ class AuditEntryApiTests(TestCase):
         self.client = APIClient()
         self.hr_user = make_hr()
         self.employee_user = make_user(User.Role.EMPLOYEE, "emp-1@audit.test")
-        self.approver_user = make_user(User.Role.HOD, "hod-1@audit.test")
+        self.approver_user = make_approver("hod", username="hod-1@audit.test")
 
         self.entry = record_audit(
             actor=self.hr_user,
@@ -392,8 +393,8 @@ class FinalizedLeaveApiTests(TestCase):
             file_size=1024,
             content_type="application/pdf",
         )
-        to_approver = make_user(User.Role.DEAN, "dean-fin@audit.test")
-        from_approver = make_user(User.Role.HOD, "hod-fin@audit.test")
+        to_approver = make_approver("dean", username="dean-fin@audit.test")
+        from_approver = make_approver("hod", username="hod-fin@audit.test")
         Reassignment.objects.create(
             application=self.app,
             from_approver=from_approver,
@@ -646,11 +647,11 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         return response.data["id"]
 
     def test_delegation_approve_reject_cancel_are_audited(self):
-        dean = make_user(User.Role.DEAN, "dean-audit@audit.test")
-        dean2 = make_user(User.Role.DEAN, "dean-audit2@audit.test")
-        dean3 = make_user(User.Role.DEAN, "dean-audit3@audit.test")
-        hod = make_user(User.Role.HOD, "hod-audit@audit.test")
-        hod2 = make_user(User.Role.HOD, "hod-audit2@audit.test")
+        dean = make_approver("dean", username="dean-audit@audit.test")
+        dean2 = make_approver("dean", username="dean-audit2@audit.test")
+        dean3 = make_approver("dean", username="dean-audit3@audit.test")
+        hod = make_approver("hod", username="hod-audit@audit.test")
+        hod2 = make_approver("hod", username="hod-audit2@audit.test")
 
         delegation_id = self._create_delegation(dean, hod)
         response = self.client.post(
@@ -700,8 +701,8 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(cancelled.reason, "No longer needed")
 
     def test_failed_delegation_action_writes_no_audit_entry(self):
-        dean = make_user(User.Role.DEAN, "dean-audit2@audit.test")
-        hod = make_user(User.Role.HOD, "hod-audit2@audit.test")
+        dean = make_approver("dean", username="dean-audit2@audit.test")
+        hod = make_approver("hod", username="hod-audit2@audit.test")
         delegation_id = self._create_delegation(dean, hod)
         response = self.client.post(
             f"/api/v1/delegations/{delegation_id}/approve/",
@@ -718,8 +719,8 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(actions, {"created"})
 
     def test_delegation_create_is_audited(self):
-        dean = make_user(User.Role.DEAN, "dean-audit3@audit.test")
-        hod = make_user(User.Role.HOD, "hod-audit3@audit.test")
+        dean = make_approver("dean", username="dean-audit3@audit.test")
+        hod = make_approver("hod", username="hod-audit3@audit.test")
         delegation_id = self._create_delegation(dean, hod)
 
         created = self._entry_for("delegation", delegation_id)
@@ -732,7 +733,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
     def test_reassignment_is_audited(self):
         employee = make_user(User.Role.EMPLOYEE, "emp-re-assign@audit.test")
         app = make_submitted_application(employee)
-        to_approver = make_user(User.Role.HOD, "hod-re-assign@audit.test")
+        to_approver = make_approver("hod", username="hod-re-assign@audit.test")
         response = self.client.post(
             "/api/v1/reassignments/",
             {

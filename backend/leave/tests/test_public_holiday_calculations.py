@@ -13,6 +13,7 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -33,14 +34,40 @@ from .stubs import StubWorkflowProvider, make_user
 
 User = get_user_model()
 
+
+def _week_shift() -> timedelta:
+    """Days to move the fixture week forward to a future Monday.
+
+    Every date below belongs to one frame: a financial year, a working week, and
+    a notice period. Shifting the frame as a unit preserves the weekdays and the
+    ordering the assertions depend on, while keeping the leave period in the
+    future — a request starting today is rejected by ``START_ON_SUBMISSION_DATE``,
+    so a fixed calendar frame silently breaks the suite once the clock passes it.
+    """
+    anchor = date(2026, 9, 28)  # a Monday, the historical start of the fixture week
+    today = timezone.localdate()
+    # Monday of the week two full weeks from now.
+    ahead = today + timedelta(days=14)
+    target = ahead - timedelta(days=ahead.weekday())
+    return timedelta(days=(target - anchor).days)
+
+
+SHIFT = _week_shift()
+
+
+def at(day: date) -> date:
+    """A fixture date, moved into the current frame."""
+    return day + SHIFT
+
+
 #: Monday to Friday.
-FULL_WEEK_START = date(2026, 9, 28)
-FULL_WEEK_END = date(2026, 10, 2)
+FULL_WEEK_START = at(date(2026, 9, 28))
+FULL_WEEK_END = at(date(2026, 10, 2))
 FULL_WEEK_DAYS = 5
 #: A Wednesday inside that week.
-MIDWEEK = date(2026, 9, 30)
+MIDWEEK = at(date(2026, 9, 30))
 #: A Saturday inside that week — already excluded as a weekend.
-WEEKEND_DAY = date(2026, 10, 3)
+WEEKEND_DAY = at(date(2026, 10, 3))
 
 
 class PublicHolidayBase(TestCase):
@@ -64,20 +91,20 @@ class PublicHolidayBase(TestCase):
             gender=EmployeeProfile.Gender.FEMALE,
         )
         self.year = FinancialYear.objects.create(
-            start_date=date(2026, 7, 1),
-            end_date=date(2027, 6, 30),
+            start_date=at(date(2026, 7, 1)),
+            end_date=at(date(2027, 6, 30)),
             is_active=True,
         )
         GradeEntitlement.objects.create(
             grade_start="A",
             grade_end="C",
             days=30,
-            effective_from=date(2026, 1, 1),
+            effective_from=at(date(2026, 1, 1)),
         )
         self.leave_type = LeaveType.objects.create(name="Annual", code="annual")
         LeaveRule.objects.create(
             leave_type=self.leave_type,
-            effective_from=date(2026, 1, 1),
+            effective_from=at(date(2026, 1, 1)),
             max_duration_days=30,
             min_notice_days=0,
             consumes_annual_entitlement=True,
@@ -164,8 +191,8 @@ class CountWorkingDaysTests(PublicHolidayBase):
         )
 
     def test_a_leave_spanning_only_holidays_and_weekends_is_zero(self):
-        friday = date(2026, 10, 2)
-        monday = date(2026, 10, 5)
+        friday = at(date(2026, 10, 2))
+        monday = at(date(2026, 10, 5))
         self.holiday(friday, "Eid al-Fitr")
         self.holiday(monday, "Eid al-Fitr holiday")
 
@@ -392,9 +419,9 @@ class NoticePeriodTests(PublicHolidayBase):
     """``min_notice_days`` is counted in working days, so holidays bite here too."""
 
     #: A Monday, with the notice window running Tue 22 - Mon 28 September.
-    TODAY = date(2026, 9, 21)
-    START = date(2026, 9, 28)
-    NOTICE_HOLIDAY = date(2026, 9, 23)
+    TODAY = at(date(2026, 9, 21))
+    START = at(date(2026, 9, 28))
+    NOTICE_HOLIDAY = at(date(2026, 9, 23))
 
     def setUp(self):
         super().setUp()
@@ -452,10 +479,10 @@ class HolidayChangeRefreshesDraftsTests(PublicHolidayBase):
         super().setUp()
         # Two independent weeks, so a holiday can be moved from one to the other.
         self.first = self.create_draft_via_api(
-            start=date(2026, 9, 28), end=date(2026, 10, 2)
+            start=at(date(2026, 9, 28)), end=at(date(2026, 10, 2))
         )
         self.second = self.create_draft_via_api(
-            start=date(2026, 10, 12), end=date(2026, 10, 16)
+            start=at(date(2026, 10, 12)), end=at(date(2026, 10, 16))
         )
         self.assertEqual(self.first.calculated_days, 5)
         self.assertEqual(self.second.calculated_days, 5)
@@ -471,7 +498,7 @@ class HolidayChangeRefreshesDraftsTests(PublicHolidayBase):
         self.assertEqual(self.stored(self.second), 5)
 
     def test_a_holiday_outside_every_draft_changes_nothing(self):
-        self.holiday(date(2026, 12, 25), "Christmas Day")
+        self.holiday(at(date(2026, 12, 25)), "Christmas Day")
 
         self.assertEqual(self.stored(self.first), 5)
         self.assertEqual(self.stored(self.second), 5)
@@ -480,7 +507,7 @@ class HolidayChangeRefreshesDraftsTests(PublicHolidayBase):
         holiday = self.holiday(MIDWEEK, "Eid al-Fitr")
         self.assertEqual(self.stored(self.first), 4)
 
-        holiday.date = date(2026, 10, 14)
+        holiday.date = at(date(2026, 10, 14))
         holiday.save()
 
         self.assertEqual(self.stored(self.first), 5)

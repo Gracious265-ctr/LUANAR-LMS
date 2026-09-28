@@ -32,11 +32,19 @@ EARLIEST_ANNUAL_START = date(2026, 9, 28)
 
 
 def make_user(username="employee@test.luanar", **kwargs):
-    return User.objects.create_user(
-        username=username,
-        email=kwargs.pop("email", username),
-        password="testpass123",
-        **kwargs,
+    """Create a user, defaulting to an ordinary employee.
+
+    ``role`` accepts a :class:`~users.models.User.Role` value *or* one of the six
+    approver role codes (``"hod"``, ``"registrar"``, ...). An approver code
+    produces a real ``ApproverRole`` plus an institution-wide holding, because
+    setting the user row alone no longer makes somebody an approver — see
+    :func:`workflows.services.is_approver_user`.
+    """
+    from workflows.testing import create_user_with_role
+
+    kwargs.setdefault("role", User.Role.EMPLOYEE)
+    return create_user_with_role(
+        username, role=kwargs.pop("role"), password=kwargs.pop("password", "testpass123"), **kwargs
     )
 
 
@@ -175,18 +183,37 @@ class StubRulesProvider:
 
 
 def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | None:
-    """The lowest-id active user holding ``role``, optionally not ``exclude``.
+    """The lowest-id active user *holding* ``role``, optionally not ``exclude``.
 
-    Mirrors ``workflows.providers._first_active_user_id`` plus the applicant's
-    own id, so a stubbed chain never resolves a stage to the applicant — a
-    configuration ``assign_workflow`` now rejects outright.
+    Resolution goes through the role tables — a team membership or an
+    institution-wide assignment — not ``User.role``, which no longer records an
+    approval position. Falls back to institution-wide holders when no team member
+    exists, mirroring :func:`workflows.providers.resolve_stage_approver`.
+
+    The applicant's own id is excluded so a stubbed chain never resolves a stage
+    to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
+    from workflows.models import ApproverRole, RoleAssignment, TeamMember
+
+    role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
+    if role_obj is None:
+        return None
+    holder_ids = set(
+        TeamMember.objects.filter(role=role_obj)
+        .values_list("user_id", flat=True)
+    ) | set(
+        RoleAssignment.objects.filter(role=role_obj).values_list("user_id", flat=True)
+    )
     from django.contrib.auth import get_user_model
 
-    qs = get_user_model().objects.filter(role=role, is_active=True)
+    candidates = (
+        get_user_model()
+        .objects.filter(id__in=holder_ids, is_active=True)
+        .order_by("id")
+    )
     if exclude is not None:
-        qs = qs.exclude(id=exclude)
-    return qs.order_by("id").values_list("id", flat=True).first()
+        candidates = candidates.exclude(id=exclude)
+    return candidates.values_list("id", flat=True).first()
 
 
 def register_chain_approvers(
@@ -194,13 +221,25 @@ def register_chain_approvers(
 ) -> dict[str, object]:
     """Register one distinct active approver per role and return them by role.
 
+    Each approver gets a real :class:`RoleAssignment`, so
+    :func:`workflows.services.is_approver_user` — and therefore the approvals
+    API — sees them as approvers. Creating users with ``User.role`` alone would
+    leave them unable to use the API, which is the point of the feature.
+
     Submission-focused tests only care about what submission does, not about who
     approves. Rather than repeating four ``register_approver`` calls in every
     ``setUp``, they call this to obtain a chain the product would accept.
     """
+    from workflows.testing import make_approver
+
     chain = roles or ("supervisor", "hod", "registrar", "dvc")
     approvers = {
-        role: make_user(f"{prefix}-{role}@test.luanar", role=role) for role in chain
+        role: make_approver(
+            role,
+            username=f"{prefix}-{role}@test.luanar",
+            institution_wide=True,
+        )
+        for role in chain
     }
     for role, user in approvers.items():
         stub.workflow.register_approver(role, user)
@@ -233,39 +272,45 @@ class StubWorkflowProvider:
         self.approvers[role] = user.id
 
     def _filler_approver_id(self, role: str) -> int:
-        """A stable, non-applicant approver for an otherwise unstaffed role."""
-        from django.db import IntegrityError, transaction
+        """A stable, non-applicant approver for an otherwise unstaffed role.
+
+        Built as a real approver (role row plus institution-wide assignment) so
+        the filler is indistinguishable from a hand-registered one, including to
+        :func:`workflows.services.is_approver_user`.
+        """
+        from workflows.testing import make_approver
 
         if role not in self._fillers:
-            try:
-                with transaction.atomic():
-                    user = make_user(f"stub-filler-{role}@test.luanar", role=role)
-            except IntegrityError:
-                user = get_user_model().objects.get(
-                    username=f"stub-filler-{role}@test.luanar"
-                )
+            user = make_approver(
+                role, username=f"stub-filler-{role}@test.luanar", institution_wide=True
+            )
             self._fillers[role] = user.id
         return self._fillers[role]
 
     def get_stage_definitions(self, application):
-        from workflows.models import STAGE_ROLE_LABELS
         from workflows.providers import StageDefinition
+        from workflows.testing import ensure_roles
 
+        roles = ensure_roles(*self.default_chain)
         definitions = []
-        for order, role in enumerate(self.default_chain, start=1):
-            approver_id = self.approvers.get(role)
+        for order, code in enumerate(self.default_chain, start=1):
+            approver_id = self.approvers.get(code)
             if approver_id is None and not self.strict:
                 approver_id = _active_user_id_for_role(
-                    role, exclude=application.employee_id
+                    code, exclude=application.employee_id
                 )
                 if approver_id is None:
-                    approver_id = self._filler_approver_id(role)
+                    approver_id = self._filler_approver_id(code)
+            role = roles[code]
             definitions.append(
                 StageDefinition(
                     order=order,
-                    role=role,
-                    role_label=STAGE_ROLE_LABELS[role],
+                    role=role.code,
+                    role_label=role.label,
                     approver_user_id=approver_id,
+                    role_id=role.pk,
+                    history_scope=role.history_scope,
+                    handles_cancellation=role.handles_cancellation,
                 )
             )
         return definitions
@@ -274,7 +319,7 @@ class StubWorkflowProvider:
         if self.block_cancellation:
             return []
         from django.db.models import Min
-        from workflows.models import STAGE_ROLE_LABELS, ApplicationStage
+        from workflows.models import ApplicationStage
         from workflows.providers import CancellationStageSpec
 
         cycle = (
@@ -283,17 +328,19 @@ class StubWorkflowProvider:
             )["chain"]
             or 1
         )
+        # Filtered on the stage's own ``handles_cancellation`` snapshot, matching
+        # the real provider: a role that has since been retired from
+        # cancellation handling must not pick up an in-flight application.
         stages = ApplicationStage.objects.filter(
             application=application,
             submission_cycle=cycle,
-            role__in=self.cancellation_roles,
+            handles_cancellation=True,
         ).order_by("stage_order")
         return [
             CancellationStageSpec(
                 order=stage.stage_order,
                 role=stage.role,
-                role_label=stage.role_label
-                or STAGE_ROLE_LABELS.get(stage.role, stage.role),
+                role_label=stage.role_label or stage.role,
                 approver_user_id=stage.assigned_approver_id,
             )
             for stage in stages

@@ -98,22 +98,22 @@ class EndToEndBase(StubProviderMixin, TestCase):
         )
         self.supervisor = make_user(
             "supervisor@luanar",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
-        self.hod = make_user("hod@luanar", role=User.Role.HOD, first_name="Hady")
+        self.hod = make_user("hod@luanar", role="hod", first_name="Hady")
         self.registrar = make_user(
-            "registrar@luanar", role=User.Role.REGISTRAR, first_name="Rej"
+            "registrar@luanar", role="registrar", first_name="Rej"
         )
-        self.dvc = make_user("dvc@luanar", role=User.Role.DVC, first_name="Din")
+        self.dvc = make_user("dvc@luanar", role="dvc", first_name="Din")
         # Dean is an approver role that is *not* in the administration chain, so
         # it can stand in as a delegate or a reassignment target without
         # perturbing the role spine.
-        self.dean = make_user("dean@luanar", role=User.Role.DEAN, first_name="Dena")
+        self.dean = make_user("dean@luanar", role="dean", first_name="Dena")
 
         self.stub.register_employee(self.employee)
-        EmployeeProfile.objects.create(
+        self.employee_profile = EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
             department="Administration",
@@ -122,6 +122,13 @@ class EndToEndBase(StubProviderMixin, TestCase):
         )
         self.chain = self.hr_configures_chain(CHAIN)
         self.chain_approvers = (self.supervisor, self.hod, self.registrar, self.dvc)
+        self.chain_roles = dict(
+            zip(CHAIN, self.chain_approvers, strict=True)
+        )
+        self.team_id = self.hr_creates_team(
+            self.chain["id"], CHAIN, self.chain_roles
+        )
+        self.place_employee_on_team()
 
     def capture_events(self):
         """Register an event-capturing consumer, restoring the real bus after."""
@@ -154,6 +161,49 @@ class EndToEndBase(StubProviderMixin, TestCase):
         )
         self.assertEqual(response.status_code, 201, response.data)
         return response.data
+
+    def hr_creates_team(self, workflow_id, roles, approvers):
+        """HR wires the chain into a team and staffs every role on it.
+
+        A workflow alone routes nothing: the applicant's team names the workflow,
+        and each role is resolved to the team's member. Doing this through the
+        real endpoints keeps the journey end-to-end — this is the configuration
+        an HR user actually performs, not a hand-built fixture.
+        """
+        self.client.force_authenticate(user=self.hr)
+        response = self.client.post(
+            "/api/v1/teams/",
+            {
+                "name": "Administration team",
+                "description": "Administration approval chain",
+                "workflow": workflow_id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        team_id = response.data["id"]
+
+
+        for role in roles:
+            response = self.client.post(
+                "/api/v1/team-members/",
+                {"team": team_id, "user": approvers[role].id, "role": role},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+        return team_id
+
+    def place_employee_on_team(self):
+        """Put the applicant on the team, the way HR does it."""
+        self.client.force_authenticate(user=self.hr)
+        response = self.client.patch(
+            f"/api/v1/employees/{self.employee_profile.id}/",
+            {"team": self.team_id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.employee.refresh_from_db()
+        return self.employee.employee_profile
 
     # --- journey steps ---------------------------------------------------
 

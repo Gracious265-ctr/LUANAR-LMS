@@ -26,6 +26,7 @@ from .events import (
     _reset_consumers_for_tests,
     register_consumer,
 )
+from .testing import grant_approver_role, make_stage, make_team
 from .models import (
     ApplicationStage,
     ApprovalDecision,
@@ -63,24 +64,24 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         )
         self.supervisor = make_user(
             "supervisor@luanar",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
         self.hod = make_user(
-            "hod@luanar", role=User.Role.HOD, first_name="Hady", last_name="Od"
+            "hod@luanar", role="hod", first_name="Hady", last_name="Od"
         )
         self.registrar = make_user(
             "registrar@luanar",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rej",
             last_name="Registrar",
         )
         self.dvc = make_user(
-            "dvc@luanar", role=User.Role.DVC, first_name="Din", last_name="Vc"
+            "dvc@luanar", role="dvc", first_name="Din", last_name="Vc"
         )
         self.dean = make_user(
-            "dean@luanar", role=User.Role.DEAN, first_name="Dena", last_name="Dean"
+            "dean@luanar", role="dean", first_name="Dena", last_name="Dean"
         )
         self.stub.register_employee(self.employee)
         EmployeeProfile.objects.create(
@@ -150,9 +151,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         for index, role in enumerate(
             ("supervisor", "hod", "registrar", "dvc"), start=1
         ):
-            WorkflowStage.objects.create(
-                workflow=self.admin_workflow, order=index, approver_role=role
-            )
+            make_stage(self.admin_workflow, index, role)
         self.academic_workflow = Workflow.objects.create(
             name="Academic chain",
             employee_category=EmployeeProfile.Category.ACADEMIC,
@@ -160,12 +159,37 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             is_active=True,
         )
         for index, role in enumerate(("hod", "dean", "registrar", "dvc"), start=1):
-            WorkflowStage.objects.create(
-                workflow=self.academic_workflow, order=index, approver_role=role
-            )
+            make_stage(self.academic_workflow, index, role)
+
+        # A team's workflow is what routes its members, so each workflow needs a
+        # team behind it — and the employees need to be on one. ``registrar`` is
+        # institution-wide, so it is a ``RoleAssignment`` rather than a member
+        # row; that is the fallback branch the provider is meant to exercise.
+        self.admin_team = make_team(
+            "Admin team",
+            ("supervisor", "hod"),
+            workflow=self.admin_workflow,
+            approvers={"supervisor": self.supervisor, "hod": self.hod},
+        )
+        self.academic_team = make_team(
+            "Academic team",
+            ("hod", "dean"),
+            workflow=self.academic_workflow,
+            approvers={"hod": self.hod, "dean": self.dean},
+        )
+        grant_approver_role(self.registrar, "registrar", institution_wide=True)
+        grant_approver_role(self.dvc, "dvc", institution_wide=True)
+        self._place_on_team(self.employee, self.admin_team)
+        self._place_on_team(self.supervisor, self.admin_team)
+
+    def _place_on_team(self, user, team):
+        profile = user.employee_profile
+        profile.team = team
+        profile.save(update_fields=["team"])
+        return profile
 
     def test_chain_for_administration_starts_with_supervisor(self):
-        profile = self.supervisor.employee_profile
+        profile = self._place_on_team(self.supervisor, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
         app = LeaveApplication(employee=self.supervisor)
@@ -176,7 +200,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         )
 
     def test_chain_for_academic_without_department_starts_with_hod(self):
-        profile = self.employee.employee_profile
+        profile = self._place_on_team(self.employee, self.academic_team)
         profile.category = EmployeeProfile.Category.ACADEMIC
         profile.department = "Mathematics"
         profile.save()
@@ -189,7 +213,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         )
 
     def test_every_definition_resolves_an_active_approver(self):
-        profile = self.employee.employee_profile
+        profile = self._place_on_team(self.employee, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
@@ -198,14 +222,54 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         self.assertTrue(all(d.approver_user_id is not None for d in definitions))
 
     def test_no_active_workflow_raises_config_error(self):
-        Workflow.objects.all().delete()
+        # Deactivate rather than delete: teams PROTECT their workflow, and the
+        # point of the test is that nothing is *applicable*.
+        Workflow.objects.update(is_active=False)
+        # A queryset update bypasses the ORM, so the already-fetched team would
+        # still hand the provider a cached, active workflow. Drop the cache so
+        # the provider sees what a fresh request would.
+        self.admin_team.refresh_from_db()
         profile = self.employee.employee_profile
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
-        with self.assertRaises(WorkflowConfigError):
+        with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
+        self.assertIn("inactive", str(ctx.exception))
+
+    def test_inactive_team_raises_config_error(self):
+        self.admin_team.is_active = False
+        self.admin_team.save(update_fields=["is_active"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("inactive", str(ctx.exception))
+
+    def test_team_without_a_workflow_raises_config_error(self):
+        self.admin_team.workflow = None
+        self.admin_team.save(update_fields=["workflow"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("no approval workflow", str(ctx.exception))
+
+    def test_future_dated_workflow_raises_config_error(self):
+        """A scheduled-but-not-yet-effective workflow must not route anything."""
+        from datetime import timedelta as _td
+
+        from django.utils import timezone as _tz
+
+        self.admin_workflow.effective_from = _tz.localdate() + _td(days=7)
+        self.admin_workflow.save(update_fields=["effective_from"])
+        self.admin_team.refresh_from_db()
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("does not start until", str(ctx.exception))
 
     def test_exact_scope_wins_over_category_any(self):
         from django.utils import timezone
@@ -217,8 +281,12 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             effective_from=timezone.localdate(),
             is_active=True,
         )
-        WorkflowStage.objects.create(
-            workflow=exact, order=1, approver_role="supervisor"
+        make_stage(exact, 1, "supervisor")
+        maths_team = make_team(
+            "Maths team",
+            ("supervisor",),
+            workflow=exact,
+            approvers={"supervisor": self.supervisor},
         )
         profile = self.employee.employee_profile
         profile.category = EmployeeProfile.Category.ACADEMIC

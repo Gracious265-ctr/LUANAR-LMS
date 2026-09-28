@@ -1,16 +1,36 @@
 """Dev seed for the Unit 16 approver dashboard (DEBUG-only).
 
-Creates submitted leave applications that flow through the live workflow so the
-approver dashboard has realistic pending/decided items for every approver role.
-The chain comes from the real ``Workflow``/``WorkflowStage`` rows seeded by
-``_seed_workflows`` (Unit 21):
+Creates the HR-managed approval configuration and submitted leave applications
+that flow through it, so the approver dashboard has realistic pending/decided
+items for every approver role.
+
+The configuration is seeded in dependency order, because every layer points at
+the one before it:
+
+1. **Approver roles** — the six roles the product ships with. ``registrar`` and
+   ``campus_registrar`` are institution-wide; the rest are team roles.
+2. **Campuses** — reference data teams can optionally belong to.
+3. **Workflows** — ordered chains of roles, e.g. supervisor → hod → registrar →
+   dvc. Stages now reference roles by foreign key.
+4. **Teams** — each points at one workflow and names who holds each role in it.
+5. **People** — employees are placed on a team (``EmployeeProfile.team``), which
+   is what selects their workflow; approvers are placed on a team in a role
+   (``TeamMember``), and the registrar is given the role institution-wide
+   (``RoleAssignment``) because they approve for every team.
+
+So:
 
 * Administration (employee@test.luanar) → supervisor → hod → registrar → dvc
-* Academic (the separate ``science-employee@test.luanar`` outside the dean's
-  faculty) → hod → dean → registrar → dvc.
+* Academic (science-employee@test.luanar, outside the dean's faculty)
+  → hod → dean → registrar → dvc
 
-Idempotent: once a scenario reference (``LV-<FY>-800NNN``) exists, the command
-keeps the existing applications untouched. Requires ``seed_dev_users`` first.
+The registrar resolves through the institution-wide assignment rather than any
+team, which keeps the "no team member — fall back to the holder" path exercised
+in development rather than only in tests.
+
+Idempotent: every step is ``get_or_create``/``update_or_create`` on a natural key,
+and the applications step is guarded by the ``LV-<FY>-800`` reference prefix.
+Requires ``seed_dev_users`` first, which this command runs itself.
 """
 
 from datetime import date, timedelta
@@ -26,6 +46,101 @@ from users.models import EmployeeProfile, User
 
 FIYEAR_PREFIX = "800"
 DEV_PASSWORD = "testpass123"
+
+# The shipped approver roles. Mirrors what migration 0011 backfills, so a
+# database that has been migrated and one that has only been seeded end up with
+# the same six roles. `update_or_create` on `code` keeps the two in step.
+SEED_ROLES = [
+    # code, label, description, history_scope, handles_cancellation, wide
+    {
+        "code": "supervisor",
+        "label": "Supervisor",
+        "description": "Line manager of the applicant.",
+        "history_scope": "all",
+        "handles_cancellation": True,
+        "is_institution_wide": False,
+    },
+    {
+        "code": "hod",
+        "label": "Head of Department",
+        "description": "Head of the applicant's department.",
+        "history_scope": "same_department",
+        "handles_cancellation": True,
+        "is_institution_wide": False,
+    },
+    {
+        "code": "dean",
+        "label": "Dean",
+        "description": "Dean of the applicant's faculty.",
+        "history_scope": "same_faculty",
+        "handles_cancellation": False,
+        "is_institution_wide": False,
+    },
+    {
+        "code": "registrar",
+        "label": "Registrar",
+        "description": "Institution-wide registrar; approves every application.",
+        "history_scope": "current_financial_year",
+        "handles_cancellation": False,
+        "is_institution_wide": True,
+    },
+    {
+        "code": "campus_registrar",
+        "label": "Campus Registrar",
+        "description": "Registrar for a single campus.",
+        "history_scope": "current_financial_year",
+        "handles_cancellation": False,
+        "is_institution_wide": True,
+    },
+    {
+        "code": "dvc",
+        "label": "Deputy Vice-Chancellor",
+        "description": "Deputy Vice-Chancellor; final institution-wide approval.",
+        "history_scope": "current_financial_year",
+        "handles_cancellation": False,
+        "is_institution_wide": False,
+    },
+]
+
+SEED_CAMPUSES = [
+    ("main", "Main Campus"),
+    ("theochrist", "Theo-Christ University Campus"),
+]
+
+# name, code, description, campus code, workflow name, [(role code, username)]
+SEED_TEAMS = [
+    {
+        "name": "Administration Team",
+        "code": "administration",
+        "description": "Central administration staff.",
+        "campus": "main",
+        "workflow": "Administration Leave Workflow",
+        "members": [
+            ("supervisor", "supervisor@test.luanar"),
+            ("hod", "hod@test.luanar"),
+            ("dvc", "dvc@test.luanar"),
+        ],
+    },
+    {
+        "name": "Bunda College Team",
+        "code": "bunda-college",
+        "description": "Academic staff of the School of Education.",
+        "campus": "theochrist",
+        "workflow": "Academic Leave Workflow",
+        "members": [
+            ("hod", "hod@test.luanar"),
+            ("dean", "dean@test.luanar"),
+            ("dvc", "dvc@test.luanar"),
+        ],
+    },
+]
+
+# Employee placement, applied after the teams exist. An employee with no team
+# cannot submit: the provider refuses to build a chain and says so.
+SEED_EMPLOYEE_TEAMS = {
+    "employee@test.luanar": "administration",
+    "science-employee@test.luanar": "bunda-college",
+}
 
 
 class Command(BaseCommand):
@@ -55,7 +170,7 @@ class Command(BaseCommand):
             raise CommandError("No active financial year configured.")
 
         self._ensure_second_employee()
-        self._seed_workflows()
+        self._seed_configuration()
 
         prefix = f"LV-{fy_label}-{FIYEAR_PREFIX}"
         if LeaveApplication.objects.filter(
@@ -77,12 +192,60 @@ class Command(BaseCommand):
         self._seed_cancellations(fy_label)
         self._seed_documents(fy_label)
 
-    def _seed_workflows(self):
-        """Real ``Workflow``/``WorkflowStage`` rows (Unit 21).
+    def _seed_configuration(self):
+        """Roles, campuses, workflows, teams, and people — in that order.
 
-        Idempotent by workflow name; ``effective_from`` defaults to the active
-        financial year's start so the ``DatabaseWorkflowProvider`` treats the
-        chains as live configuration from day one.
+        Each layer references the previous one, so the order is the dependency
+        order, not a preference. Every step is idempotent on a natural key, so
+        re-running the command repairs a partially seeded database instead of
+        failing on it.
+        """
+        roles = self._seed_roles()
+        campuses = self._seed_campuses()
+        self._seed_workflows(roles)
+        self._seed_teams(roles, campuses)
+        self._place_people(roles)
+
+    def _seed_roles(self) -> dict:
+        """The shipped approver roles, keyed by code.
+
+        ``update_or_create`` rather than ``get_or_create`` on purpose: if an
+        admin has edited a label or deactivated a role in development, the next
+        seed run restores the shipped configuration instead of silently
+        disagreeing with it.
+        """
+        from workflows.models import ApproverRole
+
+        seeded = {}
+        for spec in SEED_ROLES:
+            role, created = ApproverRole.objects.update_or_create(
+                code=spec["code"],
+                defaults={**spec, "is_active": True},
+            )
+            seeded[spec["code"]] = role
+            if created:
+                self.stdout.write(self.style.SUCCESS(f"Seeded role '{role.code}'."))
+        return seeded
+
+    def _seed_campuses(self) -> dict:
+        from workflows.models import Campus
+
+        return {
+            code: Campus.objects.update_or_create(
+                code=code,
+                defaults={"name": name, "is_active": True},
+            )[0]
+            for code, name in SEED_CAMPUSES
+        }
+
+    def _seed_workflows(self, roles: dict) -> None:
+        """Workflows whose stages reference approver roles by foreign key.
+
+        ``effective_from`` defaults to the active financial year's start so the
+        provider treats the chains as live configuration from day one. Stages
+        are rebuilt on every run rather than only on creation: a role retired in
+        the admin would otherwise leave the workflow permanently unactivatable
+        with no way to repair it from a seed.
         """
         from workflows.models import Workflow, WorkflowStage
 
@@ -103,8 +266,8 @@ class Command(BaseCommand):
                 ("hod", "dean", "registrar", "dvc"),
             ),
         ]
-        for name, category, roles in definitions:
-            workflow, created = Workflow.objects.get_or_create(
+        for name, category, role_codes in definitions:
+            workflow, created = Workflow.objects.update_or_create(
                 name=name,
                 defaults={
                     "employee_category": category,
@@ -112,23 +275,86 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
+            workflow.stages.all().delete()
+            WorkflowStage.objects.bulk_create(
+                [
+                    WorkflowStage(
+                        workflow=workflow,
+                        order=index,
+                        approver_role=roles[code],
+                    )
+                    for index, code in enumerate(role_codes, start=1)
+                ]
+            )
             if created:
-                WorkflowStage.objects.bulk_create(
-                    [
-                        WorkflowStage(
-                            workflow=workflow,
-                            order=index,
-                            approver_role=role,
-                        )
-                        for index, role in enumerate(roles, start=1)
-                    ]
-                )
                 self.stdout.write(
                     self.style.SUCCESS(f"Seeded workflow '{name}'.")
                 )
 
+    def _seed_teams(self, roles: dict, campuses: dict) -> None:
+        """Teams, their members, and the institution-wide registrar holding.
+
+        A team has at most one member per role, so the two seeded teams give the
+        hod and dvc users a membership in each while keeping every
+        ``(team, role)`` pair single-occupied.
+        """
+        from workflows.models import RoleAssignment, Team, TeamMember, Workflow
+
+        for spec in SEED_TEAMS:
+            workflow = Workflow.objects.get(name=spec["workflow"])
+            team, created = Team.objects.update_or_create(
+                code=spec["code"],
+                defaults={
+                    "name": spec["name"],
+                    "description": spec["description"],
+                    "campus": campuses.get(spec["campus"]),
+                    "workflow": workflow,
+                    "is_active": True,
+                },
+            )
+            if created:
+                self.stdout.write(self.style.SUCCESS(f"Seeded team '{team.name}'."))
+            for role_code, username in spec["members"]:
+                TeamMember.objects.update_or_create(
+                    team=team,
+                    role=roles[role_code],
+                    defaults={"user": User.objects.get(username=username)},
+                )
+
+        # The registrar approves for every team, so their holding is
+        # institution-wide rather than a membership in each. This is the row that
+        # makes the "stage role with no team member" case work in development.
+        registrar_role = roles["registrar"]
+        registrar = User.objects.get(username="registrar@test.luanar")
+        RoleAssignment.objects.get_or_create(user=registrar, role=registrar_role)
+
+        # The campus registrar is seeded as a holder too, but of no team: with
+        # nothing pointing at a campus-specific chain it deliberately resolves to
+        # nobody, which is what a half-configured campus should look like.
+        RoleAssignment.objects.get_or_create(
+            user=User.objects.get(username="dvc@test.luanar"),
+            role=roles["campus_registrar"],
+        )
+
+    def _place_people(self, roles: dict) -> None:
+        """Put employees on a team; that is what picks their workflow."""
+        from workflows.models import Team
+
+        teams = {team.code: team for team in Team.objects.all()}
+        for username, team_code in SEED_EMPLOYEE_TEAMS.items():
+            employee = User.objects.get(username=username)
+            profile = EmployeeProfile.objects.filter(user=employee).first()
+            if profile is None:
+                profile = EmployeeProfile.objects.create(user=employee)
+            profile.team = teams[team_code]
+            profile.save(update_fields=["team"])
+
     def _ensure_second_employee(self):
-        """An academic outside the Dean's faculty (review-scope boundary)."""
+        """An academic outside the Dean's faculty (review-scope boundary).
+
+        Placed on a team by :meth:`_place_people`, not here, so every employee
+        gets their team in the same pass.
+        """
         user, created = User.objects.get_or_create(
             username="science-employee@test.luanar",
             defaults={
@@ -219,23 +445,52 @@ class Command(BaseCommand):
 
         del pending_supervisor, pending_hod, pending_registrar, pending_dean
 
-    def _suitable_start(self, user, seq: int) -> date:
-        """A working day giving >= 5 working days' notice from today.
+    def _suitable_start(self, user, seq: int, min_offset_days: int = 0) -> date:
+        """A working day giving >= 5 working days' notice, with no clash.
+
+        ``min_offset_days`` pushes the start further out — the cancellation
+        scenarios need a fortnight-plus run of future leave so there is something
+        to cancel.
 
         Public holidays are skipped as well as weekends, so a seeded application
-        never starts on a day the validation pipeline would reject.
+        never starts on a day the validation pipeline would reject. Dates that
+        overlap an application this person already has are skipped as well: the
+        seeded scenarios are all for the same two employees, and as real time
+        advances the dates an *earlier* seed run picked drift into the window this
+        run is about to use. Without this the command fails with
+        ``OVERLAPPING_LEAVE`` on every re-seed, which reads like a regression in
+        routing rather than the seed being time-dependent.
         """
         today = timezone.localdate()
-        holidays = holidays_in_range(today + timedelta(days=1), today + timedelta(days=60))
+        holidays = holidays_in_range(
+            today + timedelta(days=1), today + timedelta(days=180)
+        )
+        taken = [
+            (app.start_date, app.end_date)
+            for app in LeaveApplication.objects.filter(employee=user)
+        ]
+
         candidate = today
-        count = 0
+        working_days = 0
         while True:
             candidate += timedelta(days=1)
             if candidate.weekday() >= 5 or candidate in holidays:
                 continue
-            count += 1
-            if count >= 6 + (seq % 2):  # stagger scenarios a little
-                return candidate
+            working_days += 1
+            # Six working days' notice, staggered per scenario so the seeded
+            # applications do not all pile onto the same week, and never earlier
+            # than the caller's own floor.
+            if working_days < 6 + (seq % 2) or candidate < today + timedelta(
+                days=min_offset_days
+            ):
+                continue
+            end = candidate + timedelta(days=6)
+            if any(
+                candidate <= existing_end and end >= existing_start
+                for existing_start, existing_end in taken
+            ):
+                continue
+            return candidate
 
     def _seed_cancellations(self, fy_label: str):
         """Unit 18 cancellation scenarios (references LV-<FY>-810NNN).
@@ -245,7 +500,10 @@ class Command(BaseCommand):
         supervisor queue and decided tab have realistic items. Idempotent on
         the 810 prefix.
         """
-        from leave.cancellations.models import CancellationRequest
+        from leave.cancellations.models import (
+            CancellationApprovalStage,
+            CancellationRequest,
+        )
         from leave.cancellations.providers import get_today
         from leave.cancellations.services import (
             DECISION_APPROVE,
@@ -266,21 +524,26 @@ class Command(BaseCommand):
             )
             return
 
+        # Deliberately the *second* employee, not employee@test.luanar. Annual
+        # leave is a finite per-year balance and the approval scenarios above
+        # already finalise leave against the first employee, so sharing one
+        # employee between the two groups exhausts the balance partway through
+        # and the command fails with INSUFFICIENT_BALANCE — which reads like a
+        # routing regression rather than the seed outgrowing its own budget. Two
+        # employees, two independent scenario groups.
         employee = User.objects.get(
-            username="employee@test.luanar", role=User.Role.EMPLOYEE
+            username="science-employee@test.luanar", role=User.Role.EMPLOYEE
         )
-        supervisor = User.objects.get(username="supervisor@test.luanar")
-        hod = User.objects.get(username="hod@test.luanar")
-        registrar = User.objects.get(username="registrar@test.luanar")
-        dvc = User.objects.get(username="dvc@test.luanar")
 
         today = get_today()
-        base_start = today + timedelta(days=21)
-        while base_start.weekday() >= 5:
-            base_start += timedelta(days=1)
 
         def approved(seq: int):
-            start = base_start + timedelta(days=(seq - 1) * 14)
+            # Each scenario is a fortnight later than the last, and
+            # _suitable_start keeps them off weekends, holidays, and anything
+            # this employee already has.
+            start = self._suitable_start(
+                employee, seq, min_offset_days=21 + (seq - 1) * 14
+            )
             application = LeaveApplication.objects.create(
                 employee=employee,
                 leave_type_id=1,
@@ -292,15 +555,25 @@ class Command(BaseCommand):
             submitted = submit_application(
                 user=employee, application_id=application.pk
             )
-            for actor in (supervisor, hod, registrar, dvc):
+            # Walk the application's own chain rather than a hardcoded list of
+            # approvers. The chain is now a property of the employee's team, so
+            # naming the roles here would re-introduce exactly the hardcoding
+            # this feature removes — and would break the moment HR reorders a
+            # workflow, with a "not_current_stage" error that reads like a
+            # routing bug.
+            for _ in range(len(SEED_TEAMS) + len(SEED_ROLES)):
                 stage = submitted.current_stage
+                if stage is None:
+                    break
                 submitted = decide(
                     application_id=submitted.pk,
-                    actor=actor,
+                    actor=stage.assigned_approver,
                     action="approve",
                     comment="",
                     expected_version=stage.decision_version,
                 )
+                if submitted.status == LeaveApplication.Status.APPROVED:
+                    break
             return submitted
 
         def request_for(seq: int, reason: str):
@@ -313,57 +586,68 @@ class Command(BaseCommand):
                 today=today,
             )
 
-        # Pending at the supervisor (first cancellation approver).
+        def decide_request(request, decision: str, comment: str = ""):
+            """Decide whichever cancellation stage is currently pending.
+
+            The cancellation chain is derived from the application's own
+            workflow snapshot — the stages whose role handles cancellations — so
+            its length and order depend on the employee's team. Naming roles here
+            would hardcode the very configuration this feature moves into data, and
+            would raise ``NotCurrentApproverError`` as soon as a team is
+            reconfigured.
+            """
+            stage = CancellationApprovalStage.objects.filter(
+                request=request, status=CancellationApprovalStage.Status.PENDING
+            ).order_by("order").first()
+            if stage is None:
+                return request
+            return decide_cancellation(
+                user=stage.approver,
+                request_id=request.pk,
+                decision=decision,
+                comment=comment,
+                stage_version=request.stage_version,
+                today=today,
+            )
+
+        def decide_all(request, decision: str, comment: str = ""):
+            for _ in range(len(SEED_ROLES)):
+                request = decide_request(request, decision, comment)
+                if request.status != CancellationRequest.Status.PENDING:
+                    break
+            return request
+
+        # Pending at the first cancellation approver.
         request_for(
             1,
             "A departmental retreat prevents me taking the approved leave as planned.",
         )
 
-        # Pending at the HOD (supervisor already approved).
-        hod_request = request_for(
-            2, "An audit deadline now conflicts with the approved leave dates."
-        )
-        decide_cancellation(
-            user=supervisor,
-            request_id=hod_request.pk,
-            decision=DECISION_APPROVE,
-            comment="",
-            stage_version=1,
-            today=today,
+        # Pending at the second cancellation approver (first already approved).
+        decide_all(
+            request_for(
+                2, "An audit deadline now conflicts with the approved leave dates."
+            ),
+            DECISION_APPROVE,
         )
 
-        # Fully cancelled: approved through both stages, balance restored.
-        cancelled_request = request_for(
-            3, "The project I was heading was postponed until next year."
-        )
-        decide_cancellation(
-            user=supervisor,
-            request_id=cancelled_request.pk,
-            decision=DECISION_APPROVE,
-            comment="",
-            stage_version=1,
-            today=today,
-        )
-        decide_cancellation(
-            user=hod,
-            request_id=cancelled_request.pk,
-            decision=DECISION_APPROVE,
-            comment="Leave recovery approved.",
-            stage_version=2,
-            today=today,
+        # Fully cancelled: approved through every cancellation stage, balance
+        # restored.
+        decide_all(
+            request_for(
+                3, "The project I was heading was postponed until next year."
+            ),
+            DECISION_APPROVE,
+            "Leave recovery approved.",
         )
 
         # Rejected: the leave stays approved but appears in the decided tab.
-        rejected_request = request_for(
-            4, "I have been asked to travel for an overseas workshop."
-        )
-        decide_cancellation(
-            user=supervisor,
-            request_id=rejected_request.pk,
-            decision=DECISION_REJECT,
-            comment="Coverage cannot be spared over this period.",
-            stage_version=1,
-            today=today,
+        decide_all(
+            request_for(
+                4, "I have been asked to travel for an overseas workshop."
+            ),
+            DECISION_REJECT,
+            "Coverage cannot be spared over this period.",
         )
 
         self.stdout.write(

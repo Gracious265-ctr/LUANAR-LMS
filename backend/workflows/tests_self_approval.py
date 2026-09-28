@@ -63,31 +63,31 @@ class SelfApprovalBase(StubProviderMixin, TestCase):
         self.stub = self.use_stub()
         self.employee = make_user(
             "emp@selfapproval",
-            role=User.Role.HOD,
+            role="hod",
             first_name="Nia",
             last_name="Applicant",
         )
         self.supervisor = make_user(
             "sup@selfapproval",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sam",
             last_name="Supervisor",
         )
         self.other_hod = make_user(
             "hod2@selfapproval",
-            role=User.Role.HOD,
+            role="hod",
             first_name="Hana",
             last_name="OtherHod",
         )
         self.registrar = make_user(
             "reg@selfapproval",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rio",
             last_name="Registrar",
         )
         self.dvc = make_user(
             "dvc@selfapproval",
-            role=User.Role.DVC,
+            role="dvc",
             first_name="Dev",
             last_name="Vc",
         )

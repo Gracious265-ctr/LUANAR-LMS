@@ -2,7 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { ReassignmentForm } from "@/components/hr/reassignment-form";
-import type { Employee, UserRole } from "@/lib/employees";
+import type { Employee } from "@/lib/employees";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
 import type { PendingApplication } from "@/lib/reassignments";
 
 vi.mock("@/lib/reassignments-client", async (importOriginal) => {
@@ -16,28 +17,12 @@ vi.mock("@/lib/reassignments-client", async (importOriginal) => {
 
 import { reassignApplication } from "@/lib/reassignments-client";
 
-function makeEmployee(id: number, role: UserRole, name: string): Employee {
-  return {
-    id,
-    user_id: id,
-    email: `${name.replace(" ", ".").toLowerCase()}@test.luanar`,
-    first_name: name.split(" ")[0],
-    last_name: name.split(" ")[1] ?? "",
-    full_name: name,
-    role,
-    designation: "Role holder",
-    department: "Registry",
-    category: "academic",
-    grade: "G",
-    appointment_date: "2020-01-01",
-    is_active: true,
-  };
-}
-
+// The approvers here hold their positions as data, and their accounts carry no
+// special role: that is the shape the pickers now have to cope with.
 const employees: Employee[] = [
-  makeEmployee(3, "dean", "Jane Dean"),
-  makeEmployee(5, "hod", "Bob HOD"),
-  makeEmployee(8, "employee", "Sam Staff"),
+  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["dean"] }),
+  makeEmployee({ id: 5, full_name: "Bob HOD", approver_roles: ["hod"] }),
+  makeEmployee({ id: 8, full_name: "Sam Staff", approver_roles: [] }),
 ];
 
 const application: PendingApplication = {

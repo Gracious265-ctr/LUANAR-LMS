@@ -5,25 +5,23 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 
+import type { ApproverRole } from "@/lib/approver-roles";
 import type {
-  ApproverRoleCode,
   Workflow,
   WorkflowCategoryCode,
   WorkflowStageInput,
 } from "@/lib/workflows";
-import {
-  APPROVER_ROLE_CODES,
-  APPROVER_ROLE_LABELS,
-  createWorkflow,
-  updateWorkflow,
-} from "@/lib/workflows-client";
-
-const DEFAULT_FIRST_ROLE: ApproverRoleCode = "supervisor";
+import { createWorkflow, updateWorkflow } from "@/lib/workflows-client";
 
 export function WorkflowForm({
   workflow,
+  roles,
+  rolesError = "",
 }: {
   workflow?: Workflow;
+  roles: ApproverRole[];
+  /** Set when the roles fetch failed; the form is unusable without its options. */
+  rolesError?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -36,10 +34,19 @@ export function WorkflowForm({
     workflow?.stages.map((stage) => ({
       order: stage.order,
       approver_role: stage.approver_role,
-    })) ?? [{ order: 1, approver_role: DEFAULT_FIRST_ROLE }]
+    })) ??
+      // A new workflow opens with one stage, as before — seeded with the first
+      // available role rather than a hardcoded one. Without a role list there is
+      // nothing to seed, and the form starts empty and disabled instead.
+      (roles.length > 0 ? [{ order: 1, approver_role: roles[0].code }] : [])
   );
 
   const baseHref = "/dashboard/hr-admin/workflows";
+
+  // Nothing can be saved without the role list: a stage with no options is a
+  // workflow HR cannot build, so the controls are disabled rather than offered
+  // a silently empty picker.
+  const rolesUnavailable = rolesError !== "" || roles.length === 0;
 
   function moveStage(index: number, direction: -1 | 1) {
     setStages((current) => {
@@ -58,12 +65,19 @@ export function WorkflowForm({
     setStages((current) => current.filter((_, i) => i !== index));
   }
 
-  function updateRole(index: number, role: ApproverRoleCode) {
+  function updateRole(index: number, role: string) {
     setStages((current) =>
       current.map((stage, i) =>
         i === index ? { ...stage, approver_role: role } : stage
       )
     );
+  }
+
+  function addStage() {
+    setStages((current) => [
+      ...current,
+      { order: current.length + 1, approver_role: roles[0].code },
+    ]);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -221,27 +235,24 @@ export function WorkflowForm({
           </div>
           <button
             type="button"
-            onClick={() =>
-              setStages((current) => [
-                ...current,
-                {
-                  order: current.length + 1,
-                  approver_role: DEFAULT_FIRST_ROLE,
-                },
-              ])
-            }
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+            onClick={addStage}
+            disabled={rolesUnavailable}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Plus className="h-4 w-4" />
             Add stage
           </button>
         </div>
 
-        {stages.length === 0 && (
+        {rolesError ? (
+          <p className="mb-2 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+            {rolesError}
+          </p>
+        ) : stages.length === 0 ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
             No stages yet. Add at least one approver role.
           </p>
-        )}
+        ) : null}
 
         <div className="space-y-2">
           {stages.map((stage, index) => (
@@ -255,14 +266,22 @@ export function WorkflowForm({
               <select
                 aria-label={`Stage ${index + 1} approver`}
                 value={stage.approver_role}
-                onChange={(event) =>
-                  updateRole(index, event.target.value as ApproverRoleCode)
-                }
-                className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                disabled={rolesUnavailable}
+                onChange={(event) => updateRole(index, event.target.value)}
+                className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {APPROVER_ROLE_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {APPROVER_ROLE_LABELS[code]}
+                {/* An already-chosen code that is not in the list — a role retired
+                    since this workflow was saved — stays selectable and shows its
+                    stored label rather than snapping the stage to another role. */}
+                {stage.approver_role &&
+                !roles.some((role) => role.code === stage.approver_role) && (
+                  <option value={stage.approver_role}>
+                    {stage.approver_role} (no longer active)
+                  </option>
+                )}
+                {roles.map((role) => (
+                  <option key={role.code} value={role.code}>
+                    {role.label}
                   </option>
                 ))}
               </select>
@@ -308,7 +327,7 @@ export function WorkflowForm({
       <div className="flex items-center gap-3 md:col-span-2">
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || rolesUnavailable || stages.length === 0}
           className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Saving..." : workflow ? "Save changes" : "Create workflow"}

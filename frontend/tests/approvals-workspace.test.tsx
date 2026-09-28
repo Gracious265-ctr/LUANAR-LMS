@@ -34,7 +34,7 @@ const delegation: Delegation = {
 };
 
 const candidates: DelegateCandidate[] = [
-  { id: 5, full_name: "Bob HOD", role: "hod" },
+  { id: 5, full_name: "Bob HOD", role: "approver" },
 ];
 
 describe("ApprovalsWorkspace", () => {

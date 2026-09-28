@@ -58,24 +58,24 @@ class RoutingBase(StubProviderMixin, APITestCase):
         )
         self.supervisor = make_user(
             "sup@routing",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
         self.hod = make_user(
-            "hod@routing", role=User.Role.HOD, first_name="Hady", last_name="Od"
+            "hod@routing", role="hod", first_name="Hady", last_name="Od"
         )
         self.registrar = make_user(
             "reg@routing",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rej",
             last_name="Registrar",
         )
         self.dean = make_user(
-            "dean@routing", role=User.Role.DEAN, first_name="Dena", last_name="Dean"
+            "dean@routing", role="dean", first_name="Dena", last_name="Dean"
         )
         self.dvc = make_user(
-            "dvc@routing", role=User.Role.DVC, first_name="Din", last_name="Vc"
+            "dvc@routing", role="dvc", first_name="Din", last_name="Vc"
         )
         self.hr = make_user(
             "hr@routing", role=User.Role.HR, first_name="Hry", last_name="Hr"

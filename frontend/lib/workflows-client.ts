@@ -1,26 +1,6 @@
 import { apiErrorMessage } from "./utils";
 import type { Workflow, WorkflowInput } from "./workflows";
 
-export const APPROVER_ROLE_CODES = [
-  "supervisor",
-  "hod",
-  "dean",
-  "registrar",
-  "dvc",
-  "hr",
-] as const;
-
-export type ApproverRoleCode = (typeof APPROVER_ROLE_CODES)[number];
-
-export const APPROVER_ROLE_LABELS: Record<ApproverRoleCode, string> = {
-  supervisor: "Supervisor",
-  hod: "Head of Department",
-  dean: "Dean",
-  registrar: "Registrar",
-  dvc: "Deputy Vice-Chancellor",
-  hr: "Human Resources",
-};
-
 export const WORKFLOW_CATEGORY_CODES = ["academic", "administration"] as const;
 
 export type WorkflowCategoryCode =
@@ -50,10 +30,6 @@ export const WORKFLOW_STATE_LABELS: Record<WorkflowState, string> = {
   active: "Active",
   inactive: "Inactive",
 };
-
-export function approverRoleLabel(code: ApproverRoleCode): string {
-  return APPROVER_ROLE_LABELS[code];
-}
 
 export function workflowCategoryLabel(
   code: WorkflowCategoryCode

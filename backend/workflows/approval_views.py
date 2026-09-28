@@ -41,7 +41,7 @@ from .approval_payloads import (
     list_item,
     review_payload,
 )
-from .models import APPROVER_ROLE_CODES, ApplicationStage, ApprovalDecision
+from .models import ApplicationStage, ApprovalDecision
 from .policies import get_view_access
 from .services import (
     ApprovalNotFoundError,
@@ -50,15 +50,31 @@ from .services import (
     ApprovalValidationError,
     SelfApprovalBlockedError,
     acting_approver_predicate,
+    approver_role_labels_for,
     decide,
+    is_approver_user,
 )
+from users.models import User
+
+
+def _may_use_approvals(user) -> bool:
+    """Whether ``user`` may use the approvals API.
+
+    Approver status is the authoritative
+    :func:`~workflows.services.is_approver_user` check — an active holder of an
+    active approver role. HR is admitted explicitly alongside it, so HR keeps the
+    oversight access it has always had without HR needing a role assignment.
+    """
+    if not (user and user.is_authenticated and user.is_active):
+        return False
+    return is_approver_user(user) or user.role == User.Role.HR
 
 
 class _ApproverOnly(permissions.BasePermission):
-    """Approver roles (incl. HR) may use the approvals API."""
+    """Active approvers (and HR) may use the approvals API."""
 
     def has_permission(self, request, view):
-        return bool(request.user) and request.user.role in APPROVER_ROLE_CODES
+        return _may_use_approvals(request.user)
 
 
 class _Paginator(PageNumberPagination):
@@ -79,11 +95,17 @@ class ApprovalDecisionInputSerializer(serializers.Serializer):
 
 
 class ApprovalsCapabilitiesView(APIView):
+    """What the signed-in user may do on the approval desk.
+
+    ``approver_roles`` is the live role list the user holds, so the frontend can
+    describe them by the roles HR actually assigned instead of a hardcoded map.
+    """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        is_approver = user.role in APPROVER_ROLE_CODES
+        is_approver = _may_use_approvals(user)
         pending_count = (
             LeaveApplication.objects.filter(
                 status=LeaveApplication.Status.SUBMITTED,
@@ -93,7 +115,13 @@ class ApprovalsCapabilitiesView(APIView):
             if is_approver
             else 0
         )
-        return Response({"is_approver": is_approver, "pending_count": pending_count})
+        return Response(
+            {
+                "is_approver": is_approver,
+                "approver_roles": approver_role_labels_for(user),
+                "pending_count": pending_count,
+            }
+        )
 
 
 class ApprovalListAPIView(APIView):

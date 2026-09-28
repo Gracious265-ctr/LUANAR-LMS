@@ -1,9 +1,8 @@
 import { apiClient } from "./api-client";
 import type { UserRole } from "./employees";
-import { APPROVER_ROLE_CODE_SET } from "./delegations-client";
+import type { ApprovalCapabilities } from "./approvals/types";
 import type { DelegationState } from "./delegations-client";
 
-export { APPROVER_ROLE_CODE_SET } from "./delegations-client";
 export { DELEGATION_STATE_CODES } from "./delegations-client";
 export { DELEGATION_STATE_LABELS } from "./delegations-client";
 export { delegationStateLabel } from "./delegations-client";
@@ -87,9 +86,19 @@ export async function listDelegateCandidates(): Promise<DelegateCandidate[]> {
   return data.candidates;
 }
 
-/** Whether this role may request cover (mirrors the backend's role set). */
-export function canRequestCover(role: string | undefined | null): boolean {
-  return role != null && APPROVER_ROLE_CODE_SET.has(role);
+/**
+ * Whether this caller may request cover (mirrors the backend's rule).
+ *
+ * The decision comes from the capabilities read, which the backend computes
+ * from approver holdings, not from the caller's system role: someone whose
+ * account reads `employee` can still hold an approver position on a team, and
+ * that is exactly the person who needs cover. `null` means the read failed, and
+ * a caller with unknown standing is treated as having none.
+ */
+export function canRequestCover(
+  capabilities: ApprovalCapabilities | null
+): boolean {
+  return capabilities !== null && capabilities.is_approver;
 }
 
 export interface CoverData {

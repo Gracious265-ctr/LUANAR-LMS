@@ -180,6 +180,7 @@ These rules apply across all branches and environments. Code that violates these
 - HR permissions must be enforced independently of frontend visibility.
 - Hiding a button or page is not an authorization mechanism.
 - Never accept a user role from the frontend as proof of authorization.
+- Never infer authorization in the frontend from the account's system role either. Ask the backend what the caller may do (`/api/v1/approvals/capabilities/`) and fail closed when the answer is unavailable.
 - Never accept an employee identity from the frontend as proof of ownership.
 - Authorization checks must occur before protected mutations.
 - Permission failures must not reveal information about resources the user is not authorized to access.
@@ -241,6 +242,13 @@ These rules apply across all branches and environments. Code that violates these
 - Future workflow configuration changes must not silently modify submitted applications.
 - HR must not become a normal approval stage unless the configured organizational workflow explicitly defines HR as an approver.
 
+## Server Data Loading
+
+- State a server component needs must be fetched on the server and passed down as props. A client component must not re-fetch, on mount, a fact the server already loaded for the same render.
+- Independent reads for one render must be awaited together, not sequentially.
+- The current user and the caller's approval capabilities are read by many components per render. Each must be read once per request, not once per component.
+- A cache scoped to a request exists to prevent duplicate work within that request. It must not be used to serve data across requests; data that changes must be re-read or explicitly revalidated.
+
 ## Application State
 
 - Application state transitions must be controlled by backend domain logic.
@@ -279,6 +287,9 @@ These rules apply across all branches and environments. Code that violates these
 - Database queries must be optimized for the actual access pattern.
 - Do not load entire tables when only a subset of records is required.
 - Do not expose database implementation details as frontend contracts.
+- A field computed per row must not issue per-row queries. When a list endpoint derives a fact for every row from related tables, read those tables once for the whole result set and join the results in memory.
+- Where a fact is exposed twice (for example a boolean and the evidence behind it), both must come from one computation, not two derivations.
+- Configured data is expected to grow without a deploy. Query counts for a screen must be a function of what the screen requests, not of how many rows exist; pin that with a query-count test when it matters.
 
 ## File Storage
 
@@ -342,6 +353,7 @@ These rules apply across all branches and environments. Code that violates these
 
 - Configurable business rules must have one authoritative implementation.
 - Do not hard-code values that HR is required to configure.
+- The positions an approval stage may name are configuration. Do not switch on a role code, and do not keep a lookup table of role names in either stack; resolve codes against the stored roles and fall back to the stored label for display.
 - Current default values must not be duplicated across frontend and backend.
 - Configuration changes must have a defined effective point when historical behavior could be affected.
 - Existing applications must continue using the rules applicable when they were submitted.

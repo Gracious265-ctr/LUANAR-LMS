@@ -5,6 +5,8 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
+from workflows.models import Team
+from workflows.services import approver_role_codes_for
 
 from .models import EmployeeProfile
 
@@ -50,6 +52,14 @@ class EmployeeSerializer(serializers.ModelSerializer):
         allow_blank=True,
     )
     is_active = serializers.BooleanField(source="user.is_active", required=False)
+    team = serializers.PrimaryKeyRelatedField(
+        queryset=Team.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="The team whose approval chain this employee submits into.",
+    )
+    team_name = serializers.CharField(source="team.name", read_only=True)
+    approver_roles = serializers.SerializerMethodField()
 
     class Meta:
         model = EmployeeProfile
@@ -61,6 +71,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "role",
+            "approver_roles",
             "designation",
             "department",
             "faculty",
@@ -68,8 +79,19 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "gender",
             "grade",
             "appointment_date",
+            "team",
+            "team_name",
             "is_active",
         ]
+
+    def get_approver_roles(self, obj: EmployeeProfile) -> list[str]:
+        """The approver positions this person holds, from the role graph.
+
+        Empty for an ordinary employee. HR reads it to answer "who can approve
+        for this person", which ``role`` can no longer answer: it is a system
+        access level, not a place in a chain.
+        """
+        return approver_role_codes_for(obj.user)
 
     def validate_email(self, value: str) -> str:
         value = value.lower()
@@ -165,6 +187,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "gender": instance.gender,
             "grade": instance.grade,
             "appointment_date": instance.appointment_date,
+            "team": instance.team_id,
         }
 
     def _audit(

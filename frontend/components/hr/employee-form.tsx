@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import type { Employee, UserRole } from "@/lib/employees";
+import type { Employee, TeamOption, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
 
 const CATEGORIES: { value: string; label: string }[] = [
@@ -12,13 +12,14 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: "administration", label: "Administration" },
 ];
 
+/**
+ * What an account can reach. An approver position is not chosen here — it is
+ * held on a team, or granted institution-wide from the Roles page — so this list
+ * covers system access only.
+ */
 const ROLES: { value: UserRole; label: string }[] = [
   { value: "employee", label: "Employee" },
-  { value: "supervisor", label: "Supervisor" },
-  { value: "hod", label: "Head of Department" },
-  { value: "dean", label: "Dean" },
-  { value: "registrar", label: "Registrar" },
-  { value: "dvc", label: "Deputy Vice-Chancellor" },
+  { value: "approver", label: "Approver" },
   { value: "hr", label: "Human Resources" },
 ];
 
@@ -27,11 +28,16 @@ export function EmployeeForm({
   endpoint,
   method,
   gradeOptions = [],
+  teams = [],
+  teamsError = "",
 }: {
   employee?: Employee;
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
+  teams?: TeamOption[];
+  /** Set when the teams fetch failed; the picker is then shown unusable. */
+  teamsError?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -44,23 +50,26 @@ export function EmployeeForm({
 
     const formData = new FormData(event.currentTarget);
 
-    try {
-      const response = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          first_name: formData.get("first_name"),
-          last_name: formData.get("last_name"),
-          email: formData.get("email"),
-          role: formData.get("role"),
-          designation: formData.get("designation"),
-          department: formData.get("department"),
-          category: formData.get("category"),
-          grade: formData.get("grade"),
-          appointment_date: formData.get("appointment_date") || null,
-          is_active: formData.get("is_active") === "on",
-        }),
-      });
+      const teamValue = String(formData.get("team") || "");
+
+      try {
+        const response = await fetch(endpoint, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            first_name: formData.get("first_name"),
+            last_name: formData.get("last_name"),
+            email: formData.get("email"),
+            role: formData.get("role"),
+            designation: formData.get("designation"),
+            department: formData.get("department"),
+            category: formData.get("category"),
+            grade: formData.get("grade"),
+            appointment_date: formData.get("appointment_date") || null,
+            team: teamValue ? Number(teamValue) : null,
+            is_active: formData.get("is_active") === "on",
+          }),
+        });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -151,6 +160,33 @@ export function EmployeeForm({
             </option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label
+          htmlFor="team"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Team
+        </label>
+        <select
+          id="team"
+          name="team"
+          defaultValue={employee?.team ?? ""}
+          disabled={teamsError !== ""}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">No team</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          {teamsError ||
+            "Leave applications from this employee follow the team's workflow. Without a team they follow the institution-wide workflow."}
+        </p>
       </div>
 
       <div>

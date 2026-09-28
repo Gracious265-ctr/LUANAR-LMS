@@ -13,9 +13,9 @@ const workflow: Workflow = {
   is_active: true,
   state: "active",
   stages: [
-    { id: 1, order: 1, approver_role: "supervisor" },
-    { id: 2, order: 2, approver_role: "hod" },
-    { id: 3, order: 3, approver_role: "registrar" },
+    { id: 1, order: 1, approver_role: "supervisor", approver_role_label: "Supervisor" },
+    { id: 2, order: 2, approver_role: "hod", approver_role_label: "Head of Department" },
+    { id: 3, order: 3, approver_role: "registrar", approver_role_label: "Registrar" },
   ],
 };
 
@@ -28,8 +28,8 @@ const anyCategoryWorkflow: Workflow = {
   state: "draft",
   effective_from: null,
   stages: [
-    { id: 4, order: 1, approver_role: "registrar" },
-    { id: 5, order: 2, approver_role: "dvc" },
+    { id: 4, order: 1, approver_role: "registrar", approver_role_label: "Registrar" },
+    { id: 5, order: 2, approver_role: "dvc", approver_role_label: "Deputy Vice-Chancellor" },
   ],
 };
 
@@ -94,7 +94,9 @@ describe("WorkflowTable", () => {
             name: "Short approval",
             state: "scheduled",
             effective_from: "2026-12-01",
-            stages: [{ id: 9, order: 1, approver_role: "hr" }],
+            stages: [
+              { id: 9, order: 1, approver_role: "hr", approver_role_label: "Human Resources" },
+            ],
           },
         ]}
       />
@@ -102,5 +104,30 @@ describe("WorkflowTable", () => {
 
     expect(screen.getByText("Human Resources")).toBeInTheDocument();
     expect(screen.getByText("Scheduled")).toBeInTheDocument();
+  });
+
+  it("shows the stored label for a role this build has no entry for", () => {
+    render(
+      <WorkflowTable
+        workflows={[
+          {
+            ...workflow,
+            id: 4,
+            name: "Late-joined role",
+            stages: [
+              {
+                id: 10,
+                order: 1,
+                approver_role: "chief_auditor",
+                approver_role_label: "Chief Auditor",
+              },
+            ],
+          },
+        ]}
+      />
+    );
+
+    // HR added the role after this build shipped; the chain still reads.
+    expect(screen.getByText("Chief Auditor")).toBeInTheDocument();
   });
 });

@@ -11,7 +11,16 @@ from .approval_views import (
     CancellationDetailAPIView,
     CancellationListAPIView,
 )
-from .views import DelegationViewSet, ReassignmentViewSet, WorkflowViewSet
+from .views import (
+    ApproverRoleViewSet,
+    CampusViewSet,
+    DelegationViewSet,
+    ReassignmentViewSet,
+    RoleAssignmentViewSet,
+    TeamMemberViewSet,
+    TeamViewSet,
+    WorkflowViewSet,
+)
 
 app_name = "workflows"
 
@@ -19,6 +28,13 @@ router = SimpleRouter()
 router.register("workflows", WorkflowViewSet, basename="workflow")
 router.register("delegations", DelegationViewSet, basename="delegation")
 router.register("reassignments", ReassignmentViewSet, basename="reassignment")
+router.register("approver-roles", ApproverRoleViewSet, basename="approver-role")
+router.register(
+    "role-assignments", RoleAssignmentViewSet, basename="role-assignment"
+)
+router.register("teams", TeamViewSet, basename="team")
+router.register("campuses", CampusViewSet, basename="campus")
+router.register("team-members", TeamMemberViewSet, basename="team-member")
 
 urlpatterns = [
     path("", include(router.urls)),

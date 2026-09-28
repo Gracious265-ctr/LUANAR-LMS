@@ -4,8 +4,9 @@ from datetime import date
 from dataclasses import dataclass
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.text import slugify
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
@@ -14,12 +15,17 @@ from leave.services import date_ranges_overlap
 from users.models import User
 
 from .models import (
-    APPROVER_ROLE_CODES,
     ApplicationStage,
+    Campus,
     ApprovalDecision,
+    ApproverRole,
     Delegation,
     Reassignment,
+    RoleAssignment,
+    Team,
+    TeamMember,
     Workflow,
+    WorkflowStage,
 )
 from .policies import is_self_application
 
@@ -49,9 +55,16 @@ class StageSequenceError(ValueError):
 def normalize_stage_sequence(stages: list[dict]) -> list[dict]:
     """Validate and renumber a workflow's stage list in submission order.
 
-    Returns a list of ``{"approver_role": role, "order": i + 1}`` payloads.
-    Raises :class:`StageSequenceError` for an empty list, an unknown approver
-    role, a repeated approver role, or a missing/non-positive/duplicate order.
+    A stage names its approver role by ``code`` (``"hod"``) — that is the wire
+    contract — or by primary key for convenience. Either way the value is
+    resolved against :class:`~workflows.models.ApproverRole`, and the normalized
+    payload carries the role's *code* so the sequence round-trips through the API
+    without leaking database ids into saved forms.
+
+    Returns a list of ``{"approver_role": code, "order": i + 1}``. Raises
+    :class:`StageSequenceError` for an empty list, an unknown or inactive
+    approver role, a repeated approver role, or a missing/non-positive/duplicate
+    order.
     """
     items = list(stages)
     if not items:
@@ -59,21 +72,30 @@ def normalize_stage_sequence(stages: list[dict]) -> list[dict]:
             "stages", "At least one approval stage is required."
         )
 
-    seen_roles: set[str] = set()
+    seen_roles: set[int] = set()
     seen_orders: set[int] = set()
     normalized: list[dict] = []
 
     for index, item in enumerate(items):
-        role = item.get("approver_role") if isinstance(item, dict) else None
-        if role not in APPROVER_ROLE_CODES:
+        role = _stage_role(item)
+        if role is None:
             raise StageSequenceError(
                 "approver_role", "Select a valid approver role.", index
             )
-        if role in seen_roles:
+        role_row = role if isinstance(role, ApproverRole) else _resolve_stage_role(role)
+        if role_row is None:
+            raise StageSequenceError(
+                "approver_role",
+                "That approver role is missing or deactivated. Pick an active "
+                "role, or reactivate the role in Roles.",
+                index,
+            )
+        role = role_row
+        if role.pk in seen_roles:
             raise StageSequenceError(
                 "stages", "An approver role can appear only once in a workflow.", index
             )
-        seen_roles.add(role)
+        seen_roles.add(role.pk)
 
         order = item.get("order")
         if not isinstance(order, int) or isinstance(order, bool) or order < 1:
@@ -86,7 +108,7 @@ def normalize_stage_sequence(stages: list[dict]) -> list[dict]:
             )
         seen_orders.add(order)
 
-        normalized.append({"approver_role": role, "order": index + 1})
+        normalized.append({"approver_role": role.code, "order": index + 1})
 
     return normalized
 
@@ -104,10 +126,50 @@ class ActivationIssue:
     message: str
 
 
-def _stage_role(stage) -> str | None:
+def _stage_role(stage) -> int | str | ApproverRole | None:
+    """The approver role a stage payload names, whether dict or model.
+
+    Returns an :class:`ApproverRole`, its primary key, or its code, as named.
+    ``None`` means the payload named nothing usable. The ambiguity is harmless
+    because :func:`normalize_stage_sequence` only ever needs to resolve the
+    value against a role, and the choice of code-vs-pk is an input detail.
+    """
     if isinstance(stage, dict):
-        return stage.get("approver_role")
-    return getattr(stage, "approver_role", None)
+        value = stage.get("approver_role")
+    elif isinstance(getattr(stage, "approver_role", None), ApproverRole):
+        return stage.approver_role
+    else:
+        value = getattr(stage, "approver_role_id", None)
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, ApproverRole)):
+        return value
+    if isinstance(value, str):
+        return value.strip()
+    return None
+
+
+def _resolve_stage_role(value) -> ApproverRole | None:
+    """Look up an *active* :class:`ApproverRole` by code or primary key."""
+    role = _lookup_stage_role(value)
+    return role if role is not None and role.is_active else None
+
+
+def _lookup_stage_role(value) -> ApproverRole | None:
+    """Look up an :class:`ApproverRole` by code or primary key, active or not.
+
+    Callers that need to distinguish "deactivated" from "unknown" use this;
+    callers that just need a usable role use :func:`_resolve_stage_role`.
+    """
+    if isinstance(value, ApproverRole):
+        return value
+    if isinstance(value, str) and not value.strip().isdigit():
+        return ApproverRole.objects.filter(code=value).first()
+    try:
+        pk = int(value)
+    except (TypeError, ValueError):
+        return None
+    return ApproverRole.objects.filter(pk=pk).first()
 
 
 def _value_matches(left: str, right: str) -> bool:
@@ -128,14 +190,29 @@ def scopes_overlap(a: tuple[str, str], b: tuple[str, str]) -> bool:
 
 
 def missing_approver_roles(stages) -> list[str]:
-    """Stage roles with no active user holding that role."""
+    """Labels of stage roles that cannot currently be used, in stage order.
+
+    Activation is a configuration check, so the only thing it can know about
+    holder availability without an applicant is whether the *role itself* is
+    usable. A role that has been deactivated is reported; whether a given team
+    actually has somebody holding each active role is resolved per applicant at
+    submission time (invariant 12.7 still blocks that submission).
+    """
     missing: list[str] = []
+    seen: set[int] = set()
     for stage in stages:
         role = _stage_role(stage)
-        if not role or role in missing:
+        if role is None:
             continue
-        if not User.objects.filter(role=role, is_active=True).exists():
-            missing.append(role)
+        if not isinstance(role, ApproverRole):
+            role = _lookup_stage_role(role)
+        if role is None:
+            continue
+        if role.pk in seen:
+            continue
+        seen.add(role.pk)
+        if not role.is_active:
+            missing.append(role.label)
     return missing
 
 
@@ -168,9 +245,12 @@ def validate_workflow_for_activation(
 
     missing = missing_approver_roles(stages)
     if missing:
-        labels = ", ".join(dict(User.Role.choices)[role] for role in missing)
         issues.append(
-            ActivationIssue(None, f"No active user exists for: {labels}.")
+            ActivationIssue(
+                None,
+                "These approver roles are deactivated and cannot be used: "
+                f"{', '.join(missing)}. Reactivate them in Roles, or replace them.",
+            )
         )
 
     conflict = find_conflicting_workflow(workflow_pk, scope)
@@ -200,12 +280,79 @@ class DelegationActionError(ValueError):
 
 
 def is_approver_user(user) -> bool:
-    """True when ``user`` may act as an approver or delegate."""
-    return bool(
-        user
-        and getattr(user, "is_active", False)
-        and getattr(user, "role", None) in APPROVER_ROLE_CODES
+    """Whether ``user`` currently holds at least one active approver role.
+
+    The one and only definition of "is an approver", replacing every former
+    role-name check. A person is an approver when they hold an active
+    :class:`~workflows.models.ApproverRole` in at least one of the two places a
+    role can be held:
+
+    * a :class:`~workflows.models.TeamMember` row on a team, or
+    * a :class:`~workflows.models.RoleAssignment` row, for an
+      institution-wide role.
+
+    Deactivating a role therefore retires the approver status it conferred, and
+    ``User.role`` is irrelevant: it records system access, not a place in an
+    approval chain.
+    """
+    if not user or not getattr(user, "is_active", False):
+        return False
+    user_id = user.pk if hasattr(user, "pk") else user
+    if user_id is None:
+        return False
+    if TeamMember.objects.filter(
+        user_id=user_id, role__is_active=True
+    ).exists():
+        return True
+    return RoleAssignment.objects.filter(
+        user_id=user_id, role__is_active=True
+    ).exists()
+
+
+def approver_role_codes_for(user) -> list[str]:
+    """The active approver-role codes ``user`` holds, de-duplicated and sorted.
+
+    Sorted rather than ranked so the answer is stable: a person holding several
+    roles is described the same way on every request, which matters for surfaces
+    that render a single role label (the delegation list) and for API payloads
+    that should not reshuffle between reads.
+    """
+    if not user or not getattr(user, "is_active", False):
+        return []
+    user_id = user.pk if hasattr(user, "pk") else user
+    codes = set(
+        TeamMember.objects.filter(user_id=user_id, role__is_active=True).values_list(
+            "role__code", flat=True
+        )
     )
+    codes.update(
+        RoleAssignment.objects.filter(
+            user_id=user_id, role__is_active=True
+        ).values_list("role__code", flat=True)
+    )
+    return sorted(code for code in codes if code)
+
+
+def approver_role_labels_for(user) -> list[str]:
+    """The active approver-role labels ``user`` holds, in a stable order.
+
+    Used by HR surfaces (the delegate candidate list) so a person is described by
+    the roles they actually hold rather than by a system access level.
+    """
+    if not user or not getattr(user, "is_active", False):
+        return []
+    user_id = user.pk if hasattr(user, "pk") else user
+    labels = set(
+        TeamMember.objects.filter(user_id=user_id, role__is_active=True).values_list(
+            "role__label", flat=True
+        )
+    )
+    labels.update(
+        RoleAssignment.objects.filter(
+            user_id=user_id, role__is_active=True
+        ).values_list("role__label", flat=True)
+    )
+    return sorted(label for label in labels if label)
 
 
 def resolve_delegate_user(approver, delegate_pk: int | None):
@@ -990,6 +1137,9 @@ def assign_workflow(application):
                 stage_order=definition.order,
                 role=definition.role,
                 role_label=definition.role_label,
+                role_ref_id=definition.role_id,
+                history_scope=definition.history_scope or "",
+                handles_cancellation=definition.handles_cancellation,
                 assigned_approver=approver,
                 status=_initial_stage_status(index, active_index),
                 is_final=index == last_index,
@@ -1299,3 +1449,528 @@ def _audit_action(action: str) -> str:
         ApprovalDecision.Action.RETURN_FOR_CORRECTION: AuditEntry.Action.CORRECTION_REQUESTED,
     }
     return mapping[action]
+
+# ---------------------------------------------------------------------------
+# Approver roles, role assignments, and teams (HR-managed configuration).
+#
+# Every write here is a configuration change: it runs inside a transaction,
+# records one audit entry, and refuses any state that would leave a workflow
+# stage or a routing decision unresolvable.
+# ---------------------------------------------------------------------------
+class RoleActionError(ValueError):
+    """Raised when an approver-role write cannot be applied.
+
+    ``field`` is the API field the error belongs to (``"detail"`` when the
+    problem is the role's state rather than one submitted value).
+    """
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.message = message
+
+
+def role_usage_map(roles) -> dict[int, list[str]]:
+    """``_role_usage`` for a whole queryset, in a fixed number of queries.
+
+    The Roles screen renders usage for every role at once, and the naive
+    per-role version cost one query per blocker per role — 69 queries to
+    serialize six roles, and worse as HR adds more. Collecting each blocker
+    kind for all roles at once and assembling the sentences in Python makes the
+    list cost three queries no matter how many roles it holds.
+    """
+    role_ids = {role.pk for role in roles}
+    usage: dict[int, list[str]] = {pk: [] for pk in role_ids}
+    if not role_ids:
+        return usage
+
+    stage_counts = (
+        WorkflowStage.objects.filter(
+            approver_role_id__in=role_ids, workflow__is_active=True
+        )
+        .values("approver_role_id", "workflow_id", "workflow__name")
+        .annotate(count=Count("id"))
+        .order_by("workflow__name")
+    )
+    for row in stage_counts:
+        count = row["count"]
+        noun = "stage" if count == 1 else "stages"
+        usage[row["approver_role_id"]].append(
+            f"the '{row['workflow__name']}' workflow ({count} {noun})"
+        )
+
+    member_counts = (
+        TeamMember.objects.filter(role_id__in=role_ids, team__is_active=True)
+        .values("role_id", "team_id", "team__name")
+        .annotate(count=Count("id"))
+        .order_by("team__name")
+    )
+    for row in member_counts:
+        count = row["count"]
+        noun = "member" if count == 1 else "members"
+        usage[row["role_id"]].append(
+            f"the '{row['team__name']}' team ({count} {noun})"
+        )
+
+    holders = (
+        RoleAssignment.objects.filter(role_id__in=role_ids, user__is_active=True)
+        .select_related("user")
+        .order_by("user_id")
+    )
+    for assignment in holders:
+        name = assignment.user.get_full_name() or assignment.user.username
+        usage[assignment.role_id].append(f"{name}, who holds it institution-wide")
+
+    return usage
+
+
+def _role_usage(role: ApproverRole) -> list[str]:
+    """Human-readable sentences naming everything currently using ``role``.
+
+    Each clause names the specific blocker and its size, so a refused
+    deactivation tells HR exactly which workflows, teams, and people to fix
+    instead of just saying "in use".
+    """
+    return role_usage_map([role]).get(role.pk, [])
+
+
+def ensure_role_not_in_use(role: ApproverRole) -> None:
+    """Refuse while an active workflow stage, team member, or holder uses the role."""
+    clauses = _role_usage(role)
+    if not clauses:
+        return
+    raise RoleActionError(
+        "detail",
+        f"This role cannot be deactivated because it is used by "
+        f"{', and by '.join(clauses)}. Remove those references first, or "
+        "deactivate the workflow or team instead.",
+    )
+
+
+def create_approver_role(*, actor, data: dict) -> ApproverRole:
+    """Create one approver role and audit it."""
+    with transaction.atomic():
+        role = ApproverRole.objects.create(**data)
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail={"before": None, "after": _role_snapshot(role)},
+        )
+    return role
+
+
+def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRole:
+    """Update a role's editable fields and audit the change.
+
+    ``code`` is immutable once anything references the role, because workflow
+    stages, team members, and historical stage snapshots all key off it; HR
+    edits ``label``, ``description``, ``history_scope``,
+    ``handles_cancellation``, and ``is_institution_wide`` freely.
+
+    ``is_active`` is deliberately *not* handled here: retiring a role runs the
+    in-use check, so it has its own action.
+    """
+    with transaction.atomic():
+        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
+        before = _role_snapshot(role)
+        if "code" in data and data["code"] != before["code"]:
+            raise RoleActionError(
+                "code",
+                "The role code cannot be changed once the role is referenced by a "
+                "workflow stage, a team member, or a role assignment. Create a new "
+                "role instead and retire this one.",
+            )
+        data.pop("code", None)
+        data.pop("is_active", None)
+        for field, value in data.items():
+            setattr(role, field, value)
+        role.save()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=changed_fields(before, _role_snapshot(role)),
+        )
+    return role
+
+
+def deactivate_approver_role(*, role: ApproverRole, actor) -> ApproverRole:
+    """Soft-retire a role, refusing while anything still uses it."""
+    if not role.is_active:
+        return role
+    ensure_role_not_in_use(role)
+    with transaction.atomic():
+        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
+        if not role.is_active:
+            return role
+        ensure_role_not_in_use(role)
+        before = _role_snapshot(role)
+        role.is_active = False
+        role.save(update_fields=["is_active", "updated_at"])
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CANCELLED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=changed_fields(before, _role_snapshot(role)),
+            reason="Role deactivated by HR.",
+        )
+    return role
+
+
+def _role_snapshot(role: ApproverRole) -> dict:
+    return {
+        "code": role.code,
+        "label": role.label,
+        "description": role.description,
+        "is_active": role.is_active,
+        "history_scope": role.history_scope,
+        "handles_cancellation": role.handles_cancellation,
+        "is_institution_wide": role.is_institution_wide,
+    }
+
+
+def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssignment:
+    """Assign an institution-wide role to a user and audit it."""
+    with transaction.atomic():
+        role.full_clean(exclude=["code", "label"])
+        if not role.is_active:
+            raise RoleActionError(
+                "role",
+                f'"{role.label}" is deactivated. Reactivate it in Roles, or pick '
+                "an active role.",
+            )
+        if not role.is_institution_wide:
+            raise RoleActionError(
+                "role",
+                f'"{role.label}" is a team role, not an institution-wide role. '
+                "Add this person to the team that uses it instead, or mark the "
+                "role institution-wide first.",
+            )
+        if not user.is_active:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} is not an active user. "
+                "Activate the account before assigning a role.",
+            )
+        assignment, created = RoleAssignment.objects.get_or_create(
+            user=user, role=role
+        )
+        if not created:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} already holds the "
+                f"{role.label} role.",
+            )
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=changed_fields(
+                {},
+                {
+                    "user_id": user.pk,
+                    "user": user.get_full_name() or user.username,
+                    "assignment_id": assignment.pk,
+                },
+            ),
+            reason=(
+                f"{user.get_full_name() or user.username} assigned the "
+                f"{role.label} role institution-wide."
+            ),
+        )
+    return assignment
+
+
+def remove_role_assignment(*, assignment: RoleAssignment, actor) -> RoleAssignment:
+    """Remove an institution-wide role holding and audit it."""
+    with transaction.atomic():
+        user = assignment.user
+        role = assignment.role
+        detail = changed_fields(
+            {
+                "user_id": user.pk,
+                "user": user.get_full_name() or user.username,
+                "assignment_id": assignment.pk,
+            },
+            {},
+        )
+        assignment.delete()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CANCELLED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=detail,
+            reason=(
+                f"{user.get_full_name() or user.username} no longer holds the "
+                f"{role.label} role."
+            ),
+        )
+    return assignment
+
+
+class CampusActionError(ValueError):
+    """Raised when a campus write cannot be applied."""
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.message = message
+
+
+def _campus_snapshot(campus: Campus) -> dict:
+    return {
+        "name": campus.name,
+        "code": campus.code,
+        "description": campus.description,
+        "is_active": campus.is_active,
+    }
+
+
+def create_campus(*, actor, data: dict) -> Campus:
+    """Create a campus and audit it."""
+    with transaction.atomic():
+        campus = Campus.objects.create(**data)
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.CAMPUS,
+            target_id=campus.pk,
+            target_summary=campus.name,
+            detail={"before": None, "after": _campus_snapshot(campus)},
+        )
+    return campus
+
+
+def update_campus(*, campus: Campus, actor, data: dict) -> Campus:
+    """Update a campus and audit the change.
+
+    A campus is PROTECTed from deletion because a team references it, and its
+    code is treated like a role's: once referenced, changing it would leave a
+    team pointing at a code nobody recognises.
+    """
+    with transaction.atomic():
+        campus = Campus.objects.select_for_update().get(pk=campus.pk)
+        before = _campus_snapshot(campus)
+        if "code" in data and data["code"] != before["code"]:
+            if campus.teams.exists():
+                raise CampusActionError(
+                    "code",
+                    "The campus code cannot be changed once a team uses it. "
+                    "Create a new campus instead.",
+                )
+        for field, value in data.items():
+            setattr(campus, field, value)
+        campus.save()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.CAMPUS,
+            target_id=campus.pk,
+            target_summary=campus.name,
+            detail=changed_fields(before, _campus_snapshot(campus)),
+        )
+    return campus
+
+
+class TeamActionError(ValueError):
+    """Raised when a team or team-member write cannot be applied."""
+
+    def __init__(self, field: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.message = message
+
+
+def _unique_team_code(name: str) -> str:
+    """Derive a unique slug code from a team name.
+
+    HR names a team; the code is machine-facing (it is what other systems and
+    reports key off), so it is derived rather than typed. Two different names
+    can slug to the same thing — "R & D" and "R&D" both give "r-d" — so the
+    suffix loop keeps creation from failing on the unique index.
+    """
+    base = slugify(name)[:40] or "team"
+    candidate = base
+    suffix = 2
+    while Team.objects.filter(code=candidate).exists():
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def create_team(*, actor, data: dict) -> Team:
+    """Create a team and audit it."""
+    with transaction.atomic():
+        data = dict(data)
+        data.setdefault("code", _unique_team_code(data.get("name", "")))
+        team = Team.objects.create(**data)
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=team.pk,
+            target_summary=team.name,
+            detail={"before": None, "after": _team_snapshot(team)},
+        )
+    return team
+
+
+def update_team(*, team: Team, actor, data: dict) -> Team:
+    """Update a team's editable fields and audit the change."""
+    with transaction.atomic():
+        team = Team.objects.select_for_update().get(pk=team.pk)
+        before = _team_snapshot(team)
+        for field, value in data.items():
+            setattr(team, field, value)
+        team.save()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=team.pk,
+            target_summary=team.name,
+            detail=changed_fields(before, _team_snapshot(team)),
+        )
+    return team
+
+
+def _team_snapshot(team: Team) -> dict:
+    return {
+        "name": team.name,
+        "code": team.code,
+        "description": team.description,
+        "campus_id": team.campus_id,
+        "campus": team.campus.name if team.campus_id else "",
+        "workflow_id": team.workflow_id,
+        "is_active": team.is_active,
+    }
+
+
+def add_team_member(*, team: Team, user: User, role: ApproverRole, actor) -> TeamMember:
+    """Add one person to a team in one role, refusing unusable configurations."""
+    with transaction.atomic():
+        if team.workflow_id is None:
+            raise TeamActionError(
+                "team",
+                f'The "{team.name}" team has no workflow yet. Set one on the team '
+                "before adding members.",
+            )
+        if not team.is_active:
+            raise TeamActionError(
+                "team",
+                f'The "{team.name}" team is inactive. Activate it before adding '
+                "members.",
+            )
+        if not user.is_active:
+            raise TeamActionError(
+                "user",
+                f"{user.get_full_name() or user.username} is not an active user. "
+                "Activate the account before adding them to a team.",
+            )
+        if not role.is_active:
+            raise TeamActionError(
+                "role",
+                f'"{role.label}" is deactivated. Reactivate it in Roles, or pick '
+                "an active role.",
+            )
+        if TeamMember.objects.filter(team=team, user=user).exists():
+            raise TeamActionError(
+                "user",
+                f"{user.get_full_name() or user.username} is already a member of "
+                f'the "{team.name}" team. Remove them from their current role '
+                "first.",
+            )
+        if TeamMember.objects.filter(team=team, role=role).exists():
+            holder = TeamMember.objects.filter(team=team, role=role).first()
+            name = holder.user.get_full_name() or holder.user.username
+            raise TeamActionError(
+                "role",
+                f'"{role.label}" is already held on the "{team.name}" team by '
+                f"{name}. A team has one member per role; create a second role if "
+                "two people are needed.",
+            )
+        membership = TeamMember(team=team, user=user, role=role)
+        # Full clean last: it catches the fields the checks above cannot (a role
+        # the team's workflow does not use, say), and by now the uniqueness rules
+        # have already produced a message that names the blocker.
+        membership.full_clean()
+        membership.save()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=team.pk,
+            target_summary=team.name,
+            detail=changed_fields(
+                {},
+                {
+                    "member_user_id": user.pk,
+                    "member": user.get_full_name() or user.username,
+                    "member_role": role.label,
+                },
+            ),
+            reason=f"{user.get_full_name() or user.username} added as {role.label}.",
+        )
+    return membership
+
+
+def remove_team_member(*, membership: TeamMember, actor) -> TeamMember:
+    """Remove one team membership and audit it."""
+    with transaction.atomic():
+        team = membership.team
+        user = membership.user
+        role = membership.role
+        detail = changed_fields(
+            {
+                "member_user_id": user.pk,
+                "member": user.get_full_name() or user.username,
+                "member_role": role.label,
+            },
+            {},
+        )
+        membership.delete()
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CANCELLED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=team.pk,
+            target_summary=team.name,
+            detail=detail,
+            reason=f"{user.get_full_name() or user.username} removed from {role.label}.",
+        )
+    return membership
+
+
+def team_stage_roles(team: Team) -> list[ApproverRole]:
+    """The roles the team's workflow actually asks for, in stage order.
+
+    The role picker is driven by this rather than by the full role list, so HR
+    can only assign a member a role that will route applications.
+    """
+    if team.workflow_id is None:
+        return []
+    role_ids = list(
+        team.workflow.stages.order_by("order")
+        .values_list("approver_role", flat=True)
+        .distinct()
+    )
+    if not role_ids:
+        return []
+    # Re-fetch as rows (callers need ``code``/``label``, not ids) while keeping
+    # the stage order the ``values_list`` above established.
+    by_id = {
+        role.pk: role
+        for role in ApproverRole.objects.filter(pk__in=role_ids).select_related()
+    }
+    return [by_id[role_id] for role_id in role_ids if role_id in by_id]

@@ -1,6 +1,5 @@
 import type { Employee } from "./employees";
 import { apiErrorMessage } from "./utils";
-import { APPROVER_ROLE_CODES } from "./workflows-client";
 import type { Delegation, DelegationInput } from "./delegations";
 
 export const DELEGATION_STATE_CODES = [
@@ -43,13 +42,16 @@ export function delegationStateBadgeClass(state: DelegationState): string {
   }
 }
 
-export const APPROVER_ROLE_CODE_SET: ReadonlySet<string> = new Set(
-  APPROVER_ROLE_CODES
-);
-
+/**
+ * The people who can be asked to cover or to take over an approval.
+ *
+ * Read from the approver holdings the API reports rather than from a list of
+ * role names: a role HR adds later, or a membership a person holds under any
+ * team, has to count here without a code change.
+ */
 export function approverRolePeople(employees: Employee[]): Employee[] {
   return employees.filter(
-    (employee) => employee.is_active && APPROVER_ROLE_CODE_SET.has(employee.role)
+    (employee) => employee.is_active && employee.approver_roles.length > 0
   );
 }
 

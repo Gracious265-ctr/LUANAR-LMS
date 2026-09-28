@@ -3,8 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
+import { listApproverRoles } from "@/lib/approver-roles";
+import type { ApproverRole } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
 import { getWorkflow } from "@/lib/workflows";
+
+const ROLES_ERROR =
+  "Unable to load approver roles, so a stage cannot be given an approver. Reload the page, or add a role under HR Administration → Roles.";
 
 export default async function EditWorkflowPage({
   params,
@@ -28,6 +33,16 @@ export default async function EditWorkflowPage({
     notFound();
   }
 
+  // Active roles only: a retired role cannot be added to a chain, but a stage
+  // that already uses one still has to render, which the form handles.
+  let roles: ApproverRole[] = [];
+  let rolesError = "";
+  try {
+    roles = await listApproverRoles();
+  } catch {
+    rolesError = ROLES_ERROR;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -48,7 +63,11 @@ export default async function EditWorkflowPage({
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <WorkflowForm workflow={workflow} />
+        <WorkflowForm
+          workflow={workflow}
+          roles={roles}
+          rolesError={rolesError}
+        />
       </div>
     </div>
   );

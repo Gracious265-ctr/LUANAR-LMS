@@ -1,25 +1,251 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
 from users.models import EmployeeProfile, User
 
-APPROVER_ROLE_CODES = ("supervisor", "hod", "dean", "registrar", "dvc", "hr")
 
-APPROVER_ROLE_CHOICES = [
-    (code, label)
-    for code, label in User.Role.choices
-    if code in APPROVER_ROLE_CODES
-]
+class ApproverRole(models.Model):
+    """An HR-managed approver role a workflow stage can require.
 
-# Stage roles in the approver chain. HR and employee are never workflow stages.
-STAGE_ROLE_CODES = ("supervisor", "hod", "dean", "registrar", "dvc")
+    Roles are data, not a hardcoded code list: HR creates, labels, and retires
+    them, and workflow stages plus team members reference them by foreign key.
 
-STAGE_ROLE_LABELS = {
-    code: label for code, label in User.Role.choices if code in STAGE_ROLE_CODES
-}
+    A role is never deleted. ``is_active`` is a soft retire, refused while the
+    role is in use (referenced by an active workflow stage, by a member of an
+    active team, or held by an active user through a ``RoleAssignment``), so a
+    stage can never be left pointing at a role that has quietly disappeared.
+    """
 
-STAGE_ROLE_CHOICES = list(STAGE_ROLE_LABELS.items())
+    class HistoryScope(models.TextChoices):
+        """What leave history an approver in this role may see."""
+
+        ALL = "all", "Full history"
+        SAME_DEPARTMENT = "same_department", "Same department only"
+        SAME_FACULTY = "same_faculty", "Same faculty only"
+        CURRENT_FINANCIAL_YEAR = (
+            "current_financial_year",
+            "Current financial year only",
+        )
+        NONE = "none", "No history"
+
+    code = models.SlugField(
+        max_length=50,
+        unique=True,
+        help_text="Stable identifier. Immutable once any stage or member references it.",
+    )
+    label = models.CharField(
+        max_length=80,
+        help_text="Human-readable name shown wherever the role appears.",
+    )
+    description = models.TextField(
+        blank=True, default="", help_text="What this role is responsible for."
+    )
+    is_active = models.BooleanField(default=True)
+    history_scope = models.CharField(
+        max_length=32,
+        choices=HistoryScope.choices,
+        default=HistoryScope.CURRENT_FINANCIAL_YEAR,
+        help_text="Which leave history an approver in this role may see.",
+    )
+    handles_cancellation = models.BooleanField(
+        default=False,
+        help_text="Whether this role's stages decide Unit 18 cancellation requests.",
+    )
+    is_institution_wide = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whether the role may be resolved from a global role assignment when "
+            "a team has no member holding it."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["label"]
+
+    def __str__(self) -> str:
+        return self.label
+
+
+class Campus(models.Model):
+    """A physical campus in the institution.
+
+    A campus is HR-maintained reference data, not something an employee edits.
+    A team may optionally belong to one, which lets HR ask "who approves at this
+    campus" without making a free-text field that quietly accumulates typos
+    ("Main campus", "main campus", "MAIN").
+    """
+
+    name = models.CharField(max_length=200, unique=True)
+    code = models.SlugField(max_length=50, unique=True)
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Team(models.Model):
+    """A group of employees sharing one approval workflow.
+
+    A team points at exactly one reusable :class:`Workflow`. At submission time
+    the applicant's team is what selects the workflow — there is no
+    category/department matching — and the team's members are who actually hold
+    each role in that workflow.
+    """
+
+    name = models.CharField(max_length=200, unique=True)
+    code = models.SlugField(max_length=50, unique=True)
+    description = models.TextField(blank=True, default="")
+    campus = models.ForeignKey(
+        Campus,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="teams",
+        help_text=(
+            "The campus this team belongs to; blank when the team is not "
+            "campus-based. Informational — routing always follows the team."
+        ),
+    )
+    workflow = models.ForeignKey(
+        "workflows.Workflow",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="teams",
+        help_text=(
+            "The approval workflow this team's members are routed through. "
+            "Blank means the team cannot route any application yet."
+        ),
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class TeamMember(models.Model):
+    """One person's holding of one :class:`ApproverRole` within a team.
+
+    At most one member per role per team, and at most one role per person per
+    team. A team that genuinely needs two people in the same role introduces a
+    second role rather than storing two rows here.
+    """
+
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+        help_text=(
+            "The team this role is held in. Note the reverse name: the employees "
+            "who belong to a team are Team.members, while the roles they hold "
+            "inside it are Team.memberships."
+        ),
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="team_memberships"
+    )
+    role = models.ForeignKey(
+        ApproverRole, on_delete=models.PROTECT, related_name="team_memberships"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["team", "role"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["team", "user"], name="teammember_team_user_unique"
+            ),
+            models.UniqueConstraint(
+                fields=["team", "role"], name="teammember_team_role_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.get_full_name()} — {self.role.label} ({self.team.name})"
+
+    def clean(self) -> None:
+        """Reject a role the team's workflow does not actually use.
+
+        A member holding a role the workflow never asks for can never be routed
+        an application, so the row would be dead configuration. The error names
+        the role and the workflow so HR can see exactly what to fix.
+        """
+        super().clean()
+        if self.role_id is None or self.team_id is None:
+            return
+        team = self.team
+        if team.workflow_id is None:
+            return
+        used = team.workflow.stages.filter(approver_role_id=self.role_id).exists()
+        if not used:
+            raise ValidationError(
+                {
+                    "role": (
+                        f'"{self.role.label}" is not a stage of the '
+                        f'"{team.workflow.name}" workflow this team uses. Add the '
+                        "role to the workflow's stages first, then add the member."
+                    )
+                }
+            )
+
+
+class RoleAssignment(models.Model):
+    """An institution-wide holding of an :class:`ApproverRole`.
+
+    Only roles with ``is_institution_wide = True`` can be assigned this way;
+    every other role is held through a :class:`TeamMember`, which is what makes
+    "who approves what" a property of the team rather than of the person.
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="role_assignments"
+    )
+    role = models.ForeignKey(
+        ApproverRole, on_delete=models.PROTECT, related_name="role_assignments"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["role", "user"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "role"], name="roleassignment_user_role_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.get_full_name()} — {self.role.label} (institution-wide)"
+
+    def clean(self) -> None:
+        """Reject a non-institution-wide role; point HR at team membership."""
+        super().clean()
+        if self.role_id is None:
+            return
+        if not self.role.is_institution_wide:
+            raise ValidationError(
+                {
+                    "role": (
+                        f'"{self.role.label}" is a team role, not an '
+                        "institution-wide role. Mark it institution-wide to assign "
+                        "it here, or add this person to the team that uses it."
+                    )
+                }
+            )
 
 
 class Workflow(models.Model):
@@ -77,7 +303,12 @@ class WorkflowStage(models.Model):
         Workflow, on_delete=models.CASCADE, related_name="stages"
     )
     order = models.PositiveIntegerField()
-    approver_role = models.CharField(max_length=20, choices=APPROVER_ROLE_CHOICES)
+    approver_role = models.ForeignKey(
+        ApproverRole,
+        on_delete=models.PROTECT,
+        related_name="workflow_stages",
+        help_text="The role whose holder approves this stage.",
+    )
 
     class Meta:
         ordering = ["order"]
@@ -93,7 +324,7 @@ class WorkflowStage(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.order}. {self.approver_role}"
+        return f"{self.order}. {self.approver_role.label}"
 
 
 class Delegation(models.Model):
@@ -308,13 +539,48 @@ class ApplicationStage(models.Model):
         help_text="Position in the chain, 1-based and unique per application/cycle.",
     )
     role = models.CharField(
-        max_length=20,
-        choices=STAGE_ROLE_CHOICES,
-        help_text="The approver role responsible for this stage.",
+        max_length=50,
+        help_text=(
+            "The approver role responsible for this stage, snapshotted as its "
+            "code. Kept as a plain string — and kept forever — so a later rename "
+            "or retirement of the role can never rewrite history."
+        ),
     )
     role_label = models.CharField(
         max_length=80,
-        help_text="Human-readable label for ``role``.",
+        help_text="Human-readable label for ``role``, snapshotted at materialization.",
+    )
+    role_ref = models.ForeignKey(
+        ApproverRole,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="application_stages",
+        help_text=(
+            "The live role this stage was materialised from. Null only for rows "
+            "written before roles became data; ``role`` stays authoritative in "
+            "that case. Kept for traceability — not for reading behaviour."
+        ),
+    )
+    history_scope = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text=(
+            "Snapshot of the role's leave-history scope at materialization. This "
+            "— not the live role — is what an in-flight application is judged "
+            "by, so widening or narrowing a role later never rewrites the review "
+            "history of an application already in flight. Blank on rows written "
+            "before roles became data."
+        ),
+    )
+    handles_cancellation = models.BooleanField(
+        default=False,
+        help_text=(
+            "Snapshot of the role's cancellation-handling flag at materialization, "
+            "so an in-flight application never changes behaviour when HR edits "
+            "the role."
+        ),
     )
     assigned_approver = models.ForeignKey(
         User,

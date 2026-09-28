@@ -3,7 +3,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { DelegationReview } from "@/components/hr/delegation-review";
 import type { Delegation } from "@/lib/delegations";
-import type { Employee, UserRole } from "@/lib/employees";
+import type { Employee } from "@/lib/employees";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -22,27 +23,11 @@ import {
   rejectDelegation,
 } from "@/lib/delegations-client";
 
-function makeEmployee(id: number, role: UserRole, name: string): Employee {
-  return {
-    id,
-    user_id: id,
-    email: `${name.replace(" ", ".").toLowerCase()}@test.luanar`,
-    first_name: name.split(" ")[0],
-    last_name: name.split(" ")[1] ?? "",
-    full_name: name,
-    role,
-    designation: "Role holder",
-    department: "Registry",
-    category: "academic",
-    grade: "G",
-    appointment_date: "2020-01-01",
-    is_active: true,
-  };
-}
-
+// The approvers here hold their positions as data, and their accounts carry no
+// special role: that is the shape the pickers now have to cope with.
 const employees: Employee[] = [
-  makeEmployee(3, "dean", "Jane Dean"),
-  makeEmployee(5, "hod", "Bob HOD"),
+  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["dean"] }),
+  makeEmployee({ id: 5, full_name: "Bob HOD", approver_roles: ["hod"] }),
 ];
 
 const base: Delegation = {

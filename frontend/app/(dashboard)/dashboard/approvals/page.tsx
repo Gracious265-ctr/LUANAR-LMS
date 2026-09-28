@@ -1,5 +1,5 @@
 import { ApprovalsWorkspace } from "@/components/approvals/approvals-workspace";
-import { getCurrentUser } from "@/lib/auth";
+import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, loadCoverData } from "@/lib/delegations";
 
 export const metadata = {
@@ -11,10 +11,15 @@ export default async function ApprovalsPage({
 }: {
   searchParams: Promise<{ view?: string | string[] }>;
 }) {
-  const user = await getCurrentUser();
-  const showCover = canRequestCover(user?.role);
+  // `searchParams` is independent of the capabilities read, so both are awaited
+  // together. The cover data is only needed for an approver, and loading it
+  // eagerly would fetch two more endpoints for somebody who cannot see it.
+  const [capabilities, params] = await Promise.all([
+    loadApprovalCapabilities(),
+    searchParams,
+  ]);
+  const showCover = canRequestCover(capabilities);
 
-  const params = await searchParams;
   const requestedView = typeof params.view === "string" ? params.view : "";
   // Only an approver can be sent to the Cover tab; for anyone else the
   // parameter is ignored rather than trusted.

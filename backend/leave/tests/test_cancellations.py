@@ -73,16 +73,16 @@ class CancellationBase(StubProviderMixin, APITestCase):
         )
         self.supervisor = make_user(
             "supervisor@luanar",
-            role=User.Role.SUPERVISOR,
+            role="supervisor",
             first_name="Sana",
             last_name="Supervisor",
         )
         self.hod = make_user(
-            "hod@luanar", role=User.Role.HOD, first_name="Hady", last_name="Od"
+            "hod@luanar", role="hod", first_name="Hady", last_name="Od"
         )
         self.registrar = make_user(
             "registrar@luanar",
-            role=User.Role.REGISTRAR,
+            role="registrar",
             first_name="Rej",
             last_name="Registrar",
         )

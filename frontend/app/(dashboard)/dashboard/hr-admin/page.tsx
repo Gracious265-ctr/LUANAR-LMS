@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, UserCog, Users, Workflow } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 
@@ -85,6 +85,34 @@ export default async function HRAdminPage() {
           <h3 className="text-lg font-semibold text-text-primary">Workflows</h3>
           <p className="mt-1 text-sm text-text-secondary">
             Configure approval sequences by employee category and department.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/hr-admin/roles"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <UserCog className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">
+            Approver Roles
+          </h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Define the approver positions a workflow stage can name, and who
+            holds them institution-wide.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/hr-admin/teams"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <Users className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">Teams</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Group staff, staff the approvers, and route their applications
+            through a team workflow.
           </p>
         </Link>
         <Link

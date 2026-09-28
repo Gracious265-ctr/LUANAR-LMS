@@ -166,6 +166,12 @@ The seed command creates one user per role with password `testpass123`:
 | Deputy Vice-Chancellor | dvc@test.luanar |
 | Human Resources | hr@test.luanar |
 
+The five accounts between Employee and HR all have `User.role=approver`: the
+name in the table is the *position* each person is expected to hold, not a
+system role. Which approval roles a person actually holds is seeded by
+`seed_approvals_dev` as `TeamMember` / `RoleAssignment` rows, which is what
+decides what each of them can approve.
+
 ### Admin / Django-Q2 task inspection
 
 The seed command does not create a superuser. Create one to inspect the Django

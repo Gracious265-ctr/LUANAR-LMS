@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { DelegationReview } from "@/components/hr/delegation-review";
 import { COVER_BASE_HREF } from "@/components/approvals/cover-panel";
-import { getCurrentUser } from "@/lib/auth";
+import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, getDelegation } from "@/lib/delegations";
 
 export const metadata = {
@@ -21,12 +21,7 @@ export default async function CoverDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-  if (!canRequestCover(user.role)) {
+  if (!canRequestCover(await loadApprovalCapabilities())) {
     redirect("/dashboard");
   }
 

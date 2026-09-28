@@ -18,6 +18,8 @@ from unittest import mock
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
+
+from workflows.testing import create_user_with_role
 from django.core import mail
 from django.test import TestCase
 from django.utils import timezone
@@ -50,7 +52,7 @@ class DecisionEmailBusTest(TestCase):
         _reset_consumers_for_tests()
         register_consumer(send_decision_email)
         self.employee = self._make_user("employee@test.luanar")
-        self.approver = self._make_user("approver@test.luanar", role=User.Role.HOD)
+        self.approver = self._make_user("approver@test.luanar", role="hod")
         self.application = LeaveApplication.objects.create(
             employee=self.employee,
             status=LeaveApplication.Status.SUBMITTED,
@@ -63,11 +65,9 @@ class DecisionEmailBusTest(TestCase):
         )
 
     def _make_user(self, email, role=User.Role.EMPLOYEE):
-        return User.objects.create_user(
-            username=f"user-{uuid4().hex[:8]}",
-            email=email,
-            password="testpass123",
-            role=role,
+        """Create an account; an approver role code also gets a real holding."""
+        return create_user_with_role(
+            f"user-{uuid4().hex[:8]}", email=email, role=role
         )
 
     def _event(self, kind=DECISION_RECORDED, action="approve"):

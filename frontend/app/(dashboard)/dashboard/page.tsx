@@ -2,19 +2,27 @@ import { redirect } from "next/navigation";
 import { Calendar, Clock, FileText, ShieldCheck } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
+import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { getLeaveSummary } from "@/lib/leave-summary";
 
-const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
-
 export default async function DashboardPage() {
-  const user = await getCurrentUser();
+  // All three reads are independent, and the first two are already resolved by
+  // the layout above — so this costs one round trip's worth of waiting rather
+  // than three in sequence.
+  const [user, capabilities, summary] = await Promise.all([
+    getCurrentUser(),
+    loadApprovalCapabilities(),
+    getLeaveSummary(),
+  ]);
 
   if (!user) {
     redirect("/login");
   }
 
-  const showApprovals = APPROVER_ROLES.includes(user.role);
-  const summary = await getLeaveSummary();
+  // Whether the caller has anything to approve is a question about approver
+  // holdings, not about the account's system role.
+  const showApprovals = capabilities !== null && capabilities.is_approver;
+  const pendingApprovals = capabilities?.pending_count ?? 0;
   const balance = summary?.available_balance ?? null;
   const fiscalPeriod = summary?.financial_year?.label;
   const profile = summary?.profile;
@@ -58,7 +66,7 @@ export default async function DashboardPage() {
         {showApprovals && (
           <StatCard
             title="Awaiting My Approval"
-            value="0"
+            value={String(pendingApprovals)}
             subtitle="applications"
             icon={<ShieldCheck className="w-5 h-5" />}
             variant="info"

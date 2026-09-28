@@ -22,7 +22,14 @@ from .admin import (
     WorkflowStageForm,
     WorkflowStageInlineFormSet,
 )
-from .models import Delegation, Reassignment, Workflow, WorkflowStage
+from .testing import create_user_with_role, ensure_roles
+from .models import (
+    ApproverRole,
+    Delegation,
+    Reassignment,
+    Workflow,
+    WorkflowStage,
+)
 from .services import (
     DelegationActionError,
     ReassignmentError,
@@ -127,7 +134,7 @@ class WorkflowEndpointTests(TestCase):
             department="",
         )
         for stage in VALID_STAGES:
-            WorkflowStage.objects.create(workflow=self.workflow, **stage)
+            make_stage(self.workflow, stage["order"], stage["approver_role"])
 
         self.list_url = "/api/v1/workflows/"
         self.detail_url = f"/api/v1/workflows/{self.workflow.id}/"
@@ -209,7 +216,7 @@ class WorkflowEndpointTests(TestCase):
         )
         self.assertTrue(
             WorkflowStage.objects.filter(
-                workflow_id=payload["id"], order=2, approver_role="dean"
+                workflow_id=payload["id"], order=2, approver_role__code="dean"
             ).exists()
         )
 
@@ -401,6 +408,7 @@ class WorkflowAdminTests(TestCase):
         self.assertIn("order", formset.errors[0])
 
     def test_repeated_approver_role_rejected(self):
+        ensure_roles("hod")
         StageInlineForm = inlineformset_factory(
             Workflow,
             WorkflowStage,
@@ -428,22 +436,34 @@ class WorkflowAdminTests(TestCase):
         )
 
     def test_admin_list_prefetches_stages_for_summary(self):
-        self.workflow.stages.create(order=1, approver_role="hod")
+        make_stage(self.workflow, 1, "hod")
+        second = Workflow.objects.create(name="Second")
+        make_stage(second, 1, "dean")
         admin = WorkflowAdmin(Workflow, self.site)
-        queryset = admin.get_queryset(None)
-        with self.assertNumQueries(2):
-            summary = admin.stage_summary(queryset.get(pk=self.workflow.pk))
-        self.assertEqual(summary, "hod")
+        # workflows + stages + roles: the roles come from the joined prefetch, so
+        # the count is flat in the number of workflows and stages.
+        with self.assertNumQueries(3):
+            summaries = {
+                obj.pk: admin.stage_summary(obj) for obj in admin.get_queryset(None)
+            }
+        self.assertEqual(summaries[self.workflow.pk], "Head of Department")
+        self.assertEqual(summaries[second.pk], "Dean")
 
 
-def make_active_user(role: str, username: str) -> User:
-    return User.objects.create_user(
-        username=username,
-        email=username,
+def make_active_user(role, username: str) -> User:
+    """An active account holding ``role``.
+
+    ``role`` may be a :class:`~users.models.User.Role` value or an approver role
+    code. An approver code also creates the role row and an institution-wide
+    holding, because setting the user row alone no longer makes somebody an
+    approver — see :func:`workflows.services.is_approver_user`.
+    """
+    return create_user_with_role(
+        username,
+        role=role,
         password=SEED_PASSWORD,
         first_name="Test",
         last_name="Approver",
-        role=role,
     )
 
 
@@ -465,21 +485,32 @@ class WorkflowActivationServiceTests(TestCase):
         )
         self.assertFalse(scopes_overlap(("academic", "A"), ("academic", "B")))
 
-    def test_missing_approver_roles_lists_roles_without_active_user(self):
-        make_active_user(User.Role.HR, "hr@test.luanar")
-        stages = [
-            {"order": 1, "approver_role": "hr"},
-            {"order": 2, "approver_role": "dean"},
-        ]
-        self.assertEqual(missing_approver_roles(stages), ["dean"])
+    def test_missing_approver_roles_lists_deactivated_roles(self):
+        """Only a *deactivated* role blocks activation.
 
-    def test_missing_approver_roles_treats_inactive_users_as_missing(self):
-        user = make_active_user(User.Role.SUPERVISOR, "supervisor@test.luanar")
+        Whether a team actually has somebody holding an active role is resolved
+        per applicant at submission time, not at configuration time.
+        """
+        ensure_roles("dean", "supervisor")
+        ApproverRole.objects.filter(code="supervisor").update(is_active=False)
+        stages = [
+            {"order": 1, "approver_role": "dean"},
+            {"order": 2, "approver_role": "supervisor"},
+        ]
+        self.assertEqual(missing_approver_roles(stages), ["Supervisor"])
+
+    def test_missing_approver_roles_ignores_an_unstaffed_active_role(self):
+        ensure_roles("supervisor")
+        self.assertEqual(
+            missing_approver_roles([{"order": 1, "approver_role": "supervisor"}]), []
+        )
+
+    def test_missing_approver_roles_ignores_an_inactive_holder(self):
+        user = make_active_user("supervisor", "supervisor@test.luanar")
         user.is_active = False
         user.save(update_fields=["is_active"])
         self.assertEqual(
-            missing_approver_roles([{"order": 1, "approver_role": "supervisor"}]),
-            ["supervisor"],
+            missing_approver_roles([{"order": 1, "approver_role": "supervisor"}]), []
         )
 
     def test_find_conflicting_workflow_excludes_self_and_drafts(self):
@@ -529,6 +560,8 @@ class WorkflowActivationServiceTests(TestCase):
             employee_category="administration",
             effective_from=today,
         )
+        ensure_roles("dean")
+        ApproverRole.objects.filter(code="dean").update(is_active=False)
         issues = validate_workflow_for_activation(
             None,
             ("administration", ""),
@@ -561,7 +594,7 @@ class WorkflowActivationEndpointTests(TestCase):
             "name": "Workflow",
             "employee_category": "administration",
             "department": "",
-            "stages": [{"order": 1, "approver_role": "hr"}],
+            "stages": [{"order": 1, "approver_role": "dean"}],
         }
         payload.update(overrides)
         return payload
@@ -611,14 +644,21 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{workflow_id}/",
             {
                 "is_active": False,
-                "stages": [{"order": 1, "approver_role": "hr"}],
+                "stages": [{"order": 1, "approver_role": "dean"}],
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["state"], "inactive")
 
-    def test_activation_without_active_approver_rejected(self):
+    def test_activation_with_a_deactivated_approver_role_rejected(self):
+        """A workflow cannot go live on a role HR has switched off.
+
+        Whether an *active* role is actually staffed is not decided here — that
+        is resolved per applicant when they submit.
+        """
+        ensure_roles("dean")
+        ApproverRole.objects.filter(code="dean").update(is_active=False)
         response = self.client.post(
             self.list_url,
             self._payload(
@@ -629,7 +669,11 @@ class WorkflowActivationEndpointTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Dean", response.json()["detail"][0])
+        # The stage field rejects it first, with the actionable message, rather
+        # than letting the workflow activate and failing later per applicant.
+        self.assertIn(
+            "Dean", response.json()["stages"]["0"]["approver_role"][0]
+        )
 
     def test_activation_with_overlapping_scope_rejected(self):
         self.client.post(
@@ -670,7 +714,7 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{first.json()['id']}/",
             {
                 "is_active": False,
-                "stages": [{"order": 1, "approver_role": "hr"}],
+                "stages": [{"order": 1, "approver_role": "dean"}],
             },
             format="json",
         )
@@ -710,7 +754,7 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{academic.json()['id']}/",
             {
                 "employee_category": "administration",
-                "stages": [{"order": 1, "approver_role": "hr"}],
+                "stages": [{"order": 1, "approver_role": "dean"}],
             },
             format="json",
         )
@@ -772,9 +816,17 @@ class WorkflowActivationAdminTests(TestCase):
             any("Existing" in error for error in form.non_field_errors())
         )
 
-    def test_form_rejects_missing_approver(self):
-        workflow = Workflow.objects.create(name="Needs dean")
-        workflow.stages.create(order=1, approver_role="dean")
+    def test_form_rejects_deactivated_approver_role(self):
+        """Activation is blocked by a switched-off role, not an unstaffed one.
+
+        ``dean`` here has no holder at all, and the form still accepts it; the
+        rejection below comes from the role being deactivated, which is the only
+        role-level fact configuration can know.
+        """
+        workflow = Workflow.objects.create(name="Needs active dean")
+        make_stage(workflow, 1, "dean")
+        ensure_roles("dean")
+        ApproverRole.objects.filter(code="dean").update(is_active=False)
         form = self._form(
             workflow,
             effective_from=self.today.isoformat(),
@@ -787,14 +839,14 @@ class WorkflowActivationAdminTests(TestCase):
 
     def test_form_allows_draft_without_approvers(self):
         workflow = Workflow.objects.create(name="Draft workflow")
-        workflow.stages.create(order=1, approver_role="dean")
+        make_stage(workflow, 1, "dean")
         form = self._form(workflow)
         self.assertTrue(form.is_valid())
 
     def test_form_allows_activation_with_active_approver(self):
-        make_active_user(User.Role.HR, "hr-admin@test.luanar")
+        make_active_user("dean", "dean-admin@test.luanar")
         workflow = Workflow.objects.create(name="Ready workflow")
-        workflow.stages.create(order=1, approver_role="hr")
+        make_stage(workflow, 1, "dean")
         form = self._form(
             workflow,
             effective_from=self.today.isoformat(),
@@ -825,8 +877,8 @@ class DelegationModelStateTests(TestCase):
 
     def setUp(self):
         self.hr = make_active_user(User.Role.HR, "hr-deleg@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-deleg@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-deleg@test.luanar")
+        self.dean = make_active_user("dean", "dean-deleg@test.luanar")
+        self.hod = make_active_user("hod", "hod-deleg@test.luanar")
         self.today = timezone.localdate()
 
     def test_requested_state(self):
@@ -895,8 +947,8 @@ class DelegationServiceTests(TestCase):
 
     def setUp(self):
         self.hr = make_active_user(User.Role.HR, "hr-svc@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-svc@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-svc@test.luanar")
+        self.dean = make_active_user("dean", "dean-svc@test.luanar")
+        self.hod = make_active_user("hod", "hod-svc@test.luanar")
         self.employee = make_active_user(
             User.Role.EMPLOYEE, "employee-svc@test.luanar"
         )
@@ -904,9 +956,29 @@ class DelegationServiceTests(TestCase):
 
     def test_is_approver_user(self):
         self.assertTrue(is_approver_user(self.dean))
-        self.assertTrue(is_approver_user(self.hr))
         self.assertFalse(is_approver_user(self.employee))
         self.assertFalse(is_approver_user(None))
+
+    def test_hr_is_not_an_approver_user(self):
+        """HR is admitted by an explicit check, not by holding a role.
+
+        HR needs the delegation flow, but HR does not sit in an approval chain,
+        so ``is_approver_user`` must stay False for them — otherwise HR would
+        show up as a candidate approver in every team's routing.
+        """
+        self.assertFalse(is_approver_user(self.hr))
+
+    def test_deactivating_a_role_retires_approver_status(self):
+        role = ensure_roles("dean")["dean"]
+        self.assertTrue(is_approver_user(self.dean))
+        role.is_active = False
+        role.save(update_fields=["is_active"])
+        self.assertFalse(is_approver_user(self.dean))
+
+    def test_inactive_user_is_never_an_approver(self):
+        self.dean.is_active = False
+        self.dean.save(update_fields=["is_active"])
+        self.assertFalse(is_approver_user(self.dean))
 
     def test_resolve_delegate_user_accepts_valid_delegate(self):
         delegate = resolve_delegate_user(self.dean, self.hod.pk)
@@ -1150,8 +1222,8 @@ class DelegationConcurrencyTests(TestCase):
 
     def setUp(self):
         self.hr = make_active_user(User.Role.HR, "hr-conc@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-conc@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-conc@test.luanar")
+        self.dean = make_active_user("dean", "dean-conc@test.luanar")
+        self.hod = make_active_user("hod", "hod-conc@test.luanar")
         self.today = timezone.localdate()
 
     def test_reject_rechecks_a_stale_instance_under_lock(self):
@@ -1278,21 +1350,21 @@ class DelegationEndpointTests(TestCase):
             last_name="HR",
             role=User.Role.HR,
         )
-        self.dean = User.objects.create_user(
+        self.dean = create_user_with_role(
             username="dean@test.luanar",
             email="dean@test.luanar",
             password=SEED_PASSWORD,
             first_name="Dean",
             last_name="Dept",
-            role=User.Role.DEAN,
+            role="dean",
         )
-        self.hod = User.objects.create_user(
+        self.hod = create_user_with_role(
             username="hod@test.luanar",
             email="hod@test.luanar",
             password=SEED_PASSWORD,
             first_name="Hod",
             last_name="Head",
-            role=User.Role.HOD,
+            role="hod",
         )
         self.employee = User.objects.create_user(
             username="employee@test.luanar",
@@ -1411,13 +1483,13 @@ class DelegationEndpointTests(TestCase):
 
     def test_list_and_retrieve_are_scoped_to_the_approver(self):
         mine = self._delegation()
-        other_approver = User.objects.create_user(
+        other_approver = create_user_with_role(
             username="registrar@test.luanar",
             email="registrar@test.luanar",
             password=SEED_PASSWORD,
             first_name="Reg",
             last_name="Registrar",
-            role=User.Role.REGISTRAR,
+            role="registrar",
         )
         theirs = make_delegation(
             other_approver, timezone.localdate(), delegate=self.hod
@@ -1649,8 +1721,8 @@ class DelegationAdminTests(TestCase):
 
     def test_list_renders_state_and_related_people(self):
         hr = make_active_user(User.Role.HR, "hr-a@test.luanar")
-        dean = make_active_user(User.Role.DEAN, "dean-a@test.luanar")
-        hod = make_active_user(User.Role.HOD, "hod-a@test.luanar")
+        dean = make_active_user("dean", "dean-a@test.luanar")
+        hod = make_active_user("hod", "hod-a@test.luanar")
         delegation = make_delegation(
             dean,
             timezone.localdate(),
@@ -1660,7 +1732,12 @@ class DelegationAdminTests(TestCase):
         )
         admin = DelegationAdmin(Delegation, self.site)
         self.assertEqual(admin.state(delegation), "active")
-        self.assertEqual(str(delegation.approver), f"{dean.get_full_name()} (dean)")
+        # ``User.__str__`` now shows the system role, so the position comes from
+        # the role graph via the admin's own column.
+        self.assertEqual(
+            str(delegation.approver), f"{dean.get_full_name()} (approver)"
+        )
+        self.assertEqual(admin.approver_roles(delegation), "dean")
 
 
 # ---------------------------------------------------------------------------
@@ -1699,7 +1776,7 @@ class ReassignmentModelTests(TestCase):
     def test_str_includes_reference_number_and_new_approver(self):
         employee = make_active_user(User.Role.EMPLOYEE, "emp-re01@test.luanar")
         app = make_application(employee, ref="LUANAR-2026-0001")
-        hod = make_active_user(User.Role.HOD, "hod-re01@test.luanar")
+        hod = make_active_user("hod", "hod-re01@test.luanar")
         reassignment = Reassignment.objects.create(
             application=app,
             to_approver=hod,
@@ -1714,8 +1791,8 @@ class ReassignmentModelTests(TestCase):
     def test_ordering_is_newest_first(self):
         employee = make_active_user(User.Role.EMPLOYEE, "emp-re02@test.luanar")
         app = make_application(employee, ref="LUANAR-2026-0002")
-        hod = make_active_user(User.Role.HOD, "hod-re02@test.luanar")
-        dean = make_active_user(User.Role.DEAN, "dean-re02@test.luanar")
+        hod = make_active_user("hod", "hod-re02@test.luanar")
+        dean = make_active_user("dean", "dean-re02@test.luanar")
         hr = make_active_user(User.Role.HR, "hr-re02@test.luanar")
         first = Reassignment.objects.create(
             application=app, to_approver=hod, reason="First", decided_by=hr,
@@ -1747,8 +1824,8 @@ class ReassignmentServiceTests(TestCase):
     def setUp(self):
         self.hr = make_active_user(User.Role.HR, "hr-svc@test.luanar")
         self.employee = make_active_user(User.Role.EMPLOYEE, "emp-svc@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-svc@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-svc@test.luanar")
+        self.dean = make_active_user("dean", "dean-svc@test.luanar")
+        self.hod = make_active_user("hod", "hod-svc@test.luanar")
 
     def _submitted_app(self, approver=None):
         return make_application(self.employee, approver=approver)
@@ -1851,13 +1928,13 @@ class ReassignmentServiceTests(TestCase):
 
     def test_inactive_to_approver_rejected(self):
         app = self._submitted_app()
-        inactive = User.objects.create_user(
+        inactive = create_user_with_role(
             username="inactive@test.luanar",
             email="inactive@test.luanar",
             password=SEED_PASSWORD,
             first_name="Inactive",
             last_name="Approver",
-            role=User.Role.DEAN,
+            role="dean",
             is_active=False,
         )
         with self.assertRaises(ReassignmentError) as ctx:
@@ -1934,21 +2011,21 @@ class ReassignmentEndpointTests(TestCase):
             last_name="Employee",
             role=User.Role.EMPLOYEE,
         )
-        self.dean = User.objects.create_user(
+        self.dean = create_user_with_role(
             username="dean-api@test.luanar",
             email="dean-api@test.luanar",
             password=SEED_PASSWORD,
             first_name="Test",
             last_name="Dean",
-            role=User.Role.DEAN,
+            role="dean",
         )
-        self.hod = User.objects.create_user(
+        self.hod = create_user_with_role(
             username="hod-api@test.luanar",
             email="hod-api@test.luanar",
             password=SEED_PASSWORD,
             first_name="Test",
             last_name="HOD",
-            role=User.Role.HOD,
+            role="hod",
         )
         self.application = make_application(self.employee_user, ref="LUANAR-2026-0010")
         self.application.submitted_at = timezone.now() - timedelta(days=10)
@@ -2248,13 +2325,13 @@ class ReassignmentEndpointTests(TestCase):
         self.assertIn("to_approver", response.json())
 
     def test_create_inactive_to_approver_400(self):
-        inactive = User.objects.create_user(
+        inactive = create_user_with_role(
             username="inactive-api@test.luanar",
             email="inactive-api@test.luanar",
             password=SEED_PASSWORD,
             first_name="Inactive",
             last_name="User",
-            role=User.Role.DEAN,
+            role="dean",
             is_active=False,
         )
         self.client.force_authenticate(user=self.hr_user)
@@ -2393,7 +2470,7 @@ class ReassignmentAdminTests(TestCase):
         hr = make_active_user(User.Role.HR, "hr-admin@test.luanar")
         employee = make_active_user(User.Role.EMPLOYEE, "emp-admin@test.luanar")
         app = make_application(employee, ref="ADMIN-001")
-        to_approver = make_active_user(User.Role.DEAN, "dean-admin@test.luanar")
+        to_approver = make_active_user("dean", "dean-admin@test.luanar")
         reassignment = Reassignment.objects.create(
             application=app, to_approver=to_approver, reason="Admin test", decided_by=hr,
         )
@@ -2450,9 +2527,7 @@ class WorkflowSerializerAtomicityTests(TestCase):
             employee_category="academic",
             department="Faculty of Science",
         )
-        WorkflowStage.objects.create(
-            workflow=workflow, order=1, approver_role="dean"
-        )
+        make_stage(workflow, 1, 'dean')
         serializer = self._serializer(
             workflow,
             data={**self.payload, "name": "Existing flow"},
@@ -2466,7 +2541,8 @@ class WorkflowSerializerAtomicityTests(TestCase):
         workflow.refresh_from_db()
         self.assertEqual(workflow.department, "Faculty of Science")
         self.assertEqual(
-            list(workflow.stages.values_list("approver_role", flat=True)), ["dean"]
+            list(workflow.stages.values_list("approver_role__code", flat=True)),
+            ["dean"],
         )
 
 
@@ -2475,8 +2551,8 @@ class SpineIntegrityTests(TestCase):
 
     def setUp(self):
         self.hr = make_active_user(User.Role.HR, "hr-spine@test.luanar")
-        self.dean = make_active_user(User.Role.DEAN, "dean-spine@test.luanar")
-        self.hod = make_active_user(User.Role.HOD, "hod-spine@test.luanar")
+        self.dean = make_active_user("dean", "dean-spine@test.luanar")
+        self.hod = make_active_user("hod", "hod-spine@test.luanar")
         self.employee = make_active_user(
             User.Role.EMPLOYEE, "emp-spine@test.luanar"
         )
@@ -2515,3 +2591,4 @@ class SpineIntegrityTests(TestCase):
         with self.assertRaises(ProtectedError):
             self.app.delete()
         self.assertTrue(LeaveApplication.objects.filter(pk=self.app.pk).exists())
+from workflows.testing import create_user_with_role, make_stage

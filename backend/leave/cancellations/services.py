@@ -17,7 +17,7 @@ from audit.services import changed_fields, record_audit
 from django.db import transaction
 from django.utils import timezone
 
-from workflows.models import STAGE_ROLE_LABELS, ApplicationStage
+from workflows.models import ApplicationStage
 from workflows.policies import is_self_application
 
 from ..models import LeaveApplication
@@ -344,7 +344,9 @@ def _request(application, user, reason: str, now) -> CancellationRequest:
             request=request,
             order=spec.order,
             role=spec.role,
-            role_label=STAGE_ROLE_LABELS.get(spec.role, spec.role),
+            # The label comes from the application's own stage snapshot, so a
+            # role renamed by HR after submission never rewrites this row.
+            role_label=spec.role_label or spec.role,
             approver_id=spec.approver_user_id,
             status=(
                 CancellationApprovalStage.Status.PENDING

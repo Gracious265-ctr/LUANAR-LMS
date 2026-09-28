@@ -1,30 +1,23 @@
 import { apiClient } from "./api-client";
-import type {
-  ApproverRoleCode,
-  WorkflowCategoryCode,
-  WorkflowState,
-} from "./workflows-client";
+import type { WorkflowCategoryCode, WorkflowState } from "./workflows-client";
 
-export { APPROVER_ROLE_CODES } from "./workflows-client";
-export { APPROVER_ROLE_LABELS } from "./workflows-client";
 export { WORKFLOW_CATEGORY_CODES } from "./workflows-client";
 export { WORKFLOW_CATEGORY_LABELS } from "./workflows-client";
 export { WORKFLOW_STATE_CODES } from "./workflows-client";
 export { WORKFLOW_STATE_LABELS } from "./workflows-client";
-export { approverRoleLabel, workflowCategoryLabel } from "./workflows-client";
+export { workflowCategoryLabel } from "./workflows-client";
 export { workflowStateLabel } from "./workflows-client";
 export { workflowStateBadgeClass } from "./workflows-client";
 
-export type {
-  ApproverRoleCode,
-  WorkflowCategoryCode,
-  WorkflowState,
-} from "./workflows-client";
+export type { WorkflowCategoryCode, WorkflowState } from "./workflows-client";
 
 export interface WorkflowStage {
   id: number;
   order: number;
-  approver_role: ApproverRoleCode;
+  /** The role's stable code. Open-ended: HR can add roles this build never saw. */
+  approver_role: string;
+  /** The role's label as read, so a chain is readable without a second lookup. */
+  approver_role_label: string;
 }
 
 export interface Workflow {
@@ -40,7 +33,7 @@ export interface Workflow {
 
 export interface WorkflowStageInput {
   order: number;
-  approver_role: ApproverRoleCode;
+  approver_role: string;
 }
 
 export interface WorkflowInput {

@@ -16,6 +16,7 @@ import {
   LogOut,
   Tags,
   UserCheck,
+  UserCog,
   Users,
   Workflow,
 } from "lucide-react";
@@ -35,34 +36,38 @@ interface User {
 
 interface DashboardShellProps {
   user: User;
+  /** The caller's approver access, resolved by the layout on the server. */
+  isApprover: boolean;
+  /** Pending approvals for the nav badge; 0 when unknown or not an approver. */
+  pendingApprovals: number;
   children: React.ReactNode;
 }
 
 const ROLE_LABELS: Record<string, string> = {
   employee: "Employee",
-  supervisor: "Supervisor",
-  hod: "Head of Department",
-  dean: "Dean",
-  registrar: "Registrar",
-  dvc: "Deputy Vice-Chancellor",
+  approver: "Approver",
   hr: "Human Resources",
 };
 
-const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
-const HOD_AND_ABOVE = ["hod", "dean", "registrar", "dvc"];
 const HR_ROLE = "hr";
 
-export function DashboardShell({ user, children }: DashboardShellProps) {
+export function DashboardShell({
+  user,
+  isApprover,
+  pendingApprovals,
+  children,
+}: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
 
-  const showApprovals = APPROVER_ROLES.includes(user.role);
-  const showDepartment = HOD_AND_ABOVE.includes(user.role);
+  // Whether the approver desk is available comes from the server, not from the
+  // caller's system role: an approver position is held as a team membership or
+  // an institution-wide holding, and either can belong to an account whose role
+  // reads `employee`. The layout resolves it while rendering, so the sidebar is
+  // correct in the first paint instead of appearing after hydration.
   const showHR = user.role === HR_ROLE;
-  // HR may also hold a delegation, matching the backend's approver-or-HR rule
-  // for the cover endpoints, even though it is not in APPROVER_ROLES.
-  const showCover = showApprovals || showHR;
+  const showCover = isApprover;
 
   const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -78,8 +83,8 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
           setOpen={setSidebarOpen}
           currentPath={pathname}
           user={user}
-          showApprovals={showApprovals}
-          showDepartment={showDepartment}
+          isApprover={isApprover}
+          pendingApprovals={pendingApprovals}
           showCover={showCover}
           showHR={showHR}
         />
@@ -98,8 +103,8 @@ const Sidebar = memo(function Sidebar({
   setOpen,
   currentPath,
   user,
-  showApprovals,
-  showDepartment,
+  isApprover,
+  pendingApprovals,
   showCover,
   showHR,
 }: {
@@ -107,8 +112,8 @@ const Sidebar = memo(function Sidebar({
   setOpen: (v: boolean) => void;
   currentPath: string;
   user: User;
-  showApprovals: boolean;
-  showDepartment: boolean;
+  isApprover: boolean;
+  pendingApprovals: number;
   showCover: boolean;
   showHR: boolean;
 }) {
@@ -144,21 +149,16 @@ const Sidebar = memo(function Sidebar({
           currentPath={currentPath}
           open={open}
         />
-        {showApprovals && <ApprovalsNavItem open={open} />}
+        <ApprovalsNavItem
+          open={open}
+          isApprover={isApprover}
+          pendingCount={pendingApprovals}
+        />
         {showCover && (
           <Option
             Icon={UserCheck}
             title="Request Cover"
             href="/dashboard/cover"
-            currentPath={currentPath}
-            open={open}
-          />
-        )}
-        {showDepartment && (
-          <Option
-            Icon={Users}
-            title="Department"
-            href="/dashboard/department"
             currentPath={currentPath}
             open={open}
           />
@@ -194,9 +194,23 @@ const Sidebar = memo(function Sidebar({
               open={open}
             />
             <Option
+              Icon={Users}
+              title="Teams"
+              href="/dashboard/hr-admin/teams"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
               Icon={Workflow}
               title="Workflows"
               href="/dashboard/hr-admin/workflows"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={UserCog}
+              title="Roles"
+              href="/dashboard/hr-admin/roles"
               currentPath={currentPath}
               open={open}
             />
@@ -269,6 +283,9 @@ const Option = memo(function Option({
   return (
     <Link
       href={href}
+      // Collapsed, the label span is not rendered, so the icon alone would
+      // leave the link with no accessible name.
+      aria-label={title}
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
         isSelected
