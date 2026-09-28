@@ -1882,3 +1882,109 @@ long values capped; the entry-level reason is only appended when the payload has
 no `reason` key of its own, so `stage_skipped` does not print it twice.
 
 **848 backend / 348 frontend tests OK.**
+
+## Defect Fix (2026-09-28, uploading a supporting document 500'd on a long signed URL)
+
+`POST /api/v1/leave-applications/{id}/documents/` returned
+`Internal Server Error` with
+`psycopg.errors.StringDataRightTruncation: value too long for type character
+varying(200)`, raised out of `SupportingDocument.objects.create()` in
+`leave/documents/services.py::upload`.
+
+`SupportingDocument.file_url` was declared as a bare `models.URLField()`
+(`leave/models.py`), so it inherited Django's default `max_length=200`. The
+writer does not store a plain URL — it stores the result of
+`Supabase Storage.create_signed_url()`, which is the project host plus the
+storage path plus a JWT token. That is comfortably over 200 characters, so
+**every** supporting-document upload overflowed the column. The sibling
+`ApprovedLeaveDocument.file_url` had already hit this and carries
+`max_length=1000` (`documents/models.py`); the leave-side field was never
+widened to match.
+
+Widened to `max_length=2048` with a `help_text` recording the derivation, so
+it is not narrowed again: the model's own 255-char `file_name` cap yields a
+~311-char storage path, which signs to roughly 900 characters — `1000` would
+have left under 10% headroom. Migration
+`leave/0014_supportingdocument_file_url_length.py` is a widening
+`ALTER COLUMN TYPE`, so it is metadata-only in PostgreSQL and rewrites no
+rows. The field remains a cache only: reads already re-sign from `file_path`
+via `signed_document_url()`, with the stored value as the `ValueError`
+fallback.
+
+Regression test added to `leave/tests/test_documents.py::FileValidationTests`
+posting a >900-character signed URL through the real endpoint. No frontend
+change: `file_url` is an opaque `string` in `lib/leave-api.ts`,
+`lib/tracking/types.ts` and `lib/audit.ts`.
+
+Verification: `check` clean, `makemigrations --check` clean, migration applied
+to the dev database, `leave.tests.test_documents` **34 tests OK**. Full suite
+**849 tests, 2 failures + 5 errors — all in
+`leave.tests.test_public_holiday_calculations`, confirmed pre-existing by
+re-running the same suite on a stashed tree (identical 2/5).** They are
+submit-time `ValidationFailedError`s in that suite's own fixtures, unrelated
+to documents. Frontend untouched by this fix.
+
+**Not addressed, same class of bug:** `file_name` is capped at 255 by the
+column and `_validate_file()` does not check the uploaded name's length, so a
+browser-supplied filename over 255 characters would raise the same
+`DataError`. Left alone to keep this change to the reported defect.
+
+## Operational (2026-09-28, dev database reset — history cleared, users kept)
+
+Developer asked for every workflow, application and derived record to be
+cleared while retaining the users. Executed against the dev database
+`luanar_leave` (local `DEBUG=True`), after a `pg_dump` backup to
+`storage/luanar_leave-backup-20260928-091504.sql` (166K, 36 tables, verified
+to contain the 14 users and 11 applications).
+
+**Why raw SQL rather than the ORM.** Five models enforce append-only in
+Python and were confirmed to raise on delete — `AuditEntry`
+(`AuditEntryLockedError`), `ApplicationRevision`, `NotificationOutbox`,
+`ApprovalDecision`, `LeaveBalanceTransaction` — and roughly 20 foreign keys
+are `PROTECT`. An ORM delete is structurally impossible. The database holds
+**no user triggers** (verified via `pg_trigger`), so
+`TRUNCATE ... RESTART IDENTITY CASCADE` satisfies every constraint while
+bypassing the ORM guards. The guards are not weakened: they still protect
+production, where this script will never run.
+
+Ran inside one `transaction.atomic()` with an explicit assertion that no
+`users_*` table appeared in the target list and that `django_migrations` was
+excluded. 28 tables truncated; `users_user` (14), `users_employeeprofile`
+(10), `auth_*`, `django_content_type`, `django_migrations` and
+`django_session` kept. Profiles survive deliberately: they carry `grade`,
+`department` and `category`, the fields workflow resolution matches on.
+
+**Storage.** Four objects existed in Supabase, not the three expected. The
+extra one was an orphan at
+`leave-documents/b38cc892-…/8b49c76a…png` — the upload from the
+`file_url` overflow above, which reached Supabase and *then* failed on the
+DB insert, so the blob was stranded with no row. That is direct evidence the
+fixed defect leaked a file on every attempt. All four removed; a sweep of the
+root, `leave-documents/` and `approved/` prefixes confirms the bucket is
+empty. (Listing the bucket required `bucket.list(path=...)` — the bound proxy
+takes the path as its first argument, so passing the bucket id silently
+returns the unfiltered root listing.)
+
+**Restored** by re-running `seed_dev_users` (idempotent
+`update_or_create`; reported "0 created, 7 updated", so no user was
+disturbed): 4 leave types, 4 leave rules, 3 grade entitlements.
+
+**Deliberately not restored** (developer chose this over keeping them):
+the financial year `2026-05-01 → 2027-04-30` (active, label derives as
+`2026-27`) and the three public holidays `2026-10-15 Mothers' Day`,
+`2026-10-22 Fathers' Day`, `2026-12-25 Christmas HoliDay`. Unit 5 forbids
+inventing LUANAR calendar dates, so no seed recreates them and they must be
+re-entered through HR → Calendar. Until then the expected rejections are
+`NO_FINANCIAL_YEAR_CONFIGURED` and `workflow_unavailable` — correct
+behaviour, not a new defect. Workflows are likewise gone and must be rebuilt
+in HR → Workflows, because no workflow survived to match the surviving
+profiles.
+
+**Verification:** all 22 cleared tables confirmed at 0; 14 users / 10
+profiles intact; `check` clean; `makemigrations --check` clean; full suite
+**849 tests, 2 failures + 5 errors — byte-identical to the pre-existing
+baseline** in `leave.tests.test_public_holiday_calculations`, so no
+regression.
+
+`.gitignore` now excludes `storage/*.sql`, `*.dump` and `*.sql.gz`: the
+dump is untracked and holds password hashes, so it must never be committed.

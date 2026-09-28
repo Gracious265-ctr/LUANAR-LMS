@@ -349,6 +349,32 @@ class FileValidationTests(DocumentFixtureTests):
         path = upload.call_args.args[1]
         self.assertNotIn("/", path.replace(f"leave-documents/{application.id}/", ""))
 
+    def test_signed_url_longer_than_the_column_is_stored_not_truncated(self):
+        """A real Supabase signed URL must fit ``file_url``.
+
+        Regression: the column defaulted to ``URLField()``'s 200 chars while
+        the writer stores a signed URL (host + storage path + a JWT token),
+        which raised ``StringDataRightTruncation`` -> HTTP 500 on upload.
+        """
+        field = SupportingDocument._meta.get_field("file_url")
+        # Worst case: the model's own 255-char file_name cap, signed.
+        signed_url = "https://" + "p" * 30 + ".supabase.co/storage/v1/object/sign/" + "s" * 895
+        self.assertLess(len(signed_url), field.max_length)
+
+        application = self.app()
+        with mock.patch(
+            "leave.documents.services.upload_document",
+            return_value={"path": "leave-documents/x/y", "url": signed_url},
+        ):
+            response = self.client.post(
+                self.list_url(application), {"file": pdf()}, format="multipart"
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            SupportingDocument.objects.get().file_url, signed_url
+        )
+
 
 class SerializerContractTests(DocumentFixtureTests):
     def test_leave_application_documents_excludes_retired(self):

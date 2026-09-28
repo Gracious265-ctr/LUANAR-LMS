@@ -269,7 +269,16 @@ class SupportingDocument(models.Model):
         related_name="documents",
     )
     file_path = models.CharField(max_length=512)
-    file_url = models.URLField()
+    file_url = models.URLField(
+        max_length=2048,
+        help_text=(
+            "Cached signed URL; a fresh one is minted per read. Must comfortably "
+            "exceed a Supabase signed URL at maximum length: a 255-char "
+            "file_name yields a ~311-char storage path, which signs to roughly "
+            "900 characters. Reads re-sign from file_path, so this column is a "
+            "cache/fallback only."
+        ),
+    )
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()
     content_type = models.CharField(max_length=100)
