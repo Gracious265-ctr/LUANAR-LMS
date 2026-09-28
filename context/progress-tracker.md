@@ -4,7 +4,7 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Unit 26 — HR-Managed Approver Roles and Teams (COMPLETE — implemented and verified, **working-tree only, not yet committed**)
+- Unit 26 — HR-Managed Approver Roles and Teams (COMPLETE — implemented and verified, committed as `4352a69`)
 - Unit 25 — End-to-End System (COMPLETE — implemented and verified, committed as `6f9474e`)
 - Unit 24 — Complete Audit and Historical Integrity (COMPLETE — committed as `d4860f3`)
 - Unit 23b — Approved Leave Document (COMPLETE — spec approved, `reportlab` approved, 717 backend tests OK, 302 frontend tests OK)
@@ -29,7 +29,9 @@ Update this file after every meaningful implementation change.
   configuration instead of role names baked into the code, and approval
   routing is team-based. It landed beyond the build plan (which ends at Unit
   25) from a direct feature request, so it has **no spec file** — the
-  authority is the feature prompt plus this section.
+  authority is the feature prompt plus this section. It also carried Unit 21's
+  still-uncommitted provider work into the same commit, since Unit 26 rewrote
+  `resolve_stage_approver` over it.
 - Both independent tracks (HR: Units 2–11; Employee+Approver: Unit 13) are merged
   onto `development`, and the HR track's next build **Unit 11 — Finalized Leave +
   Audit View** is complete (depends on the submitted applications Unit 13 provides).
@@ -54,8 +56,9 @@ Update this file after every meaningful implementation change.
 - **Unit 21 — Workflow-to-Approver Integration is COMPLETE** (see "Completed
   (Unit 21)" below): the last two fixture providers are gone — routing now
   reads the real HR workflow configuration, tracking reads real workflow rows,
-  and resubmission is a real routing step. Implementation is present on
-  `feature/hr-track` but is **working-tree only (not yet committed)**.
+  and resubmission is a real routing step. Committed as `4352a69`, which also
+  supersedes the "lowest-id active user of the stage role" approver rule
+  described above with team-scoped `resolve_stage_approver`.
 - **Unit 23 — Final Approval, Balance, and Document Generation (SPEC DRAFTED).**
   The draft spec was reviewed in Phase 1 (2026-09-25): the old draft's wrong
   references (HR Unit 12 credit-line, HR Units 8–9 special-leave balance,
@@ -539,10 +542,9 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 26 is the newest work and is uncommitted.** Review and commit it
-  before starting anything else; the working tree currently holds all of
-  Units 26's backend and frontend changes.
-- **The build plan is exhausted.** Units 1–25 are all implemented, verified
+- **Unit 26 is committed as `4352a69` on `feature/hr-track`**, and it carried
+  Unit 21's outstanding provider work with it. The tree is clean. The build
+  plan is exhausted: Units 1–25 are all implemented, verified
   and committed, including Unit 23b (the document half split out of Unit 23).
   Unit 26 came from a feature request rather than the plan. There is no
   queued next unit; the next step is a planning decision.
@@ -852,8 +854,9 @@ Update this file after every meaningful implementation change.
 - **Docs.** `backend/docs/workflow-to-approver-routing.md` (spine D2, acting
   approver D3, workflow resolution D5, resubmit contract D9, tracking event
   vocabulary D11).
-- **Status:** implemented and uncommitted on `feature/hr-track` (Unit 21 predates
-  this tracker entry). Commit/merge decision is the developer's.
+- **Status:** implemented and now committed on `feature/hr-track` as part of
+  `4352a69` (Unit 21 predates this tracker entry; Unit 26's rewrite of the
+  approver resolution landed in the same commit).
 
 ## Hardening pass — feature/hr-track review (2026-09-21, complete)
 
@@ -959,11 +962,14 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   Routing" — corrected).
 
 - **Unit 21 verified complete + Unit 23 spec revised (2026-09-25):** A Phase-1
-  review confirmed Unit 21 is fully implemented on `feature/hr-track` but
-  **not committed** (working-tree only — `git status` shows the provider swaps,
+  review confirmed Unit 21 is fully implemented on `feature/hr-track`. It was
+  **not committed at the time of that review** (working-tree only — `git
+  status` showed the provider swaps,
   `resubmit.py`, `tests_routing.py`, the tracking-fixture deletions, and
   `docs/workflow-to-approver-routing.md` as modified/untracked/deleted; 32
-  routing/tracking/resubmit tests pass). The Unit 23 spec draft was rewritten:
+  routing/tracking/resubmit tests pass). All of it is now committed in
+  `4352a69`, where Unit 26 replaced the approver-resolution half with
+  team-scoped `resolve_stage_approver`. The Unit 23 spec draft was rewritten:
   the old draft referenced non-existent machinery (`create_ledger_row`, a
   `submission_cycle` ledger column, `leave_type_consumes_annual_entitlement()`,
   `is_finalised`, `workflows.events._consumers`), wrong HR units (12 = employee
@@ -2111,9 +2117,10 @@ hard-coded Supervisor→HOD→Registrar→DVC list), §7 (stages resolve a role 
 against the registry, with the retirement and snapshot consequences), and a new
 invariant **12.11 Approver-Role Identity**.
 
-**Still open.** The tree is uncommitted. The Team form's workflow picker reads
+**Still open.** The Team form's workflow picker reads
 only the first page of `listWorkflows()` — harmless at current volumes, but it
-should use an exhaustive list like the role and employee pickers do.
+should use an exhaustive list like the role and employee pickers do. (The rest
+of this unit is committed as `4352a69`.)
 
 ---
 
