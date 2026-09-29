@@ -13,6 +13,14 @@ import type {
 import { cn } from "@/lib/utils";
 
 import { ActionBadge, StatusBadge } from "./badges";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function useDebounced(value: string, delay = 300): string {
   const [debounced, setDebounced] = useState(value);
@@ -172,7 +180,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
         </div>
       ) : (
         <>
-          <Table rows={data.results} tab={tab} />
+          <ApprovalTable rows={data.results} tab={tab} />
           <Pagination
             page={page}
             hasPrevious={Boolean(data.previous) || page > 1}
@@ -186,7 +194,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
   );
 }
 
-function Table({
+function ApprovalTable({
   rows,
   tab,
 }: {
@@ -196,40 +204,38 @@ function Table({
   return (
     <>
       <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle md:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-4 py-3 font-medium">Reference</th>
-              <th className="px-4 py-3 font-medium">Employee</th>
-              <th className="px-4 py-3 font-medium">Leave type</th>
-              <th className="px-4 py-3 font-medium">Dates</th>
-              <th className="px-4 py-3 font-medium">Days</th>
-              <th className="px-4 py-3 font-medium">Submitted</th>
-              {tab === "decided" && (
-                <th className="px-4 py-3 font-medium">Your decision</th>
-              )}
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="w-8 px-2 py-3" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Reference</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Leave type</TableHead>
+              <TableHead>Dates</TableHead>
+              <TableHead>Days</TableHead>
+              <TableHead>Submitted</TableHead>
+              {tab === "decided" && <TableHead>Your decision</TableHead>}
+              <TableHead>Status</TableHead>
+              <TableHead className="w-8 px-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.id} row={row} tab={tab} desktop />
+              <ApprovalTableRow key={row.id} row={row} tab={tab} desktop />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (
-          <TableRow key={row.id} row={row} tab={tab} />
+          <ApprovalTableRow key={row.id} row={row} tab={tab} />
         ))}
       </ul>
     </>
   );
 }
 
-function TableRow({
+function ApprovalTableRow({
   row,
   tab,
   desktop,
@@ -242,33 +248,33 @@ function TableRow({
 
   if (desktop) {
     return (
-      <tr className="relative border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
-        <td className="px-4 py-3 font-medium text-text-primary">
+      <TableRow className="relative">
+        <TableCell className="font-medium text-text-primary">
           <Link
             href={`/dashboard/approvals/${row.id}`}
             className="after:absolute after:inset-0 after:content-['']"
           >
             {row.reference}
           </Link>
-        </td>
-        <td className="px-4 py-3">
+        </TableCell>
+        <TableCell>
           <span className="font-medium text-text-primary">{row.employee_name}</span>
           <span className="mt-0.5 block text-xs text-text-muted">
             {row.department || "—"}
           </span>
-        </td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">
           {row.leave_type.name || "—"}
-        </td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">
           {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
-        </td>
-        <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">{row.working_days}</TableCell>
+        <TableCell className="text-text-secondary">
           {formatDateTime(row.submitted_at) || "—"}
-        </td>
+        </TableCell>
         {tab === "decided" && (
-          <td className="px-4 py-3">
+          <TableCell>
             {decision ? (
               <>
                 <ActionBadge action={decision.action} />
@@ -279,15 +285,15 @@ function TableRow({
             ) : (
               <span className="text-text-muted">—</span>
             )}
-          </td>
+          </TableCell>
         )}
-        <td className="px-4 py-3">
+        <TableCell>
           <StatusBadge status={row.status} />
-        </td>
-        <td className="px-2 py-3">
+        </TableCell>
+        <TableCell className="px-2">
           <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
     );
   }
 

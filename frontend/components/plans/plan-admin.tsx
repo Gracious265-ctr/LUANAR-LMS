@@ -19,6 +19,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { PlanStatusBadge } from "./plan-status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const PLAN_STATUSES = Object.keys(PLAN_STATUS_META) as PlanStatus[];
 const BLOCK_STATUSES = Object.keys(BLOCK_STATUS_META) as BlockStatus[];
@@ -151,48 +159,45 @@ export function PlanAdminView() {
             description="Adjust the filters, or wait for employees to create their plans."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border-default text-xs text-text-muted">
-                  <th className="px-4 py-3 font-medium">Employee</th>
-                  <th className="px-4 py-3 font-medium">Period</th>
-                  <th className="px-4 py-3 font-medium">Financial year</th>
-                  <th className="px-4 py-3 font-medium">Days</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-default">
-                {data.results.map((plan) => (
-                  <tr
-                    key={plan.id}
-                    className="transition-colors hover:bg-surface-hover"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/plans/${plan.id}`}
-                        className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                      >
-                        {plan.employee_name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      {formatDate(plan.period_start)} → {formatDate(plan.period_end)}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      {plan.financial_year_label || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      {plan.working_days}
-                    </td>
-                    <td className="px-4 py-3">
-                      <PlanStatusBadge status={plan.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Financial year</TableHead>
+                <TableHead>Days</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.results.map((plan) => (
+                <TableRow
+                  key={plan.id}
+                >
+                  <TableCell>
+                    <Link
+                      href={`/dashboard/plans/${plan.id}`}
+                      className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                    >
+                      {plan.employee_name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-text-secondary">
+                    {formatDate(plan.period_start)} → {formatDate(plan.period_end)}
+                  </TableCell>
+                  <TableCell className="text-text-secondary">
+                    {plan.financial_year_label || "—"}
+                  </TableCell>
+                  <TableCell className="text-text-secondary">
+                    {plan.working_days}
+                  </TableCell>
+                  <TableCell>
+                    <PlanStatusBadge status={plan.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
         {data && data.results.length > 0 && (
           <div className="flex items-center justify-between gap-3 border-t border-border-default px-4 py-3">

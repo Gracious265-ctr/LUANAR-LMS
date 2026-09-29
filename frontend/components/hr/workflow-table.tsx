@@ -10,6 +10,14 @@ import {
 } from "@/lib/workflows";
 
 import { EditActionLink } from "./edit-action-link";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function scopeLabel(workflow: Workflow): string {
   const category = workflowCategoryLabel(workflow.employee_category);
@@ -29,59 +37,56 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Name</th>
-            <th className="py-3 pr-4">Scope</th>
-            <th className="py-3 pr-4">Effective from</th>
-            <th className="py-3 pr-4">State</th>
-            <th className="py-3 pr-4">Approval sequence</th>
-            <th className="py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workflows.map((workflow) => (
-            <tr
-              key={workflow.id}
-              className="border-b border-border-default transition-colors hover:bg-surface-hover"
-            >
-              <td className="py-3 pr-4">
-                <Link
-                  href={`/dashboard/hr-admin/workflows/${workflow.id}/edit`}
-                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                >
-                  {workflow.name}
-                </Link>
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {scopeLabel(workflow)}
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {workflow.effective_from || "—"}
-              </td>
-              <td className="py-3 pr-4">
-                <span
-                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${workflowStateBadgeClass(workflow.state)}`}
-                >
-                  {workflowStateLabel(workflow.state)}
-                </span>
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {workflow.stages
-                  .map((stage) => approverRoleLabel(stage.approver_role))
-                  .join(" → ")}
-              </td>
-              <td className="py-3 text-right">
-                <EditActionLink
-                  href={`/dashboard/hr-admin/workflows/${workflow.id}/edit`}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Scope</TableHead>
+          <TableHead>Effective from</TableHead>
+          <TableHead>State</TableHead>
+          <TableHead>Approval sequence</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {workflows.map((workflow) => (
+          <TableRow
+            key={workflow.id}
+          >
+            <TableCell>
+              <Link
+                href={`/dashboard/hr-admin/workflows/${workflow.id}/edit`}
+                className="font-medium text-brand-primary hover:text-brand-primary-hover"
+              >
+                {workflow.name}
+              </Link>
+            </TableCell>
+            <TableCell className="text-text-secondary">
+              {scopeLabel(workflow)}
+            </TableCell>
+            <TableCell className="text-text-secondary">
+              {workflow.effective_from || "—"}
+            </TableCell>
+            <TableCell>
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${workflowStateBadgeClass(workflow.state)}`}
+              >
+                {workflowStateLabel(workflow.state)}
+              </span>
+            </TableCell>
+            <TableCell className="text-text-secondary">
+              {workflow.stages
+                .map((stage) => approverRoleLabel(stage.approver_role))
+                .join(" → ")}
+            </TableCell>
+            <TableCell className="text-right">
+              <EditActionLink
+                href={`/dashboard/hr-admin/workflows/${workflow.id}/edit`}
+              />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

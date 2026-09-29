@@ -12,6 +12,14 @@ import type {
   CancellationTab,
 } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 /**
  * Approver queue of cancellation requests (Unit 18, spec 2.3). Two-inner tabs
@@ -133,7 +141,7 @@ export function CancellationRequestsTable() {
         </div>
       ) : (
         <>
-          <Table rows={data.results} />
+          <CancellationTable rows={data.results} />
           <Pagination
             page={page}
             hasPrevious={Boolean(data.previous) || page > 1}
@@ -147,80 +155,80 @@ export function CancellationRequestsTable() {
   );
 }
 
-function Table({ rows }: { rows: CancellationRow[] }) {
+function CancellationTable({ rows }: { rows: CancellationRow[] }) {
   return (
     <>
       <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle lg:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-4 py-3 font-medium">Reference</th>
-              <th className="px-4 py-3 font-medium">Employee</th>
-              <th className="px-4 py-3 font-medium">Leave type</th>
-              <th className="px-4 py-3 font-medium">Leave dates</th>
-              <th className="px-4 py-3 font-medium">Days</th>
-              <th className="px-4 py-3 font-medium">Requested on</th>
-              <th className="px-4 py-3 font-medium">Current stage</th>
-              <th className="px-4 py-3 font-medium">Starts</th>
-              <th className="w-8 px-2 py-3" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Reference</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Leave type</TableHead>
+              <TableHead>Leave dates</TableHead>
+              <TableHead>Days</TableHead>
+              <TableHead>Requested on</TableHead>
+              <TableHead>Current stage</TableHead>
+              <TableHead>Starts</TableHead>
+              <TableHead className="w-8 px-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.request_id} row={row} desktop />
+              <CancellationTableRow key={row.request_id} row={row} desktop />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <ul className="space-y-3 lg:hidden">
         {rows.map((row) => (
-          <TableRow key={row.request_id} row={row} />
+          <CancellationTableRow key={row.request_id} row={row} />
         ))}
       </ul>
     </>
   );
 }
 
-function TableRow({ row, desktop }: { row: CancellationRow; desktop?: boolean }) {
+function CancellationTableRow({ row, desktop }: { row: CancellationRow; desktop?: boolean }) {
   const body = (
     <>
-      <td className="px-4 py-3 font-medium text-text-primary">{row.reference}</td>
-      <td className="px-4 py-3">
+      <TableCell className="font-medium text-text-primary">{row.reference}</TableCell>
+      <TableCell>
         <span className="font-medium text-text-primary">{row.employee_name}</span>
         {desktop && (
           <span className="mt-0.5 block text-xs text-text-muted">
             {row.leave_type.name || "—"}
           </span>
         )}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">{row.leave_type.name || "—"}</td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">{row.leave_type.name || "—"}</TableCell>
+      <TableCell className="text-text-secondary">
         {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">{row.working_days}</TableCell>
+      <TableCell className="text-text-secondary">
         {formatDateTime(row.requested_at) || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">
         {row.current_stage_role_label || "—"}
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell>
         <StartsLabel row={row} />
-      </td>
+      </TableCell>
       {desktop && (
-        <td className="px-2 py-3">
+        <TableCell className="px-2">
           <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        </td>
+        </TableCell>
       )}
     </>
   );
 
   if (desktop) {
     return (
-      <tr className="border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
+      <TableRow>
         <RowLink row={row}>{body}</RowLink>
-      </tr>
+      </TableRow>
     );
   }
 

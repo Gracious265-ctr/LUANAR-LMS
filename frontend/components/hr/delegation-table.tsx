@@ -10,6 +10,14 @@ import {
   delegationStateBadgeClass,
   delegationStateLabel,
 } from "@/lib/delegations-client";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function periodLabel(delegation: Delegation): string {
   return delegation.ends_on
@@ -34,47 +42,44 @@ export function DelegationTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Approver</th>
-            <th className="py-3 pr-4">Delegate</th>
-            <th className="py-3 pr-4">Period</th>
-            <th className="py-3">State</th>
-          </tr>
-        </thead>
-        <tbody>
-          {delegations.map((delegation) => (
-            <tr
-              key={delegation.id}
-              className="border-b border-border-default transition-colors hover:bg-surface-hover"
-            >
-              <td className="py-3 pr-4">
-                <Link
-                  href={`${baseHref}/${delegation.id}`}
-                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                >
-                  {delegation.approver_name}
-                </Link>
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {delegation.delegate_name || "Not yet assigned"}
-              </td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {periodLabel(delegation)}
-              </td>
-              <td className="py-3">
-                <span
-                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
-                >
-                  {delegationStateLabel(delegation.state)}
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Approver</TableHead>
+          <TableHead>Delegate</TableHead>
+          <TableHead>Period</TableHead>
+          <TableHead>State</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {delegations.map((delegation) => (
+          <TableRow
+            key={delegation.id}
+          >
+            <TableCell>
+              <Link
+                href={`${baseHref}/${delegation.id}`}
+                className="font-medium text-brand-primary hover:text-brand-primary-hover"
+              >
+                {delegation.approver_name}
+              </Link>
+            </TableCell>
+            <TableCell className="text-text-secondary">
+              {delegation.delegate_name || "Not yet assigned"}
+            </TableCell>
+            <TableCell className="text-text-secondary">
+              {periodLabel(delegation)}
+            </TableCell>
+            <TableCell>
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
+              >
+                {delegationStateLabel(delegation.state)}
+              </span>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

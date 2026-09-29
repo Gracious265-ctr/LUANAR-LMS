@@ -7,6 +7,14 @@ import type { ApprovalReview } from "@/lib/approvals/types";
 
 import { Panel } from "./panel";
 import { StatusBadge } from "./badges";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const FALLBACK_META: StatusMeta = {
   label: "Submitted",
@@ -42,47 +50,45 @@ export function LeaveHistoryCard({ data }: { data: ApprovalReview }) {
           No other leave applications are visible in this scope.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-                <th className="py-2 pr-3 font-medium">Reference</th>
-                <th className="py-2 pr-3 font-medium">Leave type</th>
-                <th className="py-2 pr-3 font-medium">Dates</th>
-                <th className="py-2 pr-3 font-medium">Days</th>
-                <th className="py-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.entries.map((entry) => {
-                const meta = STATUS_META[entry.status] ?? FALLBACK_META;
-                const Icon = meta.icon;
-                return (
-                  <tr key={entry.id} className="border-b border-border-default last:border-b-0">
-                    <td className="py-2.5 pr-3 font-medium text-text-primary">
-                      {entry.reference}
-                    </td>
-                    <td className="py-2.5 pr-3 text-text-secondary">
-                      {entry.leave_type.name}
-                    </td>
-                    <td className="py-2.5 pr-3 text-text-secondary">
-                      {formatDate(entry.start_date) || "—"} → {formatDate(entry.end_date) || "—"}
-                    </td>
-                    <td className="py-2.5 pr-3 text-text-secondary">
-                      {entry.working_days}
-                    </td>
-                    <td className="py-2.5">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
-                        <Icon className={meta.dotClass} aria-hidden="true" />
-                        {meta.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="py-2 pr-3">Reference</TableHead>
+              <TableHead className="py-2 pr-3">Leave type</TableHead>
+              <TableHead className="py-2 pr-3">Dates</TableHead>
+              <TableHead className="py-2 pr-3">Days</TableHead>
+              <TableHead className="py-2">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {history.entries.map((entry) => {
+              const meta = STATUS_META[entry.status] ?? FALLBACK_META;
+              const Icon = meta.icon;
+              return (
+                <TableRow key={entry.id}>
+                  <TableCell className="py-2.5 pr-3 font-medium text-text-primary">
+                    {entry.reference}
+                  </TableCell>
+                  <TableCell className="py-2.5 pr-3 text-text-secondary">
+                    {entry.leave_type.name}
+                  </TableCell>
+                  <TableCell className="py-2.5 pr-3 text-text-secondary">
+                    {formatDate(entry.start_date) || "—"} → {formatDate(entry.end_date) || "—"}
+                  </TableCell>
+                  <TableCell className="py-2.5 pr-3 text-text-secondary">
+                    {entry.working_days}
+                  </TableCell>
+                  <TableCell className="py-2.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-secondary">
+                      <Icon className={meta.dotClass} aria-hidden="true" />
+                      {meta.label}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
     </Panel>
   );
