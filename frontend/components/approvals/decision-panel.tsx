@@ -5,6 +5,7 @@ import { Check, RotateCcw, X } from "lucide-react";
 import { STATUS_META, restrictionLabel } from "@/lib/approvals/labels";
 import { formatDateTime } from "@/lib/approvals/format";
 import type { ApprovalAction, ApprovalReview } from "@/lib/approvals/types";
+import { Button } from "@/components/ui/button";
 
 import { Panel } from "./panel";
 
@@ -41,33 +42,39 @@ export function DecisionPanel({ data, onAction, disabled }: DecisionPanelProps) 
   return (
     <Panel title="Decision">
       <div className="space-y-2.5">
-        <button
+        <Button
           type="button"
           disabled={disabled}
           onClick={() => onAction("approve")}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[#009119] px-4 py-2.5 font-medium text-white hover:bg-[#008017] focus:outline-none focus:ring-2 focus:ring-[#009119]/40 disabled:cursor-not-allowed disabled:opacity-50"
+          variant="primary"
+          size="lg"
+          className="w-full bg-[#009119] text-white hover:bg-[#008017] border border-transparent"
         >
           <Check className="h-4 w-4" aria-hidden="true" />
           Approve
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={disabled}
           onClick={() => onAction("reject")}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2.5 font-medium text-status-rejected hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-status-rejected/40 disabled:cursor-not-allowed disabled:opacity-50"
+          variant="secondary"
+          size="lg"
+          className="w-full border-status-rejected bg-status-rejected-subtle text-status-rejected"
         >
           <X className="h-4 w-4" aria-hidden="true" />
           Reject
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           disabled={disabled}
           onClick={() => onAction("return_for_correction")}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-status-correction bg-status-correction-subtle px-4 py-2.5 font-medium text-status-correction hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-status-correction/40 disabled:cursor-not-allowed disabled:opacity-50"
+          variant="secondary"
+          size="lg"
+          className="w-full border-status-correction bg-status-correction-subtle text-status-correction"
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
           Return for Correction
-        </button>
+        </Button>
       </div>
     </Panel>
   );

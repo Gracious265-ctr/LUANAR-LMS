@@ -225,15 +225,16 @@ export function LeaveDocumentTemplateEditor({
                   ))}
                 </SelectContent>
               </Select>
-              <button
+              <Button
                 type="button"
                 onClick={addField}
                 disabled={!newFieldKey}
                 aria-label="Add selected field"
-                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
+                size="sm"
               >
                 <Plus className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -264,33 +265,39 @@ export function LeaveDocumentTemplateEditor({
                   className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  <Button
                     type="button"
                     aria-label={`Move ${field.key} up`}
                     disabled={index === 0}
                     onClick={() => updateFieldOrder(index, -1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Move ${field.key} down`}
                     disabled={index === fields.length - 1}
                     onClick={() => updateFieldOrder(index, 1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronDown className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Remove ${field.key}`}
                     disabled={fields.length <= 1}
                     onClick={() => removeField(index)}
-                    className="rounded p-1 text-status-rejected hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1 text-status-rejected"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))
@@ -314,14 +321,10 @@ export function LeaveDocumentTemplateEditor({
             <h3 className="text-sm font-semibold text-text-primary">
               Signature areas
             </h3>
-            <button
-              type="button"
-              onClick={addSignatureArea}
-              className="flex items-center gap-1 rounded-md bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-            >
+            <Button type="button" onClick={addSignatureArea} variant="secondary" size="sm">
               <Plus className="h-4 w-4" />
               Add signature
-            </button>
+            </Button>
           </div>
 
           {signatureAreas.length === 0 ? (
@@ -343,32 +346,38 @@ export function LeaveDocumentTemplateEditor({
                   className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  <Button
                     type="button"
                     aria-label={`Move signature ${index + 1} up`}
                     disabled={index === 0}
                     onClick={() => updateSignatureOrder(index, -1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Move signature ${index + 1} down`}
                     disabled={index === signatureAreas.length - 1}
                     onClick={() => updateSignatureOrder(index, 1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronDown className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Remove signature ${index + 1}`}
                     onClick={() => removeSignature(index)}
-                    className="rounded p-1 text-status-rejected hover:bg-surface-hover"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1 text-status-rejected"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))

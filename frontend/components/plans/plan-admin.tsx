@@ -136,14 +136,16 @@ export function PlanAdminView() {
             </SelectContent>
           </Select>
         </div>
-        <button
+        <Button
           type="button"
           onClick={() => setReloadKey((n) => n + 1)}
-          className="rounded-md p-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
           aria-label="Refresh"
+          variant="ghost"
+          size="icon"
+          className="h-auto w-auto p-2"
         >
           <RefreshCw className="size-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">

@@ -10,6 +10,7 @@ import {
 } from "@/lib/entitlements";
 import { currentDateIso } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default async function EntitlementsPage({
   searchParams,
@@ -86,12 +87,9 @@ export default async function EntitlementsPage({
               className="pl-9 pr-3"
             />
           </div>
-          <button
-            type="submit"
-            className="mt-3 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Button type="submit" variant="secondary" className="mt-3">
             Resolve
-          </button>
+          </Button>
 
           {queryGrade && (
             <div className="mt-4 rounded-md bg-brand-primary-subtle p-3 text-sm">

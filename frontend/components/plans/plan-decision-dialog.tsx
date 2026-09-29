@@ -12,6 +12,7 @@ import type {
   PlanDetail,
 } from "@/lib/plans/types";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -194,35 +195,24 @@ function PlanDecisionDialogInner({
 
           <div className="flex items-center justify-end gap-2">
             {conflict ? (
-              <button
-                type="button"
-                onClick={onReloadRequest}
-                className="inline-flex items-center gap-1 rounded-md border border-border-default px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
-              >
+              <Button type="button" onClick={onReloadRequest} variant="secondary" size="sm">
                 <RefreshCw className="size-4" />
                 Reload
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={busy}
-                className="inline-flex items-center rounded-md border border-border-default px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
-              >
+              <Button type="button" onClick={onClose} disabled={busy} variant="secondary" size="sm">
                 Cancel
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="submit"
+              variant="secondary"
               disabled={busy}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-60",
-                meta.buttonClass
-              )}
+              className={cn("border-transparent", meta.buttonClass)}
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
               {busy ? "Recording…" : meta.shortLabel}
-            </button>
+            </Button>
           </div>
         </form>
       </DialogContent>

@@ -12,6 +12,7 @@ import {
 } from "@/lib/cancellations/labels";
 import type { CancellationRequest } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 import { CancellationStageStepper } from "./cancellation-stage-stepper";
 
@@ -105,11 +106,13 @@ export function CancellationCard({
 
       {earlier.length > 0 && (
         <div className="mt-4 border-t border-border-default pt-3">
-          <button
+          <Button
             type="button"
             onClick={() => setHistoryOpen((open) => !open)}
             aria-expanded={historyOpen}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline"
+            variant="link"
+            size="sm"
+            className="h-auto"
           >
             <History className="h-4 w-4" aria-hidden="true" />
             Cancellation history ({earlier.length})
@@ -120,7 +123,7 @@ export function CancellationCard({
               )}
               aria-hidden="true"
             />
-          </button>
+          </Button>
           {historyOpen && (
             <ul className="mt-3 space-y-2">
               {earlier.map((request) => (

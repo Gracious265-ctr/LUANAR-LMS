@@ -9,6 +9,7 @@ import type { PendingConfirmationBlock } from "@/lib/plans/types";
 import { cn } from "@/lib/utils";
 
 import { EmptyState } from "@/components/ui/states";
+import { Button } from "@/components/ui/button";
 
 export function PendingConfirmationsPanel({
   onChanged,
@@ -68,14 +69,16 @@ export function PendingConfirmationsPanel({
         {loading ? (
           <Loader2 className="size-4 animate-spin text-text-muted" />
         ) : (
-          <button
+          <Button
             type="button"
             onClick={() => setReloadKey((n) => n + 1)}
-            className="rounded-md p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
             aria-label="Refresh confirmations"
+            variant="ghost"
+            size="icon"
+            className="h-auto w-auto p-1"
           >
             <RefreshCw className="size-4" />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -118,11 +121,13 @@ export function PendingConfirmationsPanel({
                     {windowStart &&
                       ` · confirm by ${formatDate(windowStart)} confirmed`}
                   </span>
-                  <button
+                  <Button
                     type="button"
                     disabled={busyId === block.id}
                     onClick={() => void confirm(block)}
-                    className="inline-flex items-center gap-1 rounded-md bg-[#009119] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#008017] disabled:opacity-50"
+                    variant="primary"
+                    size="sm"
+                    className="bg-[#009119] text-white hover:bg-[#008017] border border-transparent"
                   >
                     {busyId === block.id ? (
                       <Loader2 className="size-3.5 animate-spin" />
@@ -130,7 +135,7 @@ export function PendingConfirmationsPanel({
                       <Check className="size-3.5" />
                     )}
                     Confirm
-                  </button>
+                  </Button>
                 </div>
               </div>
             </li>

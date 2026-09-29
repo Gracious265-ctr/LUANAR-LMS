@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { formatDate } from "@/lib/plans/format";
 import { fetchApprovalsList } from "@/lib/plans/service";
 import type { PlanApprovalListItem, PlanApprovalListResponse } from "@/lib/plans/types";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
@@ -61,45 +62,33 @@ export function PlanApprovalsWorkspace() {
       </div>
 
       <div className="flex items-center justify-between gap-3 border-b border-border-default">
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => switchTab("pending")}
-            className={cn(
-              "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
-              tab === "pending"
-                ? "border-b-2 border-brand-primary text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Pending
-            {data && tab === "pending" && (
-              <span className="ml-1.5 rounded-full bg-status-pending-subtle px-1.5 py-0.5 text-[11px] font-semibold text-status-pending">
-                {data.count}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => switchTab("decided")}
-            className={cn(
-              "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
-              tab === "decided"
-                ? "border-b-2 border-brand-primary text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Decided
-          </button>
-        </div>
-        <button
+        <Tabs
+          value={tab}
+          className="contents"
+          onValueChange={(next) => switchTab(next as Tab)}
+        >
+          <TabsList className="flex gap-1 border-0">
+            <TabsTrigger value="pending">
+              Pending
+              {data && tab === "pending" && (
+                <span className="ml-1.5 rounded-full bg-status-pending-subtle px-1.5 py-0.5 text-[11px] font-semibold text-status-pending">
+                  {data.count}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="decided">Decided</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Button
           type="button"
           onClick={() => setReloadKey((n) => n + 1)}
-          className="rounded-md p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
           aria-label="Refresh"
+          variant="ghost"
+          size="icon"
+          className="h-auto w-auto p-1"
         >
           <RefreshCw className="size-4" />
-        </button>
+        </Button>
       </div>
 
       {loading ? (

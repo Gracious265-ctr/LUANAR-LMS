@@ -14,6 +14,7 @@ import { formatDate } from "@/lib/tracking/format";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -147,14 +148,16 @@ const fieldId = useId();
           >
             {error}
             {conflict && pendingEligibility && (
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => onActionChanged(pendingEligibility)}
-                className="mt-2 block font-medium text-brand-primary hover:underline"
+                variant="link"
+                size="sm"
+                className="mt-2 h-auto block"
               >
                 Refresh and review the latest state
-              </button>
+              </Button>
             )}
           </Alert>
         )}
@@ -220,19 +223,12 @@ const fieldId = useId();
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-primary px-4 py-2 font-medium text-white hover:bg-brand-primary-hover focus:outline-none focus:ring-2 focus:ring-brand-primary/40"
-              >
+              <Button type="submit" variant="primary">
                 Continue
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-              >
+              </Button>
+              <Button type="button" onClick={onClose} variant="secondary">
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
@@ -251,27 +247,24 @@ const fieldId = useId();
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => setStep(1)}
-                className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                variant="secondary"
+                size="sm"
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 Back
-              </button>
-              <button
-                type="submit"
-                disabled={busy}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-brand-primary px-4 py-2 font-medium text-white hover:bg-brand-primary-hover focus:outline-none focus:ring-2 focus:ring-brand-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" disabled={busy} variant="primary" className="flex-1">
                 {busy ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 ) : (
                   <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                 )}
                 {busy ? "Submitting…" : confirmLabel(action)}
-              </button>
+              </Button>
             </div>
           </form>
         )}

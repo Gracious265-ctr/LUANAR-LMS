@@ -192,15 +192,17 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
                   }
                 />
               </Field>
-              <button
+              <Button
                 type="button"
                 onClick={() => removeBlock(block.key)}
                 disabled={blocks.length === 1}
-                className="grid size-9 place-content-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-status-rejected disabled:opacity-40"
                 aria-label="Remove block"
+                variant="ghost"
+                size="icon"
+                className="size-9"
               >
                 <Trash2 className="size-4" />
-              </button>
+              </Button>
             </div>
           ))}
         </div>

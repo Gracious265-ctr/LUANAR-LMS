@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { FinancialYearTable } from "@/components/hr/financial-year-table";
 import { PublicHolidayTable } from "@/components/hr/public-holiday-table";
 import { getCurrentUser } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import {
   listFinancialYears,
   listPublicHolidays,
@@ -128,12 +129,9 @@ export default async function CalendarPage({
               ))}
             </SelectContent>
           </Select>
-          <button
-            type="submit"
-            className="rounded-md border border-border-default bg-button-secondary px-4 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Button type="submit" variant="secondary" size="sm">
             Filter
-          </button>
+          </Button>
           {yearFilter && (
             <Link
               href="/dashboard/hr-admin/calendar"

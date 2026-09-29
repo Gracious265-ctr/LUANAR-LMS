@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 import type { ValidationIssue } from "@/lib/leave-validation";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 interface ValidationPanelProps {
   issues: ValidationIssue[];
@@ -42,23 +43,27 @@ export function ValidationPanel({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {onRetry && (
-              <button
+              <Button
                 type="button"
                 onClick={onRetry}
-                className="text-xs font-medium text-text-link hover:text-text-link-hover"
+                variant="link"
+                size="sm"
+                className="h-auto text-text-link"
               >
                 Retry
-              </button>
+              </Button>
             )}
             {onDismissError && (
-              <button
+              <Button
                 type="button"
                 onClick={onDismissError}
                 aria-label="Dismiss alert"
-                className="text-xs font-medium text-text-muted hover:text-text-primary"
+                variant="link"
+                size="sm"
+                className="h-auto text-text-muted hover:no-underline"
               >
                 Dismiss
-              </button>
+              </Button>
             )}
           </div>
         </div>

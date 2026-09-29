@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { DelegateCandidate } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -143,13 +144,9 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       )}
 
       <div className="md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={loading} variant="primary">
           {loading ? "Submitting..." : "Request cover"}
-        </button>
+        </Button>
       </div>
     </form>
   );

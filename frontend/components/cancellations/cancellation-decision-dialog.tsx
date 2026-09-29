@@ -7,6 +7,7 @@ import { postCancellationDecision } from "@/lib/cancellations/service";
 import type { CancellationDetail } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -191,13 +192,13 @@ function CancellationDecisionDialogInner({
           </div>
 
           <div className="mt-5 flex items-center gap-3">
-            <button
+            <Button
               type="submit"
+              variant="secondary"
               disabled={busy || !validatedConfirm}
               className={cn(
-                "inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 font-medium focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
                 isApprove
-                  ? "bg-[#009119] text-white hover:bg-[#008017] focus:ring-[#009119]/40"
+                  ? "border border-transparent bg-[#009119] text-white hover:bg-[#008017]"
                   : "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover"
               )}
             >
@@ -209,15 +210,10 @@ function CancellationDecisionDialogInner({
                 <X className="h-4 w-4" aria-hidden="true" />
               )}
               {busy ? "Submitting…" : isApprove ? "Approve" : "Reject"}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onClose}
-              className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            </Button>
+            <Button type="button" disabled={busy} onClick={onClose} variant="secondary">
               Cancel
-            </button>
+            </Button>
             {data.leave_started && (
               <span className="inline-flex items-center gap-1 text-xs text-status-pending">
                 <RefreshCw className="h-3 w-3" aria-hidden="true" />

@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { fetchCapabilities, fetchMyPlans } from "@/lib/plans/service";
 import type { PlanCapabilities, PlanRow } from "@/lib/plans/types";
 import type { UserRole } from "@/lib/employees";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 
 import { PlanCard } from "./plan-card";
@@ -126,14 +126,16 @@ export function PlansHome({ role }: { role: UserRole }) {
           <h3 className="text-base font-semibold text-text-primary">
             {plans.length} {plans.length === 1 ? "plan" : "plans"}
           </h3>
-          <button
+          <Button
             type="button"
             onClick={() => setReloadKey((n) => n + 1)}
-            className="rounded-md p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
             aria-label="Refresh plans"
+            variant="ghost"
+            size="icon"
+            className="h-auto w-auto p-1"
           >
             <RefreshCw className="size-4" />
-          </button>
+          </Button>
         </div>
 
         {loading ? (

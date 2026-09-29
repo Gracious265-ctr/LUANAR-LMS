@@ -17,6 +17,7 @@ import { LeaveReviewSummary } from "@/components/leave/leave-review-summary";
 import { BalanceCard } from "@/components/leave/balance-card";
 import { ValidationPanel } from "@/components/leave/validation-panel";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 type NetworkError = {
   message: string;
@@ -163,13 +164,15 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{submitError.message}</span>
           </div>
-          <button
+          <Button
             type="button"
             onClick={() => setSubmitError(null)}
-            className="text-xs font-medium text-text-muted hover:text-text-primary shrink-0"
+            variant="link"
+            size="sm"
+            className="h-auto shrink-0 text-text-muted hover:no-underline"
           >
             Dismiss
-          </button>
+          </Button>
         </Alert>
       )}
 
@@ -179,11 +182,13 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
           label="Back to edit"
           button
         />
-        <button
+        <Button
           type="button"
           onClick={handleSubmit}
           disabled={submitDisabled}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          variant="primary"
+          size="lg"
+          className="bg-brand-secondary text-brand-secondary-foreground border-transparent hover:bg-brand-secondary-hover"
         >
           {submitting ? (
             <>
@@ -193,7 +198,7 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
           ) : (
             "Submit application"
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

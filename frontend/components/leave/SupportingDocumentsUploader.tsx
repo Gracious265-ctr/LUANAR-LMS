@@ -12,6 +12,7 @@ import {
   type SupportingDocument,
 } from "@/lib/leave-api";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface SupportingDocumentsUploaderProps {
   applicationId: string | null;
@@ -206,26 +207,29 @@ export function SupportingDocumentsUploader({
                           if (file) void handleReplace(doc, file);
                         }}
                       />
-                      <button
+                      <Button
                         type="button"
                         onClick={() => replaceInputs.current[doc.id]?.click()}
                         disabled={busyId !== null}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-input-border bg-input-background px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                        variant="secondary"
+                        size="sm"
                       >
                         <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                         {busyId === doc.id ? "Replacing…" : "Replace"}
-                      </button>
+                      </Button>
                     </>
                   )}
-                  <button
+                  <Button
                     type="button"
                     aria-label={`Remove document ${doc.file_name}`}
                     onClick={() => void handleRemove(doc)}
                     disabled={busyId !== null}
-                    className="p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1.5 hover:text-status-rejected"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>

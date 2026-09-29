@@ -13,6 +13,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Pagination } from "@/components/ui/pagination";
+import { Button } from "@/components/ui/button";
 
 import { ActionBadge, StatusBadge } from "./badges";
 import {
@@ -134,14 +135,10 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       {error ? (
         <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
           <p className="text-sm text-status-rejected">{error}</p>
-          <button
-            type="button"
-            onClick={retry}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
+          <Button type="button" onClick={retry} variant="primary" className="mt-4">
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Retry
-          </button>
+          </Button>
         </div>
       ) : loading ? (
         <SkeletonRows count={6} />

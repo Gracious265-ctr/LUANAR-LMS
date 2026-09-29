@@ -53,14 +53,16 @@ export function PlanScopeList({ scope }: { scope: "team" | "department" }) {
                 : "Approved plans from across your department."}
             </p>
           </div>
-          <button
+          <Button
             type="button"
             onClick={() => setReloadKey((n) => n + 1)}
-            className="rounded-md p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
             aria-label="Refresh"
+            variant="ghost"
+            size="icon"
+            className="h-auto w-auto p-1"
           >
             <RefreshCw className="size-4" />
-          </button>
+          </Button>
         </div>
       </div>
 

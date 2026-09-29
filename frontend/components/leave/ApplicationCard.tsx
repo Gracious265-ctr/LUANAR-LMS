@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { STATUS_META } from "@/lib/tracking/labels";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 import {
   deleteLeaveApplication,
@@ -172,29 +173,35 @@ export function ApplicationCard({
           {confirming ? (
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="text-xs text-status-rejected">Delete?</span>
-              <button
+              <Button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs font-medium text-status-rejected hover:underline"
+                variant="link"
+                size="sm"
+                className="h-auto text-status-rejected"
               >
                 {deleting ? "..." : "Yes"}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setConfirming(false)}
-                className="text-xs font-medium text-text-muted hover:underline"
+                variant="link"
+                size="sm"
+                className="h-auto text-text-muted"
               >
                 No
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
               type="button"
               aria-label="Delete draft"
               onClick={() => setConfirming(true)}
-              className="ml-auto p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-auto w-auto rounded p-1.5 hover:text-status-rejected"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
       ) : (

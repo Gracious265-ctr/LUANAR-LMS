@@ -4,6 +4,7 @@ import Link from "next/link";
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
+import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "./StatusBadge";
 
@@ -37,15 +38,16 @@ export function TrackingHeader({
               Last refreshed {formatDateTime(lastRefreshed.toISOString())}
             </p>
           )}
-          <button
+          <Button
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border-default bg-surface-card px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            variant="secondary"
+            className="min-h-11"
           >
             <meta.icon className="h-4 w-4" aria-hidden="true" />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Check, CheckCircle2, Copy } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import type {
   SubmittedApplication,
   ValidationResult,
@@ -64,12 +65,14 @@ export function SubmissionConfirmation({
         <span className="text-xl font-mono font-semibold tracking-tight text-text-primary">
           {reference}
         </span>
-        <button
+        <Button
           type="button"
           onClick={copyReference}
           disabled={!reference}
-          className="inline-flex items-center gap-1.5 ml-3 align-middle px-2.5 py-1.5 rounded-md border border-input-border bg-input-background text-xs font-medium text-text-primary hover:bg-surface-hover disabled:opacity-50 transition-colors"
           aria-label="Copy reference number"
+          variant="secondary"
+          size="sm"
+          className="ml-3 align-middle"
         >
           {copied ? (
             <>
@@ -82,7 +85,7 @@ export function SubmissionConfirmation({
               Copy
             </>
           )}
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-center justify-center gap-3 mb-8">

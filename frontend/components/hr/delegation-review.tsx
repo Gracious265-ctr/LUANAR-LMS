@@ -183,35 +183,33 @@ export function DelegationReview({
 
       {showApproveReject && (
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => openKind("approve")}
-            className="inline-flex items-center gap-1.5 rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
+          <Button type="button" onClick={() => openKind("approve")} variant="primary">
             <Check className="h-4 w-4" />
             Approve
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => openKind("reject")}
-            className="inline-flex items-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2 font-medium text-status-rejected hover:bg-surface-hover"
+            variant="secondary"
+            className="border-status-rejected bg-status-rejected-subtle text-status-rejected"
           >
             <X className="h-4 w-4" />
             Reject
-          </button>
+          </Button>
         </div>
       )}
 
       {showCancel && (
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
             onClick={() => openKind("cancel")}
-            className="inline-flex items-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2 font-medium text-status-rejected hover:bg-surface-hover"
+            variant="secondary"
+            className="border-status-rejected bg-status-rejected-subtle text-status-rejected"
           >
             <X className="h-4 w-4" />
             Cancel delegation
-          </button>
+          </Button>
         </div>
       )}
 

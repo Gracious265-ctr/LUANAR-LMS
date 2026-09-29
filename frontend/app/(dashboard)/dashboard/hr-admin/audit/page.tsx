@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AuditEntriesTable } from "@/components/hr/audit-entries-table";
 import { FinalizedLeaveTable } from "@/components/hr/finalized-leave-table";
 import { getCurrentUser } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import {
   ACTION_LABELS,
   listAuditEntries,
@@ -156,12 +157,9 @@ export default async function AuditPage({
                 </SelectContent>
               </Select>
             </div>
-            <button
-              type="submit"
-              className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-            >
+            <Button type="submit" variant="primary">
               Apply
-            </button>
+            </Button>
             {hasFilters && (
               <Link
                 href="/dashboard/hr-admin/audit"

@@ -6,6 +6,7 @@ import { EmployeeTable } from "@/components/hr/employee-table";
 import { getCurrentUser } from "@/lib/auth";
 import { listEmployees } from "@/lib/employees";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default async function EmployeesPage({
   searchParams,
@@ -63,12 +64,9 @@ export default async function EmployeesPage({
             className="pl-9 pr-3"
           />
         </div>
-        <button
-          type="submit"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
+        <Button type="submit" variant="secondary">
           Search
-        </button>
+        </Button>
       </form>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

@@ -10,6 +10,7 @@ import {
   type EffectiveFilter,
 } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -134,12 +135,9 @@ export default async function LeaveRulesPage({
               ))}
             </SelectContent>
           </Select>
-          <button
-            type="submit"
-            className="rounded-md border border-border-default bg-button-secondary px-4 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Button type="submit" variant="secondary" size="sm">
             Filter
-          </button>
+          </Button>
         </form>
       </div>
 

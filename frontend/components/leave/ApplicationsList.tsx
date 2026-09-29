@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
+import { Button } from "@/components/ui/button";
 import { ApplicationCard } from "./ApplicationCard";
 
 export function ApplicationsList() {
@@ -36,12 +37,9 @@ export function ApplicationsList() {
     return (
       <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
         <p className="text-status-rejected text-sm">{error}</p>
-        <button
-          onClick={refetch}
-          className="mt-2 text-sm text-text-link hover:text-text-link-hover"
-        >
+        <Button onClick={refetch} variant="link" size="sm" className="mt-2 h-auto text-text-link">
           Try again
-        </button>
+        </Button>
       </div>
     );
   }

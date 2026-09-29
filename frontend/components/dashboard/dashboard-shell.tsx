@@ -26,6 +26,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
+import { Button } from "@/components/ui/button";
 
 interface User {
   id: number;
@@ -341,27 +342,15 @@ const TitleSection = memo(function TitleSection({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Hide sidebar"
-            title="Hide sidebar"
-            className="rounded-md p-1.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-          >
+          <Button type="button" onClick={onToggle} aria-label="Hide sidebar" title="Hide sidebar" variant="ghost" size="icon" className="h-auto w-auto p-1.5">
             <ChevronsRight className="h-4 w-4 rotate-180" />
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="flex flex-col items-center py-1">
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Show sidebar"
-            title="Show sidebar"
-            className="grid size-9 place-content-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
-          >
+          <Button type="button" onClick={onToggle} aria-label="Show sidebar" title="Show sidebar" variant="ghost" size="icon" className="size-9">
             <ChevronsRight className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -382,13 +371,9 @@ const Header = memo(function Header({
         <p className="text-sm text-text-secondary">Welcome back, {user.full_name}</p>
       </div>
       <div className="flex items-center gap-4">
-        <button
-          onClick={onLogout}
-          aria-label="Sign out"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-border-default bg-surface-card text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
-        >
+        <Button onClick={onLogout} aria-label="Sign out" variant="secondary" size="icon" className="size-10 rounded-lg">
           <LogOut className="h-4 w-4" />
-        </button>
+        </Button>
         <div className="flex items-center gap-3">
           <div className="text-right">
             <p className="text-sm font-medium text-text-primary">{user.full_name}</p>

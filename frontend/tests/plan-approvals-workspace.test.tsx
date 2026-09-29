@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { PlanApprovalsWorkspace } from "@/components/plans/plan-approvals-workspace";
@@ -46,8 +47,9 @@ describe("PlanApprovalsWorkspace", () => {
       data: makeApprovalList({ tab: "pending", count: 0, results: [] }),
     });
 
+    const user = userEvent.setup();
     render(<PlanApprovalsWorkspace />);
-    fireEvent.click(screen.getByRole("button", { name: "Decided" }));
+    await user.click(screen.getByRole("tab", { name: "Decided" }));
 
     await waitFor(() =>
       expect(fetchApprovalsList).toHaveBeenCalledWith("decided", 1)

@@ -34,6 +34,17 @@ const buttonVariants = cva(CONTROL_BASE, {
         "hover:bg-button-destructive-hover",
         "active:shadow-pressed",
       ],
+      /**
+       * Text-only action. The app has many tertiary actions (Retry, Dismiss,
+       * "View details") that were plain buttons with no chrome; these keep
+       * that weight while still getting the shared focus ring and disabled
+       * treatment. The height still comes from `size`, so callers that need
+       * the original inline text box pass `h-auto`.
+       */
+      link: [
+        "border border-transparent bg-transparent text-brand-primary",
+        "hover:underline",
+      ],
     },
     size: {
       sm: "h-control-height-sm gap-control-gap px-control-x-sm text-xs",

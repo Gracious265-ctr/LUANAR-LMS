@@ -206,7 +206,7 @@ export function WorkflowForm({
               Every stage is mandatory and runs in the order shown.
             </p>
           </div>
-          <button
+          <Button
             type="button"
             onClick={() =>
               setStages((current) => [
@@ -217,11 +217,12 @@ export function WorkflowForm({
                 },
               ])
             }
-            className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+            variant="secondary"
+            size="sm"
           >
             <Plus className="h-4 w-4" />
             Add stage
-          </button>
+          </Button>
         </div>
 
         {stages.length === 0 && (
@@ -260,32 +261,38 @@ export function WorkflowForm({
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
-                <button
+                <Button
                   type="button"
                   aria-label={`Move stage ${index + 1} up`}
                   disabled={index === 0}
                   onClick={() => moveStage(index, -1)}
-                  className="grid size-8 place-content-center rounded-md border border-border-default text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                  variant="secondary"
+                  size="icon"
+                  className="size-8"
                 >
                   <ArrowUp className="h-4 w-4" />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   aria-label={`Move stage ${index + 1} down`}
                   disabled={index === stages.length - 1}
                   onClick={() => moveStage(index, 1)}
-                  className="grid size-8 place-content-center rounded-md border border-border-default text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                  variant="secondary"
+                  size="icon"
+                  className="size-8"
                 >
                   <ArrowDown className="h-4 w-4" />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   aria-label={`Remove stage ${index + 1}`}
                   onClick={() => removeStage(index)}
-                  className="grid size-8 place-content-center rounded-md border border-border-default text-status-rejected hover:bg-surface-hover"
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-status-rejected"
                 >
                   <X className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
             </div>
           ))}
