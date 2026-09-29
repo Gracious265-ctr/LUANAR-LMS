@@ -160,8 +160,8 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 
 | Token | Value | Usage |
 |---|---|---|
-| `font-family-primary` | `Inter, ui-sans-serif, system-ui, sans-serif` | Entire application |
-| `font-family-mono` | `ui-monospace, SFMono-Regular, Menlo, monospace` | Reference numbers and technical identifiers |
+| `font-family-primary` | `Geist, ui-sans-serif, system-ui, sans-serif` | Entire application |
+| `font-family-mono` | `Geist Mono, ui-monospace, monospace` | Reference numbers and technical identifiers |
 | `text-xs` | `12px / 18px` | Metadata, timestamps, compact labels |
 | `text-sm` | `14px / 20px` | Form labels, secondary text, table content |
 | `text-base` | `16px / 24px` | Default body text |
@@ -177,7 +177,8 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 
 ## Typography Rules
 
-- Use Inter throughout the application.
+- Use Geist Sans throughout the application.
+- Use Geist Mono for reference numbers and technical identifiers.
 - Use `font-semibold` or `font-bold` for primary page headings.
 - Use `font-normal` for normal body content.
 - Use `font-medium` for labels and navigation.
