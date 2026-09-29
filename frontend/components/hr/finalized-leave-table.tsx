@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { FinalizedApplication } from "@/lib/audit";
+import { EmptyState } from "@/components/ui/states";
 
 export function FinalizedLeaveTable({
   applications,
@@ -9,15 +10,10 @@ export function FinalizedLeaveTable({
 }) {
   if (applications.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No finalized applications
-        </p>
-        <p className="mt-1 text-sm">
-          Submitted leave applications organization-wide appear here once
-          employees submit them.
-        </p>
-      </div>
+      <EmptyState
+        title="No finalized applications"
+        description="Submitted leave applications organization-wide appear here once employees submit them."
+      />
     );
   }
 

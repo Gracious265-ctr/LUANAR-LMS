@@ -8,6 +8,10 @@ import { approverRolePeople } from "@/lib/delegations-client";
 import type { Employee } from "@/lib/employees";
 import { reassignApplication } from "@/lib/reassignments-client";
 import type { PendingApplication } from "@/lib/reassignments";
+import { Field, Select } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
 
 export function ReassignmentForm({
   application,
@@ -81,18 +85,15 @@ export function ReassignmentForm({
 
       </div>
 
-      <div>
-        <label
-          htmlFor="to_approver"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Replacement approver
-        </label>
-        <select
+      <Field
+        label="Replacement approver"
+        htmlFor="to_approver"
+        hint="An active user with an approver role, different from the current approver and the applicant."
+      >
+        <Select
           id="to_approver"
           name="to_approver"
           required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
           <option value="">Select the replacement approver</option>
           {candidates.map((employee) => (
@@ -100,32 +101,22 @@ export function ReassignmentForm({
               {employee.full_name}
             </option>
           ))}
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          An active user with an approver role, different from the current
-          approver and the applicant.
-        </p>
-      </div>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="reason"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Reassignment reason
-        </label>
-        <textarea
+      <Field
+        label="Reassignment reason"
+        htmlFor="reason"
+        hint="Mandatory. Recorded on the reassignment history row."
+      >
+        <Textarea
           id="reason"
           name="reason"
           rows={3}
           required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Why is the application being reassigned?"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Mandatory. Recorded on the reassignment history row.
-        </p>
-      </div>
+      </Field>
 
       {candidates.length === 0 && (
         <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
@@ -135,22 +126,16 @@ export function ReassignmentForm({
       )}
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-          {error}
-        </div>
+        <FormError>{error}</FormError>
       )}
 
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Reassigning..." : "Reassign application"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/reassignments"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

@@ -5,6 +5,7 @@ import Link from "next/link";
 // workspace, and `@/lib/delegations` re-exports the API client, which reads
 // `next/headers` and cannot cross into the browser bundle.
 import type { Delegation } from "@/lib/delegations";
+import { EmptyState } from "@/components/ui/states";
 import {
   delegationStateBadgeClass,
   delegationStateLabel,
@@ -28,12 +29,7 @@ export function DelegationTable({
 }) {
   if (delegations.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No delegations found
-        </p>
-        <p className="mt-1 text-sm">{emptyHint}</p>
-      </div>
+      <EmptyState title="No delegations found" description={emptyHint} />
     );
   }
 

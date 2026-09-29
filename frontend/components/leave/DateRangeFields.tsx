@@ -1,5 +1,7 @@
 "use client";
 
+import { Field, Input } from "@/components/ui/input";
+
 interface DateRangeFieldsProps {
   startDate: string;
   endDate: string;
@@ -17,38 +19,24 @@ export function DateRangeFields({
 }: DateRangeFieldsProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div>
-        <label
-        htmlFor="start-date"
-        className="block text-sm font-medium text-text-secondary mb-1.5"
-      >
-        Start Date
-      </label>
-      <input
-        id="start-date"
-        type="date"
-        value={startDate}
+      <Field label="Start Date" htmlFor="start-date">
+        <Input
+          id="start-date"
+          type="date"
+          value={startDate}
           onChange={(e) => onStartChange(e.target.value)}
           disabled={disabled}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-1 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:bg-input-disabled"
         />
-      </div>
-      <div>
-        <label
-        htmlFor="end-date"
-        className="block text-sm font-medium text-text-secondary mb-1.5"
-      >
-        End Date
-      </label>
-      <input
-        id="end-date"
-        type="date"
-        value={endDate}
+      </Field>
+      <Field label="End Date" htmlFor="end-date">
+        <Input
+          id="end-date"
+          type="date"
+          value={endDate}
           onChange={(e) => onEndChange(e.target.value)}
           disabled={disabled}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-1 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:bg-input-disabled"
         />
-      </div>
+      </Field>
     </div>
   );
 }

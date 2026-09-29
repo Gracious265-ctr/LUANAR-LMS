@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { PublicHoliday } from "@/lib/financial-years";
 import { EditActionLink } from "./edit-action-link";
+import { EmptyState } from "@/components/ui/states";
 
 export function PublicHolidayTable({
   holidays,
@@ -10,14 +11,10 @@ export function PublicHolidayTable({
 }) {
   if (holidays.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No public holidays
-        </p>
-        <p className="mt-1 text-sm">
-          Add the dates that should not count as working leave days.
-        </p>
-      </div>
+      <EmptyState
+        title="No public holidays"
+        description="Add the dates that should not count as working leave days."
+      />
     );
   }
 

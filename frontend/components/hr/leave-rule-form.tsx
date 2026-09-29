@@ -6,6 +6,10 @@ import Link from "next/link";
 
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
 import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
+import { Field, Input, Select } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
 
 export function LeaveRuleForm({
   leaveRule,
@@ -53,19 +57,12 @@ export function LeaveRuleForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="leave_type"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Leave type
-        </label>
-        <select
+      <Field label="Leave type" htmlFor="leave_type">
+        <Select
           id="leave_type"
           name="leave_type"
           required
           defaultValue={leaveRule?.leave_type ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
           {leaveTypes.length === 0 && <option value="">No leave types available</option>}
           {leaveTypes.map((leaveType) => (
@@ -73,91 +70,67 @@ export function LeaveRuleForm({
               {leaveType.name}
             </option>
           ))}
-        </select>
+        </Select>
         {leaveTypes.length === 0 && (
-          <p className="mt-1 text-xs text-text-muted">
+          <p className="text-xs text-text-muted">
             Create a leave type before adding a rule.
           </p>
         )}
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="max_duration_days"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Maximum duration (days)
-        </label>
-        <input
+      <Field label="Maximum duration (days)" htmlFor="max_duration_days">
+        <Input
           id="max_duration_days"
           name="max_duration_days"
           type="number"
           min={1}
           required
           defaultValue={leaveRule?.max_duration_days}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="min_notice_days"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Minimum notice (days)
-        </label>
-        <input
+      <Field
+        label="Minimum notice (days)"
+        htmlFor="min_notice_days"
+        hint="0 means no advance notice is required."
+      >
+        <Input
           id="min_notice_days"
           name="min_notice_days"
           type="number"
           min={0}
           defaultValue={leaveRule?.min_notice_days ?? 0}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          0 means no advance notice is required.
-        </p>
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="effective_from"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Effective from
-        </label>
-        <input
+      <Field
+        label="Effective from"
+        htmlFor="effective_from"
+        hint="Future-dated rules only apply from this date; past rules stay intact."
+      >
+        <Input
           id="effective_from"
           name="effective_from"
           type="date"
           required
           defaultValue={leaveRule?.effective_from}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Future-dated rules only apply from this date; past rules stay intact.
-        </p>
-      </div>
+      </Field>
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="eligibility"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Eligibility
-        </label>
-        <textarea
+      <Field
+        label="Eligibility"
+        htmlFor="eligibility"
+        hint="A human-readable description of who qualifies for this leave type."
+        className="md:col-span-2"
+      >
+        <Textarea
           id="eligibility"
           name="eligibility"
           rows={3}
           defaultValue={leaveRule?.eligibility}
           placeholder="e.g. Female employees at any grade"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          A human-readable description of who qualifies for this leave type.
-        </p>
-      </div>
+      </Field>
 
       <label className="flex items-center gap-2 md:col-span-2">
         <input
@@ -184,22 +157,16 @@ export function LeaveRuleForm({
       </label>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : leaveRule ? "Save changes" : "Create rule"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/leave-rules"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

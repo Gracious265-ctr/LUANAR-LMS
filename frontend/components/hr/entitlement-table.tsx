@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
+import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink } from "./edit-action-link";
 
@@ -17,14 +18,10 @@ export function EntitlementTable({
 }) {
   if (entitlements.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No entitlement rules found
-        </p>
-        <p className="mt-1 text-sm">
-          Add a grade range and annual leave entitlement to get started.
-        </p>
-      </div>
+      <EmptyState
+        title="No entitlement rules found"
+        description="Add a grade range and annual leave entitlement to get started."
+      />
     );
   }
 

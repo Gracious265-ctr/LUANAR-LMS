@@ -11,6 +11,10 @@ import type {
 } from "@/lib/leave-document-template";
 import { updateLeaveDocumentTemplate } from "@/lib/leave-document-template-client";
 import { DocumentTemplatePreview } from "./document-template-preview";
+import { Field, Input, Select } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
 
 export function LeaveDocumentTemplateEditor({
   template,
@@ -154,53 +158,34 @@ export function LeaveDocumentTemplateEditor({
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="space-y-6">
-        <div>
-          <label
-            htmlFor="template-title"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Document title
-          </label>
-          <input
+        <Field
+          label="Document title"
+          htmlFor="template-title"
+          hint="Shown at the top of the approved leave document."
+        >
+          <Input
             id="template-title"
             value={title}
             onChange={(event) => {
               setTitle(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-          <p className="mt-1 text-xs text-text-muted">
-            Shown at the top of the approved leave document.
-          </p>
-        </div>
+        </Field>
 
-        <div>
-          <label
-            htmlFor="template-header"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Header
-          </label>
-          <input
+        <Field label="Header" htmlFor="template-header">
+          <Input
             id="template-header"
             value={header}
             onChange={(event) => {
               setHeader(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
-        <div>
-          <label
-            htmlFor="template-intro"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Opening wording
-          </label>
-          <textarea
+        <Field label="Opening wording" htmlFor="template-intro">
+          <Textarea
             id="template-intro"
             rows={3}
             value={intro}
@@ -208,9 +193,8 @@ export function LeaveDocumentTemplateEditor({
               setIntro(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -218,11 +202,11 @@ export function LeaveDocumentTemplateEditor({
               Data fields
             </h3>
             <div className="flex items-center gap-2">
-              <select
+              <Select
                 aria-label="Add data field"
                 value={newFieldKey}
                 onChange={(event) => setNewFieldKey(event.target.value)}
-                className="rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                className="w-auto px-2 py-1.5"
               >
                 <option value="">Add field</option>
                 {availableFields.map((field) => (
@@ -230,7 +214,7 @@ export function LeaveDocumentTemplateEditor({
                     {field.label}
                   </option>
                 ))}
-              </select>
+              </Select>
               <button
                 type="button"
                 onClick={addField}
@@ -261,13 +245,13 @@ export function LeaveDocumentTemplateEditor({
                 <span className="w-32 shrink-0 text-xs text-text-muted">
                   {field.key}
                 </span>
-                <input
+                <Input
                   aria-label={`Edit label: ${field.key}`}
                   value={field.label}
                   onChange={(event) =>
                     updateFieldLabel(index, event.target.value)
                   }
-                  className="min-w-0 flex-1 rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                  className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
                   <button
@@ -303,14 +287,8 @@ export function LeaveDocumentTemplateEditor({
           )}
         </div>
 
-        <div>
-          <label
-            htmlFor="template-closing"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Closing wording
-          </label>
-          <textarea
+        <Field label="Closing wording" htmlFor="template-closing">
+          <Textarea
             id="template-closing"
             rows={2}
             value={closing}
@@ -318,9 +296,8 @@ export function LeaveDocumentTemplateEditor({
               setClosing(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -347,13 +324,13 @@ export function LeaveDocumentTemplateEditor({
                 key={`${area.label}-${index}`}
                 className="mb-2 flex items-center gap-2 rounded-md border border-border-default bg-surface-page p-2"
               >
-                <input
+                <Input
                   aria-label={`Signature area ${index + 1} label`}
                   value={area.label}
                   onChange={(event) =>
                     updateSignatureLabel(index, event.target.value)
                   }
-                  className="min-w-0 flex-1 rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                  className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
                   <button
@@ -388,38 +365,25 @@ export function LeaveDocumentTemplateEditor({
           )}
         </div>
 
-        <div>
-          <label
-            htmlFor="template-footer"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Footer
-          </label>
-          <input
+        <Field label="Footer" htmlFor="template-footer">
+          <Input
             id="template-footer"
             value={footer}
             onChange={(event) => {
               setFooter(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
         {error && (
-          <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-            {error}
-          </div>
+          <FormError>{error}</FormError>
         )}
 
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" loading={loading}>
             {loading ? "Saving..." : "Save template"}
-          </button>
+          </Button>
           {saved && (
             <span className="text-sm text-text-muted">
               Template saved — preview reflects the saved configuration.

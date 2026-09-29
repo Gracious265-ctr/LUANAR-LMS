@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { Employee } from "@/lib/employees";
 import { EditActionLink } from "./edit-action-link";
+import { EmptyState } from "@/components/ui/states";
 
 const CATEGORY_LABELS: Record<Employee["category"], string> = {
   academic: "Academic",
@@ -11,10 +12,10 @@ const CATEGORY_LABELS: Record<Employee["category"], string> = {
 export function EmployeeTable({ employees }: { employees: Employee[] }) {
   if (employees.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">No employees found</p>
-        <p className="mt-1 text-sm">Try adjusting your search and try again.</p>
-      </div>
+      <EmptyState
+        title="No employees found"
+        description="Try adjusting your search and try again."
+      />
     );
   }
 

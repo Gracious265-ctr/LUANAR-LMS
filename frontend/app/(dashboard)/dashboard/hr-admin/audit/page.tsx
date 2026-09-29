@@ -10,6 +10,7 @@ import {
   listFinalizedApplications,
   TARGET_TYPE_LABELS,
 } from "@/lib/audit";
+import { Select } from "@/components/ui/input";
 
 type AuditSearchParams = Promise<{
   action?: string | string[];
@@ -68,7 +69,7 @@ export default async function AuditPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Audit View</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Audit View</h2>
         <p className="text-text-secondary">
           Review finalized leave applications and the administrative audit trail
           of actions taken across the system.
@@ -111,10 +112,10 @@ export default async function AuditPage({
               <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
                 Action
               </span>
-              <select
+              <Select
                 name="action"
                 defaultValue={action || ""}
-                className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                className="w-auto"
               >
                 <option value="">All actions</option>
                 {Object.entries(ACTION_LABELS).map(([value, label]) => (
@@ -122,16 +123,16 @@ export default async function AuditPage({
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="text-sm">
               <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
                 Target
               </span>
-              <select
+              <Select
                 name="target_type"
                 defaultValue={targetType || ""}
-                className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                className="w-auto"
               >
                 <option value="">All targets</option>
                 {Object.entries(TARGET_TYPE_LABELS).map(([value, label]) => (
@@ -139,7 +140,7 @@ export default async function AuditPage({
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <button
               type="submit"

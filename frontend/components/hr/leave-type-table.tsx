@@ -2,18 +2,15 @@ import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
 import { EditActionLink } from "./edit-action-link";
+import { EmptyState } from "@/components/ui/states";
 
 export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
   if (leaveTypes.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No leave types found
-        </p>
-        <p className="mt-1 text-sm">
-          Add a leave type (such as annual, maternity, or paternity) to get started.
-        </p>
-      </div>
+      <EmptyState
+        title="No leave types found"
+        description="Add a leave type (such as annual, maternity, or paternity) to get started."
+      />
     );
   }
 

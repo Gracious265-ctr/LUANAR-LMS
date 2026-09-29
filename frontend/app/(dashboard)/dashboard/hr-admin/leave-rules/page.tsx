@@ -10,6 +10,7 @@ import {
   type EffectiveFilter,
 } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
+import { Select } from "@/components/ui/input";
 
 const TABS: { value: EffectiveFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -77,7 +78,7 @@ export default async function LeaveRulesPage({
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Leave rules</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave rules</h2>
           <p className="text-text-secondary">
             Configure how long and under what conditions each leave type can be
             taken. Rule changes are effective-dated and never alter submitted
@@ -114,10 +115,10 @@ export default async function LeaveRulesPage({
           {effective !== "all" && (
             <input type="hidden" name="effective" value={effective} />
           )}
-          <select
+          <Select
             name="leave_type"
             defaultValue={leaveTypeFilter}
-            className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+            className="w-auto py-1.5"
           >
             <option value="">All leave types</option>
             {leaveTypes?.results.map((leaveType) => (
@@ -125,7 +126,7 @@ export default async function LeaveRulesPage({
                 {leaveType.name}
               </option>
             ))}
-          </select>
+          </Select>
           <button
             type="submit"
             className="rounded-md border border-border-default bg-button-secondary px-4 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"

@@ -4,6 +4,7 @@ import type { LeaveRule } from "@/lib/leave-rules";
 import { leaveRuleStatus } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink } from "./edit-action-link";
+import { EmptyState } from "@/components/ui/states";
 
 export function LeaveRuleTable({
   rules,
@@ -14,15 +15,10 @@ export function LeaveRuleTable({
 }) {
   if (rules.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No leave rules found
-        </p>
-        <p className="mt-1 text-sm">
-          Add a rule to define how long and under what conditions a leave type
-          can be taken.
-        </p>
-      </div>
+      <EmptyState
+        title="No leave rules found"
+        description="Add a rule to define how long and under what conditions a leave type can be taken."
+      />
     );
   }
 

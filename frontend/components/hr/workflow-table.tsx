@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { Workflow } from "@/lib/workflows";
+import { EmptyState } from "@/components/ui/states";
 import {
   approverRoleLabel,
   workflowCategoryLabel,
@@ -20,15 +21,10 @@ function scopeLabel(workflow: Workflow): string {
 export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
   if (workflows.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No workflows found
-        </p>
-        <p className="mt-1 text-sm">
-          Create a workflow to define the approval sequence for a
-          category or department.
-        </p>
-      </div>
+      <EmptyState
+        title="No workflows found"
+        description="Create a workflow to define the approval sequence for a category or department."
+      />
     );
   }
 

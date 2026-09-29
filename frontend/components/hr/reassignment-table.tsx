@@ -1,4 +1,5 @@
 import type { Reassignment } from "@/lib/reassignments";
+import { EmptyState } from "@/components/ui/states";
 
 export function ReassignmentTable({
   reassignments,
@@ -7,15 +8,10 @@ export function ReassignmentTable({
 }) {
   if (reassignments.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No reassignments yet
-        </p>
-        <p className="mt-1 text-sm">
-          Reassign a pending application from the intervention queue above to
-          record the first reassignment.
-        </p>
-      </div>
+      <EmptyState
+        title="No reassignments yet"
+        description="Reassign a pending application from the intervention queue above to record the first reassignment."
+      />
     );
   }
 

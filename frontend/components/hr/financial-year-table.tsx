@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { FinancialYear } from "@/lib/financial-years";
+import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink } from "./edit-action-link";
 
@@ -13,15 +14,10 @@ export function FinancialYearTable({
 }) {
   if (years.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No financial years configured
-        </p>
-        <p className="mt-1 text-sm">
-          Add a financial year so leave applications can be validated against
-          it.
-        </p>
-      </div>
+      <EmptyState
+        title="No financial years configured"
+        description="Add a financial year so leave applications can be validated against it."
+      />
     );
   }
 

@@ -17,6 +17,9 @@ import {
   createWorkflow,
   updateWorkflow,
 } from "@/lib/workflows-client";
+import { Field, Input, Select } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 const DEFAULT_FIRST_ROLE: ApproverRoleCode = "supervisor";
 
@@ -107,84 +110,60 @@ export function WorkflowForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Workflow name
-        </label>
-        <input
+      <Field label="Workflow name" htmlFor="name">
+        <Input
           id="name"
           name="name"
           type="text"
           required
           defaultValue={workflow?.name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="employee_category"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Employee category
-        </label>
-        <select
+      <Field
+        label="Employee category"
+        htmlFor="employee_category"
+        hint="Blank applies the workflow to every employee category."
+      >
+        <Select
           id="employee_category"
           name="employee_category"
           defaultValue={workflow?.employee_category ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
           <option value="">Any category</option>
           <option value="academic">Academic</option>
           <option value="administration">Administration</option>
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          Blank applies the workflow to every employee category.
-        </p>
-      </div>
+        </Select>
+      </Field>
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="department"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Department / Faculty
-        </label>
-        <input
+      <Field
+        label="Department / Faculty"
+        htmlFor="department"
+        hint="Blank applies the workflow to every department."
+        className="md:col-span-2"
+      >
+        <Input
           id="department"
           name="department"
           type="text"
           defaultValue={workflow?.department}
           placeholder="e.g. Faculty of Science"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Blank applies the workflow to every department.
-        </p>
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="effective_from"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Effective from
-        </label>
-        <input
+      <Field
+        label="Effective from"
+        htmlFor="effective_from"
+        hint="Leave blank to keep this workflow a draft."
+      >
+        <Input
           id="effective_from"
           name="effective_from"
           type="date"
           value={effectiveFrom}
           onChange={(event) => setEffectiveFrom(event.target.value)}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Leave blank to keep this workflow a draft.
-        </p>
-      </div>
+      </Field>
 
       {effectiveFrom && (
         <div>
@@ -252,20 +231,20 @@ export function WorkflowForm({
               <span className="grid size-8 shrink-0 place-content-center rounded-full bg-brand-primary-subtle text-sm font-semibold text-brand-primary">
                 {index + 1}
               </span>
-              <select
+              <Select
                 aria-label={`Stage ${index + 1} approver`}
                 value={stage.approver_role}
                 onChange={(event) =>
                   updateRole(index, event.target.value as ApproverRoleCode)
                 }
-                className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                className="w-auto min-w-44 flex-1"
               >
                 {APPROVER_ROLE_CODES.map((code) => (
                   <option key={code} value={code}>
                     {APPROVER_ROLE_LABELS[code]}
                   </option>
                 ))}
-              </select>
+              </Select>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -300,22 +279,16 @@ export function WorkflowForm({
       </div>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : workflow ? "Save changes" : "Create workflow"}
-        </button>
+        </Button>
         <Link
           href={baseHref}
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

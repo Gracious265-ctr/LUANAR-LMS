@@ -9,6 +9,7 @@ import {
   listFinancialYears,
   listPublicHolidays,
 } from "@/lib/financial-years";
+import { Select } from "@/components/ui/input";
 
 export default async function CalendarPage({
   searchParams,
@@ -51,7 +52,7 @@ export default async function CalendarPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Leave calendar</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave calendar</h2>
         <p className="text-text-secondary">
           Configure the university&apos;s financial years and public holidays.
           The system uses the active financial year when validating leave
@@ -108,10 +109,10 @@ export default async function CalendarPage({
         </div>
 
         <form method="get" className="mb-4 flex items-center gap-2">
-          <select
+          <Select
             name="year"
             defaultValue={yearFilter}
-            className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+            className="w-auto py-1.5"
           >
             <option value="">All years</option>
             {availableYears.map((year) => (
@@ -119,7 +120,7 @@ export default async function CalendarPage({
                 {year}
               </option>
             ))}
-          </select>
+          </Select>
           <button
             type="submit"
             className="rounded-md border border-border-default bg-button-secondary px-4 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"

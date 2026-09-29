@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeftRight } from "lucide-react";
 
 import type { PendingApplication } from "@/lib/reassignments";
+import { EmptyState } from "@/components/ui/states";
 
 export function PendingApplicationsTable({
   applications,
@@ -10,15 +11,10 @@ export function PendingApplicationsTable({
 }) {
   if (applications.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No pending applications
-        </p>
-        <p className="mt-1 text-sm">
-          All submitted applications are either assigned or no leave applications
-          have been submitted yet.
-        </p>
-      </div>
+      <EmptyState
+        title="No pending applications"
+        description="All submitted applications are either assigned or no leave applications have been submitted yet."
+      />
     );
   }
 

@@ -9,6 +9,9 @@ import {
   createFinancialYear,
   updateFinancialYear,
 } from "@/lib/financial-years-client";
+import { Input, Field } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 export function FinancialYearForm({
   financialYear,
@@ -48,42 +51,29 @@ export function FinancialYearForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="start_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Start date
-        </label>
-        <input
+      <Field label="Start date" htmlFor="start_date">
+        <Input
           id="start_date"
           name="start_date"
           type="date"
           required
           defaultValue={financialYear?.start_date}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="end_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          End date
-        </label>
-        <input
+      <Field
+        label="End date"
+        htmlFor="end_date"
+        hint="Periods must not overlap each other."
+      >
+        <Input
           id="end_date"
           name="end_date"
           type="date"
           required
           defaultValue={financialYear?.end_date}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Periods must not overlap each other.
-        </p>
-      </div>
+      </Field>
 
       <div className="flex items-center gap-2 md:col-span-2">
         <input
@@ -107,22 +97,16 @@ export function FinancialYearForm({
       </p>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : financialYear ? "Save changes" : "Create financial year"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/calendar"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>
