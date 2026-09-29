@@ -59,7 +59,7 @@ export function Toast({
           type="button"
           onClick={onDismiss}
           aria-label={dismissLabel}
-          className="shrink-0 rounded transition-colors hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+          className="shrink-0 rounded-control transition-colors hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

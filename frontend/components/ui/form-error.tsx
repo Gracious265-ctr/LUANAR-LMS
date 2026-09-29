@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
 
 /** Form-level error banner: says why the whole submission failed. */
 export function FormError({
@@ -9,14 +9,8 @@ export function FormError({
   className?: string;
 }) {
   return (
-    <div
-      role="alert"
-      className={cn(
-        "rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected",
-        className
-      )}
-    >
+    <Alert tone="rejected" className={className}>
       {children}
-    </div>
+    </Alert>
   );
 }
