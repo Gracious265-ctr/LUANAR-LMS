@@ -122,6 +122,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         label="Period"
         htmlFor="starts_on"
         hint="Leave the end blank to stay open-ended until HR cancels it."
+        className="md:col-span-2"
       >
         <DateRangePicker
           id="starts_on"

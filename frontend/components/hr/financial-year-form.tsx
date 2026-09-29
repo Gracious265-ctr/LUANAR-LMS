@@ -66,6 +66,7 @@ export function FinancialYearForm({
         label="Period"
         htmlFor="start_date"
         hint="Periods must not overlap each other."
+        className="md:col-span-2"
       >
         <DateRangePicker
           id="start_date"
