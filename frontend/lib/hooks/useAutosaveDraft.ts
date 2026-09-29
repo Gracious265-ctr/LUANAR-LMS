@@ -2,27 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { updateLeaveApplication } from "@/lib/leave-api";
+import { updateLeaveApplication, type LeaveApplication } from "@/lib/leave-api";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export function useAutosaveDraft(
   applicationId: string | null,
   data: Record<string, unknown>,
-  delay = 800
+  delay = 800,
+  onSaved?: (application: LeaveApplication) => void
 ) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
   const isInitialRef = useRef(true);
   const startedWithIdRef = useRef(Boolean(applicationId));
+  const onSavedRef = useRef(onSaved);
+
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
 
   const save = useCallback(
     async (patchData: Record<string, unknown>) => {
       if (!applicationId) return;
       try {
         setSaveStatus("saving");
-        await updateLeaveApplication(applicationId, patchData);
+        const saved = await updateLeaveApplication(applicationId, patchData);
+        onSavedRef.current?.(saved);
         setSaveStatus("saved");
       } catch {
         setSaveStatus("error");

@@ -11,6 +11,9 @@ import { LeaveTypeSelect } from "./LeaveTypeSelect";
 import { DateRangeFields } from "./DateRangeFields";
 import { WorkingDaysPreview } from "./WorkingDaysPreview";
 import { SupportingDocumentsUploader } from "./SupportingDocumentsUploader";
+import { Textarea } from "@/components/ui/textarea";
+import { Field } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
@@ -39,6 +42,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(
     mode === "edit" ? (applicationId ?? null) : null
   );
+  const [calculatedDays, setCalculatedDays] = useState<number | null>(null);
 
   const formData = useMemo(
     () => ({
@@ -50,7 +54,12 @@ const [loadError, setLoadError] = useState<string | null>(null);
     [leaveTypeId, startDate, endDate, reason]
   );
 
-  const { saveStatus } = useAutosaveDraft(currentId, formData);
+  const { saveStatus } = useAutosaveDraft(
+    currentId,
+    formData,
+    800,
+    (saved) => setCalculatedDays(saved.calculated_days ?? null)
+  );
 
   useEffect(() => {
     if (!(mode === "edit" && applicationId)) return;
@@ -70,6 +79,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
           setStartDate(data.start_date || "");
           setEndDate(data.end_date || "");
           setReason(data.reason || "");
+          setCalculatedDays(data.calculated_days ?? null);
           setDocuments(data.documents || []);
         } else {
           setLoadError("Could not load this draft. It may have been removed.");
@@ -112,6 +122,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
     try {
       const app = await createLeaveApplication(patch);
       setCurrentId(app.id);
+      setCalculatedDays(app.calculated_days ?? null);
       setCreateError(null);
       return app.id;
     } catch {
@@ -208,28 +219,24 @@ const [loadError, setLoadError] = useState<string | null>(null);
           {endError && <FieldError message={endError} id="end-date-error" />}
           <WorkingDaysPreview
             days={
-              startDate && endDate ? (validation.result?.working_days ?? null) : null
+              startDate && endDate
+                ? (validation.result?.working_days ?? calculatedDays ?? null)
+                : null
             }
             loading={Boolean(startDate && endDate) && validation.isLoading}
           />
-          <div>
-            <label
-              htmlFor="leave-reason"
-              className="block text-sm font-medium text-text-secondary mb-1.5"
-            >
-              Reason
-            </label>
-            <textarea
-              id="leave-reason"
+          <Field label="Reason" htmlFor="reason">
+            <Textarea
+              id="reason"
+              className="resize-none"
               value={reason}
               onChange={(e) => handleFieldChange("reason", e.target.value)}
               rows={3}
               aria-describedby={reasonError ? "reason-error" : undefined}
               placeholder="Provide a reason for your leave application..."
-              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-1 focus:ring-input-ring-focus resize-none"
             />
             {reasonError && <FieldError message={reasonError} id="reason-error" />}
-          </div>
+          </Field>
           {topIssues.length > 0 && (
             <div role="alert" className="rounded-lg border border-border-error bg-status-rejected-subtle p-3">
               {topIssues.map((issue) => (
@@ -264,17 +271,16 @@ const [loadError, setLoadError] = useState<string | null>(null);
       )}
 
       <div className="flex justify-end">
-        <button
+        <Button
           onClick={() =>
             currentId
               ? router.push(`/dashboard/leave/${currentId}/review`)
               : undefined
           }
           disabled={!currentId}
-          className="px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Review Application
-        </button>
+        </Button>
       </div>
     </div>
   );

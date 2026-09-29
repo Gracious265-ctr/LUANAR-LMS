@@ -8,21 +8,21 @@ the context key supplied by the view.
 
 from rest_framework import serializers
 
-from ..services.storage import signed_document_url
+from ..services.storage import safe_signed_document_url
 
 
 class TrackedDocumentSerializer(serializers.Serializer):
     """One active supporting document attached to the tracked application.
 
     ``file_url`` is re-signed at read time like the employee document list,
-    falling back to the stored URL when storage is not configured.
+    falling back to the stored URL when storage is not configured or the
+    object is missing.
     """
 
     def to_representation(self, document):
-        try:
-            file_url = signed_document_url(document.file_path)
-        except ValueError:
-            file_url = document.file_url
+        file_url = safe_signed_document_url(
+            document.file_path, fallback=document.file_url
+        )
         return {
             "id": str(document.id),
             "file_name": document.file_name,
