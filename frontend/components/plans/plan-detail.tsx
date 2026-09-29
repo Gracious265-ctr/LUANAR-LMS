@@ -13,12 +13,12 @@ import {
   submitPlan,
 } from "@/lib/plans/service";
 import type { PlanDetail, PlanSubmitError } from "@/lib/plans/types";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { Panel, DetailRow } from "@/components/approvals/panel";
 
 import { BlockStatusBadge, PlanStatusBadge, StageStatusBadge } from "./plan-status-badge";
+import { Badge } from "@/components/ui/badge";
 
 export function PlanDetailView({ id }: { id: string }) {
   const [data, setData] = useState<PlanDetail | null>(null);
@@ -263,15 +263,10 @@ export function PlanDetailView({ id }: { id: string }) {
                       <span className="font-medium text-text-primary">
                         {decision.role_label}
                       </span>
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-                          meta2.badgeClass
-                        )}
-                      >
-                        <meta2.icon className="size-3" />
+                      <Badge size="compact" tone={meta2.badgeTone}>
+                        <meta2.icon className="size-3" aria-hidden="true" />
                         {meta2.label}
-                      </span>
+                      </Badge>
                     </div>
                     <div className="mt-0.5 text-xs text-text-muted">
                       {decision.approver_name} ·{" "}

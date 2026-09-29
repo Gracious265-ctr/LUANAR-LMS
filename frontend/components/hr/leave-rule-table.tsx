@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function LeaveRuleTable({
   rules,
@@ -75,15 +76,13 @@ export function LeaveRuleTable({
                 {rule.effective_from}
               </TableCell>
               <TableCell>
-                <span
-                  className={
-                    current
-                      ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                      : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-                  }
+                <Badge
+                  size="sm"
+                  tone={current ? "info" : "muted"}
+                  className="font-medium"
                 >
                   {current ? "Current" : "Scheduled"}
-                </span>
+                </Badge>
               </TableCell>
               <TableCell className="text-right">
                 <EditActionLink

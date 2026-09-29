@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/states";
 import {
   approverRoleLabel,
   workflowCategoryLabel,
-  workflowStateBadgeClass,
+  workflowStateTone,
   workflowStateLabel,
 } from "@/lib/workflows";
 
@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 function scopeLabel(workflow: Workflow): string {
   const category = workflowCategoryLabel(workflow.employee_category);
@@ -68,11 +69,13 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
               {workflow.effective_from || "—"}
             </TableCell>
             <TableCell>
-              <span
-                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${workflowStateBadgeClass(workflow.state)}`}
+              <Badge
+                size="sm"
+                tone={workflowStateTone(workflow.state)}
+                className="font-medium"
               >
                 {workflowStateLabel(workflow.state)}
-              </span>
+              </Badge>
             </TableCell>
             <TableCell className="text-text-secondary">
               {workflow.stages

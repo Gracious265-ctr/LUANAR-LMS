@@ -1,5 +1,4 @@
-import { cn } from "@/lib/utils";
-
+import { Badge } from "@/components/ui/badge";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingStatus } from "@/lib/tracking/types";
 
@@ -16,15 +15,9 @@ export function StatusBadge({
   const meta = STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-        meta.badgeClass,
-        className
-      )}
-    >
+    <Badge tone={meta.badgeTone} className={className}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }

@@ -13,13 +13,13 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { STATUS_META } from "@/lib/tracking/labels";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 import {
   deleteLeaveApplication,
   type LeaveApplication,
 } from "@/lib/leave-api";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
 
 interface ApplicationCardProps {
   application: LeaveApplication;
@@ -29,12 +29,12 @@ interface ApplicationCardProps {
 
 const CARD_STATUS_META: Record<
   LeaveApplication["status"],
-  { label: string; icon: LucideIcon; badgeClass: string }
+  { label: string; icon: LucideIcon; badgeTone: BadgeTone }
 > = {
   draft: {
     label: "Draft",
     icon: FileText,
-    badgeClass: "bg-status-cancelled-subtle text-status-cancelled",
+    badgeTone: "draft",
   },
   submitted: STATUS_META.pending,
   approved: STATUS_META.approved,
@@ -47,15 +47,10 @@ function StatusPill({ status }: { status: LeaveApplication["status"] }) {
   const meta = CARD_STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-        meta.badgeClass
-      )}
-    >
+    <Badge tone={meta.badgeTone}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 

@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function FinalizedLeaveTable({
   applications,
@@ -68,13 +69,21 @@ export function FinalizedLeaveTable({
             </TableCell>
             <TableCell>
               {app.current_approver ? (
-                <span className="inline-block rounded-full bg-brand-primary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-primary">
+                <Badge
+                  size="sm"
+                  tone="brand"
+                  className="font-medium"
+                >
                   {app.current_approver_name}
-                </span>
+                </Badge>
               ) : (
-                <span className="inline-block rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
+                <Badge
+                  size="sm"
+                  tone="pending"
+                  className="font-medium"
+                >
                   Unassigned
-                </span>
+                </Badge>
               )}
             </TableCell>
             <TableCell className="text-text-secondary">

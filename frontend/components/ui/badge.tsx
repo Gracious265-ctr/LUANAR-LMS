@@ -2,35 +2,61 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * The one place status colour is defined. Every status pill renders through
+ * `tone`, and the label maps in lib/*\/labels.ts carry a `badgeTone` rather
+ * than a hand-written class string, so a new status only needs a new entry
+ * here. `tone` is the single source of truth: the two icon tiles that need
+ * the same colours on a square (rather than a pill) call `badgeVariants`
+ * directly instead of restating the classes.
+ *
+ * `size` carries the four pill densities the app actually uses. Anything
+ * denser than `xs` is a deliberate design decision, not an accident.
+ */
 const badgeVariants = cva(
   [
-    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
+    "inline-flex items-center rounded-full",
     "transition-colors duration-fast ease-standard",
   ],
   {
     variants: {
       tone: {
         neutral: "bg-surface-muted text-text-secondary",
+        draft: "bg-surface-secondary text-text-secondary",
+        muted: "bg-surface-muted text-text-muted",
         brand: "bg-brand-primary-subtle text-brand-primary",
+        info: "bg-brand-secondary-subtle text-brand-secondary",
         pending: "bg-status-pending-subtle text-status-pending",
         approved: "bg-status-approved-subtle text-status-approved",
         rejected: "bg-status-rejected-subtle text-status-rejected",
         correction: "bg-status-correction-subtle text-status-correction",
-        cancelled: "bg-status-cancelled-subtle text-text-secondary",
+        cancelled: "bg-status-cancelled-subtle text-status-cancelled",
+      },
+      size: {
+        default: "gap-1.5 px-3 py-1 text-xs font-semibold",
+        sm: "gap-1.5 px-2.5 py-0.5 text-xs font-semibold",
+        compact: "gap-1 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
+        xs: "gap-1 px-2 py-0.5 text-[11px] font-semibold",
       },
     },
     defaultVariants: {
       tone: "neutral",
+      size: "default",
     },
   }
 );
+
+/** The status colour keys accepted by the `tone` variant. */
+export type BadgeTone = NonNullable<VariantProps<typeof badgeVariants>["tone"]>;
 
 export interface BadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
     VariantProps<typeof badgeVariants> {}
 
-export function Badge({ className, tone, ...props }: BadgeProps) {
-  return <span className={cn(badgeVariants({ tone }), className)} {...props} />;
+export function Badge({ className, size, tone, ...props }: BadgeProps) {
+  return (
+    <span className={cn(badgeVariants({ size, tone }), className)} {...props} />
+  );
 }
 
 export { badgeVariants };

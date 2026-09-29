@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import {
   BLOCK_STATUS_META,
   PLAN_STATUS_META,
@@ -16,16 +17,10 @@ export function PlanStatusBadge({
   const meta = PLAN_STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium",
-        meta.badgeClass,
-        className
-      )}
-    >
-      <Icon className="size-3" />
+    <Badge size="compact" tone={meta.badgeTone} className={className}>
+      <Icon className="size-3" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -39,16 +34,14 @@ export function BlockStatusBadge({
   const meta = BLOCK_STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
-        meta.badgeClass,
-        className
-      )}
+    <Badge
+      size="xs"
+      tone={meta.badgeTone}
+      className={cn("font-medium whitespace-nowrap", className)}
     >
-      <Icon className="size-3" />
+      <Icon className="size-3" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -62,15 +55,13 @@ export function StageStatusBadge({
   const meta = STAGE_STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
-        meta.badgeClass,
-        className
-      )}
+    <Badge
+      size="xs"
+      tone={meta.badgeTone}
+      className={cn("font-medium whitespace-nowrap", className)}
     >
-      <Icon className="size-3" />
+      <Icon className="size-3" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }

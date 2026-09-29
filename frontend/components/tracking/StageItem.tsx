@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 import { formatDateTime } from "@/lib/tracking/format";
 import type { TrackingStage, TrackingStatus } from "@/lib/tracking/types";
+import { Badge } from "@/components/ui/badge";
 
 const STATE_MARKER: Record<
   TrackingStage["state"],
@@ -100,9 +101,13 @@ export function StageItem({
                 </span>
               </p>
               {stage.approver.is_delegate && stage.approver.on_behalf_of && (
-                <span className="mt-1 inline-block rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-text-secondary">
+                <Badge
+                  size="xs"
+                  tone="neutral"
+                  className="mt-1 font-medium"
+                >
                   Acting for {stage.approver.on_behalf_of}
-                </span>
+                </Badge>
               )}
             </div>
           )}

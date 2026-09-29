@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 
 import type { BlockStatus, PlanDecisionAction, PlanStatus, StageStatus } from "./types";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export interface StatusMeta {
   label: string;
   icon: LucideIcon;
-  badgeClass: string;
+  badgeTone: BadgeTone;
   textClass: string;
   dotClass: string;
 }
@@ -23,28 +24,28 @@ export const PLAN_STATUS_META: Record<PlanStatus, StatusMeta> = {
   draft: {
     label: "Draft",
     icon: FileText,
-    badgeClass: "bg-surface-secondary text-text-secondary",
+    badgeTone: "draft",
     textClass: "text-text-secondary",
     dotClass: "bg-text-muted",
   },
   submitted: {
     label: "Submitted",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
@@ -54,35 +55,35 @@ export const BLOCK_STATUS_META: Record<BlockStatus, StatusMeta> = {
   proposed: {
     label: "Proposed",
     icon: Clock,
-    badgeClass: "bg-surface-secondary text-text-secondary",
+    badgeTone: "draft",
     textClass: "text-text-secondary",
     dotClass: "bg-text-muted",
   },
   reserved: {
     label: "Reserved",
     icon: Lock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   confirmed: {
     label: "Confirmed",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   lapsed: {
     label: "Lapsed",
     icon: Clock,
-    badgeClass: "bg-surface-muted text-text-muted",
+    badgeTone: "muted",
     textClass: "text-text-muted",
     dotClass: "bg-text-muted",
   },
   released: {
     label: "Released",
     icon: RotateCcw,
-    badgeClass: "bg-status-cancelled-subtle text-status-cancelled",
+    badgeTone: "cancelled",
     textClass: "text-status-cancelled",
     dotClass: "bg-status-cancelled",
   },
@@ -92,35 +93,35 @@ export const STAGE_STATUS_META: Record<StageStatus, StatusMeta> = {
   waiting: {
     label: "Waiting",
     icon: Clock,
-    badgeClass: "bg-surface-muted text-text-muted",
+    badgeTone: "muted",
     textClass: "text-text-muted",
     dotClass: "bg-text-muted",
   },
   pending: {
     label: "Pending",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
   skipped: {
     label: "Skipped",
     icon: History,
-    badgeClass: "bg-surface-muted text-text-muted",
+    badgeTone: "muted",
     textClass: "text-text-muted",
     dotClass: "bg-text-muted",
   },
@@ -130,7 +131,7 @@ export interface ActionMeta {
   label: string;
   shortLabel: string;
   icon: LucideIcon;
-  badgeClass: string;
+  badgeTone: BadgeTone;
   buttonClass: string;
 }
 
@@ -139,7 +140,7 @@ export const PLAN_ACTION_META: Record<PlanDecisionAction, ActionMeta> = {
     label: "Approved",
     shortLabel: "Approve",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     buttonClass:
       "bg-[#009119] text-white hover:bg-[#008017] focus:ring-2 focus:ring-[#009119]/40",
   },
@@ -147,7 +148,7 @@ export const PLAN_ACTION_META: Record<PlanDecisionAction, ActionMeta> = {
     label: "Rejected",
     shortLabel: "Reject",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     buttonClass:
       "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover",
   },

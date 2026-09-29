@@ -2,6 +2,7 @@ import type { Employee } from "./employees";
 import { apiErrorMessage } from "./utils";
 import { APPROVER_ROLE_CODES } from "./workflows-client";
 import type { Delegation, DelegationInput } from "./delegations";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export const DELEGATION_STATE_CODES = [
   "requested",
@@ -27,19 +28,19 @@ export function delegationStateLabel(state: DelegationState): string {
   return DELEGATION_STATE_LABELS[state];
 }
 
-export function delegationStateBadgeClass(state: DelegationState): string {
+export function delegationStateTone(state: DelegationState): BadgeTone {
   switch (state) {
     case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
+      return "info";
     case "scheduled":
-      return "bg-brand-primary-subtle text-brand-primary";
+      return "brand";
     case "requested":
-      return "bg-status-pending-subtle text-status-pending";
+      return "pending";
     case "rejected":
-      return "bg-status-rejected-subtle text-status-rejected";
+      return "rejected";
     case "cancelled":
     case "ended":
-      return "bg-surface-muted text-text-muted";
+      return "muted";
   }
 }
 

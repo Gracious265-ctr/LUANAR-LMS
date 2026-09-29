@@ -13,7 +13,7 @@ export { WORKFLOW_STATE_CODES } from "./workflows-client";
 export { WORKFLOW_STATE_LABELS } from "./workflows-client";
 export { approverRoleLabel, workflowCategoryLabel } from "./workflows-client";
 export { workflowStateLabel } from "./workflows-client";
-export { workflowStateBadgeClass } from "./workflows-client";
+export { workflowStateTone } from "./workflows-client";
 
 export type {
   ApproverRoleCode,

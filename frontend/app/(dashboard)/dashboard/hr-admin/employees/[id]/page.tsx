@@ -9,6 +9,7 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
+import { Badge } from "@/components/ui/badge";
 
 const SUPERVISOR_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -69,15 +70,13 @@ export default async function EmployeeDetailPage({
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">
             {employee.full_name || employee.email}
           </h2>
-          <span
-            className={
-              employee.is_active
-                ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-            }
-          >
-            {employee.is_active ? "Active" : "Inactive"}
-          </span>
+          <Badge
+            tone={employee.is_active ? "info" : "muted"}
+          size="sm"
+          className="font-medium"
+        >
+          {employee.is_active ? "Active" : "Inactive"}
+        </Badge>
         </div>
         <p className="text-text-secondary">{employee.email}</p>
       </div>

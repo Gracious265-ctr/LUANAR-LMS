@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/states";
 
 import { PlanCard } from "./plan-card";
 import { PendingConfirmationsPanel } from "./pending-confirmations-panel";
+import { Badge } from "@/components/ui/badge";
 
 const APPROVER_ROLES: UserRole[] = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -96,9 +97,9 @@ export function PlansHome({ role }: { role: UserRole }) {
             >
               Approvals
               {caps.approver_pending_count > 0 && (
-                <span className="ml-1 rounded-full bg-status-pending-subtle px-1.5 py-0.5 text-[11px] font-semibold text-status-pending">
+                <Badge size="xs" tone="pending" className="ml-1 px-1.5">
                   {caps.approver_pending_count}
-                </span>
+                </Badge>
               )}
             </Link>
           )}

@@ -2,6 +2,7 @@ import { formatDateTime } from "@/lib/cancellations/format";
 import { STAGE_STATE_META } from "@/lib/cancellations/labels";
 import type { CancellationStage } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Compact vertical stepper for a cancellation request's two Reviewer/HOD stages.
@@ -31,12 +32,7 @@ export function CancellationStageStepper({
               <p className="text-sm font-medium text-text-primary">
                 {stage.role_label}
               </p>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                  STAGE_STATE_META[stage.status].badgeClass
-                )}
-              >
+              <Badge size="xs" tone={STAGE_STATE_META[stage.status].badgeTone}>
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
@@ -45,7 +41,7 @@ export function CancellationStageStepper({
                   aria-hidden="true"
                 />
                 {STAGE_STATE_META[stage.status].label}
-              </span>
+              </Badge>
             </div>
             <p className="mt-0.5 text-sm text-text-secondary">{stage.approver_name}</p>
             {stage.decided_at && (

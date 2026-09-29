@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function FinancialYearTable({
   years,
@@ -63,21 +64,23 @@ export function FinancialYearTable({
                 {year.end_date}
               </TableCell>
               <TableCell>
-                <span
-                  className={
+                <Badge
+                  size="sm"
+                  tone={
                     status === "active"
-                      ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
+                      ? "info"
                       : status === "upcoming"
-                        ? "inline-block rounded-full bg-brand-primary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-primary"
-                        : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
+                        ? "brand"
+                        : "muted"
                   }
+                  className="font-medium"
                 >
                   {status === "active"
                     ? "Active"
                     : status === "upcoming"
                       ? "Upcoming"
                       : "Past"}
-                </span>
+                </Badge>
               </TableCell>
               <TableCell className="text-right">
                 <EditActionLink

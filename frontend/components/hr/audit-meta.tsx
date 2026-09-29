@@ -1,33 +1,36 @@
 import { ACTION_LABELS } from "@/lib/audit";
 import type { AuditEntry } from "@/lib/audit";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
 
-export function auditActionTone(action: string): string {
+export function auditActionTone(action: string): BadgeTone {
   switch (action) {
     case "approved":
     case "plan_approved":
-      return "bg-brand-secondary-subtle text-brand-secondary";
+      return "info";
     case "rejected":
     case "cancelled":
     case "plan_rejected":
-      return "bg-status-rejected-subtle text-status-rejected";
+      return "rejected";
     case "submitted":
     case "reassigned":
     case "plan_submitted":
     case "plan_confirmed":
     case "plan_released":
-      return "bg-brand-primary-subtle text-brand-primary";
+      return "brand";
     default:
-      return "bg-surface-muted text-text-muted";
+      return "muted";
   }
 }
 
 export function AuditActionPill({ action }: { action: string }) {
   return (
-    <span
-      className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${auditActionTone(action)}`}
+    <Badge
+      size="sm"
+      tone={auditActionTone(action)}
+      className="font-medium whitespace-nowrap"
     >
       {ACTION_LABELS[action] || action}
-    </span>
+    </Badge>
   );
 }
 

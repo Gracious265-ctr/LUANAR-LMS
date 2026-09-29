@@ -12,13 +12,13 @@ import type {
   PlanDecisionAction,
   PlanDetail,
 } from "@/lib/plans/types";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { Panel } from "@/components/approvals/panel";
 
 import { PlanDecisionDialog } from "./plan-decision-dialog";
 import { BlockStatusBadge, PlanStatusBadge, StageStatusBadge } from "./plan-status-badge";
+import { Badge } from "@/components/ui/badge";
 
 export function PlanApprovalDetailView({ id }: { id: string }) {
   const [data, setData] = useState<PlanApprovalDetail | null>(null);
@@ -141,13 +141,11 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
       )}
 
       {data.my_decision && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-            data.my_decision.action === "approve"
-              ? "bg-status-approved-subtle text-status-approved"
-              : "bg-status-rejected-subtle text-status-rejected"
-          )}
+        <Badge
+          tone={
+            data.my_decision.action === "approve" ? "approved" : "rejected"
+          }
+          className="font-medium"
         >
           {data.my_decision.action === "approve" ? (
             <Check className="size-3.5" />
@@ -157,7 +155,7 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
           Your decision:{" "}
           {PLAN_ACTION_META[data.my_decision.action].label.toLowerCase()} ·{" "}
           {formatDate(data.my_decision.decided_at)}
-        </span>
+        </Badge>
       )}
 
       {blocks.length > 0 && (
@@ -216,15 +214,10 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
                       <span className="font-medium text-text-primary">
                         {decision.role_label}
                       </span>
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-                          meta2.badgeClass
-                        )}
-                      >
-                        <meta2.icon className="size-3" />
+                      <Badge size="compact" tone={meta2.badgeTone}>
+                        <meta2.icon className="size-3" aria-hidden="true" />
                         {meta2.label}
-                      </span>
+                      </Badge>
                     </div>
                     <div className="mt-0.5 text-xs text-text-muted">
                       {decision.approver_name} ·{" "}

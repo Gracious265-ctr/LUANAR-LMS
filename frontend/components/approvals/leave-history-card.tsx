@@ -19,7 +19,7 @@ import {
 const FALLBACK_META: StatusMeta = {
   label: "Submitted",
   icon: Clock,
-  badgeClass: "bg-surface-secondary text-text-secondary",
+  badgeTone: "draft",
   textClass: "text-text-secondary",
   dotClass: "bg-text-muted",
 };

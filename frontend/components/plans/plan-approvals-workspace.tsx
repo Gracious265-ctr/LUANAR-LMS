@@ -8,10 +8,10 @@ import { formatDate } from "@/lib/plans/format";
 import { fetchApprovalsList } from "@/lib/plans/service";
 import type { PlanApprovalListItem, PlanApprovalListResponse } from "@/lib/plans/types";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { PlanStatusBadge } from "./plan-status-badge";
+import { Badge } from "@/components/ui/badge";
 
 type Tab = "pending" | "decided";
 
@@ -71,9 +71,9 @@ export function PlanApprovalsWorkspace() {
             <TabsTrigger value="pending">
               Pending
               {data && tab === "pending" && (
-                <span className="ml-1.5 rounded-full bg-status-pending-subtle px-1.5 py-0.5 text-[11px] font-semibold text-status-pending">
+                <Badge size="xs" tone="pending" className="ml-1.5 px-1.5">
                   {data.count}
-                </span>
+                </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="decided">Decided</TabsTrigger>
@@ -155,9 +155,9 @@ function PlanApprovalRow({ item }: { item: PlanApprovalListItem }) {
             <p className="font-medium text-text-primary">{item.employee_name}</p>
             <PlanStatusBadge status={item.status} />
             {item.stage_role_label && (
-              <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-text-secondary">
+              <Badge size="xs" tone="neutral" className="font-medium">
                 with {item.stage_role_label}
-              </span>
+              </Badge>
             )}
           </div>
           <p className="mt-1 text-sm text-text-secondary">
@@ -178,17 +178,15 @@ function PlanApprovalRow({ item }: { item: PlanApprovalListItem }) {
         </div>
         <div className="flex items-center gap-2">
           {item.my_decision && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
-                item.my_decision.action === "approve"
-                  ? "bg-status-approved-subtle text-status-approved"
-                  : "bg-status-rejected-subtle text-status-rejected"
-              )}
+            <Badge
+              size="compact"
+              tone={
+                item.my_decision.action === "approve" ? "approved" : "rejected"
+              }
             >
-              <CheckCircle2 className="size-3" />
+              <CheckCircle2 className="size-3" aria-hidden="true" />
               {item.my_decision.action === "approve" ? "Approved" : "Rejected"}
-            </span>
+            </Badge>
           )}
           <ChevronRight className="size-4 text-text-muted" />
         </div>

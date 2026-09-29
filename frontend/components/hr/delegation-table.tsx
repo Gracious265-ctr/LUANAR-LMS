@@ -7,7 +7,7 @@ import Link from "next/link";
 import type { Delegation } from "@/lib/delegations";
 import { EmptyState } from "@/components/ui/states";
 import {
-  delegationStateBadgeClass,
+  delegationStateTone,
   delegationStateLabel,
 } from "@/lib/delegations-client";
 import {
@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 function periodLabel(delegation: Delegation): string {
   return delegation.ends_on
@@ -71,11 +72,13 @@ export function DelegationTable({
               {periodLabel(delegation)}
             </TableCell>
             <TableCell>
-              <span
-                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
+              <Badge
+                size="sm"
+                tone={delegationStateTone(delegation.state)}
+                className="font-medium"
               >
                 {delegationStateLabel(delegation.state)}
-              </span>
+              </Badge>
             </TableCell>
           </TableRow>
         ))}

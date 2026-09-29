@@ -1,5 +1,6 @@
 import { apiErrorMessage } from "./utils";
 import type { Workflow, WorkflowInput } from "./workflows";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export const APPROVER_ROLE_CODES = [
   "supervisor",
@@ -65,16 +66,16 @@ export function workflowStateLabel(state: WorkflowState): string {
   return WORKFLOW_STATE_LABELS[state];
 }
 
-export function workflowStateBadgeClass(state: WorkflowState): string {
+export function workflowStateTone(state: WorkflowState): BadgeTone {
   switch (state) {
     case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
+      return "info";
     case "scheduled":
-      return "bg-brand-primary-subtle text-brand-primary";
+      return "brand";
     case "draft":
-      return "bg-status-pending-subtle text-status-pending";
+      return "pending";
     case "inactive":
-      return "bg-surface-muted text-text-muted";
+      return "muted";
   }
 }
 

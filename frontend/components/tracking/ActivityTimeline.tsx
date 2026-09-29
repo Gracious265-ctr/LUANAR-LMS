@@ -1,13 +1,15 @@
 import { cn } from "@/lib/utils";
 
+import type { BadgeTone } from "@/components/ui/badge";
+import { badgeVariants } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/tracking/format";
 import { eventIcon, eventTitle } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 
-const EVENT_ACCENT: Record<string, string> = {
-  approved: "bg-status-approved-subtle text-status-approved",
-  rejected: "bg-status-rejected-subtle text-status-rejected",
-  correction_requested: "bg-status-correction-subtle text-status-correction",
+const EVENT_ACCENT_TONE: Record<string, BadgeTone> = {
+  approved: "approved",
+  rejected: "rejected",
+  correction_requested: "correction",
 };
 
 /**
@@ -43,7 +45,9 @@ export function ActivityTimeline({ data }: { data: TrackingResponse }) {
       <ol className="space-y-5">
         {events.map((event) => {
           const Icon = eventIcon(event.type);
-          const accent = EVENT_ACCENT[event.type] ?? "bg-surface-muted text-text-secondary";
+          const accent = badgeVariants({
+            tone: EVENT_ACCENT_TONE[event.type] ?? "muted",
+          });
           return (
             <li key={event.id} className="flex gap-3">
               <span

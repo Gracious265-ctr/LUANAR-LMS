@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 const CATEGORY_LABELS: Record<Employee["category"], string> = {
   academic: "Academic",
@@ -66,15 +67,13 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
             </TableCell>
             <TableCell className="text-text-secondary">{employee.grade || "—"}</TableCell>
             <TableCell>
-              <span
-                className={
-                  employee.is_active
-                    ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                    : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-                }
+              <Badge
+                size="sm"
+                tone={employee.is_active ? "info" : "muted"}
+                className="font-medium"
               >
                 {employee.is_active ? "Active" : "Inactive"}
-              </span>
+              </Badge>
             </TableCell>
             <TableCell className="text-right">
               <EditActionLink

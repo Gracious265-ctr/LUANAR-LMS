@@ -7,6 +7,7 @@ import type { TrackingResponse } from "@/lib/tracking/types";
 import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "./StatusBadge";
+import { Badge } from "@/components/ui/badge";
 
 export function TrackingHeader({
   data,
@@ -57,10 +58,10 @@ export function TrackingHeader({
         </h1>
         <StatusBadge status={status} />
         {data.has_open_cancellation_request && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
+          <Badge tone="pending">
             <Clock className="h-3.5 w-3.5" aria-hidden="true" />
             Cancellation requested
-          </span>
+          </Badge>
         )}
       </div>
 

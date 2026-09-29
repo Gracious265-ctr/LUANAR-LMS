@@ -7,11 +7,12 @@ import type {
   CancellationStatus,
   EmployeeNotificationState,
 } from "./types";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export interface StatusMeta {
   label: string;
   icon: LucideIcon;
-  badgeClass: string;
+  badgeTone: BadgeTone;
   textClass: string;
   dotClass: string;
 }
@@ -20,21 +21,21 @@ export const REQUEST_STATUS_META: Record<CancellationStatus, StatusMeta> = {
   pending: {
     label: "Pending",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Cancelled",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
@@ -44,35 +45,35 @@ export const STAGE_STATE_META: Record<CancellationStageState, StatusMeta> = {
   waiting: {
     label: "Waiting",
     icon: Clock,
-    badgeClass: "bg-surface-muted text-text-secondary",
+    badgeTone: "neutral",
     textClass: "text-text-muted",
     dotClass: "bg-surface-muted",
   },
   pending: {
     label: "Pending",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Approved",
     icon: Check,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: X,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
   not_reached: {
     label: "Not reached",
     icon: Clock,
-    badgeClass: "bg-surface-muted text-text-secondary",
+    badgeTone: "neutral",
     textClass: "text-text-muted",
     dotClass: "bg-surface-muted",
   },

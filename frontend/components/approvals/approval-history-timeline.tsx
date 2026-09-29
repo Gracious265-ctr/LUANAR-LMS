@@ -6,6 +6,7 @@ import type { ApprovalReview, ApprovalStage } from "@/lib/approvals/types";
 import { cn } from "@/lib/utils";
 
 import { Panel } from "./panel";
+import { Badge } from "@/components/ui/badge";
 
 const STATE_MARKER: Record<
   ApprovalStage["status"],
@@ -83,26 +84,29 @@ export function ApprovalHistoryTimeline({ data }: { data: ApprovalReview }) {
                       {stage.role_label}
                     </span>
                     {meta ? (
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                          meta.badgeClass
-                        )}
-                      >
+                      <Badge size="sm" tone={meta.badgeTone}>
                         {meta.label}
-                      </span>
+                      </Badge>
                     ) : stage.status === "pending" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-semibold text-status-pending">
+                      <Badge size="sm" tone="pending">
                         Awaiting your decision
-                      </span>
+                      </Badge>
                     ) : stage.status === "skipped" ? (
-                      <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                      <Badge
+                        size="sm"
+                        tone="muted"
+                        className="font-medium"
+                      >
                         Skipped — the approval flow starts after the applicant
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                      <Badge
+                        size="sm"
+                        tone="muted"
+                        className="font-medium"
+                      >
                         Not yet reached
-                      </span>
+                      </Badge>
                     )}
                   </div>
                   <p className="mt-0.5 text-xs text-text-muted">

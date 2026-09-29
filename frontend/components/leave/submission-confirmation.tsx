@@ -9,6 +9,7 @@ import type {
   SubmittedApplication,
   ValidationResult,
 } from "@/lib/leave-validation";
+import { Badge } from "@/components/ui/badge";
 
 interface SubmissionConfirmationProps {
   application: SubmittedApplication;
@@ -89,9 +90,7 @@ export function SubmissionConfirmation({
       </div>
 
       <div className="flex items-center justify-center gap-3 mb-8">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
-          Submitted
-        </span>
+        <Badge tone="pending">Submitted</Badge>
         {application.submitted_at && (
           <span className="text-xs text-text-muted">
             {formatTimestamp(application.submitted_at)}

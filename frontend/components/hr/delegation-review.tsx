@@ -11,7 +11,7 @@ import {
   approveDelegation,
   approverRolePeople,
   cancelDelegation,
-  delegationStateBadgeClass,
+  delegationStateTone,
   delegationStateLabel,
   rejectDelegation,
 } from "@/lib/delegations-client";
@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 type DecisionKind = "approve" | "reject" | "cancel" | null;
 
@@ -142,11 +143,13 @@ export function DelegationReview({
         </Link>
         <div className="mt-2 flex items-center gap-3">
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">{title}</h2>
-          <span
-            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
+          <Badge
+            size="sm"
+            tone={delegationStateTone(delegation.state)}
+            className="font-medium"
           >
             {delegationStateLabel(delegation.state)}
-          </span>
+          </Badge>
         </div>
       </div>
 

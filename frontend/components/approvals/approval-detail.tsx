@@ -25,6 +25,7 @@ import { DocumentsCard } from "./documents-card";
 import { EmployeeInfoCard } from "./employee-info-card";
 import { LeaveHistoryCard } from "./leave-history-card";
 import { Panel } from "./panel";
+import { Badge } from "@/components/ui/badge";
 
 export function ApprovalDetail({
   id,
@@ -144,9 +145,13 @@ export function ApprovalDetail({
         <span className="font-medium text-text-primary">{app.reference}</span>
         <StatusBadge status={data.workflow.state} />
         {resubmission && (
-          <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+          <Badge
+            size="sm"
+            tone="neutral"
+            className="font-medium"
+          >
             Resubmission #{app.submission_cycle}
-          </span>
+          </Badge>
         )}
       </div>
 
