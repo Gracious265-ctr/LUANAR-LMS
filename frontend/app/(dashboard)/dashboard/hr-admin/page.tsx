@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
+import { ArrowLeftRight, CalendarCheck2, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 
@@ -17,7 +17,7 @@ export default async function HRAdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">HR Administration</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">HR Administration</h2>
         <p className="text-text-secondary">
           Manage employee records and configuration for the leave management system.
         </p>
@@ -140,6 +140,21 @@ export default async function HRAdminPage() {
           <p className="mt-1 text-sm text-text-secondary">
             Configure the official template used for approved leave documents:
             wording, fields, and signature areas.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/plans/admin"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <CalendarCheck2 className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">
+            Leave Day Plans
+          </h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Review every employee&apos;s leave day plan and the plan settings
+            that govern confirmation windows.
           </p>
         </Link>
         <Link

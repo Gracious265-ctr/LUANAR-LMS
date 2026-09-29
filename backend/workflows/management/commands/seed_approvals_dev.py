@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.db import models
 from django.utils import timezone
 
 from leave.models import LeaveApplication
@@ -222,19 +223,24 @@ class Command(BaseCommand):
     def _suitable_start(self, user, seq: int) -> date:
         """A working day giving >= 5 working days' notice from today.
 
-        Public holidays are skipped as well as weekends, so a seeded application
-        never starts on a day the validation pipeline would reject.
+        Scenarios are staggered 8 working days apart (>= 5 days' notice and
+        > 7 calendar days between starts) so the seeded 7-day application spans
+        never overlap for the same employee, which the validation pipeline
+        would otherwise reject. Public holidays are skipped as well as
+        weekends, so a seeded application never starts on a day validation
+        rejects.
         """
         today = timezone.localdate()
         holidays = holidays_in_range(today + timedelta(days=1), today + timedelta(days=60))
         candidate = today
         count = 0
+        target = 5 + 8 * (seq - 1)
         while True:
             candidate += timedelta(days=1)
             if candidate.weekday() >= 5 or candidate in holidays:
                 continue
             count += 1
-            if count >= 6 + (seq % 2):  # stagger scenarios a little
+            if count >= target:  # stagger scenarios a little
                 return candidate
 
     def _seed_cancellations(self, fy_label: str):
@@ -275,7 +281,14 @@ class Command(BaseCommand):
         dvc = User.objects.get(username="dvc@test.luanar")
 
         today = get_today()
-        base_start = today + timedelta(days=21)
+        latest_end = LeaveApplication.objects.filter(
+            employee=employee
+        ).aggregate(max=models.Max("end_date"))["max"]
+        base_start = (
+            max(latest_end + timedelta(days=1), today + timedelta(days=21))
+            if latest_end
+            else today + timedelta(days=21)
+        )
         while base_start.weekday() >= 5:
             base_start += timedelta(days=1)
 

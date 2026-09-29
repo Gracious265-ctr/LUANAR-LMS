@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "users",
     "leave",
     "workflows",
+    "plans",
     "notifications",
     "documents",
     "audit",

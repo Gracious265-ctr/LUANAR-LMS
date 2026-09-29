@@ -8,4 +8,5 @@ urlpatterns = [
     path("api/v1/", include("workflows.urls")),
     path("api/v1/", include("documents.urls")),
     path("api/v1/", include("audit.urls")),
+    path("api/v1/", include("plans.urls")),
 ]

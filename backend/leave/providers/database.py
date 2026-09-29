@@ -72,6 +72,37 @@ def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
     return Decimal(restored) - Decimal(deducted)
 
 
+def _plan_reservation_net(employee_id: int, financial_year_label: str) -> Decimal:
+    """Reserved capacity minus released capacity from the plan ledger.
+
+    Approved plan blocks reserve annual-deducting working days up front (Unit
+    25 D8/D9); explicit releases (decline/HR) and auto-lapses return them.
+    ``confirm`` rows never touch capacity because the ``reserve`` row already
+    held the days. Days are only reserved for leave types that deduct annual
+    entitlement, matching the application-side balance check.
+    """
+    from django.db.models import Q, Sum
+
+    from plans.models import PlanBalanceTransaction
+
+    delta = PlanBalanceTransaction.objects.filter(
+        employee_id=employee_id,
+        financial_year=financial_year_label,
+    ).aggregate(
+        reserved=Sum(
+            "days",
+            filter=Q(type=PlanBalanceTransaction.Type.RESERVE),
+        ),
+        released=Sum(
+            "days",
+            filter=Q(type=PlanBalanceTransaction.Type.RELEASE),
+        ),
+    )
+    reserved = delta["reserved"] or Decimal(0)
+    released = delta["released"] or Decimal(0)
+    return Decimal(reserved) - Decimal(released)
+
+
 class DatabaseRulesProvider:
     """Read-only provider backed by the HR-track tables (Units 2-5)."""
 
@@ -147,5 +178,9 @@ class DatabaseRulesProvider:
 
         entitlement = resolved_annual_entitlement(profile.grade)
         days = entitlement.days if entitlement is not None else 0
-        net = Decimal(days) + _ledger_net(employee_id, financial_year_label)
+        net = (
+            Decimal(days)
+            + _ledger_net(employee_id, financial_year_label)
+            - _plan_reservation_net(employee_id, financial_year_label)
+        )
         return max(net, Decimal(0))
