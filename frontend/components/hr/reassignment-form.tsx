@@ -58,7 +58,7 @@ export function ReassignmentForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
-      <div className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+      <div className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
         <p className="font-medium text-text-primary">Reassigning</p>
         <p className="mt-1">
           {application.reference_number || "\u2014"} — {application.employee_name}
@@ -119,7 +119,7 @@ export function ReassignmentForm({
       </Field>
 
       {candidates.length === 0 && (
-        <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
           No eligible replacement approvers are available. Create employee
           records with approver roles first.
         </p>

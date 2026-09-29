@@ -73,7 +73,7 @@ export default async function EmployeesPage({
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         {error ? (
-          <div className="py-12 text-center text-sm text-status-rejected bg-status-rejected-subtle rounded-md">
+          <div className="py-12 text-center text-sm text-status-rejected bg-status-rejected-subtle rounded-lg">
             {error}
           </div>
         ) : employees ? (

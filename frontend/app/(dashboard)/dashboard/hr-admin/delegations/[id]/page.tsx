@@ -48,7 +48,7 @@ export default async function DelegationDetailPage({
             <ArrowLeft className="h-4 w-4" />
             Back to delegations
           </Link>
-          <div className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+          <div className="mt-4 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
             {employeesError}
           </div>
         </div>

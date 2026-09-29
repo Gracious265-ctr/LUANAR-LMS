@@ -91,7 +91,7 @@ export default async function DelegationsPage({
           {state ? `${delegationStateLabel(state)} delegations` : "All delegations"}
         </h3>
         {delegationsError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {delegationsError}
           </div>
         ) : delegations ? (

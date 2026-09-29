@@ -67,7 +67,7 @@ export function DocumentsCard({ data }: { data: ApprovalReview }) {
       {error && (
         <p
           role="alert"
-          className="mt-3 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
+          className="mt-3 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected"
         >
           {error}
         </p>

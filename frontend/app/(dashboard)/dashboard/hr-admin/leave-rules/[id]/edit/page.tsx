@@ -55,7 +55,7 @@ export default async function EditLeaveRulePage({
       </div>
 
       {typesError && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+        <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
           {typesError}
         </div>
       )}

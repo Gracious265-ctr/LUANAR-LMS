@@ -120,7 +120,7 @@ export default async function EntitlementsPage({
             Configuration
           </h3>
           {listError ? (
-            <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+            <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
               {listError}
             </div>
           ) : entitlements ? (

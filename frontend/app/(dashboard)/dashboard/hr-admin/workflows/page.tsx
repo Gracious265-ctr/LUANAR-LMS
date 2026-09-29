@@ -49,7 +49,7 @@ export default async function WorkflowsPage() {
           All workflows
         </h3>
         {workflowsError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {workflowsError}
           </div>
         ) : workflows ? (

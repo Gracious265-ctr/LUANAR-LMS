@@ -137,7 +137,7 @@ export default async function LeaveRulesPage({
       </div>
 
       {typesError && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+        <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
           {typesError}
         </div>
       )}
@@ -151,7 +151,7 @@ export default async function LeaveRulesPage({
               : "Upcoming rules"}
         </h3>
         {rulesError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {rulesError}
           </div>
         ) : rules ? (

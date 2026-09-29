@@ -46,7 +46,7 @@ export function CoverPanel({
           </h3>
         </div>
         {error || !delegations ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {error || "Unable to load your delegations. Please try again."}
           </div>
         ) : (

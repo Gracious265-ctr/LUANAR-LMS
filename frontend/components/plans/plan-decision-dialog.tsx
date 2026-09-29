@@ -191,7 +191,7 @@ function PlanDecisionDialogInner({
             {conflict && (
               <p
                 id={errorId}
-                className="rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected"
+                className="rounded-lg border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected"
               >
                 {error}
               </p>
@@ -199,7 +199,7 @@ function PlanDecisionDialogInner({
             {error && !conflict && (
               <p
                 id={errorId}
-                className="rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected"
+                className="rounded-lg border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected"
               >
                 {error}
               </p>

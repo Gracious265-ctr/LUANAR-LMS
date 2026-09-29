@@ -37,7 +37,7 @@ export default async function LeaveDocumentTemplatePage() {
       </div>
 
       {templateError ? (
-        <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+        <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
           {templateError}
         </div>
       ) : template ? (

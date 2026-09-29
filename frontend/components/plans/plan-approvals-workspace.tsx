@@ -66,7 +66,7 @@ export function PlanApprovalsWorkspace() {
             type="button"
             onClick={() => switchTab("pending")}
             className={cn(
-              "rounded-t-md px-4 py-2 text-sm font-medium transition-colors",
+              "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
               tab === "pending"
                 ? "border-b-2 border-brand-primary text-brand-primary"
                 : "text-text-secondary hover:text-text-primary"
@@ -83,7 +83,7 @@ export function PlanApprovalsWorkspace() {
             type="button"
             onClick={() => switchTab("decided")}
             className={cn(
-              "rounded-t-md px-4 py-2 text-sm font-medium transition-colors",
+              "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
               tab === "decided"
                 ? "border-b-2 border-brand-primary text-brand-primary"
                 : "text-text-secondary hover:text-text-primary"

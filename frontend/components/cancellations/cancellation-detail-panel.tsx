@@ -122,7 +122,7 @@ export function CancellationDetailPanel({
         {data.leave_started && (
           <div
             role="note"
-            className="flex items-start gap-2 rounded-md bg-status-pending-subtle p-3 text-sm text-status-pending"
+            className="flex items-start gap-2 rounded-lg bg-status-pending-subtle p-3 text-sm text-status-pending"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>Leave has started; this request can only be rejected.</p>
@@ -210,7 +210,7 @@ function CancellationDecisionSection({
 }) {
   if (!data.can_decide) {
     return (
-      <div className="rounded-md border border-border-default bg-surface-muted p-3">
+      <div className="rounded-lg border border-border-default bg-surface-muted p-3">
         <p className="text-sm text-text-secondary">
           {data.my_decision ? (
             <>

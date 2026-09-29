@@ -49,7 +49,7 @@ export default async function ReassignmentsPage() {
           Pending applications
         </h3>
         {pendingError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {pendingError}
           </div>
         ) : pending ? (
@@ -62,7 +62,7 @@ export default async function ReassignmentsPage() {
           Reassignment history
         </h3>
         {historyError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {historyError}
           </div>
         ) : history ? (

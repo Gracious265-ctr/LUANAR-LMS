@@ -12,7 +12,7 @@ export function FormError({
     <div
       role="alert"
       className={cn(
-        "rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected",
+        "rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected",
         className
       )}
     >

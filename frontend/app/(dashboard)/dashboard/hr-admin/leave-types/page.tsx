@@ -48,7 +48,7 @@ export default async function LeaveTypesPage() {
           Leave types
         </h3>
         {listError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {listError}
           </div>
         ) : leaveTypes ? (

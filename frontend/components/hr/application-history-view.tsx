@@ -67,7 +67,7 @@ export function ApplicationHistoryView({
             {application.documents.map((doc) => (
               <li
                 key={doc.id}
-                className="flex items-center justify-between rounded-md border border-border-default px-4 py-3"
+                className="flex items-center justify-between rounded-lg border border-border-default px-4 py-3"
               >
                 <div>
                   <div className="font-medium text-text-primary">
@@ -108,7 +108,7 @@ export function ApplicationHistoryView({
             {application.reassignments.map((reassignment) => (
               <li
                 key={reassignment.id}
-                className="rounded-md border border-border-default px-4 py-3"
+                className="rounded-lg border border-border-default px-4 py-3"
               >
                 <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
                   <span className="font-medium text-text-primary">

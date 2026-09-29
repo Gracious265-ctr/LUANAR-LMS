@@ -71,7 +71,7 @@ export default async function NewReassignmentPage({
 
       {employeesError ? (
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
             {employeesError}
           </div>
         </div>

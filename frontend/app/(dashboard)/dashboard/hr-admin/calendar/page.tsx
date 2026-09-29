@@ -81,7 +81,7 @@ export default async function CalendarPage({
         </div>
 
         {yearsError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {yearsError}
           </div>
         ) : financialYears ? (
@@ -138,7 +138,7 @@ export default async function CalendarPage({
         </form>
 
         {holidaysError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {holidaysError}
           </div>
         ) : holidays ? (

@@ -166,7 +166,7 @@ const titleId = useId();
           <div
             role="alert"
             className={cn(
-              "mt-4 rounded-md p-3 text-sm",
+              "mt-4 rounded-lg p-3 text-sm",
               conflict
                 ? "bg-status-pending-subtle text-status-pending"
                 : "bg-status-rejected-subtle text-status-rejected"
@@ -235,7 +235,7 @@ const titleId = useId();
               </div>
             </div>
 
-            <div className="mt-4 flex items-start gap-3 rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+            <div className="mt-4 flex items-start gap-3 rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
               <CalendarX2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <p>
                 {consequenceLine(
@@ -264,7 +264,7 @@ const titleId = useId();
           </form>
         ) : (
           <form onSubmit={submit} className="mt-4">
-            <div className="rounded-md border border-border-default bg-surface-card p-4">
+            <div className="rounded-xl border border-border-default bg-surface-card p-4">
               <p className="text-sm font-medium text-text-primary">Reason</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-text-secondary">{trimmed}</p>
               <p className="mt-3 text-sm font-medium text-text-primary">What happens next</p>

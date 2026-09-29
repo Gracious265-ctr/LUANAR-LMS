@@ -130,7 +130,7 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       {error && (
         <div
           role="alert"
-          className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
+          className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
         >
           {error}
         </div>

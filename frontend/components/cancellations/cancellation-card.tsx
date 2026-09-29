@@ -69,7 +69,7 @@ export function CancellationCard({
       {banner && (
         <div
           className={cn(
-            "mt-4 rounded-md p-3 text-sm",
+            "mt-4 rounded-lg p-3 text-sm",
             latest.status === "approved"
               ? "bg-status-approved-subtle text-status-approved"
               : "bg-status-rejected-subtle text-status-rejected"
@@ -126,7 +126,7 @@ export function CancellationCard({
               {earlier.map((request) => (
                 <li
                   key={request.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-surface-muted px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-surface-muted px-3 py-2 text-sm"
                 >
                   <span className="font-medium text-text-primary">
                     {KIND_LABELS[request.kind]}

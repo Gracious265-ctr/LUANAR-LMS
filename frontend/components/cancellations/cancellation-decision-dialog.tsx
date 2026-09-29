@@ -159,7 +159,7 @@ function CancellationDecisionDialogInner({
         </p>
 
         <p className="mt-4 text-sm font-medium text-text-primary">Employee&apos;s reason</p>
-        <p className="mt-1 whitespace-pre-wrap rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+        <p className="mt-1 whitespace-pre-wrap rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
           {data.request.reason}
         </p>
 
@@ -209,7 +209,7 @@ function CancellationDecisionDialogInner({
             {error && !fieldError && (
               <div
                 role="alert"
-                className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
+                className="mt-4 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected"
               >
                 {error}
               </div>

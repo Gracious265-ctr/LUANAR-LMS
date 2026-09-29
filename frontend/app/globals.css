@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* The app is light-only, but shadcn components ship `dark:` variants. Without
+   this declaration Tailwind drops those rules at build time; with it they parse
+   and stay inert until a `.dark` palette is added. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   /* Brand and Primary */
   --brand-primary: #0097F0;
@@ -95,17 +100,41 @@
   --ai-border: #DDD6FE;
   --ai-foreground: #FFFFFF;
 
-  /* Border Radius */
-  --radius: 0.6rem;
+  /* Chart palette: derived from the accent ramp so charts stay on brand
+     without introducing new hues. */
+  --chart-1: var(--accent-blue);
+  --chart-2: var(--accent-green);
+  --chart-3: var(--accent-orange);
+  --chart-4: var(--accent-purple);
+  --chart-5: var(--accent-red);
+
+  /* Sidebar */
+  --sidebar-background: var(--surface-page);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--brand-primary-foreground);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--border-focus);
+
+  /* Border Radius
+     `md` is the control scale and is deliberately pill-shaped: every button,
+     input, select, textarea, chip and date-picker trigger resolves to
+     `rounded-control`, which points here. `sm`/`lg`/`xl`/`2xl`/`3xl` are the
+     container scale. `calendar` stays compact so multi-day range bars and day
+     cells keep square-ish corners instead of collapsing into circles. */
+  --radius: 0.75rem;
   --radius-xs: 0.125rem;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: 0.25rem;
+  --radius-md: var(--radius-full);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: 1rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
   --radius-3xl: 1.5rem;
   --radius-4xl: 2rem;
   --radius-full: 9999px;
+  --radius-calendar: 0.5rem;
 
   /* Shadows */
   --shadow-none: none;
@@ -116,6 +145,15 @@
   --shadow-modal: 0 25px 50px -12px #00000040;
   --shadow-hover: 0 4px 6px -1px #0000001a, 0 2px 4px -2px #0000001a;
   --shadow-pressed: inset 0 1px 1px #0000000d;
+
+  /* shadcn elevation scale, aliased onto the shadows above so vendored
+     components read correctly without introducing a second visual language. */
+  --shadow-2xs: 0 1px 2px 0 #0000000d;
+  --shadow-sm: var(--shadow-card);
+  --shadow-md: var(--shadow-card);
+  --shadow-lg: var(--shadow-dropdown);
+  --shadow-xl: var(--shadow-dropdown);
+  --shadow-2xl: var(--shadow-modal);
 
   /* Spacing Rhythm */
   --space-hairline: 4px;
@@ -151,7 +189,7 @@
   --measure-body: 68ch;
 
   /* Controls */
-  --control-radius: var(--radius-md);
+  --control-radius: var(--radius-full);
   --control-height-sm: 32px;
   --control-height-md: 36px;
   --control-height-lg: 40px;
@@ -207,6 +245,23 @@
   --color-popover-foreground: var(--theme-popover-foreground);
   --color-accent: var(--theme-accent);
   --color-accent-foreground: var(--theme-accent-foreground);
+
+  /* Chart Colors */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Sidebar Colors */
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   /* Brand Colors */
   --color-brand-primary: var(--brand-primary);
@@ -292,6 +347,7 @@
   --radius-3xl: var(--radius-3xl);
   --radius-4xl: var(--radius-4xl);
   --radius-full: var(--radius-full);
+  --radius-calendar: var(--radius-calendar);
 
   /* Shadows */
   --shadow-none: var(--shadow-none);
@@ -302,6 +358,12 @@
   --shadow-modal: var(--shadow-modal);
   --shadow-hover: var(--shadow-hover);
   --shadow-pressed: var(--shadow-pressed);
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
 
   /* Spacing Rhythm (named additions; the numeric scale is untouched) */
   --spacing-hairline: var(--space-hairline);

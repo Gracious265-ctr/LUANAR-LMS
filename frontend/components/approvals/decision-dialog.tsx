@@ -241,7 +241,7 @@ function DecisionDialogInner({
               <div
                 role="alert"
                 className={cn(
-                  "mt-4 rounded-md p-3 text-sm",
+                  "mt-4 rounded-lg p-3 text-sm",
                   blocked
                     ? "bg-status-pending-subtle text-status-pending"
                     : "bg-status-rejected-subtle text-status-rejected"
@@ -261,7 +261,7 @@ function DecisionDialogInner({
           </div>
 
           {conflict && (
-            <div className="mt-4 rounded-md bg-status-pending-subtle p-3 text-sm text-status-pending">
+            <div className="mt-4 rounded-lg bg-status-pending-subtle p-3 text-sm text-status-pending">
               This application has changed since you opened it.{" "}
               <button
                 type="button"

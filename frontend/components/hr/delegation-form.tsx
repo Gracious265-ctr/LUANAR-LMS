@@ -118,7 +118,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
       </Field>
 
       {approvers.length === 0 && (
-        <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary md:col-span-2">
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary md:col-span-2">
           No active users with an approver role are available. Create employee
           records first.
         </p>

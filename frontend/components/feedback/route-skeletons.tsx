@@ -74,9 +74,9 @@ export function ListPageSkeleton({
       {withSearch && (
         <div className="flex max-w-md items-center gap-2">
           <div className="relative flex-1">
-            <Skeleton className="h-10 w-full rounded-md" />
+            <Skeleton className="h-10 w-full rounded-lg" />
           </div>
-          <Skeleton className="h-10 w-24 rounded-md" />
+          <Skeleton className="h-10 w-24 rounded-lg" />
         </div>
       )}
       <div className={`${CARD} overflow-hidden p-0`}>
@@ -126,7 +126,7 @@ export function FormPageSkeleton({
           {Array.from({ length: fields }).map((_, i) => (
             <div key={i} className="space-y-2">
               <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-10 w-full rounded-md" />
+              <Skeleton className="h-10 w-full rounded-lg" />
             </div>
           ))}
         </div>

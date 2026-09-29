@@ -85,7 +85,7 @@ export default async function AuditPage({
           documents, reassignment history, and full audit trail.
         </p>
         {finalizedError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {finalizedError}
           </div>
         ) : finalized ? (
@@ -106,7 +106,7 @@ export default async function AuditPage({
           </div>
           <form
             method="get"
-            className="flex flex-wrap items-end gap-3 rounded-md border border-border-default bg-surface-page p-3"
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-surface-page p-3"
           >
             <label className="text-sm">
               <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
@@ -159,7 +159,7 @@ export default async function AuditPage({
           </form>
         </div>
         {entriesError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {entriesError}
           </div>
         ) : entries ? (

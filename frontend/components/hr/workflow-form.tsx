@@ -217,7 +217,7 @@ export function WorkflowForm({
         </div>
 
         {stages.length === 0 && (
-          <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+          <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
             No stages yet. Add at least one approver role.
           </p>
         )}
@@ -226,7 +226,7 @@ export function WorkflowForm({
           {stages.map((stage, index) => (
             <div
               key={index}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-border-default bg-surface-card p-3"
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-border-default bg-surface-card p-3"
             >
               <span className="grid size-8 shrink-0 place-content-center rounded-full bg-brand-primary-subtle text-sm font-semibold text-brand-primary">
                 {index + 1}

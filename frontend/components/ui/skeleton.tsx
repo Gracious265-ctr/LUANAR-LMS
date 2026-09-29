@@ -68,7 +68,7 @@ export function SkeletonTable({
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center gap-3 rounded-md border border-border-subtle bg-surface-card px-4 py-3"
+          className="flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-card px-4 py-3"
         >
           <Skeleton className="size-8 rounded-full" />
           <Skeleton className="h-3.5 flex-1" />

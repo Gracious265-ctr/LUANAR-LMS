@@ -240,7 +240,7 @@ export function LeaveDocumentTemplateEditor({
             fields.map((field, index) => (
               <div
                 key={field.key}
-                className="mb-2 flex items-center gap-2 rounded-md border border-border-default bg-surface-page p-2"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-border-default bg-surface-page p-2"
               >
                 <span className="w-32 shrink-0 text-xs text-text-muted">
                   {field.key}
@@ -322,7 +322,7 @@ export function LeaveDocumentTemplateEditor({
             signatureAreas.map((area, index) => (
               <div
                 key={`${area.label}-${index}`}
-                className="mb-2 flex items-center gap-2 rounded-md border border-border-default bg-surface-page p-2"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-border-default bg-surface-page p-2"
               >
                 <Input
                   aria-label={`Signature area ${index + 1} label`}
