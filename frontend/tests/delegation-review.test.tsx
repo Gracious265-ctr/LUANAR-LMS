@@ -1,9 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { DelegationReview } from "@/components/hr/delegation-review";
 import type { Delegation } from "@/lib/delegations";
 import type { Employee, UserRole } from "@/lib/employees";
+
+import { selectOption } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -72,6 +77,7 @@ describe("DelegationReview", () => {
     vi.mocked(approveDelegation).mockResolvedValue(base);
     vi.mocked(rejectDelegation).mockResolvedValue(base);
     vi.mocked(cancelDelegation).mockResolvedValue(base);
+    user = userEvent.setup();
   });
 
   it("renders the delegation details and a state badge", () => {
@@ -113,13 +119,11 @@ describe("DelegationReview", () => {
     expect(approveDelegation).not.toHaveBeenCalled();
   });
 
-  it("submits an approval with delegate and reason", () => {
+  it("submits an approval with delegate and reason", async () => {
     render(<DelegationReview delegation={base} employees={employees} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    fireEvent.change(screen.getByLabelText("Delegate"), {
-      target: { value: "5" },
-    });
+    await selectOption(screen.getByLabelText("Delegate"), "Bob HOD", { user });
     fireEvent.change(screen.getByLabelText("Decision reason"), {
       target: { value: "Approved" },
     });

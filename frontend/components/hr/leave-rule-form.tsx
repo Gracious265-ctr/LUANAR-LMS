@@ -6,7 +6,14 @@ import Link from "next/link";
 
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
 import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,18 +65,17 @@ export function LeaveRuleForm({
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Field label="Leave type" htmlFor="leave_type">
-        <Select
-          id="leave_type"
-          name="leave_type"
-          required
-          defaultValue={leaveRule?.leave_type ?? ""}
-        >
-          {leaveTypes.length === 0 && <option value="">No leave types available</option>}
-          {leaveTypes.map((leaveType) => (
-            <option key={leaveType.id} value={leaveType.id}>
-              {leaveType.name}
-            </option>
-          ))}
+        <Select name="leave_type" required defaultValue={leaveRule?.leave_type ? String(leaveRule.leave_type) : ""}>
+          <SelectTrigger id="leave_type" aria-label="Leave type">
+            <SelectValue placeholder="No leave types available" />
+          </SelectTrigger>
+          <SelectContent>
+            {leaveTypes.map((leaveType) => (
+              <SelectItem key={leaveType.id} value={String(leaveType.id)}>
+                {leaveType.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
         {leaveTypes.length === 0 && (
           <p className="text-xs text-text-muted">

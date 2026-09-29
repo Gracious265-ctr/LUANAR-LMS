@@ -17,7 +17,14 @@ import {
   createWorkflow,
   updateWorkflow,
 } from "@/lib/workflows-client";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -125,14 +132,15 @@ export function WorkflowForm({
         htmlFor="employee_category"
         hint="Blank applies the workflow to every employee category."
       >
-        <Select
-          id="employee_category"
-          name="employee_category"
-          defaultValue={workflow?.employee_category ?? ""}
-        >
-          <option value="">Any category</option>
-          <option value="academic">Academic</option>
-          <option value="administration">Administration</option>
+        <Select name="employee_category" defaultValue={workflow?.employee_category ?? ""}>
+          <SelectTrigger id="employee_category" aria-label="Employee category">
+            <SelectValue placeholder="Any category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Any category</SelectItem>
+            <SelectItem value="academic">Academic</SelectItem>
+            <SelectItem value="administration">Administration</SelectItem>
+          </SelectContent>
         </Select>
       </Field>
 
@@ -232,18 +240,24 @@ export function WorkflowForm({
                 {index + 1}
               </span>
               <Select
-                aria-label={`Stage ${index + 1} approver`}
                 value={stage.approver_role}
-                onChange={(event) =>
-                  updateRole(index, event.target.value as ApproverRoleCode)
+                onValueChange={(next) =>
+                  updateRole(index, next as ApproverRoleCode)
                 }
-                className="w-auto min-w-44 flex-1"
               >
-                {APPROVER_ROLE_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {APPROVER_ROLE_LABELS[code]}
-                  </option>
-                ))}
+                <SelectTrigger
+                  aria-label={`Stage ${index + 1} approver`}
+                  className="w-auto min-w-44 flex-1"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {APPROVER_ROLE_CODES.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {APPROVER_ROLE_LABELS[code]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
                 <button

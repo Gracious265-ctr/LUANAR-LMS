@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 
+import { Label } from "./label";
+
 /** One source of truth for every text control's border, fill and focus ring. */
 export const fieldStyles = [
   "w-full rounded-control border border-input-border bg-input-background px-control-x-md py-control-y",
@@ -17,21 +19,14 @@ export function Input({
   return <input className={cn(fieldStyles, className)} {...props} />;
 }
 
-export function Select({
-  className,
-  children,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      className={cn(fieldStyles, "cursor-pointer", className)}
-      {...props}
-    >
-      {children}
-    </select>
-  );
-}
-
+/**
+ * Label + control + hint/error, the shape every form in the app uses.
+ *
+ * `htmlFor` must match the `id` on the control, which is what makes
+ * `getByLabelText` work. That holds for a Radix `SelectTrigger` too, since a
+ * `<button>` is a labelable element, so switching a field from `Input` to
+ * `Select` does not move its accessible name.
+ */
 export function Field({
   label,
   htmlFor,
@@ -49,9 +44,9 @@ export function Field({
 }) {
   return (
     <div className={cn("space-y-block", className)}>
-      <label htmlFor={htmlFor} className="block text-sm font-medium text-text-secondary">
+      <Label htmlFor={htmlFor} className="block">
         {label}
-      </label>
+      </Label>
       {children}
       {hint && !error && (
         <p id={`${htmlFor}-hint`} className="text-xs text-text-muted">

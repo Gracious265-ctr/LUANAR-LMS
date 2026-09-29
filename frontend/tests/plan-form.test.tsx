@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanForm } from "@/components/plans/plan-form";
 import { createPlan } from "@/lib/plans/service";
+
+import { selectOption } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 vi.mock("@/lib/plans/service", () => ({
   createPlan: vi.fn(),
@@ -17,15 +22,16 @@ const leaveTypes = [
   { id: 2, name: "Sick Leave", code: "SICK" },
 ];
 
-function fillBlock(
-  typeValue: string,
+/** `typeLabel` is the visible leave type text, e.g. "Annual Leave". */
+async function fillBlock(
+  typeLabel: string,
   start: string,
   end: string,
   index = 0
 ) {
   const typeSelect = screen.getAllByLabelText("Leave type")[index];
   expect(typeSelect).toBeTruthy();
-  fireEvent.change(typeSelect, { target: { value: typeValue } });
+  await selectOption(typeSelect, typeLabel, { user });
   const starts = screen.getAllByLabelText("Start date");
   const ends = screen.getAllByLabelText("End date");
   fireEvent.change(starts[index], { target: { value: start } });
@@ -33,6 +39,10 @@ function fillBlock(
 }
 
 describe("PlanForm", () => {
+  beforeEach(() => {
+    user = userEvent.setup();
+  });
+
   it("adds and removes dynamic blocks", () => {
     render(<PlanForm leaveTypes={leaveTypes} />);
 
@@ -84,7 +94,7 @@ describe("PlanForm", () => {
     fireEvent.change(screen.getByLabelText("Period end"), {
       target: { value: "2027-06-30" },
     });
-    fillBlock("1", "2026-10-08", "2026-10-09");
+    await fillBlock("Annual Leave", "2026-10-08", "2026-10-09");
 
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 
@@ -111,7 +121,7 @@ describe("PlanForm", () => {
     fireEvent.change(screen.getByLabelText("Period end"), {
       target: { value: "2027-06-30" },
     });
-    fillBlock("1", "2026-10-08", "2026-10-09");
+    await fillBlock("Annual Leave", "2026-10-08", "2026-10-09");
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 
     await waitFor(() =>

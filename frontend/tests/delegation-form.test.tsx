@@ -1,8 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { DelegationForm } from "@/components/hr/delegation-form";
 import type { Employee, UserRole } from "@/lib/employees";
+
+import { openSelect, selectOption } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -62,6 +67,7 @@ describe("DelegationForm", () => {
       created_at: "2026-09-17T12:00:00Z",
       updated_at: "2026-09-17T12:00:00Z",
     });
+    user = userEvent.setup();
   });
 
   it("renders the delegation request fields", () => {
@@ -77,13 +83,12 @@ describe("DelegationForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("only offers users with an approver role as options", () => {
+  it("only offers users with an approver role as options", async () => {
     render(<DelegationForm employees={employees} />);
 
-    const approver = screen.getByLabelText("Approver");
-    const options = Array.from(approver.querySelectorAll("option")).map(
-      (option) => option.textContent
-    );
+    await openSelect(screen.getByLabelText("Approver"), { user });
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual([
       "Select the approver",
       "Jane Dean",
@@ -91,14 +96,12 @@ describe("DelegationForm", () => {
     ]);
   });
 
-  it("submits the create shape with delegate and reason", () => {
+  it("submits the create shape with delegate and reason", async () => {
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
-    fireEvent.change(screen.getByLabelText("Delegate nomination"), {
-      target: { value: "5" },
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
+    await selectOption(screen.getByLabelText("Delegate nomination"), "Bob HOD", {
+      user,
     });
     fireEvent.change(screen.getByLabelText("Starts on"), {
       target: { value: "2026-10-01" },
@@ -123,12 +126,10 @@ describe("DelegationForm", () => {
     });
   });
 
-  it("sends null when no delegate nomination or end date is chosen", () => {
+  it("sends null when no delegate nomination or end date is chosen", async () => {
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
     fireEvent.change(screen.getByLabelText("Starts on"), {
       target: { value: "2026-10-01" },
     });
@@ -146,17 +147,14 @@ describe("DelegationForm", () => {
     });
   });
 
-  it("drops the nominated approver from the delegate list", () => {
+  it("drops the nominated approver from the delegate list", async () => {
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
 
-    const delegate = screen.getByLabelText("Delegate nomination");
-    const options = Array.from(delegate.querySelectorAll("option")).map(
-      (option) => option.textContent
-    );
+    await openSelect(screen.getByLabelText("Delegate nomination"), { user });
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual([
       "No nomination",
       "Bob HOD",

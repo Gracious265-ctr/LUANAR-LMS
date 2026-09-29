@@ -11,7 +11,14 @@ import type {
 } from "@/lib/leave-document-template";
 import { updateLeaveDocumentTemplate } from "@/lib/leave-document-template-client";
 import { DocumentTemplatePreview } from "./document-template-preview";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
@@ -202,18 +209,21 @@ export function LeaveDocumentTemplateEditor({
               Data fields
             </h3>
             <div className="flex items-center gap-2">
-              <Select
-                aria-label="Add data field"
-                value={newFieldKey}
-                onChange={(event) => setNewFieldKey(event.target.value)}
-                className="w-auto px-2 py-1.5"
-              >
-                <option value="">Add field</option>
-                {availableFields.map((field) => (
-                  <option key={field.key} value={field.key}>
-                    {field.label}
-                  </option>
-                ))}
+              <Select value={newFieldKey} onValueChange={setNewFieldKey}>
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Add data field"
+                  className="w-auto px-2 py-1.5"
+                >
+                  <SelectValue placeholder="Add field" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableFields.map((field) => (
+                    <SelectItem key={field.key} value={field.key}>
+                      {field.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <button
                 type="button"

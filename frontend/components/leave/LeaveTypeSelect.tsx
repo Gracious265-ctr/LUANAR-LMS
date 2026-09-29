@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 
 import { getLeaveTypes, type LeaveType } from "@/lib/services/leaveTypes";
-import { Field, Select } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface LeaveTypeSelectProps {
   value: number | null;
@@ -25,17 +32,21 @@ export function LeaveTypeSelect({
   return (
     <Field label="Leave Type" htmlFor="leave-type">
       <Select
-        id="leave-type"
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        value={value === null || value === undefined ? "" : String(value)}
+        onValueChange={(next) => onChange(next ? Number(next) : null)}
         disabled={disabled}
       >
-        <option value="">Select leave type</option>
-        {types.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
+        <SelectTrigger id="leave-type" aria-label="Leave Type">
+          <SelectValue placeholder="Select leave type" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="">Select leave type</SelectItem>
+          {types.map((t) => (
+            <SelectItem key={t.id} value={String(t.id)}>
+              {t.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </Field>
   );

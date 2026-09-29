@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 
 import type { DelegateCandidate } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Self-service cover request for an approver.
@@ -94,18 +101,19 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
         >
           Nominate a delegate
         </label>
-        <select
-          id="cover_delegate"
-          name="delegate"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          <option value="">No nomination</option>
-          {candidates.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.full_name}
-            </option>
-          ))}
-        </select>
+        <Select name="delegate">
+          <SelectTrigger id="cover_delegate" aria-label="Nominate a delegate">
+            <SelectValue placeholder="No nomination" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">No nomination</SelectItem>
+            {candidates.map((candidate) => (
+              <SelectItem key={candidate.id} value={String(candidate.id)}>
+                {candidate.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="mt-1 text-xs text-text-muted">
           Optional. HR confirms the delegate or picks someone else on approval.
         </p>

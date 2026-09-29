@@ -8,7 +8,14 @@ import type { LeaveType } from "@/lib/leave-rules";
 import { createPlan } from "@/lib/plans/service";
 import type { PlanInputBlock } from "@/lib/plans/types";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FormError } from "@/components/ui/form-error";
 
 interface PlanBlockDraft {
@@ -144,18 +151,25 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
             >
               <Field label="Leave type" htmlFor={`block-type-${block.key}`}>
                 <Select
-                  id={`block-type-${block.key}`}
                   value={block.leave_type_id}
-                  onChange={(e) =>
-                    updateBlock(block.key, { leave_type_id: e.target.value })
+                  onValueChange={(next) =>
+                    updateBlock(block.key, { leave_type_id: next })
                   }
                 >
-                  <option value="">Select leave type</option>
-                  {leaveTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.name}
-                    </option>
-                  ))}
+                  <SelectTrigger
+                    id={`block-type-${block.key}`}
+                    aria-label="Leave type"
+                  >
+                    <SelectValue placeholder="Select leave type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Select leave type</SelectItem>
+                    {leaveTypes.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </Field>
               <Field label="Start date" htmlFor={`block-start-${block.key}`}>

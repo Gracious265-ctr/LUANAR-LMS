@@ -10,7 +10,13 @@ import {
   listFinalizedApplications,
   TARGET_TYPE_LABELS,
 } from "@/lib/audit";
-import { Select } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type AuditSearchParams = Promise<{
   action?: string | string[];
@@ -108,40 +114,48 @@ export default async function AuditPage({
             method="get"
             className="flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-surface-page p-3"
           >
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
+            <div className="text-sm">
+              <label
+                htmlFor="action"
+                className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted"
+              >
                 Action
-              </span>
-              <Select
-                name="action"
-                defaultValue={action || ""}
-                className="w-auto"
-              >
-                <option value="">All actions</option>
-                {Object.entries(ACTION_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
+              </label>
+              <Select name="action" defaultValue={action || ""}>
+                <SelectTrigger id="action" className="w-auto">
+                  <SelectValue placeholder="All actions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All actions</SelectItem>
+                  {Object.entries(ACTION_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
+            </div>
+            <div className="text-sm">
+              <label
+                htmlFor="target_type"
+                className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted"
+              >
                 Target
-              </span>
-              <Select
-                name="target_type"
-                defaultValue={targetType || ""}
-                className="w-auto"
-              >
-                <option value="">All targets</option>
-                {Object.entries(TARGET_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
+              </label>
+              <Select name="target_type" defaultValue={targetType || ""}>
+                <SelectTrigger id="target_type" className="w-auto">
+                  <SelectValue placeholder="All targets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All targets</SelectItem>
+                  {Object.entries(TARGET_TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </label>
+            </div>
             <button
               type="submit"
               className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"

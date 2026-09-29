@@ -9,6 +9,13 @@ import { BLOCK_STATUS_META, PLAN_STATUS_META } from "@/lib/plans/labels";
 import { fetchAdminPlans } from "@/lib/plans/service";
 import type { BlockStatus, PlanRow, PlanStatus } from "@/lib/plans/types";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { PlanStatusBadge } from "./plan-status-badge";
@@ -74,22 +81,25 @@ export function PlanAdminView() {
           >
             Plan status
           </label>
-          <select
-            id="plan-status-filter"
+          <Select
             value={status}
-            onChange={(e) => {
-              setStatus(e.target.value as PlanStatus | "");
+            onValueChange={(next) => {
+              setStatus(next as PlanStatus | "");
               setPage(1);
             }}
-            className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           >
-            <option value="">All statuses</option>
-            {PLAN_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {PLAN_STATUS_META[value].label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="plan-status-filter" aria-label="Plan status">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All statuses</SelectItem>
+              {PLAN_STATUSES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {PLAN_STATUS_META[value].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label
@@ -98,22 +108,25 @@ export function PlanAdminView() {
           >
             Block status
           </label>
-          <select
-            id="block-status-filter"
+          <Select
             value={blockStatus}
-            onChange={(e) => {
-              setBlockStatus(e.target.value as BlockStatus | "");
+            onValueChange={(next) => {
+              setBlockStatus(next as BlockStatus | "");
               setPage(1);
             }}
-            className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           >
-            <option value="">Any block</option>
-            {BLOCK_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {BLOCK_STATUS_META[value].label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="block-status-filter" aria-label="Block status">
+              <SelectValue placeholder="Any block" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Any block</SelectItem>
+              {BLOCK_STATUSES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {BLOCK_STATUS_META[value].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <button
           type="button"

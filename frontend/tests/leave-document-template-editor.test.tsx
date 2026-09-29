@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { LeaveDocumentTemplateEditor } from "@/components/hr/leave-document-template-editor";
 import type { LeaveDocumentTemplate } from "@/lib/leave-document-template";
+
+import { selectOption } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 vi.mock("@/lib/leave-document-template-client", async (importOriginal) => {
   const actual =
@@ -46,6 +51,7 @@ const template: LeaveDocumentTemplate = {
 describe("LeaveDocumentTemplateEditor", () => {
   beforeEach(() => {
     vi.mocked(updateLeaveDocumentTemplate).mockResolvedValue({ ...template });
+    user = userEvent.setup();
   });
 
   it("renders the saved configuration", () => {
@@ -79,12 +85,14 @@ describe("LeaveDocumentTemplateEditor", () => {
     expect(previewRows[0].textContent).toContain("Jane Employee");
   });
 
-  it("adds an unused catalog field in order", () => {
+  it("adds an unused catalog field in order", async () => {
     render(<LeaveDocumentTemplateEditor template={template} />);
 
-    fireEvent.change(screen.getByLabelText("Add data field"), {
-      target: { value: "end_date" },
-    });
+    await selectOption(
+      screen.getByLabelText("Add data field"),
+      "End date",
+      { user }
+    );
     fireEvent.click(screen.getByLabelText("Add selected field"));
 
     const labelInputs = [

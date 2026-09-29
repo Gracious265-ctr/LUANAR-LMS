@@ -10,7 +10,13 @@ import {
   type EffectiveFilter,
 } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
-import { Select } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const TABS: { value: EffectiveFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -115,17 +121,18 @@ export default async function LeaveRulesPage({
           {effective !== "all" && (
             <input type="hidden" name="effective" value={effective} />
           )}
-          <Select
-            name="leave_type"
-            defaultValue={leaveTypeFilter}
-            className="w-auto py-1.5"
-          >
-            <option value="">All leave types</option>
-            {leaveTypes?.results.map((leaveType) => (
-              <option key={leaveType.id} value={leaveType.id}>
-                {leaveType.name}
-              </option>
-            ))}
+          <Select name="leave_type" defaultValue={leaveTypeFilter}>
+            <SelectTrigger size="sm" aria-label="Leave type" className="w-auto py-1.5">
+              <SelectValue placeholder="All leave types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All leave types</SelectItem>
+              {leaveTypes?.results.map((leaveType) => (
+                <SelectItem key={leaveType.id} value={String(leaveType.id)}>
+                  {leaveType.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
           <button
             type="submit"

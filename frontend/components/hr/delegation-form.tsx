@@ -9,7 +9,14 @@ import {
   approverRolePeople,
   createDelegation,
 } from "@/lib/delegations-client";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
@@ -62,18 +69,22 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         hint="The person whose pending approvals will be delegated."
       >
         <Select
-          id="approver"
           name="approver"
           required
           value={approverId}
-          onChange={(event) => setApproverId(event.target.value)}
+          onValueChange={setApproverId}
         >
-          <option value="">Select the approver</option>
-          {approvers.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.full_name}
-            </option>
-          ))}
+          <SelectTrigger id="approver" aria-label="Approver">
+            <SelectValue placeholder="Select the approver" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Select the approver</SelectItem>
+            {approvers.map((employee) => (
+              <SelectItem key={employee.id} value={String(employee.id)}>
+                {employee.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </Field>
 
@@ -82,13 +93,18 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         htmlFor="delegate"
         hint="Optional. HR confirms the delegate or picks someone else on approval."
       >
-        <Select id="delegate" name="delegate">
-          <option value="">No nomination</option>
-          {delegates.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.full_name}
-            </option>
-          ))}
+        <Select name="delegate">
+          <SelectTrigger id="delegate" aria-label="Delegate nomination">
+            <SelectValue placeholder="No nomination" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">No nomination</SelectItem>
+            {delegates.map((employee) => (
+              <SelectItem key={employee.id} value={String(employee.id)}>
+                {employee.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </Field>
 

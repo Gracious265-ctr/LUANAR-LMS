@@ -9,7 +9,13 @@ import {
   listFinancialYears,
   listPublicHolidays,
 } from "@/lib/financial-years";
-import { Select } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default async function CalendarPage({
   searchParams,
@@ -109,17 +115,18 @@ export default async function CalendarPage({
         </div>
 
         <form method="get" className="mb-4 flex items-center gap-2">
-          <Select
-            name="year"
-            defaultValue={yearFilter}
-            className="w-auto py-1.5"
-          >
-            <option value="">All years</option>
-            {availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
+          <Select name="year" defaultValue={yearFilter}>
+            <SelectTrigger size="sm" aria-label="Year" className="w-auto py-1.5">
+              <SelectValue placeholder="All years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All years</SelectItem>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
           <button
             type="submit"

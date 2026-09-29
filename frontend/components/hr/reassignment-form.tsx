@@ -8,7 +8,14 @@ import { approverRolePeople } from "@/lib/delegations-client";
 import type { Employee } from "@/lib/employees";
 import { reassignApplication } from "@/lib/reassignments-client";
 import type { PendingApplication } from "@/lib/reassignments";
-import { Field, Select } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
@@ -90,17 +97,18 @@ export function ReassignmentForm({
         htmlFor="to_approver"
         hint="An active user with an approver role, different from the current approver and the applicant."
       >
-        <Select
-          id="to_approver"
-          name="to_approver"
-          required
-        >
-          <option value="">Select the replacement approver</option>
-          {candidates.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.full_name}
-            </option>
-          ))}
+        <Select name="to_approver" required>
+          <SelectTrigger id="to_approver" aria-label="Replacement approver">
+            <SelectValue placeholder="Select the replacement approver" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Select the replacement approver</SelectItem>
+            {candidates.map((employee) => (
+              <SelectItem key={employee.id} value={String(employee.id)}>
+                {employee.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </Field>
 

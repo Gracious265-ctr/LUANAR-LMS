@@ -15,7 +15,14 @@ import {
   delegationStateLabel,
   rejectDelegation,
 } from "@/lib/delegations-client";
-import { Field, Select } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
@@ -228,17 +235,18 @@ export function DelegationReview({
 
           {kind === "approve" && (
             <Field label="Delegate" htmlFor="delegate" className="mt-4">
-              <Select
-                id="delegate"
-                name="delegate"
-                defaultValue={delegation.delegate ?? ""}
-              >
-                <option value="">Select the delegate</option>
-                {delegates.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.full_name}
-                  </option>
-                ))}
+              <Select name="delegate" defaultValue={delegation.delegate ? String(delegation.delegate) : ""}>
+                <SelectTrigger id="delegate" aria-label="Delegate">
+                  <SelectValue placeholder="Select the delegate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Select the delegate</SelectItem>
+                  {delegates.map((employee) => (
+                    <SelectItem key={employee.id} value={String(employee.id)}>
+                      {employee.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </Field>
           )}

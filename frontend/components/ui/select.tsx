@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * A Radix trigger is a `<button role="combobox">`, not a `<select>`, so
  * `getByLabelText` still resolves but `fireEvent.change`, `.options` and
  * `toHaveValue` do not apply. Drive it with the `selectOption` helper in
- * `tests/setup.ts`.
+ * `tests/helpers/select.ts`.
  */
 export function Select({ ...props }: React.ComponentPropsWithRef<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />;

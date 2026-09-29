@@ -6,7 +6,14 @@ import Link from "next/link";
 
 import type { Employee, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -119,26 +126,20 @@ export function EmployeeForm({
         />
       </Field>
 
-      <div>
-        <label
-          htmlFor="role"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Role
-        </label>
-        <select
-          id="role"
-          name="role"
-          defaultValue={employee?.role ?? "employee"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {ROLES.map((role) => (
-            <option key={role.value} value={role.value}>
-              {role.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Field label="Role" htmlFor="role">
+        <Select name="role" defaultValue={employee?.role ?? "employee"}>
+          <SelectTrigger id="role">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLES.map((role) => (
+              <SelectItem key={role.value} value={role.value}>
+                {role.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
       <Field label="Designation" htmlFor="designation">
         <Input
@@ -159,16 +160,17 @@ export function EmployeeForm({
       </Field>
 
       <Field label="Category" htmlFor="category">
-        <Select
-          id="category"
-          name="category"
-          defaultValue={employee?.category ?? "academic"}
-        >
-          {CATEGORIES.map((category) => (
-            <option key={category.value} value={category.value}>
-              {category.label}
-            </option>
-          ))}
+        <Select name="category" defaultValue={employee?.category ?? "academic"}>
+          <SelectTrigger id="category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((category) => (
+              <SelectItem key={category.value} value={category.value}>
+                {category.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </Field>
 
@@ -210,16 +212,20 @@ export function EmployeeForm({
         hint="Used to route the supervisor approval stage for leave day plans when the workflow requires it."
       >
         <Select
-          id="supervisor"
           name="supervisor"
           defaultValue={employee?.supervisor ? String(employee.supervisor) : ""}
         >
-          <option value="">No assigned supervisor</option>
-          {supervisorOptions.map((supervisor) => (
-            <option key={supervisor.id} value={supervisor.id}>
-              {supervisor.full_name}
-            </option>
-          ))}
+          <SelectTrigger id="supervisor">
+            <SelectValue placeholder="No assigned supervisor" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">No assigned supervisor</SelectItem>
+            {supervisorOptions.map((supervisor) => (
+              <SelectItem key={supervisor.id} value={String(supervisor.id)}>
+                {supervisor.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </Field>
 

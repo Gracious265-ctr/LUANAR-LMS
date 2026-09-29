@@ -1,8 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { LeaveRuleForm } from "@/components/hr/leave-rule-form";
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
+
+import { openSelect, selectedValue } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 const leaveTypes: LeaveType[] = [
   { id: 1, name: "Annual leave", code: "annual" },
@@ -24,6 +29,10 @@ const rule: LeaveRule = {
 };
 
 describe("LeaveRuleForm", () => {
+  beforeEach(() => {
+    user = userEvent.setup();
+  });
+
   it("renders rule fields for a new rule", () => {
     render(<LeaveRuleForm leaveTypes={leaveTypes} />);
 
@@ -35,13 +44,12 @@ describe("LeaveRuleForm", () => {
     expect(screen.getByRole("button", { name: "Create rule" })).toBeInTheDocument();
   });
 
-  it("offers every leave type in the dropdown", () => {
+  it("offers every leave type in the dropdown", async () => {
     render(<LeaveRuleForm leaveTypes={leaveTypes} />);
 
-    const select = screen.getByLabelText("Leave type");
-    const options = Array.from(
-      select.querySelectorAll("option")
-    ).map((option) => option.textContent);
+    await openSelect(screen.getByLabelText("Leave type"), { user });
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toContain("Annual leave");
     expect(options).toContain("Maternity leave");
     expect(options).toContain("Paternity leave");
@@ -54,7 +62,9 @@ describe("LeaveRuleForm", () => {
     expect(screen.getByLabelText("Minimum notice (days)")).toHaveValue(5);
     expect(screen.getByLabelText("Effective from")).toHaveValue("2026-01-01");
     expect(screen.getByLabelText("Eligibility")).toHaveValue("Female employees");
-    expect(screen.getByLabelText("Leave type")).toHaveValue("2");
+    expect(selectedValue(screen.getByLabelText("Leave type"))).toBe(
+      "Maternity leave"
+    );
     expect(
       screen.getByLabelText("Requires a supporting document")
     ).toBeChecked();

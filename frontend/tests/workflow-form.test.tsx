@@ -1,8 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { Workflow } from "@/lib/workflows";
+
+import { openSelect, selectOption, selectedValue } from "./helpers/select";
+
+let user: ReturnType<typeof userEvent.setup>;
 
 const workflow: Workflow = {
   id: 1,
@@ -19,6 +24,10 @@ const workflow: Workflow = {
 };
 
 describe("WorkflowForm", () => {
+  beforeEach(() => {
+    user = userEvent.setup();
+  });
+
   it("renders workflow fields for a new workflow", () => {
     render(<WorkflowForm />);
 
@@ -32,13 +41,12 @@ describe("WorkflowForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers an Any category option and both categories", () => {
+  it("offers an Any category option and both categories", async () => {
     render(<WorkflowForm />);
 
-    const select = screen.getByLabelText("Employee category");
-    const options = Array.from(
-      select.querySelectorAll("option")
-    ).map((option) => option.textContent);
+    await openSelect(screen.getByLabelText("Employee category"), { user });
+
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual(["Any category", "Academic", "Administration"]);
   });
 
@@ -48,12 +56,18 @@ describe("WorkflowForm", () => {
     expect(screen.getByLabelText("Workflow name")).toHaveValue(
       "Academic approval"
     );
-    expect(screen.getByLabelText("Employee category")).toHaveValue("academic");
+    expect(selectedValue(screen.getByLabelText("Employee category"))).toBe(
+      "Academic"
+    );
     expect(screen.getByLabelText("Department / Faculty")).toHaveValue(
       "Faculty of Science"
     );
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("supervisor");
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue("hod");
+    expect(selectedValue(screen.getByLabelText("Stage 1 approver"))).toBe(
+      "Supervisor"
+    );
+    expect(selectedValue(screen.getByLabelText("Stage 2 approver"))).toBe(
+      "Head of Department"
+    );
     expect(
       screen.getByRole("button", { name: "Save changes" })
     ).toBeInTheDocument();
@@ -87,24 +101,34 @@ describe("WorkflowForm", () => {
   it("starts a new workflow with one stage by default", () => {
     render(<WorkflowForm />);
 
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("supervisor");
+    expect(selectedValue(screen.getByLabelText("Stage 1 approver"))).toBe(
+      "Supervisor"
+    );
     expect(screen.queryByLabelText("Stage 2 approver")).not.toBeInTheDocument();
   });
 
-  it("adds a stage and reorders with move controls", () => {
+  it("adds a stage and reorders with move controls", async () => {
     render(<WorkflowForm />);
 
     fireEvent.click(screen.getByRole("button", { name: "Add stage" }));
     expect(screen.getByLabelText("Stage 2 approver")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Stage 2 approver"), {
-      target: { value: "hod" },
-    });
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue("hod");
+    await selectOption(
+      screen.getByLabelText("Stage 2 approver"),
+      "Head of Department",
+      { user }
+    );
+    expect(selectedValue(screen.getByLabelText("Stage 2 approver"))).toBe(
+      "Head of Department"
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Move stage 2 up" }));
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("hod");
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue("supervisor");
+    expect(selectedValue(screen.getByLabelText("Stage 1 approver"))).toBe(
+      "Head of Department"
+    );
+    expect(selectedValue(screen.getByLabelText("Stage 2 approver"))).toBe(
+      "Supervisor"
+    );
   });
 
   it("removes a stage with its remove control", () => {
@@ -112,7 +136,9 @@ describe("WorkflowForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove stage 1" }));
     expect(screen.queryByLabelText("Stage 2 approver")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("hod");
+    expect(selectedValue(screen.getByLabelText("Stage 1 approver"))).toBe(
+      "Head of Department"
+    );
   });
 
   it("disables move-up on the first stage and move-down on the last", () => {
