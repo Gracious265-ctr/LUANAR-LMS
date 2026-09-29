@@ -12,6 +12,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  dateNavBounds,
   formatDateRange,
   formatDisplayDate,
   fromIsoDate,
@@ -49,6 +50,7 @@ export function DatePicker({
   className,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const [{ startMonth, endMonth }] = React.useState(dateNavBounds);
   const selected = fromIsoDate(value);
   const isDayDisabled = React.useCallback(
     (day: Date) => isDateOutsideBounds(day, min, max),
@@ -73,6 +75,8 @@ export function DatePicker({
         <Calendar
           mode="single"
           captionLayout="dropdown"
+          startMonth={startMonth}
+          endMonth={endMonth}
           selected={selected}
           disabled={isDayDisabled}
           onSelect={(date) => {
@@ -109,6 +113,7 @@ export function DateRangePicker({
   className,
 }: DateRangePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const [{ startMonth, endMonth }] = React.useState(dateNavBounds);
   const [pendingFrom, setPendingFrom] = React.useState<Date | undefined>();
   const label = formatDateRange(from, to);
   const isDayDisabled = React.useCallback(
@@ -140,6 +145,8 @@ export function DateRangePicker({
         <Calendar
           mode="range"
           captionLayout="dropdown"
+          startMonth={startMonth}
+          endMonth={endMonth}
           selected={
             pendingFrom
               ? { from: pendingFrom, to: undefined }

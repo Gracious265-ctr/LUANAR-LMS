@@ -7,6 +7,8 @@ import type { DelegateCandidate } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/ui/date-picker";
+import { Field } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -25,6 +27,8 @@ import {
  */
 export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate[] }) {
   const router = useRouter();
+  const [startsOn, setStartsOn] = useState("");
+  const [endsOn, setEndsOn] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +39,14 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
 
     const formData = new FormData(event.currentTarget);
     const delegateValue = String(formData.get("delegate") || "");
-    const endsOn = String(formData.get("ends_on") || "");
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!startsOn) {
+      setError("Choose a start date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       await createDelegation({
@@ -62,39 +73,24 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       data-testid="cover-request-form"
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
-        <label
-          htmlFor="cover_starts_on"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Starts on
-        </label>
-        <input
+      <Field
+        label="Period"
+        htmlFor="cover_starts_on"
+        hint="Leave the end blank to stay open-ended until HR cancels it."
+      >
+        <DateRangePicker
           id="cover_starts_on"
-          name="starts_on"
-          type="date"
-          required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          from={startsOn}
+          to={endsOn}
+          onRangeChange={(from, to) => {
+            setStartsOn(from);
+            setEndsOn(to);
+          }}
         />
-      </div>
-
-      <div>
-        <label
-          htmlFor="cover_ends_on"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Ends on
-        </label>
-        <input
-          id="cover_ends_on"
-          name="ends_on"
-          type="date"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          Leave blank to stay open-ended until HR cancels it.
-        </p>
-      </div>
+        {/* The trigger is a <button>, so the names still have to reach FormData. */}
+        <input type="hidden" name="starts_on" value={startsOn} />
+        <input type="hidden" name="ends_on" value={endsOn} />
+      </Field>
 
       <div>
         <label

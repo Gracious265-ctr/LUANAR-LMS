@@ -45,3 +45,25 @@ export function isDateOutsideBounds(
   if (maxDate && isAfter(day, maxDate)) return true;
   return false;
 }
+
+/** How many years either side of the current year the calendars can page to. */
+const NAV_YEARS = 5;
+
+/**
+ * The month range the calendars may navigate.
+ *
+ * `react-day-picker` pages within the current calendar year by default, so a
+ * plan period or financial year running past December — which the native
+ * `<input type="date">` these pickers replaced could always reach — would be
+ * unreachable. Callers with tighter needs should pass explicit `min`/`max`
+ * bounds instead; this only widens navigation, not day selection.
+ */
+export function dateNavBounds(today: Date = new Date()): {
+  startMonth: Date;
+  endMonth: Date;
+} {
+  return {
+    startMonth: new Date(today.getFullYear() - NAV_YEARS, 0, 1),
+    endMonth: new Date(today.getFullYear() + NAV_YEARS, 11, 31),
+  };
+}

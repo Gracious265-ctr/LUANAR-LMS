@@ -6,6 +6,7 @@ import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { Workflow } from "@/lib/workflows";
 
 import { openSelect, selectOption, selectedValue } from "./helpers/select";
+import { dateDisplay, pickDate } from "./helpers/date";
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -80,20 +81,18 @@ describe("WorkflowForm", () => {
     expect(screen.queryByLabelText("Active")).not.toBeInTheDocument();
   });
 
-  it("shows the active checkbox once an effective date is set", () => {
+  it("shows the active checkbox once an effective date is set", async () => {
     render(<WorkflowForm />);
 
-    fireEvent.change(screen.getByLabelText("Effective from"), {
-      target: { value: "2026-12-01" },
-    });
+    pickDate(screen.getByLabelText("Effective from"), "2026-12-01");
     expect(screen.getByLabelText("Active")).toBeInTheDocument();
   });
 
   it("prefills the effective date and active state when editing", () => {
     render(<WorkflowForm workflow={workflow} />);
 
-    expect(screen.getByLabelText("Effective from")).toHaveValue(
-      "2026-09-01"
+    expect(dateDisplay(screen.getByLabelText("Effective from"))).toBe(
+      "01 Sep 2026"
     );
     expect(screen.getByLabelText("Active")).toBeChecked();
   });

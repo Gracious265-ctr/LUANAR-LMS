@@ -9,7 +9,8 @@ import {
   createFinancialYear,
   updateFinancialYear,
 } from "@/lib/financial-years-client";
-import { Input, Field } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -19,6 +20,8 @@ export function FinancialYearForm({
   financialYear?: FinancialYear;
 }) {
   const router = useRouter();
+  const [startDate, setStartDate] = useState(financialYear?.start_date ?? "");
+  const [endDate, setEndDate] = useState(financialYear?.end_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +31,14 @@ export function FinancialYearForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!startDate || !endDate) {
+      setError("Choose the full period.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const input = {
@@ -51,28 +62,23 @@ export function FinancialYearForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <Field label="Start date" htmlFor="start_date">
-        <Input
-          id="start_date"
-          name="start_date"
-          type="date"
-          required
-          defaultValue={financialYear?.start_date}
-        />
-      </Field>
-
       <Field
-        label="End date"
-        htmlFor="end_date"
+        label="Period"
+        htmlFor="start_date"
         hint="Periods must not overlap each other."
       >
-        <Input
-          id="end_date"
-          name="end_date"
-          type="date"
-          required
-          defaultValue={financialYear?.end_date}
+        <DateRangePicker
+          id="start_date"
+          from={startDate}
+          to={endDate}
+          onRangeChange={(from, to) => {
+            setStartDate(from);
+            setEndDate(to);
+          }}
         />
+        {/* The trigger is a <button>, so the names still have to reach FormData. */}
+        <input type="hidden" name="start_date" value={startDate} />
+        <input type="hidden" name="end_date" value={endDate} />
       </Field>
 
       <div className="flex items-center gap-2 md:col-span-2">

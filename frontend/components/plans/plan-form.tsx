@@ -8,7 +8,8 @@ import type { LeaveType } from "@/lib/leave-rules";
 import { createPlan } from "@/lib/plans/service";
 import type { PlanInputBlock } from "@/lib/plans/types";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import { DatePicker, DateRangePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,11 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
       end_date: block.end_date,
     }));
 
+    if (!periodStart || !periodEnd) {
+      setError("Choose the plan period.");
+      return;
+    }
+
     if (
       inputBlocks.some(
         (block) =>
@@ -76,6 +82,13 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
       )
     ) {
       setError("Choose a leave type for every block.");
+      return;
+    }
+
+    // The pickers are popover triggers, so the browser can no longer enforce
+    // `required` on the block dates; check here instead of dropping the rule.
+    if (inputBlocks.some((block) => !block.start_date || !block.end_date)) {
+      setError("Give every block a start and end date.");
       return;
     }
 
@@ -101,27 +114,18 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Field
-          label="Period start"
+          label="Plan period"
           htmlFor="period_start"
           hint="The plan covers one financial year."
         >
-          <Input
+          <DateRangePicker
             id="period_start"
-            name="period_start"
-            type="date"
-            required
-            value={periodStart}
-            onChange={(e) => setPeriodStart(e.target.value)}
-          />
-        </Field>
-        <Field label="Period end" htmlFor="period_end">
-          <Input
-            id="period_end"
-            name="period_end"
-            type="date"
-            required
-            value={periodEnd}
-            onChange={(e) => setPeriodEnd(e.target.value)}
+            from={periodStart}
+            to={periodEnd}
+            onRangeChange={(from, to) => {
+              setPeriodStart(from);
+              setPeriodEnd(to);
+            }}
           />
         </Field>
       </div>
@@ -173,23 +177,19 @@ export function PlanForm({ leaveTypes }: { leaveTypes: LeaveType[] }) {
                 </Select>
               </Field>
               <Field label="Start date" htmlFor={`block-start-${block.key}`}>
-                <Input
+                <DatePicker
                   id={`block-start-${block.key}`}
-                  type="date"
                   value={block.start_date}
-                  onChange={(e) =>
-                    updateBlock(block.key, { start_date: e.target.value })
+                  onChange={(value) =>
+                    updateBlock(block.key, { start_date: value })
                   }
                 />
               </Field>
               <Field label="End date" htmlFor={`block-end-${block.key}`}>
-                <Input
+                <DatePicker
                   id={`block-end-${block.key}`}
-                  type="date"
                   value={block.end_date}
-                  onChange={(e) =>
-                    updateBlock(block.key, { end_date: e.target.value })
-                  }
+                  onChange={(value) => updateBlock(block.key, { end_date: value })}
                 />
               </Field>
               <Button

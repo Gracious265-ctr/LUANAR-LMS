@@ -6,6 +6,7 @@ import { LeaveRuleForm } from "@/components/hr/leave-rule-form";
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
 
 import { openSelect, selectedValue } from "./helpers/select";
+import { dateDisplay } from "./helpers/date";
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -60,7 +61,9 @@ describe("LeaveRuleForm", () => {
 
     expect(screen.getByLabelText("Maximum duration (days)")).toHaveValue(90);
     expect(screen.getByLabelText("Minimum notice (days)")).toHaveValue(5);
-    expect(screen.getByLabelText("Effective from")).toHaveValue("2026-01-01");
+    expect(dateDisplay(screen.getByLabelText("Effective from"))).toBe(
+      "01 Jan 2026"
+    );
     expect(screen.getByLabelText("Eligibility")).toHaveValue("Female employees");
     expect(selectedValue(screen.getByLabelText("Leave type"))).toBe(
       "Maternity leave"

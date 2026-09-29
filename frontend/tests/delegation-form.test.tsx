@@ -6,6 +6,7 @@ import { DelegationForm } from "@/components/hr/delegation-form";
 import type { Employee, UserRole } from "@/lib/employees";
 
 import { openSelect, selectOption } from "./helpers/select";
+import { pickDateRange, pickRangeStart } from "./helpers/date";
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -75,8 +76,7 @@ describe("DelegationForm", () => {
 
     expect(screen.getByLabelText("Approver")).toBeInTheDocument();
     expect(screen.getByLabelText("Delegate nomination")).toBeInTheDocument();
-    expect(screen.getByLabelText("Starts on")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ends on")).toBeInTheDocument();
+    expect(screen.getByLabelText("Period")).toBeInTheDocument();
     expect(screen.getByLabelText("Request reason")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create delegation request" })
@@ -103,12 +103,11 @@ describe("DelegationForm", () => {
     await selectOption(screen.getByLabelText("Delegate nomination"), "Bob HOD", {
       user,
     });
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Ends on"), {
-      target: { value: "2026-11-01" },
-    });
+    pickDateRange(
+      screen.getByLabelText("Period"),
+      "2026-10-01",
+      "2026-11-01"
+    );
     fireEvent.change(screen.getByLabelText("Request reason"), {
       target: { value: "Attending a conference" },
     });
@@ -130,9 +129,7 @@ describe("DelegationForm", () => {
     render(<DelegationForm employees={employees} />);
 
     await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
+    pickRangeStart(screen.getByLabelText("Period"), "2026-10-01");
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create delegation request" })

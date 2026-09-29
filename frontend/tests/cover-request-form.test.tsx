@@ -6,6 +6,7 @@ import { CoverRequestForm } from "@/components/approvals/cover-request-form";
 import type { DelegateCandidate } from "@/lib/delegations";
 
 import { openSelect, selectOption } from "./helpers/select";
+import { pickRangeStart } from "./helpers/date";
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -58,8 +59,7 @@ describe("CoverRequestForm", () => {
   it("renders the cover fields and never asks who the approver is", () => {
     render(<CoverRequestForm candidates={candidates} />);
 
-    expect(screen.getByLabelText("Starts on")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ends on")).toBeInTheDocument();
+    expect(screen.getByLabelText("Period")).toBeInTheDocument();
     expect(screen.getByLabelText("Nominate a delegate")).toBeInTheDocument();
     expect(screen.getByLabelText("Reason")).toBeInTheDocument();
     expect(screen.queryByLabelText("Approver")).toBeNull();
@@ -83,9 +83,7 @@ describe("CoverRequestForm", () => {
   it("submits without an approver so the backend can force the requester", async () => {
     render(<CoverRequestForm candidates={candidates} />);
 
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
+    pickRangeStart(screen.getByLabelText("Period"), "2026-10-01");
     await selectOption(
       screen.getByLabelText("Nominate a delegate"),
       "Bob HOD",
@@ -108,12 +106,10 @@ describe("CoverRequestForm", () => {
     );
   });
 
-  it("sends null when no delegate or end date is chosen", () => {
+  it("sends null when no delegate or end date is chosen", async () => {
     render(<CoverRequestForm candidates={candidates} />);
 
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
+    pickRangeStart(screen.getByLabelText("Period"), "2026-10-01");
 
     fireEvent.click(screen.getByRole("button", { name: "Request cover" }));
 
@@ -131,9 +127,7 @@ describe("CoverRequestForm", () => {
     );
     render(<CoverRequestForm candidates={candidates} />);
 
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
+    pickRangeStart(screen.getByLabelText("Period"), "2026-10-01");
     fireEvent.click(screen.getByRole("button", { name: "Request cover" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

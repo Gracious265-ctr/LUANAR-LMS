@@ -9,7 +9,8 @@ import {
   approverRolePeople,
   createDelegation,
 } from "@/lib/delegations-client";
-import { Field, Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -23,6 +24,8 @@ import { FormError } from "@/components/ui/form-error";
 
 export function DelegationForm({ employees }: { employees: Employee[] }) {
   const router = useRouter();
+  const [startsOn, setStartsOn] = useState("");
+  const [endsOn, setEndsOn] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [approverId, setApproverId] = useState("");
@@ -38,7 +41,14 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
 
     const formData = new FormData(event.currentTarget);
     const delegateValue = String(formData.get("delegate") || "");
-    const endsOn = String(formData.get("ends_on") || "");
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!startsOn) {
+      setError("Choose a start date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       await createDelegation({
@@ -108,16 +118,23 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         </Select>
       </Field>
 
-      <Field label="Starts on" htmlFor="starts_on">
-        <Input id="starts_on" name="starts_on" type="date" required />
-      </Field>
-
       <Field
-        label="Ends on"
-        htmlFor="ends_on"
-        hint="Leave blank to stay open-ended until HR cancels it."
+        label="Period"
+        htmlFor="starts_on"
+        hint="Leave the end blank to stay open-ended until HR cancels it."
       >
-        <Input id="ends_on" name="ends_on" type="date" />
+        <DateRangePicker
+          id="starts_on"
+          from={startsOn}
+          to={endsOn}
+          onRangeChange={(from, to) => {
+            setStartsOn(from);
+            setEndsOn(to);
+          }}
+        />
+        {/* The trigger is a <button>, so the names still have to reach FormData. */}
+        <input type="hidden" name="starts_on" value={startsOn} />
+        <input type="hidden" name="ends_on" value={endsOn} />
       </Field>
 
       <Field

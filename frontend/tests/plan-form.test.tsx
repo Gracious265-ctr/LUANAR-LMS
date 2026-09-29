@@ -6,6 +6,7 @@ import { PlanForm } from "@/components/plans/plan-form";
 import { createPlan } from "@/lib/plans/service";
 
 import { selectOption } from "./helpers/select";
+import { pickDate, pickDateRange } from "./helpers/date";
 
 let user: ReturnType<typeof userEvent.setup>;
 
@@ -22,6 +23,13 @@ const leaveTypes = [
   { id: 2, name: "Sick Leave", code: "SICK" },
 ];
 
+/**
+ * The plan period runs July 2026 to June 2027, so the calendar is repaged a
+ * dozen times, and each re-render of a `react-day-picker` month costs real time
+ * once the suite is running in parallel. Well past the 5s default.
+ */
+const CALENDAR_TIMEOUT = 20_000;
+
 /** `typeLabel` is the visible leave type text, e.g. "Annual Leave". */
 async function fillBlock(
   typeLabel: string,
@@ -34,8 +42,8 @@ async function fillBlock(
   await selectOption(typeSelect, typeLabel, { user });
   const starts = screen.getAllByLabelText("Start date");
   const ends = screen.getAllByLabelText("End date");
-  fireEvent.change(starts[index], { target: { value: start } });
-  fireEvent.change(ends[index], { target: { value: end } });
+  pickDate(starts[index], start);
+  pickDate(ends[index], end);
 }
 
 describe("PlanForm", () => {
@@ -65,19 +73,18 @@ describe("PlanForm", () => {
 
   it("requires a leave type for every block", async () => {
     render(<PlanForm leaveTypes={leaveTypes} />);
-    fireEvent.change(screen.getByLabelText("Period start"), {
-      target: { value: "2026-07-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Period end"), {
-      target: { value: "2027-06-30" },
-    });
+    pickDateRange(
+      screen.getByLabelText("Plan period"),
+      "2026-07-01",
+      "2027-06-30"
+    );
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 
     await waitFor(() =>
       expect(createPlan).not.toHaveBeenCalled()
     );
     expect(screen.getByText(/Choose a leave type for every block/)).toBeInTheDocument();
-  });
+  }, CALENDAR_TIMEOUT);
 
   it("submits the period and blocks to createPlan", async () => {
     vi.mocked(createPlan).mockResolvedValue({
@@ -88,12 +95,11 @@ describe("PlanForm", () => {
     });
 
     render(<PlanForm leaveTypes={leaveTypes} />);
-    fireEvent.change(screen.getByLabelText("Period start"), {
-      target: { value: "2026-07-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Period end"), {
-      target: { value: "2027-06-30" },
-    });
+    pickDateRange(
+      screen.getByLabelText("Plan period"),
+      "2026-07-01",
+      "2027-06-30"
+    );
     await fillBlock("Annual Leave", "2026-10-08", "2026-10-09");
 
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
@@ -105,7 +111,7 @@ describe("PlanForm", () => {
         { leave_type_id: 1, start_date: "2026-10-08", end_date: "2026-10-09" },
       ],
     }));
-  });
+  }, CALENDAR_TIMEOUT);
 
   it("surfaces a create error", async () => {
     vi.mocked(createPlan).mockResolvedValue({
@@ -115,17 +121,16 @@ describe("PlanForm", () => {
     });
 
     render(<PlanForm leaveTypes={leaveTypes} />);
-    fireEvent.change(screen.getByLabelText("Period start"), {
-      target: { value: "2026-07-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Period end"), {
-      target: { value: "2027-06-30" },
-    });
+    pickDateRange(
+      screen.getByLabelText("Plan period"),
+      "2026-07-01",
+      "2027-06-30"
+    );
     await fillBlock("Annual Leave", "2026-10-08", "2026-10-09");
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
 
     await waitFor(() =>
       expect(screen.getByText("Period invalid")).toBeInTheDocument()
     );
-  });
+  }, CALENDAR_TIMEOUT);
 });

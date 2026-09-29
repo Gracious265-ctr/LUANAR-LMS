@@ -18,6 +18,7 @@ import {
   updateWorkflow,
 } from "@/lib/workflows-client";
 import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -164,13 +165,13 @@ export function WorkflowForm({
         htmlFor="effective_from"
         hint="Leave blank to keep this workflow a draft."
       >
-        <Input
+        <DatePicker
           id="effective_from"
-          name="effective_from"
-          type="date"
           value={effectiveFrom}
-          onChange={(event) => setEffectiveFrom(event.target.value)}
+          onChange={setEffectiveFrom}
         />
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="effective_from" value={effectiveFrom} />
       </Field>
 
       {effectiveFrom && (

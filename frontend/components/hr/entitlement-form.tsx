@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { Entitlement } from "@/lib/entitlements";
 import { apiErrorMessage } from "@/lib/utils";
 import { Input, Field } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -20,6 +21,7 @@ export function EntitlementForm({
   method: "POST" | "PATCH";
 }) {
   const router = useRouter();
+  const [effectiveFrom, setEffectiveFrom] = useState(entitlement?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -29,6 +31,14 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!effectiveFrom) {
+      setError("Choose an effective-from date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch(endpoint, {
@@ -91,13 +101,13 @@ export function EntitlementForm({
       </Field>
 
       <Field label="Effective from" htmlFor="effective_from">
-        <Input
+        <DatePicker
           id="effective_from"
-          name="effective_from"
-          type="date"
-          required
-          defaultValue={entitlement?.effective_from}
+          value={effectiveFrom}
+          onChange={setEffectiveFrom}
         />
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="effective_from" value={effectiveFrom} />
       </Field>
 
       {error && (

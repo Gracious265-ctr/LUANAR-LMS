@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { Employee, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
 import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -46,6 +47,7 @@ export function EmployeeForm({
   supervisorOptions?: { id: number; full_name: string }[];
 }) {
   const router = useRouter();
+  const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -198,12 +200,13 @@ export function EmployeeForm({
       </Field>
 
       <Field label="Date of appointment" htmlFor="appointment_date">
-        <Input
+        <DatePicker
           id="appointment_date"
-          name="appointment_date"
-          type="date"
-          defaultValue={employee?.appointment_date ?? ""}
+          value={appointmentDate}
+          onChange={setAppointmentDate}
         />
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="appointment_date" value={appointmentDate} />
       </Field>
 
       <Field

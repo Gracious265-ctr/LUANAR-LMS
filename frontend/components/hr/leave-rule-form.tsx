@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
 import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
 import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ export function LeaveRuleForm({
   leaveTypes: LeaveType[];
 }) {
   const router = useRouter();
+  const [effectiveFrom, setEffectiveFrom] = useState(leaveRule?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -35,6 +37,14 @@ export function LeaveRuleForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!effectiveFrom) {
+      setError("Choose an effective-from date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const input = {
@@ -114,13 +124,13 @@ export function LeaveRuleForm({
         htmlFor="effective_from"
         hint="Future-dated rules only apply from this date; past rules stay intact."
       >
-        <Input
+        <DatePicker
           id="effective_from"
-          name="effective_from"
-          type="date"
-          required
-          defaultValue={leaveRule?.effective_from}
+          value={effectiveFrom}
+          onChange={setEffectiveFrom}
         />
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="effective_from" value={effectiveFrom} />
       </Field>
 
       <Field

@@ -10,6 +10,7 @@ import {
   updatePublicHoliday,
 } from "@/lib/financial-years-client";
 import { Input, Field } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -19,6 +20,7 @@ export function PublicHolidayForm({
   publicHoliday?: PublicHoliday;
 }) {
   const router = useRouter();
+  const [date, setDate] = useState(publicHoliday?.date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -28,6 +30,14 @@ export function PublicHolidayForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!date) {
+      setError("Choose a date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const input = {
@@ -65,13 +75,9 @@ export function PublicHolidayForm({
         htmlFor="date"
         hint="Each date can hold at most one holiday."
       >
-        <Input
-          id="date"
-          name="date"
-          type="date"
-          required
-          defaultValue={publicHoliday?.date}
-        />
+        <DatePicker id="date" value={date} onChange={setDate} />
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="date" value={date} />
       </Field>
 
       {error && (
