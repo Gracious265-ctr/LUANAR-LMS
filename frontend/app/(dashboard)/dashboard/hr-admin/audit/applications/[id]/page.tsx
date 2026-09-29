@@ -38,7 +38,7 @@ export default async function AuditApplicationDetailPage({
           <ArrowLeft className="h-4 w-4" />
           Back to audit view
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           {application.reference_number || "Leave application"}
         </h2>
         <p className="text-text-secondary">

@@ -34,7 +34,7 @@ export default async function NewDelegationPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to delegations
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           New delegation request
         </h2>
         <p className="text-text-secondary">

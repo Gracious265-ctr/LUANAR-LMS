@@ -33,13 +33,13 @@ export function BalanceCard({
       <dl className="grid grid-cols-2 gap-4">
         <div>
           <dt className="text-xs text-text-muted mb-1">Available balance</dt>
-          <dd className="text-2xl font-bold text-text-primary">
+          <dd className="text-2xl font-semibold tracking-tight text-text-primary">
             {availableBalance ?? "—"}
           </dd>
         </div>
         <div>
           <dt className="text-xs text-text-muted mb-1">Balance if approved</dt>
-          <dd className="text-2xl font-bold text-brand-secondary">
+          <dd className="text-2xl font-semibold tracking-tight text-brand-secondary">
             {balanceAfter ?? "—"}
           </dd>
         </div>

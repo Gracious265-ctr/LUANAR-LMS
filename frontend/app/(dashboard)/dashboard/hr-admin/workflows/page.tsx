@@ -28,7 +28,7 @@ export default async function WorkflowsPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Workflows</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Workflows</h2>
           <p className="text-text-secondary">
             Define the approval sequence applied to leave applications by
             employee category and department. Every stage is mandatory and

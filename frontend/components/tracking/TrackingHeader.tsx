@@ -50,7 +50,7 @@ export function TrackingHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="break-words font-mono text-lg font-bold text-text-primary">
+        <h1 className="break-words font-mono text-lg font-semibold text-text-primary">
           {application.reference_number}
         </h1>
         <StatusBadge status={status} />

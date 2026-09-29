@@ -25,7 +25,7 @@ export default async function LeaveDocumentTemplatePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">
           Approved Leave Document Template
         </h2>
         <p className="text-text-secondary">

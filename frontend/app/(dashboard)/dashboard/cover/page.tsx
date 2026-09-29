@@ -30,7 +30,7 @@ export default async function CoverPage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold text-text-primary">Request Cover</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-text-primary">Request Cover</h1>
         <p className="mt-1 text-sm text-text-secondary">
           Nominate someone to handle your pending approvals while you are away.
           HR approves every request before your cover takes effect.

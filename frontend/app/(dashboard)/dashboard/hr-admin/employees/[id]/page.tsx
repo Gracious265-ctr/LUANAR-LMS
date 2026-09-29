@@ -4,11 +4,13 @@ import { ArrowLeft } from "lucide-react";
 
 import { EmployeeForm } from "@/components/hr/employee-form";
 import { getCurrentUser } from "@/lib/auth";
-import { getEmployee } from "@/lib/employees";
+import { getEmployee, listEmployees } from "@/lib/employees";
 import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
+
+const SUPERVISOR_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
 export default async function EmployeeDetailPage({
   params,
@@ -40,6 +42,19 @@ export default async function EmployeeDetailPage({
     // Manual grade entry remains available if entitlements cannot be loaded.
   }
 
+  let supervisorOptions: { id: number; full_name: string }[] = [];
+  try {
+    const employees = await listEmployees();
+    supervisorOptions = employees.results
+      .filter((staff) => SUPERVISOR_ROLES.includes(staff.role))
+      .map((staff) => ({
+        id: staff.user_id,
+        full_name: staff.full_name,
+      }));
+  } catch {
+    // The supervisor field remains optional if the option list cannot load.
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -51,7 +66,7 @@ export default async function EmployeeDetailPage({
           Back to employees
         </Link>
         <div className="mt-2 flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-text-primary">
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
             {employee.full_name || employee.email}
           </h2>
           <span
@@ -76,6 +91,7 @@ export default async function EmployeeDetailPage({
           endpoint={`/api/hr/employees/${employee.id}`}
           method="PATCH"
           gradeOptions={gradeOptions}
+          supervisorOptions={supervisorOptions}
         />
       </div>
     </div>

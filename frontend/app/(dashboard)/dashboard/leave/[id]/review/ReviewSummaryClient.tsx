@@ -120,7 +120,7 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <LinkBack href={`/dashboard/leave/${application.id}/edit`} label="Back to draft" />
-        <h1 className="text-2xl font-bold text-text-primary">
+        <h1 className="text-xl font-semibold tracking-tight text-text-primary">
           Review your application
         </h1>
       </div>

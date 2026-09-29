@@ -50,7 +50,7 @@ export function SubmissionConfirmation({
   return (
     <div className="bg-surface-card rounded-xl border border-border-success shadow-subtle p-8 text-center">
       <CheckCircle2 className="h-16 w-16 mx-auto text-brand-secondary mb-4" />
-      <h2 className="text-2xl font-bold text-text-primary mb-2">
+      <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">
         Application submitted
       </h2>
       <p className="text-text-secondary mb-6">
@@ -61,7 +61,7 @@ export function SubmissionConfirmation({
         <span className="text-xs text-text-muted block mb-1">
           Reference Number
         </span>
-        <span className="text-2xl font-mono font-bold text-text-primary tracking-wide">
+        <span className="text-xl font-mono font-semibold tracking-tight text-text-primary">
           {reference}
         </span>
         <button

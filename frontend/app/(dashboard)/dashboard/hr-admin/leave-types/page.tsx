@@ -28,7 +28,7 @@ export default async function LeaveTypesPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Leave types</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave types</h2>
           <p className="text-text-secondary">
             Manage the registry of leave types the university offers. Leave
             rules for each type are configured from the Leave Rules page.

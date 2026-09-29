@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Dashboard</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Dashboard</h2>
         <p className="text-text-secondary">
           Welcome back, {user.full_name}
         </p>
@@ -117,7 +117,7 @@ function StatCard({
           {icon}
         </div>
       </div>
-      <div className="text-3xl font-bold text-text-primary">{value}</div>
+      <div className="text-3xl font-semibold tracking-tight text-text-primary">{value}</div>
       <p className="text-sm text-text-muted mt-1">{subtitle}</p>
     </div>
   );

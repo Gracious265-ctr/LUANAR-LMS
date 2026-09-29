@@ -34,7 +34,7 @@ export default async function NewLeaveRulePage() {
           <ArrowLeft className="h-4 w-4" />
           Back to leave rules
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">New rule</h2>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">New rule</h2>
         <p className="text-text-secondary">
           Define how a leave type can be taken, effective from a chosen date.
           A future-effective rule joins the current one without changing it.

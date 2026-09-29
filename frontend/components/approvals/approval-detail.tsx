@@ -153,7 +153,7 @@ export function ApprovalDetail({
         )}
       </div>
 
-      <h1 className="text-2xl font-bold text-text-primary">{app.reference}</h1>
+      <h1 className="text-xl font-mono font-semibold tracking-tight text-text-primary">{app.reference}</h1>
 
       {cancellationRequestId && (
         <CancellationDetailPanel

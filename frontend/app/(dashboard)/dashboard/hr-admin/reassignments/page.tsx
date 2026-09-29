@@ -37,7 +37,7 @@ export default async function ReassignmentsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Reassignments</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Reassignments</h2>
         <p className="text-text-secondary">
           Intervene on pending leave applications: reassign them to a replacement
           approver with a mandatory reason, and review the reassignment history.

@@ -25,7 +25,7 @@ export default async function NewLeaveTypePage() {
           <ArrowLeft className="h-4 w-4" />
           Back to leave types
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           New leave type
         </h2>
         <p className="text-text-secondary">
