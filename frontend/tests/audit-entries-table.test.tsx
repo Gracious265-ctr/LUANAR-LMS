@@ -25,7 +25,7 @@ describe("AuditEntriesTable", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
     expect(screen.getByText("Workflow")).toBeInTheDocument();
     expect(screen.getByText("Academic staff workflow")).toBeInTheDocument();
-    expect(screen.getByText("days: 20 → 25")).toBeInTheDocument();
+    expect(screen.getByText("Days: 20 → 25")).toBeInTheDocument();
   });
 
   it("renders a flat detail payload without throwing", () => {
@@ -47,8 +47,8 @@ describe("AuditEntriesTable", () => {
     };
 
     expect(() => render(<AuditEntriesTable entries={[flat]} />)).not.toThrow();
-    expect(screen.getByText(/document_id: 11/)).toBeInTheDocument();
-    expect(screen.getByText(/file_name: approved-leave\.pdf/)).toBeInTheDocument();
+    expect(screen.getByText(/approved-leave\.pdf/)).toBeInTheDocument();
+    expect(screen.queryByText(/document_id/)).not.toBeInTheDocument();
   });
 
   it("renders a stage_skipped payload and does not repeat its reason", () => {
@@ -66,8 +66,8 @@ describe("AuditEntriesTable", () => {
     };
 
     expect(() => render(<AuditEntriesTable entries={[skipped]} />)).not.toThrow();
-    const cell = screen.getByText(/reason: applicant_is_the_approver/);
-    expect(cell.textContent?.match(/applicant_is_the_approver/g)).toHaveLength(1);
+    const cell = screen.getByText(/applicant is also the approver/);
+    expect(cell.textContent?.match(/applicant is also the approver/g)).toHaveLength(1);
   });
 
   it("falls back to the reason when detail is an empty object", () => {
@@ -124,7 +124,7 @@ describe("AuditEntriesTable", () => {
     );
 
     expect(screen.getByText("Created")).toBeInTheDocument();
-    expect(screen.getByText("name: Academic leave")).toBeInTheDocument();
+    expect(screen.getByText("Name: Academic leave")).toBeInTheDocument();
   });
 
 it("links editable targets to their edit page", () => {

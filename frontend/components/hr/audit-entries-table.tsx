@@ -18,7 +18,7 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full min-w-[70rem] text-sm">
         <thead>
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Actor</th>
@@ -45,15 +45,15 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
                 <td className="py-3 pr-4">
                   <AuditActionPill action={entry.action} />
                 </td>
-                <td className="py-3 pr-4 text-text-secondary">
+                <td className="max-w-85 break-words py-3 pr-4 text-text-secondary">
                   <div className="text-xs text-text-muted">
                     {TARGET_TYPE_LABELS[entry.target_type] || entry.target_type}
                   </div>
-                  <div className="font-medium text-text-primary">
+                  <div className="break-all font-medium text-text-primary">
                     {entry.target_summary}
                   </div>
                 </td>
-                <td className="py-3 pr-4 text-text-secondary">
+                <td className="max-w-md break-words py-3 pr-4 text-text-secondary">
                   {auditChangesText(entry)}
                 </td>
                 <td className="py-3 text-text-secondary">
