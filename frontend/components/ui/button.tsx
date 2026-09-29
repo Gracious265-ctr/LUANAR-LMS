@@ -49,7 +49,7 @@ const buttonVariants = cva(CONTROL_BASE, {
 });
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends React.ComponentPropsWithRef<"button">,
     VariantProps<typeof buttonVariants> {
   /** Shows a spinner and blocks interaction without changing the button width. */
   loading?: boolean;

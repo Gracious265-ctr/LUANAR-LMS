@@ -1,6 +1,7 @@
 "use client";
 
-import { Field, Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-picker";
+import { Field } from "@/components/ui/input";
 
 interface DateRangeFieldsProps {
   startDate: string;
@@ -18,25 +19,17 @@ export function DateRangeFields({
   disabled,
 }: DateRangeFieldsProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label="Start Date" htmlFor="start-date">
-        <Input
-          id="start-date"
-          type="date"
-          value={startDate}
-          onChange={(e) => onStartChange(e.target.value)}
-          disabled={disabled}
-        />
-      </Field>
-      <Field label="End Date" htmlFor="end-date">
-        <Input
-          id="end-date"
-          type="date"
-          value={endDate}
-          onChange={(e) => onEndChange(e.target.value)}
-          disabled={disabled}
-        />
-      </Field>
-    </div>
+    <Field label="Leave dates" htmlFor="leave-dates">
+      <DateRangePicker
+        id="leave-dates"
+        from={startDate}
+        to={endDate}
+        onRangeChange={(from, to) => {
+          onStartChange(from);
+          onEndChange(to);
+        }}
+        disabled={disabled}
+      />
+    </Field>
   );
 }
