@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { CancellationRequestsTable } from "@/components/cancellations/cancellation-requests-table";
@@ -37,10 +38,11 @@ describe("CancellationRequestsTable", () => {
         ok: true,
         data: makeListResponse([], { tab: "decided" }),
       });
+    const user = userEvent.setup();
     render(<CancellationRequestsTable />);
     await screen.findAllByText("LV-2026-27-800123");
 
-    fireEvent.click(screen.getByText("Decided by me"));
+    await user.click(screen.getByText("Decided by me"));
     await waitFor(() =>
       expect(mockedFetchCancellations).toHaveBeenLastCalledWith("decided", 1)
     );

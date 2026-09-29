@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApprovalsList } from "@/components/approvals/approvals-list";
@@ -72,6 +73,7 @@ describe("ApprovalsList", () => {
   });
 
   it("renders your decision columns on the decided tab", async () => {
+    const user = userEvent.setup();
     mockedFetchApprovals.mockResolvedValue({
       ok: true,
       data: makeListResponse(
@@ -82,7 +84,7 @@ describe("ApprovalsList", () => {
     render(<ApprovalsList />);
     await screen.findAllByText("LV-2026-000123");
 
-    fireEvent.click(screen.getByText("Decided by me"));
+    await user.click(screen.getByText("Decided by me"));
     expect(await screen.findByText("Your decision")).toBeInTheDocument();
     expect((await screen.findAllByText("Approved")).length).toBeGreaterThan(0);
   });

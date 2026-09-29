@@ -11,6 +11,8 @@ import type {
   ApprovalTab,
 } from "@/lib/approvals/types";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination } from "@/components/ui/pagination";
 
 import { ActionBadge, StatusBadge } from "./badges";
 import {
@@ -93,43 +95,25 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div
-          role="tablist"
-          aria-label="Approvals list"
-          className="inline-flex rounded-lg border border-border-default bg-surface-card p-1"
+        <Tabs
+          value={tab}
+          className="contents"
+          onValueChange={(next) => switchTab(next as ApprovalTab)}
         >
-          <button
-            role="tab"
-            aria-selected={tab === "pending"}
-            onClick={() => switchTab("pending")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "pending"
-                ? "bg-brand-primary-subtle text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Pending my decision
-            {data && tab === "pending" && (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
-                {data.count}
-              </span>
-            )}
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "decided"}
-            onClick={() => switchTab("decided")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "decided"
-                ? "bg-brand-primary-subtle text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Decided by me
-          </button>
-        </div>
+          <TabsList variant="segmented" aria-label="Approvals list">
+            <TabsTrigger variant="segmented" value="pending">
+              Pending my decision
+              {data && tab === "pending" && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
+                  {data.count}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger variant="segmented" value="decided">
+              Decided by me
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="relative w-full sm:w-72">
           <Search
@@ -335,41 +319,5 @@ function SkeletonRows({ count }: { count: number }) {
         />
       ))}
     </div>
-  );
-}
-
-function Pagination({
-  page,
-  hasPrevious,
-  hasNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <nav aria-label="Pagination" className="flex items-center justify-between">
-      <button
-        type="button"
-        disabled={!hasPrevious}
-        onClick={onPrevious}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Previous
-      </button>
-      <span className="text-sm text-text-muted">Page {page}</span>
-      <button
-        type="button"
-        disabled={!hasNext}
-        onClick={onNext}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Next
-      </button>
-    </nav>
   );
 }

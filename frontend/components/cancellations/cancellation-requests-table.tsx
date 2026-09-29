@@ -11,7 +11,8 @@ import type {
   CancellationRow,
   CancellationTab,
 } from "@/lib/cancellations/types";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Table,
   TableBody,
@@ -87,38 +88,20 @@ export function CancellationRequestsTable() {
 
   return (
     <div className="space-y-4">
-      <div
-        role="tablist"
-        aria-label="Cancellation requests"
-        className="inline-flex rounded-lg border border-border-default bg-surface-card p-1"
+      <Tabs
+        value={tab}
+        className="contents"
+        onValueChange={(next) => switchTab(next as CancellationTab)}
       >
-        <button
-          role="tab"
-          aria-selected={tab === "pending"}
-          onClick={() => switchTab("pending")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-            tab === "pending"
-              ? "bg-brand-primary-subtle text-brand-primary"
-              : "text-text-secondary hover:text-text-primary"
-          )}
-        >
-          Pending
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "decided"}
-          onClick={() => switchTab("decided")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-            tab === "decided"
-              ? "bg-brand-primary-subtle text-brand-primary"
-              : "text-text-secondary hover:text-text-primary"
-          )}
-        >
-          Decided by me
-        </button>
-      </div>
+        <TabsList variant="segmented" aria-label="Cancellation requests">
+          <TabsTrigger variant="segmented" value="pending">
+            Pending
+          </TabsTrigger>
+          <TabsTrigger variant="segmented" value="decided">
+            Decided by me
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {loading ? (
         <SkeletonRows count={4} />
@@ -301,41 +284,5 @@ function SkeletonRows({ count }: { count: number }) {
         />
       ))}
     </div>
-  );
-}
-
-function Pagination({
-  page,
-  hasPrevious,
-  hasNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <nav aria-label="Pagination" className="flex items-center justify-between">
-      <button
-        type="button"
-        disabled={!hasPrevious}
-        onClick={onPrevious}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Previous
-      </button>
-      <span className="text-sm text-text-muted">Page {page}</span>
-      <button
-        type="button"
-        disabled={!hasNext}
-        onClick={onNext}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Next
-      </button>
-    </nav>
   );
 }
