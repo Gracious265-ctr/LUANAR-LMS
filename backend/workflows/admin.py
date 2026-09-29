@@ -14,11 +14,7 @@ from .models import (
     Team,
     Workflow,
 )
-from .services import (
-    approver_role_codes_for,
-    ensure_role_not_in_use,
-    validate_workflow_for_activation,
-)
+from .services import approver_role_codes_for, ensure_role_not_in_use
 
 
 class SectionForm(forms.ModelForm):
@@ -96,36 +92,34 @@ class SectionInline(admin.TabularInline):
 
 
 class WorkflowAdminForm(forms.ModelForm):
-    """Admin form that validates activation/scheduling using the same services."""
+    """Kept for the section inline; the chain itself is not editable here.
+
+    A chain is created and rewritten with its team, so this form only ever
+    renders for the read-only inspector's inlines, which do not validate a
+    lifecycle of their own.
+    """
 
     class Meta:
         model = Workflow
         fields = "__all__"
 
-    def clean(self):
-        cleaned = super().clean()
-        effective_from = cleaned.get("effective_from")
-        if effective_from and cleaned.get("is_active"):
-            scope = (
-                cleaned.get("employee_category") or "",
-                (cleaned.get("department") or "").strip(),
-            )
-            sections = self.instance.sections.all() if self.instance.pk else []
-            issues = validate_workflow_for_activation(
-                self.instance.pk, scope, sections
-            )
-            if issues:
-                raise ValidationError(
-                    " ".join(issue.message for issue in issues)
-                )
-        return cleaned
-
 
 @admin.register(Workflow)
 class WorkflowAdmin(admin.ModelAdmin):
+    """Read-only inspector. A chain is written through its team.
+
+    A chain is created with its team and its steps are rewritten by saving the
+    team again, so this page exists to answer "what is this team's chain, and
+    when did it last change" — not to be a second place to edit it. Leaving the
+    write open here would let a chain be edited apart from the team whose
+    applications it governs, which is precisely the mistake the team-owned
+    chain rules out everywhere else.
+    """
+
     form = WorkflowAdminForm
     list_display = (
         "name",
+        "owner",
         "employee_category",
         "department",
         "effective_from",
@@ -152,7 +146,21 @@ class WorkflowAdmin(admin.ModelAdmin):
 
     section_summary.short_description = "Approval sections"
 
+    @admin.display(description="Team")
+    def owner(self, obj):
+        team = getattr(obj, "team", None)
+        return team.name if team else "—"
+
+    def has_add_permission(self, request):
+        # A chain without a team is a chain nothing routes through.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
     def has_delete_permission(self, request, obj=None):
+        # PROTECTed by Team.workflow, and the audit trail is the record of why
+        # a chain looked the way it did.
         return False
 
 
@@ -303,11 +311,38 @@ class CampusAdmin(admin.ModelAdmin):
 
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "campus", "workflow", "is_active")
-    list_filter = ("is_active", "campus")
-    search_fields = ("name", "code", "description")
+    """Deliberately not a lifecycle editor.
+
+    Switching a team between draft, active and inactive is a *decision* about
+    real applications, so it goes through ``workflows.services.activate_team`` /
+    ``deactivate_team``: validated, refused when the configuration cannot support
+    it, and audited as its own event. An admin form that just wrote ``status``
+    would be a way around all three, so the field is read-only here and the
+    buttons are the API's actions.
+    """
+
+    list_display = (
+        "name",
+        "code",
+        "department",
+        "campus",
+        "workflow",
+        "status",
+        "effective_window",
+    )
+    list_filter = ("status", "campus", "department")
+    search_fields = ("name", "code", "description", "department")
     raw_id_fields = ("workflow", "campus")
     ordering = ("name",)
+    readonly_fields = ("status", "created_at", "updated_at")
+
+    @admin.display(description="Effective")
+    def effective_window(self, obj: Team) -> str:
+        if obj.effective_from is None and obj.effective_to is None:
+            return "Always"
+        start = obj.effective_from.isoformat() if obj.effective_from else "start"
+        end = obj.effective_to.isoformat() if obj.effective_to else "open"
+        return f"{start} → {end}"
 
     def has_delete_permission(self, request, obj=None):
         return False

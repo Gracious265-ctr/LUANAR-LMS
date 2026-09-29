@@ -325,12 +325,16 @@ These values are configurable by HR.
 
 ### Workflow Administration
 
-* HR workflow configuration.
+Workflows are not configured on their own. Each team owns one chain, and the
+chain is written and edited with the team, so there is never a second screen
+where a team's steps can be changed from under it.
+
+* Team-scoped workflow configuration: a chain is created with its team and
+  edited on the team's form.
 * Future effective dates.
 * Workflow validation before activation.
 * Active approver validation.
 * Required-stage validation.
-* Conflict detection.
 * Scheduled workflow configuration.
 * Temporary delegation.
 * Delegate nomination.
@@ -403,7 +407,7 @@ Failed required notifications are logged and reported to HR/administration.
 * Minimum notice configuration.
 * Workflow configuration.
 * Approver-role configuration: create, rename, and retire the positions a stage may name, and set how much leave history each may see.
-* Team configuration: the people who hold a position for a group, the workflow their applications follow, and an optional campus scope.
+* Team configuration: the people who hold a position for a group, the approval steps their applications follow, and an optional campus scope. A team owns its steps; they are never shared with another team.
 * Institution-wide role assignment for roles that must have a single holder.
 * Future-effective configuration.
 * Delegation management.

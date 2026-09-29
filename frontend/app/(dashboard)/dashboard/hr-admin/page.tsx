@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, UserCog, Users, Workflow } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, UserCog, Users } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 
@@ -73,18 +73,6 @@ export default async function HRAdminPage() {
           <h3 className="text-lg font-semibold text-text-primary">Leave Types</h3>
           <p className="mt-1 text-sm text-text-secondary">
             Maintain the registry of leave types the university offers.
-          </p>
-        </Link>
-        <Link
-          href="/dashboard/hr-admin/workflows"
-          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
-        >
-          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
-            <Workflow className="h-5 w-5" />
-          </div>
-          <h3 className="text-lg font-semibold text-text-primary">Workflows</h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Configure approval sequences by employee category and department.
           </p>
         </Link>
         <Link

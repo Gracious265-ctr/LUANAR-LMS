@@ -23,30 +23,27 @@ from .models import (
 from .services import (
     ReassignmentError,
     StageSequenceError,
-    _role_usage,
     _resolve_stage_role,
-    normalize_section_sequence,
+    _role_usage,
     acting_approver_identity,
     add_section_member,
-    create_campus,
-    update_campus,
     approver_role_codes_for,
     approver_role_labels_for,
-    role_usage_map,
     create_approver_role,
+    create_campus,
     create_role_assignment,
     create_team,
     deactivate_approver_role,
     delegation_summary,
-    _resolve_stage_role,
     is_approver_user,
     normalize_section_sequence,
     open_request_exists,
     reassign_application,
-    workflow_section_roles,
+    role_usage_map,
+    update_campus,
     update_approver_role,
     update_team,
-    validate_workflow_for_activation,
+    workflow_section_roles,
 )
 
 
@@ -117,11 +114,16 @@ class ApproverRoleCodeField(serializers.Field):
 
 
 class SectionMemberSerializer(serializers.ModelSerializer):
-    """One person who can act for a section.
+    """One period during which a person can act for a section.
 
     The section is echoed with its name, order and role, not just its id: a
     membership row on its own says nothing about *which step of which workflow*
     the person is on, and the screens that list memberships show the step.
+
+    The effective dates travel with the row because a membership is a period, not
+    a flag: ``effective_to`` being set is how "no longer an approver" is
+    recorded, and a reader that only saw the open rows could not tell an HR
+    auditor who used to be on a step from somebody who was never on it.
     """
 
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(is_active=True))
@@ -138,6 +140,7 @@ class SectionMemberSerializer(serializers.ModelSerializer):
     workflow = serializers.IntegerField(
         source="section.workflow_id", read_only=True
     )
+    is_effective = serializers.SerializerMethodField()
 
     class Meta:
         model = SectionMember
@@ -152,6 +155,9 @@ class SectionMemberSerializer(serializers.ModelSerializer):
             "user",
             "user_name",
             "user_email",
+            "effective_from",
+            "effective_to",
+            "is_effective",
             "created_at",
         ]
         read_only_fields = [
@@ -163,6 +169,7 @@ class SectionMemberSerializer(serializers.ModelSerializer):
             "approver_role_label",
             "user_name",
             "user_email",
+            "is_effective",
             "created_at",
         ]
 
@@ -171,6 +178,15 @@ class SectionMemberSerializer(serializers.ModelSerializer):
 
     def get_user_email(self, instance) -> str:
         return instance.user.email
+
+    def get_is_effective(self, instance) -> bool:
+        """Whether this membership is in force today.
+
+        Closed rows are served from ``all_objects`` so history is still
+        readable; this flag is how a client tells the two apart without having to
+        re-derive the date comparison.
+        """
+        return instance.is_effective()
 
     def __str__(self) -> str:  # pragma: no cover - debugging aid
         return f"{self.get_user_name(instance)}"
@@ -216,12 +232,18 @@ class SectionSerializer(serializers.ModelSerializer):
         return instance.members.count()
 
 
-class WorkflowSerializer(AuditedModelSerializer):
-    """HR-facing serializer for approval workflows and their ordered stages."""
+class WorkflowSerializer(serializers.ModelSerializer):
+    """Read-only view of a chain.
 
-    target_type = AuditEntry.TargetType.WORKFLOW
+    A chain is written in the same request as the team that owns it — created
+    with the team, and rewritten by saving the team again. This serializer
+    exists so the team screens, the roster views, and the audit trail can read
+    one, and it deliberately exposes no writable field: a chain has no edit of
+    its own to offer, so the only way to change one is to name the team whose
+    steps are changing.
+    """
 
-    sections = SectionSerializer(many=True)
+    sections = SectionSerializer(many=True, read_only=True)
     state = serializers.CharField(read_only=True)
 
     class Meta:
@@ -236,193 +258,7 @@ class WorkflowSerializer(AuditedModelSerializer):
             "state",
             "sections",
         ]
-
-    def _effective_is_active(self, attrs: dict) -> bool:
-        if "is_active" in attrs:
-            return bool(attrs["is_active"])
-        if self.instance is not None:
-            return bool(self.instance.is_active)
-        return True
-
-    def validate(self, attrs: dict) -> dict:
-        name = self._value(attrs, "name")
-        name = (name or "").strip()
-        if not name:
-            raise serializers.ValidationError({"name": "Name is required."})
-        attrs["name"] = name
-
-        category = self._value(attrs, "employee_category")
-        attrs["employee_category"] = (category or "").strip()
-
-        department = self._value(attrs, "department")
-        attrs["department"] = (department or "").strip()
-
-        sections = attrs.get("sections")
-        if sections is None:
-            raise serializers.ValidationError(
-                {"sections": "Approval sections are required."}
-            )
-        try:
-            normalized_sections = normalize_section_sequence(sections)
-        except StageSequenceError as exc:
-            raise serializers.ValidationError({exc.field: [exc.message]})
-
-        queryset = Workflow.objects.all()
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.filter(name=name).exists():
-            raise serializers.ValidationError(
-                {"name": "A workflow with this name already exists."}
-            )
-
-        effective_from = self._value(attrs, "effective_from")
-        if effective_from is not None and self._effective_is_active(attrs):
-            self._validate_activation(
-                normalized_sections,
-                (attrs["employee_category"], attrs["department"]),
-            )
-
-        return attrs
-
-    def _validate_activation(
-        self, sections: list[dict], scope: tuple[str, str]
-    ) -> None:
-        workflow_pk = self.instance.pk if self.instance is not None else None
-        issues = validate_workflow_for_activation(workflow_pk, scope, sections)
-        if not issues:
-            return
-        field_errors: dict[str, list[str]] = {}
-        details: list[str] = []
-        for issue in issues:
-            if issue.field is None:
-                details.append(issue.message)
-            else:
-                field_errors.setdefault(issue.field, []).append(issue.message)
-        errors: dict[str, object] = dict(field_errors)
-        if details:
-            errors["detail"] = " ".join(details)
-        raise serializers.ValidationError(errors)
-
-    def _audit_snapshot(self, instance: Workflow) -> dict:
-        return {
-            "name": instance.name,
-            "employee_category": instance.employee_category,
-            "department": instance.department,
-            "effective_from": instance.effective_from,
-            "is_active": instance.is_active,
-            # Role *codes*, not ids, so the audit entry stays readable years
-            # after the role is renamed or the row is hard to resolve.
-            "sections": list(
-                instance.sections.order_by("order").values_list(
-                    "approver_role__code", flat=True
-                )
-            ),
-        }
-
-    def _audit_target_summary(self, instance: Workflow) -> str:
-        scope = instance.employee_category or "All categories"
-        if instance.department:
-            scope += f" / {instance.department}"
-        return f"{instance.name} ({scope})"
-
-    def create(self, validated_data: dict) -> Workflow:
-        sections = validated_data.pop("sections", [])
-        with transaction.atomic():
-            workflow = Workflow.objects.create(**validated_data)
-            self._replace_sections(workflow, sections)
-            self._audit_after_create(workflow)
-        return workflow
-
-    def update(self, instance, validated_data: dict) -> Workflow:
-        sections = validated_data.pop("sections", [])
-        before = self._audit_snapshot(instance)
-        with transaction.atomic():
-            # Bypass the automated audited update so the replacement sections are
-            # in place before the "after" snapshot is taken.
-            instance = serializers.ModelSerializer.update(self, instance, validated_data)
-            self._replace_sections(instance, sections)
-            self._audit_after_update(instance, before)
-        return instance
-
-    def _replace_sections(self, workflow: Workflow, sections: list[dict]) -> None:
-        """Rewrite the workflow's section sequence, preserving membership.
-
-        A section is identified across writes by its ``(role, name)`` pair. A
-        section whose pair still appears in the payload keeps its row, and so
-        keeps its members: re-ordering the chain must not silently strip the
-        people who can act for it, which is the whole reason a section holds
-        several approvers.
-
-        A section whose role **or** name changed is a different step and is
-        rebuilt empty. Deliberately not carried over: a step that moved to a
-        different approver role has a different authority, and quietly handing
-        the old roster to the new role would grant it without HR asking. The
-        step shows up with no members, which is visible and fixable, and
-        submission is refused until it is staffed.
-
-        ``(workflow, order)`` is unique, so the write is sequenced to avoid
-        colliding with itself: stale sections go first, survivors are parked
-        beyond any real order, and only then is the final order applied.
-        """
-        existing = list(
-            workflow.sections.select_related("approver_role").prefetch_related("members")
-        )
-        by_identity = {(s.approver_role_id, s.name): s for s in existing}
-
-        resolved: list[tuple[dict, ApproverRole]] = []
-        for payload in normalize_section_sequence(sections):
-            role = _resolve_stage_role(payload["approver_role"])
-            if role is None:
-                raise serializers.ValidationError(
-                    {
-                        "approver_role": (
-                            f"Approver role '{payload['approver_role']}' is missing "
-                            "or deactivated."
-                        )
-                    }
-                )
-            resolved.append((payload, role))
-
-        # ``(payload, role, survivor_pk)``. A non-``None`` survivor keeps its row
-        # and its members; ``None`` means build the step fresh.
-        plan: list[tuple[dict, ApproverRole, int | None]] = []
-        claimed: set[int] = set()
-        for payload, role in resolved:
-            survivor = by_identity.get((role.pk, payload["name"]))
-            if survivor is not None and survivor.pk not in claimed:
-                claimed.add(survivor.pk)
-                plan.append((payload, role, survivor.pk))
-            else:
-                # Either a genuinely new step, or the same role+name a second
-                # time in one payload — two steps may share a role and a label,
-                # so the second needs its own row rather than reusing the first.
-                plan.append((payload, role, None))
-
-        # 1. Drop the steps that are no longer in the payload. Their members
-        #    cascade. Doing this first means their orders are free for reuse.
-        workflow.sections.exclude(pk__in=claimed).delete()
-
-        # 2. Park the survivors, so writing the new order cannot collide with a
-        #    surviving section that is currently sitting on the target order.
-        for _, _, survivor_pk in plan:
-            if survivor_pk is not None:
-                Section.objects.filter(pk=survivor_pk).update(
-                    order=F("order") + 1_000_000
-                )
-
-        # 3. Apply the final order, building the steps that have no row yet.
-        for payload, role, survivor_pk in plan:
-            if survivor_pk is not None:
-                Section.objects.filter(pk=survivor_pk).update(
-                    order=payload["order"]
-                )
-                continue
-            Section.objects.create(
-                workflow=workflow,
-                name=payload["name"],
-                approver_role=role,
-                order=payload["order"],
-            )
+        read_only_fields = fields
 
 
 class DelegationSerializer(serializers.ModelSerializer):
@@ -908,8 +744,10 @@ class SectionMemberWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SectionMember
-        fields = ["id", "section", "user", "created_at"]
+        fields = ["id", "section", "user", "effective_from", "created_at"]
         read_only_fields = ["created_at"]
+        # Held to the same rule as role assignments: the service owns uniqueness
+        # so the error can say who already holds the step.
         validators: list = []
 
     def validate_user(self, value):
@@ -925,11 +763,91 @@ class SectionMemberWriteSerializer(serializers.ModelSerializer):
             section=validated_data["section"],
             user=validated_data["user"],
             actor=self.context["actor"],
+            effective_from=validated_data.get("effective_from"),
         )
+
+
+class TeamSectionInputSerializer(serializers.Serializer):
+    """One approval step written inline as part of a team.
+
+    A step names the role it needs and the people who may act for it. Naming both
+    here is what lets a team be configured in one pass: HR is not asked to save
+    a chain, go and look up its id, and paste it into a team form.
+    """
+
+    name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    approver_role = serializers.CharField(max_length=100)
+    order = serializers.IntegerField(required=False, min_value=1)
+    members = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), required=False, allow_empty=True
+    )
+
+    def validate_approver_role(self, value: str) -> str:
+        """Resolve the role to a code now, so a bad role fails before any write.
+
+        Returning the code rather than the label keeps the service's normalized
+        payload in its documented shape, and a role that is missing or
+        deactivated is refused here rather than after a workflow row exists.
+        """
+        role = _resolve_stage_role(value.strip())
+        if role is None:
+            raise serializers.ValidationError(
+                "That approver role is missing or deactivated. Pick an active "
+                "role, or reactivate the role in Roles."
+            )
+        return role.code
+
+
+class TeamWorkflowInputSerializer(serializers.Serializer):
+    """The approval chain to create alongside a team."""
+
+    name = serializers.CharField(
+        max_length=200,
+        required=False,
+        allow_blank=True,
+        help_text=(
+            "Defaults to the team name. Workflow names are unique, so a clash "
+            "is suffixed rather than rejected."
+        ),
+    )
+    sections = TeamSectionInputSerializer(many=True)
+
+    def validate_sections(self, value: list[dict]) -> list[dict]:
+        if not value:
+            raise serializers.ValidationError(
+                "At least one approval step is required."
+            )
+        # Steps are numbered by the order they appear in. A team form lists them
+        # top to bottom, so making HR type a separate number for each one would
+        # be a second way of saying the same thing — and a second way to get it
+        # wrong. An explicit order is still accepted for clients that send one.
+        numbered = [
+            {**step, "order": step.get("order") or position}
+            for position, step in enumerate(value, start=1)
+        ]
+        # Reuses the workflow's own sequence rules so a chain written inline is
+        # validated identically to one written on the workflow screen, and both
+        # get numbered in the order given rather than the order submitted.
+        try:
+            normalize_section_sequence(numbered)
+        except StageSequenceError as exc:
+            raise serializers.ValidationError({exc.field: [exc.message]})
+        return numbered
 
 
 class TeamSerializer(serializers.ModelSerializer):
     """A team: the routing unit HR assigns people to."""
+
+    def _value(self, attrs: dict, field: str):
+        """The submitted value for ``field``, falling back to the stored one.
+
+        A PATCH is validated against the fully-merged state rather than treating
+        an absent key as missing, so "only the end date was sent" is checked
+        against the start date the team already has.
+        """
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, None)
 
     campus = serializers.PrimaryKeyRelatedField(
         queryset=Campus.objects.filter(is_active=True),
@@ -937,18 +855,17 @@ class TeamSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     campus_name = serializers.CharField(source="campus.name", read_only=True)
-    # Active chains only: a team pointing at a retired workflow routes nothing,
-    # and the applicant would hit a configuration error at submission.
-    workflow = serializers.PrimaryKeyRelatedField(
-        queryset=Workflow.objects.filter(is_active=True),
-        required=True,
-        allow_null=False,
-        help_text=(
-            "The approval workflow this team routes through. It owns the "
-            "sections, so its steps define who may act for this team."
-        ),
-    )
+    # Read-only. A chain is not something a team points at; it is the chain that
+    # was built with the team, and it is edited by writing its steps again. If
+    # this were writable, a team's chain could be swapped for somebody else's
+    # and every application inside it would be stranded at a step nobody staffs.
+    workflow = serializers.PrimaryKeyRelatedField(read_only=True)
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
+    # The chain, written inline. On create it is created with the team, so there
+    # is never a team that exists pointing at a chain HR has not finished
+    # describing. On update it replaces the steps of the chain the team already
+    # has. Either way it is the one and only way a chain is written.
+    new_workflow = TeamWorkflowInputSerializer(write_only=True, required=False)
     # A team no longer holds members itself — its workflow's sections do. These
     # are flattened for display so the team list can show who is on the team
     # without a second request, but they are derived from the sections, so there
@@ -957,6 +874,7 @@ class TeamSerializer(serializers.ModelSerializer):
     stage_roles = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
     sections = serializers.SerializerMethodField()
+    is_effective = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Team
@@ -965,11 +883,16 @@ class TeamSerializer(serializers.ModelSerializer):
             "name",
             "code",
             "description",
+            "department",
             "campus",
             "campus_name",
             "workflow",
             "workflow_name",
-            "is_active",
+            "new_workflow",
+            "status",
+            "effective_from",
+            "effective_to",
+            "is_effective",
             "stage_roles",
             "member_count",
             "members",
@@ -979,6 +902,11 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "code",
+            # Lifecycle is not editable here: activating and retiring go through
+            # their own validated, audited actions rather than a PATCH, so
+            # neither can happen by accident or without a validation record.
+            "status",
+            "is_effective",
             "stage_roles",
             "member_count",
             "members",
@@ -986,6 +914,40 @@ class TeamSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def validate(self, attrs: dict) -> dict:
+        supplied = attrs.pop("new_workflow", None)
+        if self.instance is None and supplied is None:
+            # A team with no chain routes nothing, and a team that exists
+            # without one is the object that used to look configured and then
+            # fail at submission.
+            raise serializers.ValidationError(
+                {
+                    "new_workflow": (
+                        "Describe the approval steps this team routes through. "
+                        "The chain is created with the team."
+                    )
+                }
+            )
+        if supplied is not None:
+            self._new_workflow = supplied
+
+        department = attrs.get("department")
+        if department is not None:
+            attrs["department"] = department.strip()
+
+        start = self._value(attrs, "effective_from")
+        end = self._value(attrs, "effective_to")
+        if start is not None and end is not None and end < start:
+            raise serializers.ValidationError(
+                {
+                    "effective_to": (
+                        f"The end date ({end.isoformat()}) is before the start "
+                        f"date ({start.isoformat()})."
+                    )
+                }
+            )
+        return attrs
 
     def get_members(self, instance: Team) -> list[dict]:
         if instance.workflow_id is None:
@@ -1053,17 +1015,54 @@ class TeamSerializer(serializers.ModelSerializer):
                 "approver_role": section.approver_role.code,
                 "approver_role_label": section.approver_role.label,
                 "member_count": section.members.count(),
+                # The same serializer the membership API uses, so a team screen
+                # and the membership screen cannot disagree about a date.
+                "members": SectionMemberSerializer(
+                    section.members.select_related("user"), many=True
+                ).data,
             }
             for section in instance.workflow.sections.order_by("order")
         ]
 
     def create(self, validated_data: dict) -> Team:
-        return create_team(actor=self.context["actor"], data=dict(validated_data))
+        return create_team(
+            actor=self.context["actor"],
+            data=dict(validated_data),
+            workflow_config=getattr(self, "_new_workflow", None),
+        )
 
     def update(self, instance: Team, validated_data: dict) -> Team:
         return update_team(
-            team=instance, actor=self.context["actor"], data=dict(validated_data)
+            team=instance,
+            actor=self.context["actor"],
+            data=dict(validated_data),
+            workflow_config=getattr(self, "_new_workflow", None),
         )
+
+
+class TeamReadinessSerializer(serializers.Serializer):
+    """The answer to "can this team be activated, and if not, why not?".
+
+    Every problem is returned at once rather than the first one, because a
+    configuration with three unstaffed steps should take HR one pass, not three.
+    """
+
+    team = serializers.CharField(source="team.name", read_only=True)
+    status = serializers.CharField(source="team.status", read_only=True)
+    ready = serializers.BooleanField(read_only=True)
+    issues = serializers.SerializerMethodField()
+
+    def get_issues(self, instance) -> list[dict]:
+        return [
+            {
+                "code": issue.code,
+                "field": issue.field,
+                "message": issue.message,
+                "section": issue.section,
+                "approver_role": issue.approver_role,
+            }
+            for issue in instance.issues
+        ]
 
 
 class CampusSerializer(serializers.ModelSerializer):

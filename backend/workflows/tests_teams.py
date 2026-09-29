@@ -1,8 +1,13 @@
 """Teams, sections, campuses, and institution-wide holdings: the routing config.
 
-A team decides *which* workflow applies: at submission the applicant's team
-selects the chain. The chain's sections then decide *who* may act at each step,
-and several members of one section may act with the first to decide taking it.
+A team decides *which* chain applies: at submission the applicant's team selects
+it. The chain's sections then decide *who* may act at each step, and several
+members of one section may act with the first to decide taking it.
+
+A team owns its chain one-to-one, so "edit this team's approval steps" and
+"re-route somebody else's applications" cannot be the same action. The chain is
+written in the same request as the team, which is what most of these tests
+exercising it looks like.
 
 These tests cover the whole configuration surface around that: the campus a team
 belongs to, the membership that staffs each section, the institution-wide
@@ -72,13 +77,27 @@ class ConfigurationAPIBase(TestCase):
             role=User.Role.EMPLOYEE,
         )
         self.client.force_authenticate(self.hr)
-        self.workflow = make_workflow("Administration chain", ("supervisor", "hod"))
+        self.chain_roles = ("supervisor", "hod")
+
+    def chain_payload(self, name="Administration chain", roles=None) -> dict:
+        """The chain as the team form writes it, since that is the only writer."""
+        return {
+            "name": name,
+            "sections": [
+                {"name": code.capitalize(), "approver_role": code}
+                for code in (roles or self.chain_roles)
+            ],
+        }
 
     def create_team(self, name="Administration team", **extra) -> dict:
-        payload = {"name": name, "workflow": self.workflow.pk}
+        payload = {"name": name, "new_workflow": self.chain_payload()}
         payload.update(extra)
         response = self.client.post(TEAMS_URL, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        # The team's own chain, so tests can staff and inspect its steps. It is
+        # the created team's workflow, not a shared fixture, because a team owns
+        # its chain.
+        self.workflow = Workflow.objects.get(pk=response.data["workflow"])
         return response.data
 
     def add_member_to_section(self, section, user) -> dict:
@@ -182,7 +201,11 @@ class CampusAPITests(ConfigurationAPIBase):
         )
         response = self.client.post(
             TEAMS_URL,
-            {"name": "Team", "workflow": self.workflow.pk, "campus": campus.pk},
+            {
+                "name": "Team",
+                "new_workflow": self.chain_payload(),
+                "campus": campus.pk,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -191,10 +214,15 @@ class CampusAPITests(ConfigurationAPIBase):
 
 class TeamAPITests(ConfigurationAPIBase):
     def test_hr_creates_a_team(self):
+        """The chain arrives with the team, and is the team's own."""
         team = self.create_team(description="Administration staff")
         self.assertEqual(team["name"], "Administration team")
         self.assertEqual(team["workflow"], self.workflow.pk)
         self.assertEqual(team["workflow_name"], "Administration chain")
+        self.assertEqual(
+            [s["approver_role"] for s in team["sections"]],
+            ["supervisor", "hod"],
+        )
 
     def test_a_code_is_derived_from_the_name(self):
         team = self.create_team("Human Resources")
@@ -213,17 +241,6 @@ class TeamAPITests(ConfigurationAPIBase):
         )
         self.assertEqual(entry.actor, self.hr)
 
-    def test_a_team_requires_a_workflow(self):
-        """A team with no workflow could never route an application.
-
-        Refusing it at creation puts the problem where HR can fix it, instead of
-        leaving a team that looks configured but approves nothing.
-        """
-        response = self.client.post(TEAMS_URL, {"name": "Unrouted"}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("workflow", response.data)
-        self.assertFalse(Team.objects.filter(name="Unrouted").exists())
-
     def test_a_team_may_be_created_without_a_campus(self):
         team = self.create_team("Non-campus team")
         self.assertIsNone(team["campus"])
@@ -232,18 +249,45 @@ class TeamAPITests(ConfigurationAPIBase):
     def test_duplicate_name_rejected(self):
         self.create_team()
         response = self.client.post(
-            TEAMS_URL, {"name": "Administration team", "workflow": self.workflow.pk},
+            TEAMS_URL,
+            {"name": "Administration team", "new_workflow": self.chain_payload()},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("name", response.data)
 
-    def test_an_unknown_workflow_rejected(self):
+    def test_a_team_may_not_point_at_an_existing_chain(self):
+        """``workflow`` is read-only: a chain is never picked from a list.
+
+        The field is still in the response, so a client that has it cached — or
+        an old one that still sends it — has to see that posting it does
+        nothing. Silently honouring it would put a team on somebody else's
+        chain, which is the one outcome the team-owned rule exists to stop.
+        """
+        other = self.create_team(name="Other team")
+        self.create_team(
+            name="Copying team",
+            **{"workflow": other["workflow"]},
+        )
+        team = Team.objects.get(name="Copying team")
+        self.assertNotEqual(team.workflow_id, other["workflow"])
+
+    def test_a_team_must_describe_its_chain(self):
+        """A team with no steps routes nothing, so it is refused at creation."""
+        response = self.client.post(TEAMS_URL, {"name": "Chainless team"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_workflow", response.data)
+        self.assertFalse(Team.objects.filter(name="Chainless team").exists())
+
+    def test_a_team_with_no_steps_is_refused(self):
         response = self.client.post(
-            TEAMS_URL, {"name": "Bad team", "workflow": 99999}, format="json"
+            TEAMS_URL,
+            {"name": "Empty chain", "new_workflow": {"sections": []}},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("workflow", response.data)
+        self.assertIn("new_workflow", response.data)
+        self.assertFalse(Workflow.objects.filter(name="Empty chain").exists())
 
     def test_teams_cannot_be_deleted(self):
         team = self.create_team()
@@ -254,7 +298,8 @@ class TeamAPITests(ConfigurationAPIBase):
     def test_non_hr_cannot_create_a_team(self):
         self.client.force_authenticate(self.employee)
         response = self.client.post(
-            TEAMS_URL, {"name": "Sneaky team", "workflow": self.workflow.pk},
+            TEAMS_URL,
+            {"name": "Sneaky team", "new_workflow": self.chain_payload()},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -312,11 +357,46 @@ class TeamAPITests(ConfigurationAPIBase):
             [("supervisor", 1), ("hod", 0)],
         )
 
-    def test_inactive_teams_are_hidden_by_default(self):
+    def test_a_new_team_starts_as_a_draft(self):
+        """Created is not in force.
+
+        A team appears the moment HR names it, and only starts affecting real
+        applications when it is activated. A boolean could not have said this:
+        a team being built looked exactly like a team in service.
+        """
+        team = self.create_team()
+        self.assertEqual(team["status"], Team.Status.DRAFT)
+        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT)
+
+    def test_status_cannot_be_set_by_a_write(self):
+        """Lifecycle moves go through their own validated actions.
+
+        A PATCH that could flip a team to active would be a team put in force
+        without a validation record and without the refusal that validation
+        exists to give.
+        """
+        team = self.create_team()
+        response = self.client.patch(
+            f"{TEAMS_URL}{team['id']}/",
+            {"status": Team.Status.ACTIVE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT
+        )
+
+    def test_retired_teams_are_hidden_by_default(self):
+        """A retired team drops out of the working list but is still reachable.
+
+        The default view shows what is in force plus what HR is still building;
+        the retired ones are there on request because their history still points
+        at them.
+        """
         self.create_team()
         team = Team.objects.get(name="Administration team")
-        team.is_active = False
-        team.save(update_fields=["is_active"])
+        team.status = Team.Status.INACTIVE
+        team.save(update_fields=["status"])
         response = self.client.get(TEAMS_URL)
         self.assertNotIn(
             "Administration team", [r["name"] for r in response.data["results"]]
@@ -326,21 +406,58 @@ class TeamAPITests(ConfigurationAPIBase):
             "Administration team", [r["name"] for r in response.data["results"]]
         )
 
-    def test_an_inactive_workflow_cannot_be_attached(self):
-        workflow = make_workflow("Old chain", ("dean",), is_active=False)
+    def test_the_list_can_be_filtered_to_one_status(self):
+        self.create_team(name="Draft team")
+        self.create_team(name="Live team", roles=("dean",))
+        Team.objects.filter(name="Live team").update(status=Team.Status.ACTIVE)
+        response = self.client.get(f"{TEAMS_URL}?status=active")
+        self.assertEqual(
+            [r["name"] for r in response.data["results"]], ["Live team"]
+        )
+        response = self.client.get(f"{TEAMS_URL}?status=draft")
+        self.assertEqual(
+            [r["name"] for r in response.data["results"]], ["Draft team"]
+        )
+
+    def test_an_unknown_status_filter_is_a_clean_error(self):
+        response = self.client.get(f"{TEAMS_URL}?status=maybe")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+
+    def test_the_list_can_be_filtered_to_one_campus(self):
+        campus = Campus.objects.create(name="Tehune", code="tehune")
+        self.create_team(name="Tehune team", campus=campus.pk)
+        self.create_team(name="Anywhere team")
+        response = self.client.get(f"{TEAMS_URL}?campus={campus.pk}")
+        self.assertEqual(
+            [r["name"] for r in response.data["results"]], ["Tehune team"]
+        )
+
+    def test_an_inactive_approver_role_cannot_be_chained(self):
+        """A step nobody can act for is refused while it is being written.
+
+        The chain is described in the same request as the team, so a retired
+        role is caught here rather than surfacing as a submission that cannot
+        move.
+        """
+        ensure_roles("dean")
+        ApproverRole.objects.filter(code="dean").update(is_active=False)
         response = self.client.post(
-            TEAMS_URL, {"name": "Stale team", "workflow": workflow.pk}, format="json"
+            TEAMS_URL,
+            {"name": "Stale team", "new_workflow": self.chain_payload(roles=("dean",))},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Team.objects.filter(name="Stale team").exists())
 
 
 class SectionMembershipTests(ConfigurationAPIBase):
     """Who can act for a section.
 
     The unit here is the *section*, not the team: membership belongs to the
-    workflow's approval steps, which several teams may share. A section takes any
-    number of people and one person may be in several sections, so the only rule
-    left is "not twice in the same section".
+    chain's approval steps. A section takes any number of people and one person
+    may be in several sections, so the only rule left is "not twice in the same
+    section".
     """
 
     def setUp(self):
@@ -467,13 +584,15 @@ class SectionMembershipTests(ConfigurationAPIBase):
 
     def test_members_can_be_listed_per_section_and_per_workflow(self):
         self.add_member(self.supervisor)
-        # Filtering by workflow has to reach the *section's* workflow, not the
-        # team: a second team on the same workflow sees the same members, which
-        # is what sharing a workflow means.
-        shared = self.create_team("Other team")
-        self.assertEqual(shared["workflow"], self.workflow.pk)
-        response = self.client.get(f"{MEMBERS_URL}?workflow={self.workflow.pk}")
+        # Filtering by workflow reaches the *section's* workflow, not the team,
+        # so one team's roster is never returned for another team's chain.
+        first_chain = self.workflow.pk
+        self.create_team("Other team")
+        other = Team.objects.get(name="Other team")
+        response = self.client.get(f"{MEMBERS_URL}?workflow={first_chain}")
         self.assertEqual(len(response.data["results"]), 1)
+        response = self.client.get(f"{MEMBERS_URL}?workflow={other.workflow_id}")
+        self.assertEqual(len(response.data["results"]), 0)
         unrelated = make_workflow("Unrelated chain", ("dean",))
         response = self.client.get(f"{MEMBERS_URL}?workflow={unrelated.pk}")
         self.assertEqual(len(response.data["results"]), 0)
@@ -498,7 +617,7 @@ class SectionMembershipTests(ConfigurationAPIBase):
         self.assertFalse(SectionMember.objects.filter(pk=membership.pk).exists())
         self.assertFalse(is_approver_user(self.supervisor))
 
-    def test_removal_leaves_a_shared_section_routable(self):
+    def test_removal_leaves_a_multi_member_section_routable(self):
         """Removing one of several members must not strand the step."""
         second = make_approver("supervisor", username="sup2@teams.test")
         self.add_member(self.supervisor)
@@ -513,13 +632,12 @@ class SectionMembershipTests(ConfigurationAPIBase):
         self.add_member(self.supervisor)
         membership = SectionMember.objects.get(section=self.section, user=self.supervisor)
         self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
-        self.assertTrue(
-            AuditEntry.objects.filter(
-                target_type=AuditEntry.TargetType.WORKFLOW,
-                action=AuditEntry.Action.CANCELLED,
-                target_id=str(self.workflow.pk),
-            ).exists()
+        entry = AuditEntry.objects.get(
+            target_type=AuditEntry.TargetType.WORKFLOW,
+            action=AuditEntry.Action.DEACTIVATED,
+            target_id=str(self.workflow.pk),
         )
+        self.assertEqual(entry.detail["after"]["effective_to"], str(timezone.localdate()))
 
     def test_memberships_cannot_be_edited_in_place(self):
         """Re-staffing a section is a removal plus an addition, both audited."""

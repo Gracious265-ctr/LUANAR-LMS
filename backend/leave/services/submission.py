@@ -34,11 +34,21 @@ class ApplicationNotSubmittableError(Exception):
 
 
 class ValidationFailedError(Exception):
-    """The re-validation failed; carries the full error list."""
+    """The re-validation failed; carries the full error list.
+
+    ``str()`` spells the issues out rather than counting them. This exception is
+    raised from a service and ends up in logs and in a 422 body; a bare
+    "1 validation error(s)" names neither the rule that fired nor what to do
+    about it, and the one thing an applicant or support officer reads is this
+    string.
+    """
 
     def __init__(self, errors):
         self.errors = errors
-        super().__init__(f"{len(errors)} validation error(s)")
+        super().__init__(
+            "; ".join(f"{getattr(issue, 'message', issue)}" for issue in errors)
+            or "validation failed"
+        )
 
 
 def submit_application(*, user, application_id):

@@ -4,6 +4,16 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Team Management (Units 1–10) COMPLETE** — backend, frontend, and docs; see
+  "Completed — Team Management (Units 1–10)" at the end of this file. Team
+  lifecycle is one authoritative field, membership is effective-dated, and a
+  team is created with its chain. Unit 11 is deliberately out of scope.
+- **Standalone Workflow management REMOVED** — a team owns its chain one-to-one,
+  so chains are written with the team and edited on the team form. The
+  `/dashboard/hr-admin/workflows` screens, their API route, and the write API
+  and admin are gone; `Workflow` stays as a read-only model because routing,
+  snapshots, and audit entries point at it. Verified: backend 1085 tests OK,
+  frontend 420 tests OK, typecheck/lint/build clean.
 - Workflow Sections migration (follow-on to Unit 26 — backend complete, frontend complete, docs updated; see "Completed — Workflow Sections (Sections/members) migration" at the end of this file)
 - Dev database fully reset and both dev servers restarted (2026-09-29) — see
   "Defect Fixes + Operational (2026-09-29, full dev reset — everything cleared)";
@@ -2365,3 +2375,126 @@ cache failing a single route with no headers).
 VS Code terminals: `uv run manage.py runserver` (pgid 11362) and `npm run dev`
 (pgid 11169). No `qcluster` — development runs tasks inline.
 
+
+---
+
+## Completed — Team Management (Units 1–10) (2026-09-29)
+
+Simplifies HR Team Management to the ten units the feature request lists, and
+stops at Unit 10. **Unit 11 (Finalized Leave + Audit View) is deliberately out
+of scope** and already exists from the original build. Follow-on to Unit 26 and
+the Workflow Sections migration above; no `context/specs/` file, so the
+authority is `context/architecture.md` plus this section. Not yet committed.
+
+**The idea.** A team is not a row with a checkbox. It is something HR builds,
+checks, and then puts into force — and a membership is not a row that is either
+there or not, but a *period*. Both are ordinary things to get wrong, so both are
+modelled explicitly.
+
+**Backend — model and migration (`workflows/0018`, `audit/0012`).**
+- `Team.is_active` → `Team.status` (`draft` / `active` / `inactive`), backfilled
+  from the old boolean. The `is_active` column is dropped, so a team cannot
+  hold two contradictory answers to "is this routing".
+- `Team.department` (free text), `effective_from`, `effective_to`; the
+  `team_effective_window_ordered` check constraint.
+- `SectionMember.effective_from` / `effective_to` dated from `created_at` for
+  existing rows, with `SectionMember.objects` narrowed to **open** memberships
+  and `SectionMember.all_objects` keeping every period. Two constraints:
+  `sectionmember_effective_window_ordered`, and
+  `sectionmember_open_section_user_unique` — *one open membership per section
+  per person*, which is what lets a handover be a removal plus an addition
+  rather than a duplicate row.
+- `AuditEntry.Action.ACTIVATED` / `DEACTIVATED`.
+
+**Backend — one authoritative lifecycle.**
+- `DatabaseWorkflowProvider.get_stage_definitions` gates on the team being
+  `active` *and* inside its effective window, and resolves each section's
+  approvers from memberships effective **today**. A draft, retired, future, or
+  expired team refuses submission with a sentence naming the team and the date,
+  so the applicant's failure is actionable rather than a stage error later.
+- Membership effective-dating does not touch the running application:
+  `decide()` still reads the `ApplicationStageApprover` snapshot, and
+  `ApplicationStage.section_ref` stays `PROTECT`, so a chain cannot be rebuilt
+  out from under an application waiting on it.
+
+**Backend — nested configuration, because a chain is decided with its team.**
+- `POST /teams/` accepts either `workflow` (an existing chain) or
+  `new_workflow` (ordered `sections`, each with a role and member user ids),
+  created in the same transaction. Existing and inline are exclusive. A chain
+  cannot be supplied on update — replacing it under a live team would strand
+  every application inside the old one.
+- `validate_team` / `GET|POST /teams/{id}/validate/` return **every** problem at
+  once with a stable `code` per issue, because a chain with three unstaffed
+  steps should take HR one pass. Side-effect free.
+- `POST /teams/{id}/activate/` validates transactionally and refuses a team that
+  is not ready, leaving it `draft`. `POST /teams/{id}/deactivate/` is idempotent.
+  Both audited. A team's detail route is reachable whatever its status — a
+  retired team is exactly the one HR needs to read.
+- `POST /teams/{id}/` status is read-only on PATCH, so activation cannot happen
+  by accident through an ordinary edit.
+- `GET /teams/` takes `?status=` and `?include_inactive=1`; the default excludes
+  retired teams but includes drafts.
+- `SectionMember` gains `?history=1` (all periods) against the default view (who
+  can act now), and accepts `effective_from` on write.
+- Removal **closes** a period; a period that has not started yet never took
+  effect and is deleted outright, so a cancelled handover leaves no row claiming
+  somebody held a step they never held.
+
+**Two defects the new tests found, both real.**
+1. `validate_team` called `resolve_section_approvers`, which *raises*
+   `WorkflowConfigError` for an unstaffable step rather than returning empty —
+   so validating a team with one empty step returned a 500 instead of the one
+   issue HR needed. Caught, with the reason carried into the report.
+2. `activate_team` snapshotted the team's status *after* setting it to `active`,
+   so the audit entry recorded an empty `before`/`after` — the one record of the
+   decision said nothing. The prior status is now captured first.
+   (`ValidationFailedError.__str__` also changed: it said "1 validation
+   error(s)", which is what a service exception's string form ends up in a log
+   or a 422 body. It now spells the issues out.)
+
+**Backend verification.** `workflows.tests_team_configuration`: **77 OK** (nested
+creation, validation, lifecycle, HR-only authorisation, effective membership
+history, routing, audit, historical integrity). Full suite **1085 OK**;
+`makemigrations --check` clean; `check` clean.
+
+**Frontend — the same model, and the two places it used to lie.**
+- `lib/teams.ts`: `is_active` → `status` + `is_effective` + `effective_from` /
+  `effective_to` / `department`; `TeamSection` carries its members; new
+  `TeamReadiness` / `TeamReadinessIssue`; `TeamWorkflowInput` for the inline
+  chain. `lib/workflows.ts` `SectionMember` gains the period and `is_effective`.
+- `components/hr/team-form.tsx`: one form for the whole team — identity, campus,
+  department, effective window, and *either* an existing chain *or* a step
+  builder that writes the chain inline with its members. The `is_active`
+  checkbox is gone; lifecycle is not a field.
+- New `components/hr/team-lifecycle-actions.tsx` (readiness / put into force /
+  retire, rendering the issue list a refusal arrives with) and
+  `components/hr/team-table.tsx` (one row per team, status and window
+  side by side, "1 of 2 staffed").
+- New `teams/[id]/page.tsx` — the team's own page: status, window, lifecycle,
+  and the roster. The list was the wrong home for staffing a step: a step
+  staffed on a team that is not routing is not doing anything, and saying so
+  in the same view is the point.
+- `components/hr/team-member-list.tsx`: optional start date per addition, the
+  period on each row, and "Who was here before?" fetching history on demand —
+  a person who left a step in March still signed for it.
+- The **employee** team picker was silently offering draft teams, which route
+  nothing: an employee only found out at submission. It now lists every team
+  (including retired, so an assigned one is never hidden into looking
+  unassigned) and labels each with why it would not route.
+- Proxies `app/api/hr/teams/{id}/{validate,activate,deactivate}/route.ts` proxy
+  rather than reimplement: the browser must not be able to get a different
+  answer about readiness than the activation action itself gives.
+
+**Frontend verification.** `tsc --noEmit` clean; **63 files / 420 tests OK**
+(rewritten `team-form` for the unified form, new `team-table` and
+`team-lifecycle-actions`, updated `team-member-list` and `employee-form`);
+`eslint` clean; `next build` compiles and registers the three new action routes.
+
+**Context updated alongside.** `architecture.md` — Team lifecycle as one
+authoritative field, effective-dated membership, nested creation, and the
+validate/activate contract.
+
+**Superseded by the standalone-workflow removal.** The chain picker and the
+workflow list screen it fed are gone: a team owns its chain one-to-one and the
+chain is written inside the team write, so there is no list to page. A team's
+lifecycle is `Team.status` alone.

@@ -35,7 +35,7 @@ export default async function NewEmployeePage() {
   let teams: TeamOption[] = [];
   let teamsError = "";
   try {
-    teams = await listTeams();
+    teams = await listTeams({ includeInactive: true });
   } catch {
     teamsError = TEAMS_ERROR;
   }

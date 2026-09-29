@@ -239,7 +239,10 @@ def make_team(
     code: str | None = None,
     approvers: dict[str, object] | None = None,
     workflow: Workflow | None = None,
-    is_active: bool = True,
+    status: str = Team.Status.ACTIVE,
+    department: str = "",
+    effective_from=None,
+    effective_to=None,
     employees=(),
 ) -> Team:
     """A team routed by ``workflow``, with the named roles staffed.
@@ -253,6 +256,11 @@ def make_team(
     member, which is how a test reaches the institution-wide fallback, or a
     section with nobody to act for it. Use :func:`add_approver_to_section` to put
     a second person on one of the sections built here.
+
+    ``status`` defaults to active because a team that cannot route is a special
+    case, not the default state of a routing fixture. The model itself defaults
+    to draft; tests that are about configuration rather than routing pass
+    ``Team.Status.DRAFT`` explicitly.
     """
     roles = ensure_roles(*role_codes)
     workflow = workflow or make_workflow(f"{name} Workflow", role_codes)
@@ -261,7 +269,10 @@ def make_team(
         defaults={
             "code": code or name.lower().replace(" ", "-"),
             "workflow": workflow,
-            "is_active": is_active,
+            "status": status,
+            "department": department,
+            "effective_from": effective_from,
+            "effective_to": effective_to,
         },
     )
     wanted = set(role_codes)
@@ -298,7 +309,7 @@ def build_routing(
     approvers: dict[str, object] | None = None,
     institution_wide_roles=("registrar",),
     team_name: str = "Test Team",
-    is_active: bool = True,
+    status: str = Team.Status.ACTIVE,
 ):
     """A complete, routable configuration in one call.
 
@@ -322,7 +333,7 @@ def build_routing(
         [code for code in chain if code not in institution_wide_roles],
         workflow=workflow,
         approvers=approvers,
-        is_active=is_active,
+        status=status,
     )
     for role_code in institution_wide_roles:
         user = (approvers or {}).get(role_code)

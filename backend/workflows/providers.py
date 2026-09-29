@@ -28,7 +28,7 @@ from django.utils.module_loading import import_string
 
 from users.models import User
 
-from .models import ApproverRole, RoleAssignment, SectionMember
+from .models import ApproverRole, RoleAssignment, SectionMember, Team
 
 
 class WorkflowConfigError(ValueError):
@@ -138,13 +138,17 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
     deliberately staffed. The "only member is the applicant" case therefore gets
     its own error naming the real fix.
 
+    Only memberships **in force today** are considered. A membership dated into
+    the future is a handover HR has scheduled, and a membership that has been
+    closed is history: routing to either would hand an approval to somebody who
+    was not, or is not yet, an approver for that step.
+
     Every error names the role, names the section, and says what HR has to do
     about it.
     """
     all_members = tuple(
-        SectionMember.objects.filter(
-            section=section, user__is_active=True
-        )
+        SectionMember.objects.effective_on()
+        .filter(section=section, user__is_active=True)
         .order_by("user_id")
         .values_list("user_id", flat=True)
     )
@@ -302,10 +306,32 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 "This employee is not in a team. Ask HR to assign them to a team "
                 "before they submit a leave application."
             )
-        if not team.is_active:
+        # The team's own status is the gate. A draft team is being configured and
+        # an inactive one has been retired; neither routes, and saying so here
+        # means the applicant's failure names the team rather than surfacing as
+        # some later stage error nobody can act on.
+        if team.status == Team.Status.DRAFT:
+            raise WorkflowConfigError(
+                f"The {team.name} team is still being set up. Ask HR to finish "
+                "configuring it and activate it."
+            )
+        if team.status == Team.Status.INACTIVE:
             raise WorkflowConfigError(
                 f"The {team.name} team is inactive. Ask HR to activate it, or to "
                 "move the employee to an active team."
+            )
+        if not team.is_effective:
+            today = timezone.localdate()
+            if team.effective_from is not None and team.effective_from > today:
+                raise WorkflowConfigError(
+                    f"The {team.name} team does not start until "
+                    f"{team.effective_from.isoformat()}. Ask HR to bring its start "
+                    "date forward, or to move the employee to an active team."
+                )
+            raise WorkflowConfigError(
+                f"The {team.name} team stopped routing applications on "
+                f"{team.effective_to.isoformat()}. Ask HR to move the employee to "
+                "a team that is still in force."
             )
         workflow = team.workflow
         if workflow is None:

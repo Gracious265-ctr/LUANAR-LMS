@@ -1,5 +1,11 @@
 # Unit 7 — HR Workflow Activation & Scheduling
 
+> **Partly superseded.** The activation gate described here is now `Team.status`
+> and lives on the team; a team owns its chain and is activated as a whole, and
+> there is no separate workflow activation screen. The scheduling/effective-date
+> model and the validation rules still stand. For the current contract see
+> `context/architecture.md` §12.12.
+
 ## Goal
 
 Add workflow administration capabilities on top of the Unit 6 workflow

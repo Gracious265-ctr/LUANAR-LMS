@@ -23,7 +23,12 @@ describe("AuditEntriesTable", () => {
 
     expect(screen.getByText("Aisha HR")).toBeInTheDocument();
     expect(screen.getByText("Updated")).toBeInTheDocument();
-    expect(screen.getByText("Workflow")).toBeInTheDocument();
+    // A chain has no screen of its own, so it reads as a chain and offers no
+    // edit link: the team that owns it is where those steps are changed.
+    expect(screen.getByText("Approval chain")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /edit/i })
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Academic staff workflow")).toBeInTheDocument();
     expect(screen.getByText("days: 20 → 25")).toBeInTheDocument();
   });

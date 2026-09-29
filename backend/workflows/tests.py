@@ -29,6 +29,7 @@ from .models import (
     Delegation,
     Reassignment,
     Section,
+    Team,
     Workflow,
 )
 from .services import (
@@ -39,7 +40,6 @@ from .services import (
     approve_delegation,
     cancel_delegation,
     find_conflicting_delegation,
-    find_conflicting_workflow,
     is_approver_user,
     missing_approver_roles,
     normalize_section_sequence,
@@ -47,8 +47,6 @@ from .services import (
     reassign_application,
     reject_delegation,
     resolve_delegate_user,
-    scopes_overlap,
-    validate_workflow_for_activation,
 )
 
 SEED_PASSWORD = "testpass123"
@@ -127,7 +125,17 @@ class SectionSequenceTests(TestCase):
 
 
 class WorkflowEndpointTests(TestCase):
-    """HR-only CRUD and validation for approval workflows."""
+    """The chain endpoint is read-only, and that is the point.
+
+    A chain exists because a team has one, and it is written in the same request
+    as the team. So this endpoint only has to answer "what does this team's chain
+    look like" for the team screens, the roster views, and the audit trail —
+    and refuse every write.
+
+    The refusals are tested rather than assumed. An endpoint that merely went
+    unused would look identical from the tests, and the first thing a future
+    change would do is reach for ``POST /workflows/`` because it is right there.
+    """
 
     def setUp(self):
         self.client = APIClient()  # type: ignore[assignment]
@@ -177,13 +185,9 @@ class WorkflowEndpointTests(TestCase):
             self.client.post(self.list_url, {}).status_code, status.HTTP_401_UNAUTHORIZED
         )
 
-    def test_detail_and_update_require_authentication(self):
+    def test_detail_requires_authentication(self):
         self.assertEqual(
             self.client.get(self.detail_url).status_code, status.HTTP_401_UNAUTHORIZED
-        )
-        self.assertEqual(
-            self.client.patch(self.detail_url, {}).status_code,
-            status.HTTP_401_UNAUTHORIZED,
         )
 
     def test_non_hr_role_forbidden(self):
@@ -192,16 +196,11 @@ class WorkflowEndpointTests(TestCase):
             self.client.get(self.list_url).status_code, status.HTTP_403_FORBIDDEN
         )
         self.assertEqual(
-            self.client.post(self.list_url, {}).status_code, status.HTTP_403_FORBIDDEN
-        )
-        self.assertEqual(
             self.client.get(self.detail_url).status_code, status.HTTP_403_FORBIDDEN
-        )
-        self.assertEqual(
-            self.client.patch(self.detail_url, {}).status_code, status.HTTP_403_FORBIDDEN
         )
 
     def test_hr_can_list_workflows_ordered_by_name(self):
+        """The list stays: the team screens and the audit trail need to read it."""
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -210,7 +209,7 @@ class WorkflowEndpointTests(TestCase):
             names, ["Academic approval", "Administration approval"]
         )
 
-    def test_hr_can_retrieve_workflow_with_ordered_stages(self):
+    def test_hr_can_retrieve_workflow_with_ordered_sections(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -221,7 +220,12 @@ class WorkflowEndpointTests(TestCase):
         )
         self.assertEqual([section["order"] for section in sections], [1, 2, 3, 4])
 
-    def test_hr_can_create_workflow_with_stages(self):
+    def test_a_chain_cannot_be_created_here(self):
+        """A chain is created with a team, never on its own.
+
+        A standalone chain has no team, which means no employee's application
+        could ever reach it and nobody could say whose approval steps these are.
+        """
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
@@ -236,39 +240,18 @@ class WorkflowEndpointTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        payload = response.json()
-        self.assertEqual(payload["name"], "Dean office approval")
-        self.assertEqual(payload["department"], "Faculty of Science")
         self.assertEqual(
-            [stage["approver_role"] for stage in payload["sections"]],
-            ["hod", "dean"],
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
         )
-        self.assertTrue(
-            Section.objects.filter(
-                workflow_id=payload["id"], order=2, approver_role__code="dean"
-            ).exists()
-        )
+        self.assertFalse(Workflow.objects.filter(name="Dean office approval").exists())
 
-    def test_create_blank_category_and_department_means_any(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {
-                "name": "University-wide approval",
-                "employee_category": "",
-                "department": "",
-                "sections": [
-                    {"order": 1, "name": "Registrar", "approver_role": "registrar"}
-                ],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.json()["employee_category"], "")
-        self.assertEqual(response.json()["department"], "")
+    def test_a_chains_steps_cannot_be_edited_here(self):
+        """Steps are rewritten by saving the team, which is the only writer.
 
-    def test_patch_replaces_stages(self):
+        A PATCH here would change the routing of a team the person editing never
+        named — or, now the relation is one-to-one, change one team's chain
+        without anyone having said the team's configuration had changed.
+        """
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             self.detail_url,
@@ -280,142 +263,22 @@ class WorkflowEndpointTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        sections = response.json()["sections"]
         self.assertEqual(
-            [section["approver_role"] for section in sections], ["dean", "registrar"]
-        )
-        self.assertEqual(Section.objects.filter(workflow=self.workflow).count(), 2)
-
-    def test_patch_normalizes_submitted_order_to_sequence(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(
-            self.detail_url,
-            {
-                "sections": [
-                    {"order": 3, "name": "HOD", "approver_role": "hod"},
-                    {"order": 1, "name": "Registrar", "approver_role": "registrar"},
-                ]
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            [stage["approver_role"] for stage in response.json()["sections"]],
-            ["hod", "registrar"],
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
         )
         self.assertEqual(
-            [stage["order"] for stage in response.json()["sections"]], [1, 2]
+            [s.approver_role.code for s in self.workflow.sections.order_by("order")],
+            ["supervisor", "hod", "registrar", "dvc"],
         )
 
-    def test_missing_name_rejected(self):
+    def test_a_chain_cannot_be_renamed_here(self):
         self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {
-                "employee_category": "academic",
-                "sections": [{"order": 1, "name": "HOD", "approver_role": "hod"}],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.json())
-
-    def test_duplicate_name_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {
-                "name": "Academic approval",
-                "sections": [{"order": 1, "name": "HOD", "approver_role": "hod"}],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.json())
-
-    def test_missing_stages_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url, {"name": "No sections", "employee_category": "academic"}
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("sections", response.json())
-
-    def test_empty_stages_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url, {"name": "Empty sections", "sections": []}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("sections", response.json())
-
-    def test_invalid_approver_role_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {"name": "Bad role", "sections": [{"order": 1, "name": "X", "approver_role": "employee"}]},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("approver_role", response.json()["sections"]["0"])
-
-    def test_repeated_approver_role_is_accepted(self):
-        """The same position may sit at more than one point in a chain.
-
-        This is what sections are for: one person can be asked twice, and the API
-        has to agree with the service validator and the admin that this is a
-        legitimate workflow rather than a mistake.
-        """
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {
-                "name": "Repeated role",
-                "employee_category": "academic",
-                "sections": [
-                    {"order": 1, "name": "First HOD", "approver_role": "hod"},
-                    {"order": 2, "name": "Dean", "approver_role": "dean"},
-                    {"order": 3, "name": "Second HOD", "approver_role": "hod"},
-                ],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        response = self.client.patch(self.detail_url, {"name": "Renamed"}, format="json")
         self.assertEqual(
-            [section["approver_role"] for section in response.json()["sections"]],
-            ["hod", "dean", "hod"],
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
         )
-
-    def test_invalid_order_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {"name": "Bad order", "sections": [{"order": 0, "name": "X", "approver_role": "hod"}]},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # The per-section error is reported against the top-level ``order`` field
-        # rather than ``sections[0]``: ``order`` is a property of the sequence,
-        # not of one section, and DRF's ListSerializer only routes errors to an
-        # index when the failure is attributable to that one row.
-        self.assertIn("order", response.json())
-
-    def test_duplicate_order_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {
-                "name": "Duplicate order",
-                "sections": [
-                    {"order": 1, "name": "One", "approver_role": "hod"},
-                    {"order": 1, "name": "Two", "approver_role": "dean"},
-                ],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("order", response.json())
+        self.workflow.refresh_from_db()
+        self.assertEqual(self.workflow.name, "Academic approval")
 
     def test_delete_not_supported(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -550,22 +413,16 @@ def make_active_user(role, username: str) -> User:
 
 
 class WorkflowActivationServiceTests(TestCase):
-    """Service-level workflow activation validation."""
+    """Deactivated approver roles, which is the one chain-level activation check.
 
-    def test_scopes_overlap_equal_and_any(self):
-        self.assertTrue(
-            scopes_overlap(("academic", ""), ("academic", "Faculty of Science"))
-        )
-        self.assertTrue(scopes_overlap(("", ""), ("administration", "Registry")))
-        self.assertTrue(
-            scopes_overlap(("academic", "Faculty of Science"), ("academic", ""))
-        )
-
-    def test_scopes_do_not_overlap_when_a_dimension_differs(self):
-        self.assertFalse(
-            scopes_overlap(("academic", "A"), ("administration", "A"))
-        )
-        self.assertFalse(scopes_overlap(("academic", "A"), ("academic", "B")))
+    The other check that used to live here — "does another active workflow
+    already cover this scope?" — went away with shared chains. It existed
+    because two chains could apply to the same people, so which one governed an
+    applicant was ambiguous. Now every chain belongs to one team and routing
+    follows the team, so two chains in one department is a reorganisation, not a
+    conflict. That question is answered by the team activation check, which can
+    see both teams and report the overlap as something HR has to confirm.
+    """
 
     def test_missing_approver_roles_lists_deactivated_roles(self):
         """Only a *deactivated* role blocks activation.
@@ -595,68 +452,27 @@ class WorkflowActivationServiceTests(TestCase):
             missing_approver_roles([{"order": 1, "name": "S", "approver_role": "supervisor"}]), []
         )
 
-    def test_find_conflicting_workflow_excludes_self_and_drafts(self):
-        today = timezone.localdate()
-        applying = Workflow.objects.create(
-            name="Applying",
-            employee_category="administration",
-            effective_from=today,
-        )
-        Workflow.objects.create(name="Draft", employee_category="administration")
-
-        conflict = find_conflicting_workflow(None, ("administration", ""))
-        self.assertEqual(conflict, applying)
-        self.assertIsNone(
-            find_conflicting_workflow(applying.pk, ("administration", ""))
-        )
-
-    def test_find_conflicting_workflow_matches_any_category(self):
-        today = timezone.localdate()
-        applying = Workflow.objects.create(
-            name="Any scope",
-            employee_category="",
-            department="",
-            effective_from=today,
-        )
-        self.assertEqual(
-            find_conflicting_workflow(None, ("academic", "Faculty of Science")),
-            applying,
-        )
-
-    def test_inactive_workflow_does_not_conflict(self):
-        today = timezone.localdate()
-        Workflow.objects.create(
-            name="Inactive",
-            employee_category="administration",
-            effective_from=today,
-            is_active=False,
-        )
-        self.assertIsNone(
-            find_conflicting_workflow(None, ("administration", ""))
-        )
-
-    def test_validate_workflow_for_activation_reports_missing_and_conflict(self):
-        today = timezone.localdate()
-        Workflow.objects.create(
-            name="Existing",
-            employee_category="administration",
-            effective_from=today,
-        )
-        ensure_roles("dean")
-        ApproverRole.objects.filter(code="dean").update(is_active=False)
-        issues = validate_workflow_for_activation(
-            None,
-            ("administration", ""),
-            [{"order": 1, "name": "Dean", "approver_role": "dean"}],
-        )
-        self.assertEqual(len(issues), 2)
-        by_field = {issue.field: issue.message for issue in issues}
-        self.assertIn("Dean", by_field[None])
-        self.assertIn("Existing", by_field["effective_from"])
+    def test_a_role_repeated_across_steps_is_reported_once(self):
+        ensure_roles("hod")
+        ApproverRole.objects.filter(code="hod").update(is_active=False)
+        sections = [
+            {"order": 1, "name": "First HOD", "approver_role": "hod"},
+            {"order": 2, "name": "Second HOD", "approver_role": "hod"},
+        ]
+        self.assertEqual(missing_approver_roles(sections), ["Head of Department"])
 
 
 class WorkflowActivationEndpointTests(TestCase):
-    """Scheduling, activating, and conflict validation through the API."""
+    """A chain has no activation of its own, because it has no life of its own.
+
+    Scheduling a chain, putting it into force, and taking it out were all things
+    HR did to a *workflow*. They are things HR now does to a *team*, and the
+    team's readiness check is what answers them. So the questions these tests
+    used to ask of ``POST /workflows/`` — when does this start, does it clash
+    with anything, can it be switched off — are asked of the team endpoint in
+    ``tests_team_configuration.py``, and what is left here is that the old
+    answers are not still available anywhere.
+    """
 
     def setUp(self):
         self.client = APIClient()  # type: ignore[assignment]
@@ -671,198 +487,118 @@ class WorkflowActivationEndpointTests(TestCase):
         self.client.force_authenticate(user=self.hr_user)
         self.list_url = "/api/v1/workflows/"
 
-    def _payload(self, **overrides) -> dict:
-        payload = {
-            "name": "Workflow",
-            "employee_category": "administration",
-            "department": "",
-            "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
-        }
-        payload.update(overrides)
-        return payload
+    def test_a_chain_cannot_be_scheduled(self):
+        """A date on a chain used to mean "this starts applying on that day".
 
-    def test_draft_create_needs_no_approvers(self):
-        response = self.client.post(
-            self.list_url,
-            self._payload(sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}]),
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.json()["state"], "draft")
-        self.assertIsNone(response.json()["effective_from"])
-
-    def test_scheduling_future_date_is_scheduled_state(self):
+        A chain that is not yet applying is a team that has not been activated.
+        Letting the two be set independently is how you get a chain that says it
+        starts in June while the team routing through it went live in May.
+        """
         future = (timezone.localdate() + timedelta(days=30)).isoformat()
         response = self.client.post(
             self.list_url,
-            self._payload(effective_from=future, is_active=True),
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.json()["state"], "scheduled")
-        self.assertEqual(response.json()["effective_from"], future)
-
-    def test_scheduling_today_is_active_state(self):
-        response = self.client.post(
-            self.list_url,
-            self._payload(
-                effective_from=timezone.localdate().isoformat(), is_active=True
-            ),
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.json()["state"], "active")
-
-    def test_deactivation_reports_inactive_state(self):
-        response = self.client.post(
-            self.list_url,
-            self._payload(
-                effective_from=timezone.localdate().isoformat(), is_active=True
-            ),
-            format="json",
-        )
-        workflow_id = response.json()["id"]
-        response = self.client.patch(
-            f"/api/v1/workflows/{workflow_id}/",
             {
-                "is_active": False,
+                "name": "Workflow",
+                "effective_from": future,
+                "is_active": True,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["state"], "inactive")
+        self.assertEqual(
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+        self.assertFalse(Workflow.objects.filter(name="Workflow").exists())
 
-    def test_activation_with_a_deactivated_approver_role_rejected(self):
-        """A workflow cannot go live on a role HR has switched off.
+    def test_a_chain_cannot_be_switched_off(self):
+        """Retiring is a team decision, and it is audited as one.
 
-        Whether an *active* role is actually staffed is not decided here — that
-        is resolved per applicant when they submit.
+        Switching off a chain here would stop every team's routing at once,
+        without any of those teams' statuses changing and so without anything
+        in their history saying why.
+        """
+        workflow = Workflow.objects.create(
+            name="Live", effective_from=timezone.localdate()
+        )
+        response = self.client.patch(
+            f"/api/v1/workflows/{workflow.pk}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+        workflow.refresh_from_db()
+        self.assertTrue(workflow.is_active)
+
+    def test_a_chain_cannot_be_activated_with_a_deactivated_role(self):
+        """The role check is refused at the team boundary instead.
+
+        Creating a team with a step whose role is switched off is refused by the
+        team endpoint, because that is where a chain is written now. This test
+        pins that the chain endpoint offers no way around it.
         """
         ensure_roles("dean")
         ApproverRole.objects.filter(code="dean").update(is_active=False)
         response = self.client.post(
             self.list_url,
-            self._payload(
-                sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}],
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
+            {
+                "name": "Dead step",
+                "effective_from": timezone.localdate().isoformat(),
+                "is_active": True,
+                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
+            },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # The stage field rejects it first, with the actionable message, rather
-        # than letting the workflow activate and failing later per applicant.
-        self.assertIn(
-            "Dean", response.json()["sections"]["0"]["approver_role"][0]
+        self.assertEqual(
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
         )
+        self.assertFalse(Workflow.objects.filter(name="Dead step").exists())
 
-    def test_activation_with_overlapping_scope_rejected(self):
-        self.client.post(
-            self.list_url,
-            self._payload(
-                name="First",
-                employee_category="administration",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        response = self.client.post(
-            self.list_url,
-            self._payload(
-                name="Second",
-                employee_category="",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("effective_from", response.json())
-        self.assertIn("First", response.json()["effective_from"][0])
+    def test_a_conflicting_scope_cannot_be_created(self):
+        """Two chains covering one scope used to be an error worth blocking.
 
-    def test_deactivating_frees_scope_for_replacement(self):
+        With a chain per team it is not: a department changing its approval
+        route is exactly two teams with the same department, and the team
+        activation check surfaces that for HR to confirm rather than a shared
+        registry refusing to be written.
+        """
         first = self.client.post(
             self.list_url,
-            self._payload(
-                name="First",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        self.client.patch(
-            f"/api/v1/workflows/{first.json()['id']}/",
             {
-                "is_active": False,
-                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
-            },
-            format="json",
-        )
-        response = self.client.post(
-            self.list_url,
-            self._payload(
-                name="Replacement",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-    def test_editing_active_workflow_into_conflict_rejected(self):
-        self.client.post(
-            self.list_url,
-            self._payload(
-                name="Administration",
-                employee_category="administration",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        academic = self.client.post(
-            self.list_url,
-            self._payload(
-                name="Academic",
-                employee_category="academic",
-                effective_from=timezone.localdate().isoformat(),
-                is_active=True,
-            ),
-            format="json",
-        )
-        response = self.client.patch(
-            f"/api/v1/workflows/{academic.json()['id']}/",
-            {
+                "name": "First",
                 "employee_category": "administration",
+                "effective_from": timezone.localdate().isoformat(),
+                "is_active": True,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("effective_from", response.json())
-
-    def test_editing_draft_without_effective_date_is_allowed(self):
-        draft = self.client.post(
+        second = self.client.post(
             self.list_url,
-            self._payload(sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}]),
-            format="json",
-        )
-        response = self.client.patch(
-            f"/api/v1/workflows/{draft.json()['id']}/",
             {
-                "department": "Registry",
+                "name": "Second",
+                "employee_category": "administration",
+                "effective_from": timezone.localdate().isoformat(),
+                "is_active": True,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json()["state"], "draft")
+        self.assertEqual(
+            first.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+        self.assertEqual(
+            second.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        )
 
 
 class WorkflowActivationAdminTests(TestCase):
-    """Admin form guards for activation validation."""
+    """The chain admin is an inspector, not a second editor.
+
+    The form still exists because the section inline needs it, but it no longer
+    validates a lifecycle: a chain cannot be scheduled or activated here,
+    because that decision belongs to the team. These tests pin that the admin
+    has not quietly become a way to set a chain's dates behind the team's back.
+    """
 
     def setUp(self):
         self.site = AdminSite()
@@ -879,62 +615,26 @@ class WorkflowActivationAdminTests(TestCase):
         data.update(overrides)
         return WorkflowAdminForm(data=data, instance=workflow)
 
-    def test_form_rejects_conflict(self):
-        Workflow.objects.create(
-            name="Existing",
-            employee_category="administration",
-            effective_from=self.today,
-        )
-        workflow = Workflow.objects.create(
-            name="Replacement", employee_category="administration"
-        )
-        form = self._form(
-            workflow,
-            effective_from=self.today.isoformat(),
-            is_active=True,
-        )
-        self.assertFalse(form.is_valid())
-        self.assertTrue(
-            any("Existing" in error for error in form.non_field_errors())
-        )
+    def test_the_admin_refuses_to_add_a_chain(self):
+        """A chain with no team is a chain nothing routes through."""
+        admin = WorkflowAdmin(Workflow, self.site)
+        self.assertFalse(admin.has_add_permission(None))
+        self.assertFalse(admin.has_change_permission(None))
 
-    def test_form_rejects_deactivated_approver_role(self):
-        """Activation is blocked by a switched-off role, not an unstaffed one.
+    def test_the_admin_refuses_to_delete_a_chain(self):
+        """PROTECTed by the team, and the audit trail is the record of why."""
+        admin = WorkflowAdmin(Workflow, self.site)
+        self.assertFalse(admin.has_delete_permission(None))
 
-        ``dean`` here has no holder at all, and the form still accepts it; the
-        rejection below comes from the role being deactivated, which is the only
-        role-level fact configuration can know.
+    def test_the_form_still_keeps_the_fields_the_inspector_shows(self):
+        """Read-only is enforced by permissions, not by removing the columns.
+
+        Dropping the fields would make the list page lie about what a chain
+        carries; refusing the write is what actually stops the edit.
         """
-        workflow = Workflow.objects.create(name="Needs active dean")
+        workflow = Workflow.objects.create(name="Readable workflow")
         make_stage(workflow, 1, "dean")
-        ensure_roles("dean")
-        ApproverRole.objects.filter(code="dean").update(is_active=False)
-        form = self._form(
-            workflow,
-            effective_from=self.today.isoformat(),
-            is_active=True,
-        )
-        self.assertFalse(form.is_valid())
-        self.assertTrue(
-            any("Dean" in error for error in form.non_field_errors())
-        )
-
-    def test_form_allows_draft_without_approvers(self):
-        workflow = Workflow.objects.create(name="Draft workflow")
-        make_stage(workflow, 1, "dean")
-        form = self._form(workflow)
-        self.assertTrue(form.is_valid())
-
-    def test_form_allows_activation_with_active_approver(self):
-        make_active_user("dean", "dean-admin@test.luanar")
-        workflow = Workflow.objects.create(name="Ready workflow")
-        make_stage(workflow, 1, "dean")
-        form = self._form(
-            workflow,
-            effective_from=self.today.isoformat(),
-            is_active=True,
-        )
-        self.assertTrue(form.is_valid())
+        self.assertTrue(self._form(workflow).is_valid())
 
 
 def make_delegation(
@@ -2560,76 +2260,88 @@ class ReassignmentAdminTests(TestCase):
         self.assertEqual(admin.employee_name(reassignment), employee.get_full_name())
 
 class WorkflowSerializerAtomicityTests(TestCase):
-    """A failed audit write rolls back the workflow and its sections."""
+    """A failed audit write leaves no half-written team or chain behind.
+
+    The team, its chain, and its steps are one object as far as the database is
+    concerned, and they are written in one transaction. If the audit write
+    fails, the whole thing goes: a team whose chain exists but whose creation
+    was never recorded is exactly the state nobody can explain later.
+    """
 
     def setUp(self):
         from rest_framework.test import APIRequestFactory
 
-        hr = User.objects.create_user(
+        self.hr = User.objects.create_user(
             username="wf-atomic@test.luanar",
             email="wf-atomic@test.luanar",
             password=SEED_PASSWORD,
             role=User.Role.HR,
         )
         request = APIRequestFactory().post("/")
-        request.user = hr
-        self.context = {"request": request}
+        request.user = self.hr
+        self.context = {"request": request, "actor": self.hr}
+        self.supervisor = make_active_user("supervisor", "sup-atomic@test.luanar")
         self.payload = {
-            "name": "Atomic rollback flow",
-            "employee_category": "academic",
-            "department": "Faculty of Science",
-            "sections": [
-                {"order": 1, "name": "HOD", "approver_role": "hod"},
-                {"order": 2, "name": "Dean", "approver_role": "dean"},
-            ],
+            "name": "Atomic rollback team",
+            "new_workflow": {
+                "name": "Atomic rollback chain",
+                "sections": [
+                    {
+                        "name": "HOD",
+                        "approver_role": "hod",
+                        "members": [self.supervisor.pk],
+                    }
+                ],
+            },
         }
 
     def _serializer(self, *args, **kwargs):
-        from .serializers import WorkflowSerializer
+        from .serializers import TeamSerializer
 
-        return WorkflowSerializer(*args, context=self.context, **kwargs)
+        return TeamSerializer(*args, context=self.context, **kwargs)
 
-    def test_create_rolls_back_workflow_and_stages_when_audit_fails(self):
+    def test_create_rolls_back_the_team_its_chain_and_its_steps(self):
         serializer = self._serializer(data=self.payload)
         serializer.is_valid(raise_exception=True)
         with mock.patch(
-            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+            "workflows.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 serializer.save()
-        self.assertFalse(Workflow.objects.filter(name="Atomic rollback flow").exists())
-        self.assertEqual(
-            Section.objects.filter(workflow__name="Atomic rollback flow").count(),
-            0,
-        )
+        self.assertFalse(Team.objects.filter(name="Atomic rollback team").exists())
+        self.assertFalse(Workflow.objects.filter(name="Atomic rollback chain").exists())
+        self.assertEqual(Section.objects.count(), 0)
 
-    def test_update_rolls_back_when_audit_fails(self):
-        workflow = Workflow.objects.create(
-            name="Existing flow",
-            employee_category="academic",
-            department="Faculty of Science",
-        )
-        make_stage(workflow, 1, 'dean')
-        serializer = self._serializer(
-            workflow,
-            data={**self.payload, "name": "Existing flow"},
-        )
+    def test_a_team_edit_rolls_back_its_chain_rewrite(self):
+        """An edit that cannot be recorded does not half-apply.
+
+        A chain rewritten but not audited would be steps somebody changed and
+        nobody can say when or why, which is worse than the edit being refused.
+        """
+        serializer = self._serializer(data=self.payload)
         serializer.is_valid(raise_exception=True)
+        team = serializer.save()
+        workflow = team.workflow
+
+        edit = self._serializer(
+            team,
+            data={
+                "new_workflow": {
+                    "sections": [{"name": "Only step", "approver_role": "supervisor"}]
+                }
+            },
+            partial=True,
+        )
+        edit.is_valid(raise_exception=True)
         with mock.patch(
-            "audit.serializers.record_audit", side_effect=RuntimeError("audit down")
+            "workflows.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
-                serializer.save()
+                edit.save()
+
         workflow.refresh_from_db()
-        self.assertEqual(workflow.department, "Faculty of Science")
-        self.assertEqual(
-            list(
-                workflow.sections.order_by("order").values_list(
-                    "approver_role__code", flat=True
-                )
-            ),
-            ["dean"],
-        )
+        self.assertEqual(workflow.sections.count(), 1)
+        self.assertEqual(workflow.sections.get().name, "HOD")
 
 
 class SpineIntegrityTests(TestCase):

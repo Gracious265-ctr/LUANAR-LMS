@@ -18,7 +18,6 @@ import {
   UserCheck,
   UserCog,
   Users,
-  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -197,13 +196,6 @@ const Sidebar = memo(function Sidebar({
               Icon={Users}
               title="Teams"
               href="/dashboard/hr-admin/teams"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={Workflow}
-              title="Workflows"
-              href="/dashboard/hr-admin/workflows"
               currentPath={currentPath}
               open={open}
             />

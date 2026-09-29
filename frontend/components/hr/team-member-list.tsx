@@ -8,6 +8,7 @@ import type { Employee } from "@/lib/employees";
 import type { Team, TeamSection } from "@/lib/teams";
 import {
   addSectionMember,
+  listSectionMemberHistory,
   listSectionMembers,
   removeSectionMember,
 } from "@/lib/section-members-client";
@@ -16,13 +17,13 @@ import type { SectionMember } from "@/lib/workflows";
 /**
  * Staffs one team's approval chain, one section at a time.
  *
- * A team no longer holds members itself — its workflow's sections do, so there
- * is exactly one place a person is recorded as able to act. Because sections
- * are shared, every team pointing at the same workflow sees the same roster.
+ * A team no longer holds members itself — its chain's sections do, so there is
+ * exactly one place a person is recorded as able to act. A team owns its chain
+ * one-to-one, so nobody else can be looking at this roster or editing it.
  *
- * The chain is the team's workflow's, so the roster is read from the
- * section-members endpoint rather than flattened team rows: it can show who is
- * on a step and still say who is available at every other step.
+ * The roster is read from the section-members endpoint rather than flattened
+ * team rows: it can show who is on a step and still say who is available at
+ * every other step.
  */
 export function TeamMemberList({
   team,
@@ -37,6 +38,8 @@ export function TeamMemberList({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"add" | number | null>(null);
   const [addingTo, setAddingTo] = useState<number | null>(null);
+  const [history, setHistory] = useState<Record<number, SectionMember[]>>({});
+  const [showHistory, setShowHistory] = useState<Record<number, boolean>>({});
 
   const activeEmployees = employees.filter((employee) => employee.is_active);
 
@@ -71,6 +74,28 @@ export function TeamMemberList({
     setRoster((current) => ({ ...current, [sectionId]: members }));
   }
 
+  /**
+   * History is fetched on demand and then cached, because a period is a fact
+   * about the past: it does not change while this screen is open, and asking
+   * again on every render would turn one click into a request per row.
+   */
+  async function toggleHistory(sectionId: number) {
+    const next = !showHistory[sectionId];
+    setShowHistory((current) => ({ ...current, [sectionId]: next }));
+    if (!next || history[sectionId]) {
+      return;
+    }
+    try {
+      setHistory((current) => ({ ...current, [sectionId]: [] }));
+      const periods = await listSectionMemberHistory(sectionId);
+      setHistory((current) => ({ ...current, [sectionId]: periods }));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "An error occurred. Please try again."
+      );
+    }
+  }
+
   async function add(event: React.FormEvent<HTMLFormElement>, section: TeamSection) {
     event.preventDefault();
     setError("");
@@ -78,6 +103,7 @@ export function TeamMemberList({
 
     const formData = new FormData(event.currentTarget);
     const user = String(formData.get("user") || "");
+    const effectiveFrom = String(formData.get("effective_from") || "");
 
     if (!user) {
       setError("Choose a person to staff this section.");
@@ -86,7 +112,7 @@ export function TeamMemberList({
     }
 
     try {
-      await addSectionMember(section.id, Number(user));
+      await addSectionMember(section.id, Number(user), effectiveFrom || undefined);
       setAddingTo(null);
       await reloadSection(section.id);
       router.refresh();
@@ -122,8 +148,8 @@ export function TeamMemberList({
   if (team.sections.length === 0) {
     return (
       <p className="mt-3 text-sm text-text-muted">
-        This team&apos;s workflow has no sections, so there is nobody to staff.
-        Point the team at a workflow with approval sections first.
+        This team has no approval steps, so there is nobody to staff. Add a
+        step to its chain first.
       </p>
     );
   }
@@ -177,6 +203,15 @@ export function TeamMemberList({
                         {member.user_name}
                       </span>
                       <span className="text-text-muted">{member.user_email}</span>
+                      {member.effective_to ? (
+                        <span className="text-xs text-text-muted">
+                          until {formatDate(member.effective_to)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-text-muted">
+                          from {formatDate(member.effective_from)}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => remove(section, member)}
@@ -194,6 +229,24 @@ export function TeamMemberList({
                   Nobody can act for this section yet.
                 </p>
               )}
+
+              {!addingTo || addingTo !== section.id ? (
+                <button
+                  type="button"
+                  onClick={() => toggleHistory(section.id)}
+                  aria-label={`Show past members of ${section.name}`}
+                  aria-pressed={Boolean(showHistory[section.id])}
+                  className="mt-2 ml-auto block text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  {showHistory[section.id]
+                    ? "Hide past members"
+                    : "Who was here before?"}
+                </button>
+              ) : null}
+
+              {showHistory[section.id] ? (
+                <PastMembers section={section} periods={history[section.id] ?? []} />
+              ) : null}
 
               {addingTo === section.id ? (
                 <form
@@ -215,6 +268,17 @@ export function TeamMemberList({
                       </option>
                     ))}
                   </select>
+                  <label
+                    className="flex items-center gap-1.5 text-xs text-text-secondary"
+                  >
+                    From
+                    <input
+                      type="date"
+                      name="effective_from"
+                      aria-label={`Start date for a member of ${section.name}`}
+                      className="rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                    />
+                  </label>
                   <button
                     type="submit"
                     disabled={busy === "add"}
@@ -249,12 +313,61 @@ export function TeamMemberList({
       {error && <p className="mt-3 text-sm text-status-rejected">{error}</p>}
 
       <p className="mt-2 text-xs text-text-muted">
-        Sections are shared: any other team on the same workflow sees the same
-        people here, because there is just one place a person is recorded as
-        able to act.
+        Each person is recorded in one place, on this team&apos;s own chain, so
+        what you see here is exactly who can act for it.
       </p>
     </div>
   );
+}
+
+/**
+ * The periods a step has had, closed ones included.
+ *
+ * Worth showing: a person who left a step in March still signed for it, and
+ * "who could act on the second" has to be answerable long after the handover.
+ * An empty period is not shown — it says somebody held a step they never did.
+ */
+function PastMembers({
+  section,
+  periods,
+}: {
+  section: TeamSection;
+  periods: SectionMember[];
+}) {
+  const past = periods.filter((period) => !period.is_effective);
+  if (past.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-text-muted">
+        Nobody has held {section.name} in the past.
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-2 space-y-1 border-l-2 border-border-default pl-3">
+      {past.map((period) => (
+        <li key={period.id} className="text-xs text-text-muted">
+          <span className="font-medium text-text-secondary">
+            {period.user_name}
+          </span>{" "}
+          {formatDate(period.effective_from)} to{" "}
+          {period.effective_to ? formatDate(period.effective_to) : "open"}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 /** How many distinct people sit on at least one of this team's sections. */

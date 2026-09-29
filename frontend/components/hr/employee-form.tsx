@@ -180,12 +180,13 @@ export function EmployeeForm({
           {teams.map((team) => (
             <option key={team.id} value={team.id}>
               {team.name}
+              {teamNote(team) ? ` (${teamNote(team)})` : ""}
             </option>
           ))}
         </select>
         <p className="mt-1 text-xs text-text-muted">
           {teamsError ||
-            "Leave applications from this employee follow the team's workflow. Without a team they follow the institution-wide workflow."}
+            "Leave applications from this employee follow the team's chain. Only a team in force routes anything, so a team still being set up will not."}
         </p>
       </div>
 
@@ -320,4 +321,24 @@ export function EmployeeForm({
       </div>
     </form>
   );
+}
+/**
+ * Why a team would not route, said next to its name.
+ *
+ * The picker cannot simply hide a team that is not in force: an employee may
+ * already belong to one, and hiding it would make them look unassigned. So
+ * the team stays and the reason is spelled out, which is also the difference
+ * between HR noticing now and an applicant finding out at submission.
+ */
+function teamNote(team: TeamOption): string {
+  if (team.status === "draft") {
+    return "still being set up";
+  }
+  if (team.status === "inactive") {
+    return "retired";
+  }
+  if (!team.is_effective) {
+    return "not in force today";
+  }
+  return "";
 }

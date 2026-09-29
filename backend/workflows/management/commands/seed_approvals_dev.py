@@ -13,8 +13,9 @@ the one before it:
 3. **Workflows** — ordered chains of *sections*, e.g. supervisor → hod → registrar
    → dvc. Each section names the role that may act on it and references it by
    foreign key.
-4. **Teams** — each points at one workflow, and the workflow's sections name who
-   may act on them.
+4. **Teams** — each owns one chain, and that chain's sections name who may act
+   on them. A chain is never shared between teams, so editing one team's steps
+   cannot re-route another team's applications.
 5. **People** — employees are placed on a team (``EmployeeProfile.team``), which
    is what selects their workflow; approvers are placed on the relevant section
    (``SectionMember``), and the registrar is given the role institution-wide
@@ -269,18 +270,22 @@ class Command(BaseCommand):
         effective = (fy.start_date if fy else None) or timezone.localdate()
 
         definitions = [
-            (
-                "Administration Leave Workflow",
-                EmployeeProfile.Category.ADMINISTRATION,
-                ("supervisor", "hod", "registrar", "dvc"),
-            ),
-            (
-                "Academic Leave Workflow",
-                EmployeeProfile.Category.ACADEMIC,
-                ("hod", "dean", "registrar", "dvc"),
-            ),
+            (spec, category, role_codes)
+            for spec, category, role_codes in [
+                (
+                    next(t for t in SEED_TEAMS if t["code"] == "administration"),
+                    EmployeeProfile.Category.ADMINISTRATION,
+                    ("supervisor", "hod", "registrar", "dvc"),
+                ),
+                (
+                    next(t for t in SEED_TEAMS if t["code"] == "bunda-college"),
+                    EmployeeProfile.Category.ACADEMIC,
+                    ("hod", "dean", "registrar", "dvc"),
+                ),
+            ]
         ]
-        for name, category, role_codes in definitions:
+        for spec, category, role_codes in definitions:
+            name = spec["workflow"]
             workflow, created = Workflow.objects.update_or_create(
                 name=name,
                 defaults={
@@ -308,19 +313,60 @@ class Command(BaseCommand):
                     self.style.SUCCESS(f"Seeded workflow '{name}'.")
                 )
 
+    def _chain_for(self, workflow, spec: dict):
+        """The chain ``spec``'s team may own, copying it if somebody else has it.
+
+        A team owns its chain, so a chain that another team already holds cannot
+        be adopted. That happens in development when an older seed left a team
+        behind holding a chain the current seed wants to give to a different
+        team: rather than crash on leftover data, the new team gets a copy of
+        the same steps. A copy, not a rename — the stale team is still routing
+        real dev applications through the chain it has.
+        """
+        from workflows.models import Section, Team, Workflow
+
+        if not Team.objects.filter(workflow=workflow).exclude(
+            code=spec["code"]
+        ).exists():
+            return workflow
+
+        copy = Workflow.objects.create(
+            name=f"{workflow.name} ({spec['name']})",
+            employee_category=workflow.employee_category,
+            effective_from=workflow.effective_from,
+            is_active=workflow.is_active,
+        )
+        for section in workflow.sections.all():
+            Section.objects.create(
+                workflow=copy,
+                name=section.name,
+                order=section.order,
+                approver_role=section.approver_role,
+                description=section.description,
+                is_active=section.is_active,
+            )
+        self.stdout.write(
+            self.style.WARNING(
+                f"Another team already owns '{workflow.name}'; the "
+                f"{spec['name']} team was given a copy of it."
+            )
+        )
+        return copy
+
     def _seed_teams(self, roles: dict, campuses: dict) -> None:
         """Teams, their sections' members, and the institution-wide registrar holding.
 
-        A team points at one workflow, and the workflow's sections are the same
-        rows for every team that uses it. The two seeded teams therefore share
-        their workflows rather than each having a private copy, which is what
-        makes the shared-workflow case real in development; the registrar has no
-        section member at all so their institution-wide holding is what resolves.
+        Each team owns its own chain, which is the one-to-one the product
+        enforces: there is no second team to re-route when these steps are
+        edited. The registrar deliberately has no section member on either
+        chain, so their institution-wide holding is what resolves — that is the
+        "no team member, fall back to the holder" path, exercised in
+        development rather than only in tests.
         """
         from workflows.models import RoleAssignment, SectionMember, Team, Workflow
 
         for spec in SEED_TEAMS:
-            workflow = Workflow.objects.get(name=spec["workflow"])
+            workflow = self._chain_for(Workflow.objects.get(name=spec["workflow"]), spec)
             team, created = Team.objects.update_or_create(
                 code=spec["code"],
                 defaults={
@@ -328,7 +374,10 @@ class Command(BaseCommand):
                     "description": spec["description"],
                     "campus": campuses.get(spec["campus"]),
                     "workflow": workflow,
-                    "is_active": True,
+                    # Seeded straight into force: development data exists to be
+                    # used, and a draft team would refuse every submission with a
+                    # message about HR needing to finish configuring it.
+                    "status": Team.Status.ACTIVE,
                 },
             )
             if created:

@@ -4,7 +4,8 @@ from datetime import date
 from dataclasses import dataclass
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
+from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -29,6 +30,7 @@ from .models import (
     Workflow,
 )
 from .policies import is_self_application
+from .providers import WorkflowConfigError, resolve_section_approvers
 
 
 class WorkflowAssignmentError(Exception):
@@ -180,23 +182,6 @@ def _lookup_stage_role(value) -> ApproverRole | None:
     return ApproverRole.objects.filter(pk=pk).first()
 
 
-def _value_matches(left: str, right: str) -> bool:
-    return left == right or not left or not right
-
-
-def scopes_overlap(a: tuple[str, str], b: tuple[str, str]) -> bool:
-    """Two (category, department) scopes overlap when each dimension matches.
-
-    A blank value on either side matches anything (any category / any
-    department).
-    """
-    a_category, a_department = a
-    b_category, b_department = b
-    return _value_matches(a_category, b_category) and _value_matches(
-        a_department, b_department
-    )
-
-
 def missing_approver_roles(sections) -> list[str]:
     """Labels of section roles that cannot currently be used, in section order.
 
@@ -224,54 +209,107 @@ def missing_approver_roles(sections) -> list[str]:
     return missing
 
 
-def find_conflicting_workflow(
-    workflow_pk: int | None, scope: tuple[str, str]
-) -> Workflow | None:
-    """The first other workflow applying now or in the future with an overlap.
+def replace_workflow_sections(workflow: Workflow, sections) -> list[Section]:
+    """Rewrite a workflow's section sequence, preserving membership.
 
-    A workflow is "applying" when it has an ``effective_from`` date and is
-    active. Drafts and inactive workflows never conflict.
+    A section is identified across writes by its ``(role, name)`` pair. A
+    section whose pair still appears in the payload keeps its row, and so
+    keeps its members: re-ordering the chain must not silently strip the
+    people who can act for it, which is the whole reason a section holds
+    several approvers.
+
+    A section whose role **or** name changed is a different step and is
+    rebuilt empty. Deliberately not carried over: a step that moved to a
+    different approver role has a different authority, and quietly handing
+    the old roster to the new role would grant it without HR asking. The
+    step shows up with no members, which is visible and fixable, and
+    submission is refused until it is staffed.
+
+    ``(workflow, order)`` is unique, so the write is sequenced to avoid
+    colliding with itself: stale sections go first, survivors are parked
+    beyond any real order, and only then is the final order applied.
+
+    Lives here rather than on the workflow serializer so a team created with
+    its chain inline goes through the *same* rules as a standalone workflow
+    edit — one implementation, so the two paths cannot drift apart. Returns
+    the resulting sections in approval order.
     """
-    candidates = Workflow.objects.filter(
-        effective_from__isnull=False, is_active=True
+    existing = list(
+        workflow.sections.select_related("approver_role").prefetch_related("members")
     )
-    if workflow_pk is not None:
-        candidates = candidates.exclude(pk=workflow_pk)
-    for candidate in candidates:
-        if scopes_overlap(scope, candidate.scope):
-            return candidate
-    return None
+    by_identity = {(s.approver_role_id, s.name): s for s in existing}
 
-
-def validate_workflow_for_activation(
-    workflow_pk: int | None,
-    scope: tuple[str, str],
-    stages,
-) -> list[ActivationIssue]:
-    """Authoritative validation for activating or scheduling a workflow."""
-    issues: list[ActivationIssue] = []
-
-    missing = missing_approver_roles(stages)
-    if missing:
-        issues.append(
-            ActivationIssue(
-                None,
-                "These approver roles are deactivated and cannot be used: "
-                f"{', '.join(missing)}. Reactivate them in Roles, or replace them.",
+    resolved: list[tuple[dict, ApproverRole]] = []
+    for payload in normalize_section_sequence(sections):
+        role = _resolve_stage_role(payload["approver_role"])
+        if role is None:
+            raise StageSequenceError(
+                "approver_role",
+                f"Approver role '{payload['approver_role']}' is missing or "
+                "deactivated.",
             )
+        resolved.append((payload, role))
+
+    # ``(payload, role, survivor_pk)``. A non-``None`` survivor keeps its row
+    # and its members; ``None`` means build the step fresh.
+    plan: list[tuple[dict, ApproverRole, int | None]] = []
+    claimed: set[int] = set()
+    for payload, role in resolved:
+        survivor = by_identity.get((role.pk, payload["name"]))
+        if survivor is not None and survivor.pk not in claimed:
+            claimed.add(survivor.pk)
+            plan.append((payload, role, survivor.pk))
+        else:
+            # Either a genuinely new step, or the same role+name a second
+            # time in one payload — two steps may share a role and a label,
+            # so the second needs its own row rather than reusing the first.
+            plan.append((payload, role, None))
+
+    # 1. Drop the steps that are no longer in the payload. Their members
+    #    cascade. Doing this first means their orders are free for reuse.
+    #    A step an application is still sitting on cannot go: the application's
+    #    stage points at it, so deleting it would strand that application with
+    #    no approver and no way to say who used to hold the step. Reported as a
+    #    validation error naming the step, not as a database integrity error.
+    try:
+        workflow.sections.exclude(pk__in=claimed).delete()
+    except ProtectedError as exc:
+        blocked_ids: set[int] = set()
+        for protected in exc.protected_objects:
+            # Django hands back the referencing rows, not the rows being
+            # deleted, so the blocked steps are read back off the referrers.
+            for field in ("section_ref", "section"):
+                value = getattr(protected, f"{field}_id", None)
+                if value is not None:
+                    blocked_ids.add(value)
+        blocked = Section.objects.filter(pk__in=blocked_ids)
+        names = ", ".join(f'"{section.name}"' for section in blocked) or "a step"
+        raise StageSequenceError(
+            "sections",
+            f"Cannot remove {names}: an application is still waiting on that "
+            "step. Decide or withdraw those applications first, then change the "
+            "steps.",
+        ) from exc
+
+    # 2. Park the survivors, so writing the new order cannot collide with a
+    #    surviving section that is currently sitting on the target order.
+    for _, _, survivor_pk in plan:
+        if survivor_pk is not None:
+            Section.objects.filter(pk=survivor_pk).update(order=F("order") + 1_000_000)
+
+    # 3. Apply the final order, building the steps that have no row yet.
+    for payload, role, survivor_pk in plan:
+        if survivor_pk is not None:
+            Section.objects.filter(pk=survivor_pk).update(order=payload["order"])
+            continue
+        Section.objects.create(
+            workflow=workflow,
+            name=payload["name"],
+            approver_role=role,
+            order=payload["order"],
         )
 
-    conflict = find_conflicting_workflow(workflow_pk, scope)
-    if conflict is not None:
-        issues.append(
-            ActivationIssue(
-                "effective_from",
-                f'Activating this workflow conflicts with "{conflict.name}" '
-                f"(active since {conflict.effective_from.isoformat()}).",
-            )
-        )
-
-    return issues
+    return list(workflow.sections.select_related("approver_role").order_by("order"))
 
 
 class DelegationActionError(ValueError):
@@ -308,7 +346,7 @@ def is_approver_user(user) -> bool:
     user_id = user.pk if hasattr(user, "pk") else user
     if user_id is None:
         return False
-    if SectionMember.objects.filter(
+    if SectionMember.objects.effective_on().filter(
         user_id=user_id, section__approver_role__is_active=True
     ).exists():
         return True
@@ -329,9 +367,9 @@ def approver_role_codes_for(user) -> list[str]:
         return []
     user_id = user.pk if hasattr(user, "pk") else user
     codes = set(
-        SectionMember.objects.filter(
-            user_id=user_id, section__approver_role__is_active=True
-        ).values_list("section__approver_role__code", flat=True)
+        SectionMember.objects.effective_on()
+        .filter(user_id=user_id, section__approver_role__is_active=True)
+        .values_list("section__approver_role__code", flat=True)
     )
     codes.update(
         RoleAssignment.objects.filter(
@@ -351,9 +389,9 @@ def approver_role_labels_for(user) -> list[str]:
         return []
     user_id = user.pk if hasattr(user, "pk") else user
     labels = set(
-        SectionMember.objects.filter(
-            user_id=user_id, section__approver_role__is_active=True
-        ).values_list("section__approver_role__label", flat=True)
+        SectionMember.objects.effective_on()
+        .filter(user_id=user_id, section__approver_role__is_active=True)
+        .values_list("section__approver_role__label", flat=True)
     )
     labels.update(
         RoleAssignment.objects.filter(
@@ -1095,8 +1133,9 @@ def assign_workflow(application):
         # gap, and it has already removed the applicant. So there is no longer a
         # "which stages does the applicant hold" question to answer here — the
         # chain always starts at section one, and self-approval is prevented by
-        # the snapshot rather than by skipping stages.
-        active_index = 0
+        # the snapshot rather than by skipping stages. There is consequently no
+        # "skipped" status to produce: the first stage is pending and the rest
+        # are waiting.
         last_index = len(definitions) - 1
         stages = [
             ApplicationStage(
@@ -1110,7 +1149,7 @@ def assign_workflow(application):
                 handles_cancellation=definition.handles_cancellation,
                 section_ref_id=definition.section_id,
                 assigned_approver=None,
-                status=_initial_stage_status(index, active_index),
+                status=_initial_stage_status(index),
                 is_final=index == last_index,
             )
             for index, definition in enumerate(definitions)
@@ -1127,18 +1166,22 @@ def assign_workflow(application):
             for user_id in definition.approver_user_ids
         )
 
-        first = stages[active_index]
+        first = stages[0]
         application.current_stage = first
         application.current_approver = None
         application.save(update_fields=["current_stage", "current_approver", "updated_at"])
         return first
 
 
-def _initial_stage_status(index: int, active_index: int) -> str:
-    """The status a freshly materialised stage starts in."""
-    if index < active_index:
-        return ApplicationStage.Status.SKIPPED
-    if index == active_index:
+def _initial_stage_status(index: int) -> str:
+    """The status a freshly materialised stage starts in.
+
+    A chain always starts at its first section, so there is exactly one pending
+    stage and the rest are waiting. A stage can no longer be born skipped: the
+    applicant is excluded from the eligibility snapshot instead of being jumped
+    over, and a section left with nobody able to act refuses the submission.
+    """
+    if index == 0:
         return ApplicationStage.Status.PENDING
     return ApplicationStage.Status.WAITING
 
@@ -1772,13 +1815,76 @@ def update_campus(*, campus: Campus, actor, data: dict) -> Campus:
     return campus
 
 
-class TeamActionError(ValueError):
-    """Raised when a team or team-member write cannot be applied."""
+@dataclass(frozen=True)
+class TeamIssue:
+    """One reason a team is not ready to route applications.
 
-    def __init__(self, field: str, message: str):
+    ``code`` is stable and machine-readable so a client can react to a specific
+    problem rather than parsing the sentence; ``field`` is the API field the
+    issue belongs to, so a form can put it next to the input that caused it.
+    ``section`` is the 1-based approval order when the issue is about one step.
+    """
+
+    code: str
+    field: str
+    message: str
+    section: int | None = None
+    approver_role: str = ""
+
+
+@dataclass(frozen=True)
+class TeamReadiness:
+    """The outcome of checking a team, and whether it may be activated.
+
+    ``ready`` is False when *any* issue was found: a team is only ever
+    all-or-nothing, because a chain with one unstaffed step strands every
+    application that reaches it and the employee finds out at the worst
+    possible moment. The issues are returned whole rather than the first
+    failure so HR can fix the configuration in one pass.
+    """
+
+    team: Team
+    issues: tuple[TeamIssue, ...] = ()
+
+    @property
+    def ready(self) -> bool:
+        return not self.issues
+
+    def as_dict(self) -> dict:
+        return {
+            "ready": self.ready,
+            "issues": [
+                {
+                    "code": issue.code,
+                    "field": issue.field,
+                    "message": issue.message,
+                    "section": issue.section,
+                    "approver_role": issue.approver_role,
+                }
+                for issue in self.issues
+            ],
+        }
+
+
+class TeamActionError(ValueError):
+    """Raised when a team or team-member write cannot be applied.
+
+    ``field`` is the API field the error belongs to. ``issues`` carries the
+    structured :class:`TeamIssue` list when the refusal came from validating a
+    whole configuration (activation), so a client can render each problem
+    against the step that caused it instead of parsing one long sentence.
+    """
+
+    def __init__(
+        self,
+        field: str,
+        message: str,
+        issues: tuple[TeamIssue, ...] | list[TeamIssue] | None = None,
+    ):
         super().__init__(message)
         self.field = field
         self.message = message
+        self.issues = tuple(issues or ())
 
 
 def _unique_team_code(name: str) -> str:
@@ -1798,12 +1904,259 @@ def _unique_team_code(name: str) -> str:
     return candidate
 
 
-def create_team(*, actor, data: dict) -> Team:
-    """Create a team and audit it."""
+def _mismatched_department_team(team: Team) -> Team | None:
+    """Another active, in-force team covering the same department.
+
+    Routing follows the team, so two active teams in one department is not
+    ambiguous in the engine — each employee follows their own. It is ambiguous
+    to a human reading the configuration, though, and it is nearly always
+    accidental: the same staff being asked to approve the same department's
+    leave twice. Surfacing it as an activation issue makes HR say out loud
+    that it is intended. Blank departments never conflict, since a team with
+    no department is not claiming one.
+    """
+    if not team.department or not team.is_effective:
+        return None
+    for other in (
+        Team.objects.filter(
+            status=Team.Status.ACTIVE, department=team.department
+        )
+        .exclude(pk=team.pk)
+        .order_by("name")
+    ):
+        if other.is_effective:
+            return other
+    return None
+
+
+def validate_team(team: Team) -> TeamReadiness:
+    """Check whether a team can route an application's approvals.
+
+    Side-effect free and safe to call at any time: the validation endpoint and
+    the activation action run the same function, so HR sees exactly the
+    problems that will block activation, no more and no fewer.
+
+    The checks are deliberately about the team's *own* configuration — the
+    workflow, its sections, their roles, and whether somebody can act at each
+    step today. Per-applicant resolution (an applicant who is themselves the
+    only approver of a step, say) cannot be known without an application and is
+    still refused at submission by invariant 12.7.
+    """
+    issues: list[TeamIssue] = []
+    workflow = team.workflow
+
+    if workflow is None:
+        issues.append(
+            TeamIssue(
+                "workflow_missing",
+                "workflow",
+                f"The {team.name} team has no approval workflow. Create one for "
+                "it, with at least one section.",
+            )
+        )
+        return TeamReadiness(team=team, issues=tuple(issues))
+
+    if not workflow.is_active:
+        issues.append(
+            TeamIssue(
+                "workflow_inactive",
+                "workflow",
+                f"Workflow '{workflow.name}' is inactive. Reactivate it, or point "
+                f"the {team.name} team at an active workflow.",
+            )
+        )
+
+    if (
+        workflow.effective_from is not None
+        and workflow.effective_from > timezone.localdate()
+    ):
+        issues.append(
+            TeamIssue(
+                "workflow_scheduled",
+                "workflow",
+                f"Workflow '{workflow.name}' does not start until "
+                f"{workflow.effective_from.isoformat()}. Move its start date "
+                f"earlier, or wait until then to activate the {team.name} team.",
+            )
+        )
+
+    sections = list(
+        workflow.sections.filter(is_active=True)
+        .order_by("order")
+        .select_related("approver_role")
+    )
+    if not sections:
+        issues.append(
+            TeamIssue(
+                "no_sections",
+                "sections",
+                f"Workflow '{workflow.name}' has no active approval sections. Add "
+                "at least one step before activating the team.",
+            )
+        )
+
+    for section in sections:
+        role = section.approver_role
+        if not role.is_active:
+            issues.append(
+                TeamIssue(
+                    "inactive_role",
+                    "sections",
+                    f'The "{section.name}" step needs the "{role.label}" role, which '
+                    "is deactivated. Reactivate it in Roles, or replace the step.",
+                    section=section.order,
+                    approver_role=role.code,
+                )
+            )
+            continue
+        # An open membership whose user has since been deactivated resolves to
+        # nobody, which is the same failure as no membership at all: a step HR
+        # believes is staffed with somebody who cannot log in. The resolver
+        # *raises* for an unstaffable step rather than returning an empty set, so
+        # the reason is captured and the whole configuration is still reported.
+        try:
+            approvers = resolve_section_approvers(section)
+        except WorkflowConfigError:
+            approvers = ()
+        if not approvers:
+            issues.append(
+                TeamIssue(
+                    "no_approver",
+                    "sections",
+                    f'Nobody can act on the "{section.name}" step '
+                    f"({role.label}). Add at least one active member, or a "
+                    "holder of the role, or give the role an institution-wide "
+                    "holder.",
+                    section=section.order,
+                    approver_role=role.code,
+                )
+            )
+
+    if (
+        team.effective_from is not None
+        and team.effective_to is not None
+        and team.effective_to < team.effective_from
+    ):
+        issues.append(
+            TeamIssue(
+                "window_ordered",
+                "effective_to",
+                f"The end date ({team.effective_to.isoformat()}) is before the "
+                f"start date ({team.effective_from.isoformat()}).",
+            )
+        )
+
+    if team.effective_to is not None and team.effective_to < timezone.localdate():
+        issues.append(
+            TeamIssue(
+                "window_ended",
+                "effective_to",
+                f"This team's last routing date was "
+                f"{team.effective_to.isoformat()}, which has passed. Move the end "
+                "date into the future, or leave it blank, to activate the team.",
+            )
+        )
+
+    conflict = _mismatched_department_team(team)
+    if conflict is not None:
+        issues.append(
+            TeamIssue(
+                "department_conflict",
+                "department",
+                f'Another active team already covers this department: '
+                f'"{conflict.name}". If sharing it is intended, deactivate that '
+                f"team first; otherwise give this team a different department.",
+            )
+        )
+
+    return TeamReadiness(team=team, issues=tuple(issues))
+
+
+def _raise_for_readiness(readiness: TeamReadiness, field: str = "status") -> None:
+    """Turn validation issues into the API's refusal for a lifecycle action."""
+    if readiness.ready:
+        return
+    raise TeamActionError(
+        field,
+        " ".join(issue.message for issue in readiness.issues),
+        issues=readiness.issues,
+    )
+
+
+def _unique_workflow_name(base: str, exclude_pk: int | None = None) -> str:
+    """A unique workflow name derived from the team being created or edited.
+
+    ``exclude_pk`` is the workflow being renamed, which does not count as a
+    clash with itself — otherwise saving a team without touching the chain name
+    would rename it to "… (2)" every time.
+    """
+    base = (base or "").strip() or "Team workflow"
+    candidate = base
+    suffix = 2
+    while (
+        Workflow.objects.filter(name=candidate)
+        .exclude(pk=exclude_pk)
+        .exists()
+    ):
+        candidate = f"{base} ({suffix})"
+        suffix += 1
+    return candidate
+
+
+def create_team(
+    *, actor, data: dict, workflow_config: dict | None = None
+) -> Team:
+    """Create a team together with the approval chain it routes through.
+
+    ``data`` holds the team's own editable fields. ``workflow_config`` is
+    ``{"name", "sections": [{"name", "approver_role", "members"}]}`` — the
+    chain, its ordered sections, and the people who may act at each step, all
+    created as part of the same transaction as the team.
+
+    A chain is required, and that is the whole point: there is nowhere else a
+    chain comes into being, so a team is never a row pointing at a chain that
+    does not exist yet or that belongs to somebody else. A team whose chain is
+    already wired is one object for HR to reason about, not three to keep in
+    step.
+
+    Everything lands together or not at all. A half-built team with a chain but
+    no sections is exactly the object that used to look configured and then fail
+    at submission, so a failure part-way through leaves nothing behind.
+
+    A team created this way starts in ``DRAFT`` and does not route until
+    :func:`activate_team` says it may — being created is not being in force.
+    """
+    if workflow_config is None:
+        raise TeamActionError(
+            "new_workflow",
+            "A team is created with its approval chain. Describe the approval "
+            "steps this team routes through.",
+        )
+
     with transaction.atomic():
         data = dict(data)
         data.setdefault("code", _unique_team_code(data.get("name", "")))
+        # A new team is never born in force, whatever the caller sent: routing
+        # is a separate, validated decision.
+        data["status"] = Team.Status.DRAFT
+
+        config = dict(workflow_config)
+        sections_payload = [
+            dict(section, members=section.get("members") or [])
+            for section in config.get("sections") or []
+        ]
+        workflow_name = _unique_workflow_name(
+            config.get("name") or f"{data.get('name', '').strip()} workflow"
+        )
+        workflow = Workflow.objects.create(name=workflow_name)
+        data["workflow"] = workflow
+        # Written before the team so a bad section list cannot leave a chain row
+        # behind for a team that was never created.
+        sections = replace_workflow_sections(workflow, sections_payload)
+        _attach_section_members(workflow=workflow, sections=sections, config=sections_payload)
+
         team = Team.objects.create(**data)
+
         record_audit(
             actor=actor,
             action=AuditEntry.Action.CREATED,
@@ -1812,15 +2165,128 @@ def create_team(*, actor, data: dict) -> Team:
             target_summary=team.name,
             detail={"before": None, "after": _team_snapshot(team)},
         )
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.CREATED,
+            target_type=AuditEntry.TargetType.WORKFLOW,
+            target_id=team.workflow_id,
+            target_summary=team.workflow.name,
+            detail={
+                "before": None,
+                "after": {
+                    "name": team.workflow.name,
+                    "created_with_team": team.name,
+                    "workflow": _workflow_snapshot(team.workflow),
+                },
+            },
+            reason=f"Created with the {team.name} team.",
+        )
     return team
 
 
-def update_team(*, team: Team, actor, data: dict) -> Team:
-    """Update a team's editable fields and audit the change."""
+def _workflow_snapshot(workflow: Workflow) -> dict:
+    """A workflow's chain, in role *codes* with its current open members.
+
+    Codes rather than ids so the entry stays readable years after the role is
+    renamed; the member list is the open memberships only, which is the roster
+    the chain actually routes with.
+    """
+    return {
+        "name": workflow.name,
+        "effective_from": workflow.effective_from,
+        "is_active": workflow.is_active,
+        "sections": [
+            {
+                "name": section.name,
+                "order": section.order,
+                "approver_role": section.approver_role.code,
+                "members": [
+                    {"user_id": membership.user_id, "member": membership.user.get_full_name() or membership.user.username}
+                    for membership in SectionMember.objects.filter(
+                        section=section
+                    ).select_related("user")
+                ],
+            }
+            for section in workflow.sections.order_by("order").select_related(
+                "approver_role"
+            )
+        ],
+    }
+
+
+def _attach_section_members(
+    *, workflow: Workflow, sections: list[Section], config: list[dict]
+) -> None:
+    """Put the requested people on each newly written section.
+
+    Membership goes through the same guards as the standalone add-member
+    action (:func:`ensure_membership_allowed`) so a chain cannot be created with
+    a duplicate member, a deactivated account, or a step that is switched off —
+    the rules live in one place, and this path cannot grant something the other
+    path would refuse.
+    """
+    # Paired by position, not by name: two steps may legitimately share a label
+    # (same role, same "Approval" text twice in a row), and matching on the
+    # name alone would hand the second step's roster to the first one.
+    by_order = {section.order: section for section in sections}
+    for position, payload in enumerate(config):
+        section = by_order.get(position + 1)
+        if section is None:
+            continue
+        listed: set[int] = set()
+        for user_pk in payload.get("members") or []:
+            if user_pk in listed:
+                # The same name twice in one step is a mistake worth reporting
+                # even though the second is a no-op: it means the picker was
+                # used oddly and the author probably meant two different people.
+                raise TeamActionError(
+                    "members",
+                    f"{user_pk} is listed twice on the same step. Pick each "
+                    "person once.",
+                )
+            listed.add(user_pk)
+            user = User.objects.filter(pk=user_pk, is_active=True).first()
+            if user is None:
+                raise TeamActionError(
+                    "sections",
+                    f"Member {user_pk} is missing or is not an active user. Pick "
+                    "an active account, or activate it first.",
+                )
+            # Re-saving a team the form did not touch must not fail because the
+            # people on a step are already on it. A step that is already staffed
+            # by this person is left exactly as it is, including its start date;
+            # only a genuinely new pairing goes through the guards.
+            if SectionMember.objects.filter(section=section, user=user).exists():
+                continue
+            ensure_membership_allowed(section, user)
+            SectionMember.objects.create(section=section, user=user)
+
+
+def update_team(
+    *, team: Team, actor, data: dict, workflow_config: dict | None = None
+) -> Team:
+    """Update a team's editable fields, and optionally the steps of its chain.
+
+    ``status`` is not editable here. Lifecycle moves go through
+    :func:`activate_team` / :func:`deactivate_team` so each one is validated,
+    refused when the configuration cannot support it, and audited as the
+    distinct event it is — a PATCH that quietly flipped a team to active would
+    be a team no one decided to put in force.
+
+    ``workflow_config`` replaces the chain's *steps*, not the chain itself: a
+    team's chain belongs to it, so the only edit available is the same edit the
+    form used to create it. Sections are identified by their (role, name) pair,
+    so reordering keeps each step's roster while a role or name change rebuilds
+    that step empty. Removing a step an in-flight application is waiting on is
+    refused by the ``PROTECT`` on ``ApplicationStage.section_ref``, so an edit
+    here cannot rewrite the past.
+    """
     with transaction.atomic():
         team = Team.objects.select_for_update().get(pk=team.pk)
         before = _team_snapshot(team)
         for field, value in data.items():
+            if field == "status":
+                continue
             setattr(team, field, value)
         team.save()
         record_audit(
@@ -1831,7 +2297,150 @@ def update_team(*, team: Team, actor, data: dict) -> Team:
             target_summary=team.name,
             detail=changed_fields(before, _team_snapshot(team)),
         )
+
+        if workflow_config is not None:
+            _replace_team_chain(
+                team=team,
+                actor=actor,
+                config=workflow_config,
+            )
     return team
+
+
+def _replace_team_chain(*, team: Team, actor, config: dict) -> None:
+    """Rewrite the steps of the chain this team owns, in place.
+
+    Same replacement the serializer performs for a chain written on its own, so
+    section identity, ordering, and the ``PROTECT`` guard on a step a live
+    application points at are one implementation rather than two that can drift.
+    """
+    workflow = team.workflow
+    if workflow is None:
+        raise TeamActionError(
+            "new_workflow",
+            f'The {team.name} team has no approval chain, so there is nothing '
+            "to edit. Create a new team with the steps you want.",
+        )
+
+    config = dict(config)
+    sections_payload = [
+        dict(section, members=section.get("members") or [])
+        for section in config.get("sections") or []
+    ]
+    before = _workflow_snapshot(workflow)
+    try:
+        sections = replace_workflow_sections(workflow, sections_payload)
+    except StageSequenceError as exc:
+        raise TeamActionError(exc.field, exc.message)
+    if config.get("name"):
+        workflow.name = _unique_workflow_name(
+            str(config["name"]).strip(), exclude_pk=workflow.pk
+        )
+        workflow.save(update_fields=["name"])
+    _attach_section_members(workflow=workflow, sections=sections, config=sections_payload)
+
+    record_audit(
+        actor=actor,
+        action=AuditEntry.Action.UPDATED,
+        target_type=AuditEntry.TargetType.WORKFLOW,
+        target_id=workflow.pk,
+        target_summary=workflow.name,
+        detail=changed_fields(
+            before, _workflow_snapshot(workflow)
+        )
+        | {"team": team.name},
+        reason=f"Approval steps changed on the {team.name} team.",
+    )
+
+
+def activate_team(*, team: Team, actor) -> Team:
+    """Put a draft team into force, refusing a team that cannot route.
+
+    This is the moment a team starts affecting real applications, so it is a
+    separate action rather than a field edit, and it is refused unless the team
+    passes :func:`validate_team` in full. A team left in ``DRAFT`` on failure is
+    the useful outcome: HR keeps the configuration they wrote and is told
+    exactly what to fix, instead of having a live team that strands applications
+    at a step with no approver.
+
+    The team is locked for the duration so two HR users activating at once
+    cannot both pass validation and produce two contradictory audit entries.
+
+    Activating also dates the workflow when it has never been dated. A workflow
+    with a null ``effective_from`` still routes today, but it reads as a draft,
+    so a chain that is demonstrably in force would be labelled as one — giving
+    the date is what makes the workflow and its team agree.
+    """
+    with transaction.atomic():
+        locked = Team.objects.select_for_update().get(pk=team.pk)
+        if locked.status == Team.Status.ACTIVE:
+            return locked
+        if locked.status == Team.Status.INACTIVE:
+            raise TeamActionError(
+                "status",
+                f'The {locked.name} team has been retired and cannot be '
+                "reactivated. Create it again, or point the employees at an "
+                "active team.",
+            )
+
+        readiness = validate_team(locked)
+        _raise_for_readiness(readiness)
+
+        previous = locked.status
+        locked.status = Team.Status.ACTIVE
+        if locked.workflow is not None and locked.workflow.effective_from is None:
+            locked.workflow.effective_from = timezone.localdate()
+            locked.workflow.save(update_fields=["effective_from"])
+        locked.save(update_fields=["status", "updated_at"])
+
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.ACTIVATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=locked.pk,
+            target_summary=locked.name,
+            detail=changed_fields(
+                {"status": previous}, {"status": Team.Status.ACTIVE}
+            ),
+            reason=f"{locked.name} validated and put into force.",
+        )
+    return locked
+
+
+def deactivate_team(*, team: Team, actor) -> Team:
+    """Retire a team from routing, keeping its configuration and its history.
+
+    Retiring rather than deleting is the whole reason a team is a
+    ``status`` rather than a boolean that HR ticks: an application already
+    inside this team's chain still has to be decided, and the stages that prove
+    who was entitled to decide it are the team's configuration. The team stops
+    routing *new* applications the moment this returns, and everything that
+    pointed at it keeps resolving.
+    """
+    with transaction.atomic():
+        locked = Team.objects.select_for_update().get(pk=team.pk)
+        if locked.status == Team.Status.INACTIVE:
+            return locked
+        if locked.status == Team.Status.DRAFT:
+            raise TeamActionError(
+                "status",
+                f'The {locked.name} team is still a draft, so there is nothing to '
+                "retire. Delete it instead.",
+            )
+        locked.status = Team.Status.INACTIVE
+        locked.save(update_fields=["status", "updated_at"])
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.DEACTIVATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=locked.pk,
+            target_summary=locked.name,
+            detail=changed_fields(
+                {"status": Team.Status.ACTIVE}, {"status": Team.Status.INACTIVE}
+            ),
+            reason=f"{locked.name} retired from routing.",
+        )
+    return locked
 
 
 def _team_snapshot(team: Team) -> dict:
@@ -1839,50 +2448,74 @@ def _team_snapshot(team: Team) -> dict:
         "name": team.name,
         "code": team.code,
         "description": team.description,
+        "department": team.department,
         "campus_id": team.campus_id,
         "campus": team.campus.name if team.campus_id else "",
         "workflow_id": team.workflow_id,
-        "is_active": team.is_active,
+        "status": team.status,
+        "effective_from": team.effective_from,
+        "effective_to": team.effective_to,
     }
 
 
+def ensure_membership_allowed(section: Section, user: User) -> None:
+    """Refuse a membership the section cannot hold, naming what is wrong.
+
+    Shared by the add-member action and by creating a chain inline with a team,
+    so there is one definition of "this person may be added here" and no way for
+    the two paths to disagree about it.
+    """
+    if not section.is_active:
+        raise TeamActionError(
+            "section",
+            f'The "{section.name}" section is inactive. Activate it before '
+            "adding members.",
+        )
+    if not user.is_active:
+        raise TeamActionError(
+            "user",
+            f"{user.get_full_name() or user.username} is not an active user. "
+            "Activate the account before adding them to a section.",
+        )
+    if not section.approver_role.is_active:
+        raise TeamActionError(
+            "section",
+            f'"{section.approver_role.label}" is deactivated. Reactivate it in '
+            "Roles before adding members to this section.",
+        )
+    # Only an *open* membership blocks a new one. A person whose membership was
+    # closed and reappointed is a legitimate second period, not a duplicate.
+    if SectionMember.objects.filter(section=section, user=user).exists():
+        raise TeamActionError(
+            "user",
+            f"{user.get_full_name() or user.username} is already a member of "
+            f'the "{section.name}" section.',
+        )
+
+
 def add_section_member(
-    *, section: Section, user: User, actor
+    *, section: Section, user: User, actor, effective_from: date | None = None
 ) -> SectionMember:
     """Add one person to a section and audit it.
 
     A section may hold any number of people and the same person may belong to
     several sections, so the only uniqueness rule left is "not twice in the same
-    section". Unlike the old team membership there is deliberately **no**
-    one-holder-per-role rule and no role argument: the role belongs to the
-    section, and more than one person sharing it is the whole point.
+    section at the same time". Unlike the old team membership there is
+    deliberately **no** one-holder-per-role rule and no role argument: the role
+    belongs to the section, and more than one person sharing it is the whole
+    point.
+
+    ``effective_from`` defaults to today and may be dated ahead, which is how HR
+    says "this person takes over next month" without the team routing to
+    somebody who has not been told they are an approver yet.
     """
     with transaction.atomic():
-        if not section.is_active:
-            raise TeamActionError(
-                "section",
-                f'The "{section.name}" section is inactive. Activate it before '
-                "adding members.",
-            )
-        if not user.is_active:
-            raise TeamActionError(
-                "user",
-                f"{user.get_full_name() or user.username} is not an active user. "
-                "Activate the account before adding them to a section.",
-            )
-        if not section.approver_role.is_active:
-            raise TeamActionError(
-                "section",
-                f'"{section.approver_role.label}" is deactivated. Reactivate it in '
-                "Roles before adding members to this section.",
-            )
-        if SectionMember.objects.filter(section=section, user=user).exists():
-            raise TeamActionError(
-                "user",
-                f"{user.get_full_name() or user.username} is already a member of "
-                f'the "{section.name}" section.',
-            )
-        membership = SectionMember(section=section, user=user)
+        ensure_membership_allowed(section, user)
+        membership = SectionMember(
+            section=section,
+            user=user,
+            effective_from=effective_from or timezone.localdate(),
+        )
         membership.full_clean()
         membership.save()
         record_audit(
@@ -1902,44 +2535,88 @@ def add_section_member(
                     "member": user.get_full_name() or user.username,
                     "section": section.name,
                     "role": section.approver_role.label,
+                    "effective_from": membership.effective_from,
                 },
             ),
             reason=(
                 f"{user.get_full_name() or user.username} added to the "
-                f"{section.name} section as {section.approver_role.label}."
+                f"{section.name} section as {section.approver_role.label} "
+                f"from {membership.effective_from.isoformat()}."
             ),
         )
     return membership
 
 
-def remove_section_member(*, membership: SectionMember, actor) -> SectionMember:
-    """Remove one section membership and audit it."""
+def remove_section_member(
+    *, membership: SectionMember, actor, effective_to: date | None = None
+) -> SectionMember:
+    """Take one section membership out of force, keeping the record of it.
+
+    The row is **closed** (``effective_to`` set) rather than deleted, because it
+    is a record of who was entitled to act and when. Deleting it would rewrite
+    the past: an application approved last month by a person with no membership
+    today would be left with an approver no configuration can explain. The
+    open-membership uniqueness rule means the same person can be reappointed
+    later as a second period, and both periods are visible.
+
+    ``effective_to`` defaults to today, so the person stops routing from today
+    onwards — a period ending today still covers today, so they can act on what
+    they were given, and stops from tomorrow. A period that has not started yet
+    never took effect, so it is removed outright rather than left as a row that
+    says somebody held a step they never held.
+    """
     with transaction.atomic():
-        section = membership.section
-        user = membership.user
+        locked = SectionMember.objects.select_for_update().get(pk=membership.pk)
+        section = locked.section
+        user = locked.user
         role = section.approver_role
+        today = timezone.localdate()
+        if effective_to is not None and effective_to < locked.effective_from:
+            raise TeamActionError(
+                "effective_to",
+                f"The membership starts on {locked.effective_from.isoformat()}, "
+                f"which is after {effective_to.isoformat()}. The end date cannot "
+                "precede the start date.",
+            )
+        end = effective_to or today
+
+        # A period that has not begun yet never took effect, so removing it
+        # deletes the row. A handover that was called off must not leave a record
+        # saying somebody was — or was about to be — on a step.
+        never_effective = locked.effective_from > today
         detail = changed_fields(
             {
                 "member_user_id": user.pk,
                 "member": user.get_full_name() or user.username,
                 "section": section.name,
                 "role": role.label,
+                "effective_to": None,
             },
-            {},
+            {"effective_to": None if never_effective else end},
         )
-        membership.delete()
+        if never_effective:
+            locked.delete()
+        else:
+            locked.effective_to = end
+            locked.save(update_fields=["effective_to"])
         record_audit(
             actor=actor,
-            action=AuditEntry.Action.CANCELLED,
+            action=AuditEntry.Action.DEACTIVATED,
             target_type=AuditEntry.TargetType.WORKFLOW,
             target_id=section.workflow_id,
             target_summary=f"{section.workflow.name} / {section.name}",
             detail=detail,
             reason=(
                 f"{user.get_full_name() or user.username} removed from the "
-                f"{section.name} section."
+                f"{section.name} section"
+                + (
+                    "."
+                    if never_effective
+                    else f", effective {end.isoformat()}."
+                )
             ),
         )
+        membership = locked
     return membership
 
 

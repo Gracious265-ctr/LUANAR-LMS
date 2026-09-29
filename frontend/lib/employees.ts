@@ -13,6 +13,13 @@ export type UserRole = "employee" | "approver" | "hr";
 export interface TeamOption {
   id: number;
   name: string;
+  status: string;
+  /**
+   * False when the team is not routing today, so the picker can say so next to
+   * the name. Assigning somebody to a team that will not route is a trap: the
+   * employee only finds out when they submit.
+   */
+  is_effective: boolean;
 }
 
 export interface Employee {

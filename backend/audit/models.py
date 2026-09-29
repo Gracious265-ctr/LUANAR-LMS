@@ -37,6 +37,8 @@ class AuditEntry(models.Model):
     class Action(models.TextChoices):
         CREATED = "created", "Created"
         UPDATED = "updated", "Updated"
+        ACTIVATED = "activated", "Activated"
+        DEACTIVATED = "deactivated", "Deactivated"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         CANCELLED = "cancelled", "Cancelled"

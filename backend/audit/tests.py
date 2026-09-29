@@ -590,49 +590,87 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(updated.action, "updated")
         self.assertEqual(updated.detail["before"]["name"], "Independence Day")
 
-    def test_workflow_create_and_update_are_audited_with_stages(self):
+    def test_a_team_and_its_chain_are_audited_on_creation(self):
+        """A chain is created with a team, so both are recorded together.
+
+        The two entries are what let somebody read back, years later, that a
+        step came into being as part of a team rather than as a change to
+        something that already existed.
+        """
         response = self.client.post(
-            "/api/v1/workflows/",
+            "/api/v1/teams/",
             {
-                "name": "Registry approval",
-                "employee_category": "administration",
-                "department": "",
-                "is_active": False,
-                "effective_from": None,
-                "sections": [
-                    {"order": 1, "name": "Supervisor", "approver_role": "supervisor"},
-                    {"order": 2, "name": "HOD", "approver_role": "hod"},
-                ],
+                "name": "Registry team",
+                "new_workflow": {
+                    "name": "Registry approval",
+                    "sections": [
+                        {"name": "Supervisor", "approver_role": "supervisor"},
+                        {"name": "HOD", "approver_role": "hod"},
+                    ],
+                },
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        workflow_id = response.data["id"]
+        workflow_id = response.data["workflow"]
         created = self._entry_for("workflow", workflow_id)
         self.assertEqual(created.action, "created")
         self.assertEqual(
-            created.detail["after"]["sections"], ["supervisor", "hod"]
+            [
+                s["approver_role"]
+                for s in created.detail["after"]["workflow"]["sections"]
+            ],
+            ["supervisor", "hod"],
+        )
+        self.assertEqual(
+            created.detail["after"]["created_with_team"], "Registry team"
         )
 
-        response = self.client.patch(
-            f"/api/v1/workflows/{workflow_id}/",
+    def test_a_chains_steps_are_audited_when_the_team_is_saved(self):
+        """Steps change as a consequence of saving a team, and that is recorded.
+
+        A chain has no edit of its own, so the "before" and "after" of its steps
+        are the record of what the team's form changed — which is why the entry
+        names the team.
+        """
+        response = self.client.post(
+            "/api/v1/teams/",
             {
-                "sections": [
-                    {"order": 1, "name": "Registrar", "approver_role": "registrar"},
-                    {"order": 2, "name": "DVC", "approver_role": "dvc"},
-                ]
+                "name": "Registry team",
+                "new_workflow": {
+                    "name": "Registry approval",
+                    "sections": [
+                        {"name": "Supervisor", "approver_role": "supervisor"},
+                        {"name": "HOD", "approver_role": "hod"},
+                    ],
+                },
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        workflow_id = response.data["workflow"]
+        self.client.patch(
+            f"/api/v1/teams/{response.data['id']}/",
+            {
+                "new_workflow": {
+                    "sections": [
+                        {"name": "Registrar", "approver_role": "registrar"},
+                        {"name": "DVC", "approver_role": "dvc"},
+                    ]
+                }
+            },
+            format="json",
+        )
         updated = self._entry_for("workflow", workflow_id)
         self.assertEqual(updated.action, "updated")
         self.assertEqual(
-            updated.detail["before"]["sections"], ["supervisor", "hod"]
+            [s["approver_role"] for s in updated.detail["before"]["sections"]],
+            ["supervisor", "hod"],
         )
         self.assertEqual(
-            updated.detail["after"]["sections"], ["registrar", "dvc"]
+            [s["approver_role"] for s in updated.detail["after"]["sections"]],
+            ["registrar", "dvc"],
         )
+        self.assertEqual(updated.detail["team"], "Registry team")
 
     def _create_delegation(self, approver, delegate=None, ends_on=None):
         payload = {

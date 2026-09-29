@@ -22,6 +22,7 @@ vi.mock("@/lib/section-members-client", async (importOriginal) => {
   return {
     ...actual,
     listSectionMembers: vi.fn(),
+    listSectionMemberHistory: vi.fn(async () => []),
     addSectionMember: vi.fn(),
     removeSectionMember: vi.fn(),
   };
@@ -49,6 +50,9 @@ function makeSectionMember(
     user,
     user_name: name,
     user_email: `${name.toLowerCase().replace(/\s+/g, ".")}@luanar.ac.mw`,
+    effective_from: "2026-01-01",
+    effective_to: null,
+    is_effective: true,
     created_at: "2026-01-01T00:00:00Z",
   };
 }
@@ -59,11 +63,15 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     name: "Bunda College Faculty",
     code: "bunda-faculty",
     description: "",
+    department: "",
     campus: null,
     campus_name: "",
     workflow: 1,
     workflow_name: "Academic approval",
-    is_active: true,
+    status: "active",
+    effective_from: "2026-01-01",
+    effective_to: null,
+    is_effective: true,
     stage_roles: [
       { id: 1, code: "supervisor", label: "Supervisor" },
       { id: 2, code: "hod", label: "Head of Department" },
@@ -79,6 +87,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
         approver_role: "supervisor",
         approver_role_label: "Supervisor",
         member_count: 1,
+        members: [],
       },
       {
         id: 2,
@@ -88,6 +97,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
         approver_role: "hod",
         approver_role_label: "Head of Department",
         member_count: 1,
+        members: [],
       },
     ],
     created_at: "2026-01-01T00:00:00Z",
@@ -139,7 +149,11 @@ describe("TeamMemberList", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    await waitFor(() => expect(addSectionMember).toHaveBeenCalledWith(1, 8));
+    // No start date was given, so the membership begins today rather than on
+    // some invented date: an absent date is not "sometime".
+    await waitFor(() =>
+      expect(addSectionMember).toHaveBeenCalledWith(1, 8, undefined)
+    );
     expect(listSectionMembers).toHaveBeenCalledWith(1);
     expect(refresh).toHaveBeenCalled();
   });
@@ -184,7 +198,7 @@ describe("TeamMemberList", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("says there is nobody to staff when the workflow has no sections", () => {
+  it("says there is nobody to staff when the team has no steps", () => {
     render(
       <TeamMemberList
         team={makeTeam({ sections: [] })}
@@ -192,7 +206,7 @@ describe("TeamMemberList", () => {
       />
     );
 
-    expect(screen.getByText(/workflow has no sections/i)).toBeInTheDocument();
+    expect(screen.getByText(/no approval steps/i)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Add a member" })
     ).not.toBeInTheDocument();

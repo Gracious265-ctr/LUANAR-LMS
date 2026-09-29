@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -96,20 +98,64 @@ class Campus(models.Model):
 class Team(models.Model):
     """A group of employees sharing one approval workflow.
 
-    A team points at exactly one reusable :class:`Workflow`. At submission time
-    the applicant's team is what selects the workflow — there is no
-    category/department matching — and that workflow's
-    :class:`Section` rows are who may act at each step.
+    A team owns exactly one :class:`Workflow` — one-to-one, never shared. At
+    submission time the applicant's team is what selects the workflow — there is
+    no category/department matching — and that workflow's :class:`Section` rows
+    are who may act at each step.
+
+    The chain exists *because* the team does, and is written in the same request
+    as the team. There is deliberately no reusable chain a second team can be
+    pointed at: a shared chain makes "edit this team's approval steps" and
+    "silently re-route someone else's applications" the same action, which is
+    not an edit HR can be asked to perform safely.
 
     The workflow is **required**. A team with no workflow cannot route an
     application, so making it optional only ever produced a team HR thought was
     configured but which silently could not approve anything; refusing to create
     it puts the problem where it can be fixed.
+
+    The lifecycle is one authoritative field, :attr:`status`, and it is
+    deliberately a three-value choice rather than a boolean:
+
+    ``DRAFT``
+        Being configured. A draft team is invisible to routing, so a
+        half-finished configuration cannot strand an employee's application.
+    ``ACTIVE``
+        The only status that routes (invariant 12.5). Reaching it is a separate,
+        validated action — see :func:`workflows.services.activate_team`.
+    ``INACTIVE``
+        Retired but retained. The team keeps its configuration and every
+        historical stage snapshot that points at it, so applications already in
+        flight can still be read and decided.
+
+    :attr:`effective_from` / :attr:`effective_to` are the window the team is
+    *operative* inside, which is a different question from its status: a team
+    whose window has closed is inactive for routing even while its status still
+    reads ``ACTIVE``, and HR is told so rather than being allowed to assume the
+    configuration still applies.
     """
+
+    class Status(models.TextChoices):
+        """The team's lifecycle, and the single field that says which."""
+
+        DRAFT = "draft", "Draft"
+        ACTIVE = "active", "Active"
+        INACTIVE = "inactive", "Inactive"
 
     name = models.CharField(max_length=200, unique=True)
     code = models.SlugField(max_length=50, unique=True)
     description = models.TextField(blank=True, default="")
+    department = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=(
+            "The department this team belongs to. Informational — routing "
+            "follows the team, not the department — but it is what stops two "
+            "active teams being configured to cover the same department "
+            "without HR having said so."
+        ),
+    )
     campus = models.ForeignKey(
         Campus,
         on_delete=models.PROTECT,
@@ -121,28 +167,101 @@ class Team(models.Model):
             "campus-based. Informational — routing always follows the team."
         ),
     )
-    workflow = models.ForeignKey(
+    workflow = models.OneToOneField(
         "workflows.Workflow",
         on_delete=models.PROTECT,
-        related_name="teams",
+        related_name="team",
         help_text=(
-            "The approval workflow this team is routed through. It owns the "
-            "sections, so its steps define who may act for this team."
+            "The approval workflow this team is routed through. One-to-one, not "
+            "a foreign key: a chain belongs to the team it was built for, and a "
+            "shared chain would mean editing one team's steps silently "
+            "re-routing every other team pointing at it. It owns the sections, "
+            "so its steps define who may act for this team."
         ),
     )
-    is_active = models.BooleanField(default=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        help_text=(
+            "Draft teams do not route. Only an active team inside its "
+            "effective dates routes an application."
+        ),
+    )
+    effective_from = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The first date this team routes applications. Blank means active "
+            "from the moment it is activated."
+        ),
+    )
+    effective_to = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The last date this team routes applications; blank routes "
+            "indefinitely. Past this date the team is retired for routing while "
+            "its configuration is kept."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_from__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="team_effective_window_ordered",
+            )
+        ]
+
+    @property
+    def is_effective(self) -> bool:
+        """True when today falls inside the team's effective window.
+
+        A blank bound is open-ended, so a team with no dates is always inside
+        its window and only its ``status`` decides whether it routes.
+        """
+        today = timezone.localdate()
+        if self.effective_from is not None and self.effective_from > today:
+            return False
+        if self.effective_to is not None and self.effective_to < today:
+            return False
+        return True
 
     def __str__(self) -> str:
-        return self.name
+        return f"{self.name} ({self.get_status_display()})"
+
+
+class OpenSectionMembershipManager(models.Manager):
+    """Only memberships that are currently in force.
+
+    :class:`SectionMember` is effective-dated, so the same person can hold the
+    same section across several separate periods. The default manager returns
+    the open rows only, which is what every "who may act for this section
+    today" question wants and what keeps a historical period from being counted
+    twice. ``all_objects`` is the full history.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(effective_to__isnull=True)
+
+
+class SectionMemberQuerySet(models.QuerySet):
+    def effective_on(self, on: date | None = None) -> "SectionMemberQuerySet":
+        """Rows whose period covers ``on`` (today by default)."""
+        day = on or timezone.localdate()
+        return self.filter(effective_from__lte=day).filter(
+            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=day)
+        )
 
 
 class SectionMember(models.Model):
-    """One person eligible to act for a :class:`Section`.
+    """One period during which a person may act for a :class:`Section`.
 
     A section may name any number of members: it is resolved by whoever acts
     first, so several people may hold the same section. The same person may be a
@@ -154,7 +273,17 @@ class SectionMember(models.Model):
     *acts as* the section's role, so the snapshot an in-flight application is
     judged by (:class:`ApplicationStage`) is fixed at materialisation and cannot
     shift when HR edits membership later (invariant 12.5).
+
+    Membership is **effective-dated rather than deleted**. Removing someone from
+    a section closes the period (``effective_to``) instead of dropping the row,
+    because a row that used to be pointed at is a record of who *could* have
+    acted; a hard delete would quietly rewrite the past and leave no way to
+    explain an application that someone with no current membership approved.
+    Only one period per (section, user) may be open at a time.
     """
+
+    objects = OpenSectionMembershipManager.from_queryset(SectionMemberQuerySet)()
+    all_objects = models.Manager()
 
     section = models.ForeignKey(
         "workflows.Section", on_delete=models.CASCADE, related_name="members"
@@ -162,18 +291,47 @@ class SectionMember(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="section_memberships"
     )
+    effective_from = models.DateField(
+        default=timezone.localdate,
+        help_text="The first date this person is eligible to act for the section.",
+    )
+    effective_to = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The last date this person is eligible to act for the section; "
+            "blank while the membership is open."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["section", "user"]
+        ordering = ["section", "user", "effective_from"]
         constraints = [
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="sectionmember_effective_window_ordered",
+            ),
             models.UniqueConstraint(
-                fields=["section", "user"], name="sectionmember_section_user_unique"
-            )
+                fields=["section", "user"],
+                condition=models.Q(effective_to__isnull=True),
+                name="sectionmember_open_section_user_unique",
+            ),
         ]
 
+    def is_effective(self, on: date | None = None) -> bool:
+        """True when ``on`` (today by default) falls inside this period."""
+        day = on or timezone.localdate()
+        if self.effective_from > day:
+            return False
+        return self.effective_to is None or self.effective_to >= day
+
     def __str__(self) -> str:
-        return f"{self.user.get_full_name()} — {self.section.name}"
+        period = (
+            f"{self.effective_from} → {self.effective_to or 'open'}"
+        )
+        return f"{self.user.get_full_name()} — {self.section.name} ({period})"
 
 
 class RoleAssignment(models.Model):

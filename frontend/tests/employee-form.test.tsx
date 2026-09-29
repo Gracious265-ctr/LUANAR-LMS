@@ -97,8 +97,8 @@ describe("EmployeeForm", () => {
         endpoint="/api/hr/employees"
         method="POST"
         teams={[
-          { id: 4, name: "Bunda College Faculty" },
-          { id: 5, name: "Registry" },
+          { id: 4, name: "Bunda College Faculty", status: "active", is_effective: true },
+          { id: 5, name: "Registry", status: "active", is_effective: true },
         ]}
       />
     );
@@ -110,6 +110,49 @@ describe("EmployeeForm", () => {
     ).toEqual(["No team", "Bunda College Faculty", "Registry"]);
   });
 
+  it("says which teams would not route, rather than letting HR assign into a trap", () => {
+    // An employee in a team that is not routing only finds out when they
+    // submit, which is a bad time to find out. The reason is on the option.
+    render(
+      <EmployeeForm
+        endpoint="/api/hr/employees"
+        method="POST"
+        teams={[
+          { id: 4, name: "Registry", status: "active", is_effective: true },
+          {
+            id: 5,
+            name: "New Team",
+            status: "draft",
+            is_effective: false,
+          },
+          {
+            id: 6,
+            name: "Old Team",
+            status: "inactive",
+            is_effective: false,
+          },
+          {
+            id: 7,
+            name: "Handover",
+            status: "active",
+            is_effective: false,
+          },
+        ]}
+      />
+    );
+
+    const teamSelect = screen.getByLabelText("Team") as HTMLSelectElement;
+    expect(
+      Array.from(teamSelect.options).map((option) => option.textContent)
+    ).toEqual([
+      "No team",
+      "Registry",
+      "New Team (still being set up)",
+      "Old Team (retired)",
+      "Handover (not in force today)",
+    ]);
+  });
+
   it("prefills the employee's own team on edit", () => {
     render(
       <EmployeeForm
@@ -117,8 +160,8 @@ describe("EmployeeForm", () => {
         endpoint="/api/hr/employees/1"
         method="PATCH"
         teams={[
-          { id: 4, name: "Bunda College Faculty" },
-          { id: 5, name: "Registry" },
+          { id: 4, name: "Bunda College Faculty", status: "active", is_effective: true },
+          { id: 5, name: "Registry", status: "active", is_effective: true },
         ]}
       />
     );
@@ -132,7 +175,7 @@ describe("EmployeeForm", () => {
       <EmployeeForm
         endpoint="/api/hr/employees"
         method="POST"
-        teams={[{ id: 4, name: "Bunda College Faculty" }]}
+        teams={[{ id: 4, name: "Bunda College Faculty", status: "active", is_effective: true }]}
       />
     );
     fireEvent.change(screen.getByLabelText("Team"), { target: { value: "4" } });

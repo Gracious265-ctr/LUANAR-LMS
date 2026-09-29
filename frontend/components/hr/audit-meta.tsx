@@ -48,8 +48,8 @@ export function formatAuditValue(value: unknown): string {
 /** Edit-page route for a target the HR UI can change, or null when read-only. */
 export function auditEditHref(entry: AuditEntry): string | null {
   switch (entry.target_type) {
-    case "workflow":
-      return `/dashboard/hr-admin/workflows/${entry.target_id}/edit`;
+    case "team":
+      return `/dashboard/hr-admin/teams/${entry.target_id}`;
     case "leavetype":
       return `/dashboard/hr-admin/leave-types/${entry.target_id}/edit`;
     case "leaverule":

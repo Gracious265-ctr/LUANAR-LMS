@@ -580,6 +580,35 @@ The audit record must identify the actor, action, timestamp, and relevant previo
 
 ---
 
+### 12.12 Team Lifecycle
+
+**A team's lifecycle is one authoritative field, and only a team in force inside its effective window routes an application.**
+
+* `Team.status` is the single answer — `draft`, `active`, or `inactive`. The former `is_active` boolean is removed rather than kept alongside, so a team can never hold two contradictory answers to "is this routing".
+* `draft` is inert **by design**: a team being built routes nothing, which is what makes it safe to create before it is finished. `active` but outside `[effective_from, effective_to]` likewise routes nothing, which is how a dated handover is expressed without a gap.
+* The gate lives in the routing provider, not in the UI, and every failure names the team — and the date, where a date is the reason — so an applicant's refusal is actionable rather than a stage error nobody can act on.
+* Activation and retirement are actions, not fields: `status` is read-only on `PATCH`. Activation validates first and is refused, leaving the team `draft`, if the chain cannot route. Both are audited, and the audit entry records the status *before* the change.
+* A team's detail and action routes reach it whatever its status. A retired team is exactly the one HR needs to read, and a 404 would make retirement indistinguishable from deletion.
+* A team is created with its chain, not before it, and keeps it. `Team.workflow` is one-to-one (`PROTECT`), so a chain has exactly one owner and two teams can never be pointed at the same steps. There is no shared chain to hand out and no "which chain does this team use?" question to answer.
+* The chain is written inside the team write. `POST /teams/` takes `new_workflow`; `PATCH /teams/<id>/` may too, and rewrites the chain the team already owns rather than replacing it. Steps are matched by `(approver_role, name)`, so reordering moves a step with its roster intact while a renamed step is a different step and starts empty. Applications already inside a step are unaffected either way: `section_ref` is `PROTECT`, so a step an application used cannot be deleted out from under it.
+* There is no separate chain screen or write API. `Workflow` remains as the thing routing, snapshots, and audit entries point at, but it is read-only over the API and the admin — a chain changes because its team was saved, which is one audited action rather than two.
+* Validation returns **every** problem at once, each with a stable code, and is side-effect free. A chain with three unstaffed steps takes one pass, not three.
+* `ApplicationStage.section_ref` stays `PROTECT` and `decide()` still reads the `ApplicationStageApprover` snapshot, so retiring a team, re-approving it, or rebuilding a chain cannot change the meaning of an application already inside it.
+
+### 12.13 Membership Is a Period
+
+**A person's ability to act for a step is a date range, not a row that is there or not, and closing a period never erases the fact of it.**
+
+* `SectionMember.effective_from` / `effective_to`; the default manager exposes only **open** (in-force) memberships, `all_objects` exposes every period. "Who can act for this step" and "who could act on the second of March" are different questions and the data answers both.
+* Routing resolves approvers from memberships effective **today**, which is what lets a handover be planned: the outgoing approver is dated to a Friday and the incoming one from Monday.
+* Removal **closes** a period rather than deleting the row. A membership is the record of who was entitled to act, and deleting it would leave a decision that somebody with no membership today made, unexplainable.
+* A period that has not started yet never took effect and is removed outright, so a handover that was called off leaves no row claiming somebody held a step they never held.
+* Uniqueness is on the **open** membership: one person, one section, one time. That is what makes a handover — remove, then add — a normal sequence rather than a duplicate-row error.
+* The API mirrors the split: the default view is who can act now, `?history=1` is every period.
+* Effective-dating never rewrites a running application. The approval snapshot is the authority for anything already submitted.
+
+---
+
 ## 13. Architecture Decisions Still To Be Confirmed
 
 The following decisions are intentionally left open until the relevant LUANAR infrastructure and organizational requirements are investigated:

@@ -84,7 +84,10 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   leaverule: "Leave rule",
   financialyear: "Financial year",
   publicholiday: "Public holiday",
-  workflow: "Workflow",
+  team: "Team",
+  // A chain has no screen of its own: it is written and read through the team
+  // that owns it, so its audit entries stay history rather than a link.
+  workflow: "Approval chain",
   delegation: "Delegation",
   reassignment: "Reassignment",
   "document-template": "Document template",

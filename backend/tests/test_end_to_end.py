@@ -121,14 +121,11 @@ class EndToEndBase(StubProviderMixin, TestCase):
             grade="B",
             category=EmployeeProfile.Category.ADMINISTRATION,
         )
-        self.chain = self.hr_configures_chain(CHAIN)
         self.chain_approvers = (self.supervisor, self.hod, self.registrar, self.dvc)
-        self.chain_roles = dict(
-            zip(CHAIN, self.chain_approvers, strict=True)
-        )
-        self.team_id = self.hr_creates_team(
-            self.chain["id"], CHAIN, self.chain_roles
-        )
+        self.chain_roles = dict(zip(CHAIN, self.chain_approvers, strict=True))
+        self.team = self.hr_creates_team(CHAIN, self.chain_roles)
+        self.chain = {"id": self.team["workflow"]}
+        self.team_id = self.team["id"]
         self.place_employee_on_team()
 
     def capture_events(self):
@@ -142,67 +139,49 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.addCleanup(_restore_consumers, previous)
         return events
 
-    def hr_configures_chain(self, roles):
-        """HR configures the approval chain through the real audited endpoint.
+    def hr_creates_team(self, roles, approvers):
+        """HR configures the team and its chain, then puts it into force.
 
-        The payload is the nested shape the API takes: a workflow owns ordered
-        *sections*, and each section names the role that may act on it.
+        This is the whole configuration sequence as the product now asks for it:
+        one request describes the team *and* the approval steps it follows,
+        because a chain is not a thing HR creates apart from a team. The people
+        who may act at each step are then staffed one person at a time, which is
+        its own audited action, and finally the team is activated — a validated
+        step, so a configuration still being built cannot affect anyone's
+        application.
+
+        Going through the real endpoints keeps the journey honest: an
+        activation the API refuses fails this test rather than being papered
+        over in a fixture.
         """
-        self.client.force_authenticate(user=self.hr)
-        response = self.client.post(
-            "/api/v1/workflows/",
-            {
-                "name": "Administration chain",
-                "employee_category": EmployeeProfile.Category.ADMINISTRATION,
-                "department": "",
-                "is_active": True,
-                "effective_from": timezone.localdate().isoformat(),
-                "sections": [
-                    {"order": index, "name": role.title(), "approver_role": role}
-                    for index, role in enumerate(roles, start=1)
-                ],
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, 201, response.data)
-        return response.data
-
-    def hr_staffs_sections(self, workflow_id, roles, approvers):
-        """HR puts each approver on the section that has to name them.
-
-        A workflow alone routes nothing: the applicant's team names the workflow,
-        and each section resolves to the people on it, minus the applicant.
-        Doing this through the real endpoints keeps the journey end-to-end —
-        this is the configuration an HR user actually performs, not a hand-built
-        fixture.
-        """
-        sections = {
-            section.approver_role.code: section.id
-            for section in Workflow.objects.get(pk=workflow_id).sections.all()
-        }
-        for role in roles:
-            response = self.client.post(
-                "/api/v1/section-members/",
-                {"section": sections[role], "user": approvers[role].id},
-                format="json",
-            )
-            self.assertEqual(response.status_code, 201, response.data)
-
-    def hr_creates_team(self, workflow_id, roles, approvers):
-        """HR creates the team the applicant's team points at."""
-        self.hr_staffs_sections(workflow_id, roles, approvers)
         self.client.force_authenticate(user=self.hr)
         response = self.client.post(
             "/api/v1/teams/",
             {
                 "name": "Administration team",
                 "description": "Administration approval chain",
-                "workflow": workflow_id,
+                "new_workflow": {
+                    "name": "Administration chain",
+                    "sections": [
+                        {
+                            "name": role.title(),
+                            "approver_role": role,
+                            "members": [approvers[role].id],
+                        }
+                        for role in roles
+                    ],
+                },
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        return response.data["id"]
+        self.assertEqual(response.data["status"], "draft")
+
+        activated = self.client.post(
+            f"/api/v1/teams/{response.data['id']}/activate/", format="json"
+        )
+        self.assertEqual(activated.status_code, 200, activated.data)
+        return response.data
 
     def place_employee_on_team(self):
         """Put the applicant on the team, the way HR does it."""

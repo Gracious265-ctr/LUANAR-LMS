@@ -13,8 +13,34 @@ export async function listSectionMembers(section: number): Promise<SectionMember
   return readAllPages<SectionMember>(`/api/hr/section-members/?section=${section}`);
 }
 
-export async function addSectionMember(section: number, user: number): Promise<void> {
-  await proxyWrite("/api/hr/section-members", "POST", { section, user });
+/**
+ * Every period a section has had, closed ones included. Shown on demand, not by
+ * default: the everyday question is "who can act now", and a roster listing
+ * people who left months ago is noise unless somebody is looking at the past.
+ */
+export async function listSectionMemberHistory(
+  section: number
+): Promise<SectionMember[]> {
+  return readAllPages<SectionMember>(
+    `/api/hr/section-members/?section=${section}&history=1`
+  );
+}
+
+/**
+ * Adds someone to a step, optionally starting later. Dated because a handover
+ * is a normal event: somebody takes over a step on a Monday, and the record has
+ * to say so from Monday rather than from the moment it was typed.
+ */
+export async function addSectionMember(
+  section: number,
+  user: number,
+  effectiveFrom?: string
+): Promise<void> {
+  await proxyWrite("/api/hr/section-members", "POST", {
+    section,
+    user,
+    ...(effectiveFrom ? { effective_from: effectiveFrom } : {}),
+  });
 }
 
 export async function removeSectionMember(id: number): Promise<void> {

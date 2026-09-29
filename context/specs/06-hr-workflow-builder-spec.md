@@ -1,5 +1,11 @@
 # Unit 6 — HR Workflow Builder
 
+> **Superseded.** This spec records what Unit 6 built. Standalone workflow
+> management has since been removed: a team owns its chain one-to-one, and the
+> chain is created and edited through the team instead. There is no
+> `/dashboard/hr-admin/workflows` screen, and `Workflow` is read-only over the
+> API and admin. For the current contract see `context/architecture.md` §12.12.
+
 ## Goal
 
 Create the HR approval-workflow configuration experience (build-plan §4,

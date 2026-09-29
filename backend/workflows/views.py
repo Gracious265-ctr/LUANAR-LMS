@@ -1,7 +1,9 @@
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import decorators, mixins, permissions, response, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework import serializers as drf_serializers
 from rest_framework import viewsets
@@ -34,6 +36,7 @@ from .serializers import (
     RoleAssignmentSerializer,
     SectionMemberSerializer,
     SectionMemberWriteSerializer,
+    TeamReadinessSerializer,
     TeamSerializer,
     WorkflowSerializer,
 )
@@ -45,27 +48,37 @@ from .services import (
     create_campus,
     acting_approver_map,
     approve_delegation,
+    activate_team,
     cancel_delegation,
     deactivate_approver_role,
+    deactivate_team,
     is_approver_user,
     reject_delegation,
     remove_role_assignment,
     remove_section_member,
+    validate_team,
 )
 
 
 class WorkflowViewSet(
     mixins.ListModelMixin,
-    mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """HR-only CRUD for approval workflows (no hard delete)."""
+    """Read-only. A chain is written through its team, never on its own.
+
+    Listing and fetching stay, because the team screens and the audit trail
+    both need to read a chain — a step's roster and the reason a chain changed
+    are things people look up, not just an implementation detail. But
+    ``POST``/``PATCH`` are gone: a chain is created with its team and edited
+    with it, so the only writer is the one that knows which team's
+    applications those steps govern. A write here would change routing for a
+    team the person editing never named.
+    """
 
     serializer_class = WorkflowSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    http_method_names = ["get", "head", "options"]
 
     def get_queryset(self):
         return Workflow.objects.prefetch_related(
@@ -391,13 +404,20 @@ class TeamViewSet(
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
+    viewsets.GenericViewSet
 ):
-    """HR-only CRUD for teams (no hard delete).
+    """HR-only CRUD for teams, plus their lifecycle actions (no hard delete).
 
-    Members are edited through :class:`SectionMemberViewSet` rather than as a nested
-    write, so adding or removing one person is its own atomic, audited action
-    instead of a whole-team overwrite.
+    A team is created in one pass, optionally with its whole approval chain, and
+    put into force by a separate validated action. Members are edited through
+    :class:`SectionMemberViewSet` rather than as a nested write, so adding or
+    removing one person is its own atomic, audited action instead of a
+    whole-team overwrite.
+
+    ``status`` is a three-state lifecycle, not a flag, so the list defaults to
+    the teams that are actually in force plus the drafts HR is still working on
+    (``?status=active``, ``?status=draft``, or ``?include_inactive=1`` for
+    everything) rather than hiding the half-built ones HR most needs to see.
     """
 
     serializer_class = TeamSerializer
@@ -405,14 +425,42 @@ class TeamViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        queryset = Team.objects.select_related("workflow", "campus").prefetch_related(
+        base = Team.objects.select_related("workflow", "campus").prefetch_related(
             "workflow__sections__approver_role",
             "workflow__sections__members__user",
             "workflow__sections__members",
         )
-        if self.request.query_params.get("include_inactive") != "1":
-            queryset = queryset.filter(is_active=True)
-        return queryset.order_by("name")
+        # Filters are for the *list*. A detail or action route must be able to
+        # reach a team whatever its status: a retired team is exactly the one HR
+        # needs to read, and refusing to return it would make the 404 the only
+        # way to learn a team had been retired.
+        if self.action != "list":
+            return base.order_by("name")
+
+        params = self.request.query_params
+        if params.get("include_inactive") == "1":
+            return base.order_by("name")
+        requested = params.get("status")
+        if requested is not None:
+            if requested not in Team.Status.values:
+                # A DRF ValidationError, not Django's: only the former is
+                # translated into a 400 by the exception handler, and an
+                # unhandled one would surface a typo'd filter as a 500.
+                raise drf_serializers.ValidationError(
+                    {
+                        "status": (
+                            f"'{requested}' is not a team status. Use "
+                            f"{', '.join(Team.Status.values)}."
+                        )
+                    }
+                )
+            base = base.filter(status=requested)
+        else:
+            base = base.exclude(status=Team.Status.INACTIVE)
+        campus = params.get("campus")
+        if campus:
+            base = base.filter(campus_id=positive_int(campus, "campus"))
+        return base.order_by("name")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -422,7 +470,16 @@ class TeamViewSet(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        team = serializer.save()
+        try:
+            team = serializer.save()
+        except TeamActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        except IntegrityError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(
             TeamSerializer(team, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
@@ -434,9 +491,76 @@ class TeamViewSet(
             instance, data=request.data, partial=kwargs.pop("partial", True)
         )
         serializer.is_valid(raise_exception=True)
-        team = serializer.save()
+        try:
+            team = serializer.save()
+        except TeamActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(
             TeamSerializer(team, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="validate")
+    def validate_configuration(self, request, *args, **kwargs):
+        """Report whether this team could be activated, without changing it.
+
+        Side-effect free and available at any status, so HR can check a team that
+        is already in force and find out which step has lost its approver — the
+        question that otherwise only surfaces as a refused submission from the
+        employee. The same function gates the activate action, so the answer here
+        is exactly the answer activation would give.
+        """
+        team = self.get_object()
+        readiness = validate_team(team)
+        return Response(TeamReadinessSerializer(readiness).data)
+
+    @action(detail=True, methods=["post"], url_path="activate")
+    def activate(self, request, *args, **kwargs):
+        """Put a draft team into force, refusing a team that cannot route.
+
+        A refusal is a 400 carrying the full list of issues rather than the first
+        one, and the team stays a draft: the configuration HR wrote is intact and
+        every problem is named, so this is a to-do list and not a dead end.
+        """
+        team = self.get_object()
+        try:
+            activated = activate_team(team=team, actor=request.user)
+        except TeamActionError as exc:
+            payload: dict = {exc.field: [exc.message]}
+            if exc.issues:
+                payload["issues"] = [
+                    {
+                        "code": issue.code,
+                        "field": issue.field,
+                        "message": issue.message,
+                        "section": issue.section,
+                        "approver_role": issue.approver_role,
+                    }
+                    for issue in exc.issues
+                ]
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            TeamSerializer(activated, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="deactivate")
+    def deactivate(self, request, *args, **kwargs):
+        """Retire a team from routing, keeping its configuration and history.
+
+        Applications already inside the team's chain keep the stages they were
+        submitted with, so they can still be decided; only new submissions stop
+        following the team. There is no hard delete for that reason.
+        """
+        team = self.get_object()
+        try:
+            retired = deactivate_team(team=team, actor=request.user)
+        except TeamActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            TeamSerializer(retired, context=self.get_serializer_context()).data
         )
 
 
@@ -451,26 +575,41 @@ class SectionMemberViewSet(
     Membership is edited here rather than as part of a whole-workflow write, so
     adding or removing one person is its own atomic, audited action. A section
     accepts any number of members and the same person may be a member of several
-    sections; the only rule is "not twice in the same section".
+    sections; the only rule is "not twice in the same section at the same time".
+
+    The default view is the people who can act *now*. ``?history=1`` widens it to
+    every period, closed ones included, because a membership row is a record of
+    who was entitled to act and when — and a chain that once had an approver must
+    still be explainable after they have gone.
     """
 
-    serializer_class = SectionMemberWriteSerializer
+    serializer_class = SectionMemberSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
+    def get_serializer_class(self):
+        # Reads want the dates and the "is this in force right now" flag; writes
+        # are the smaller payload the service actually takes.
+        if self.action == "create":
+            return SectionMemberWriteSerializer
+        return SectionMemberSerializer
+
     def get_queryset(self):
-        queryset = SectionMember.objects.select_related(
-            "section", "section__workflow", "user"
-        )
-        section = self.request.query_params.get("section")
+        params = self.request.query_params
+        queryset = (
+            SectionMember.all_objects
+            if params.get("history") == "1"
+            else SectionMember.objects
+        ).select_related("section", "section__workflow", "user")
+        section = params.get("section")
         if section:
             queryset = queryset.filter(section_id=positive_int(section, "section"))
-        workflow = self.request.query_params.get("workflow")
+        workflow = params.get("workflow")
         if workflow:
             queryset = queryset.filter(
                 section__workflow_id=positive_int(workflow, "workflow")
             )
-        user = self.request.query_params.get("user")
+        user = params.get("user")
         if user:
             queryset = queryset.filter(user_id=positive_int(user, "user"))
         return queryset.order_by("section__order", "user__last_name")
@@ -499,7 +638,15 @@ class SectionMemberViewSet(
         )
 
     def destroy(self, request, *args, **kwargs):
-        remove_section_member(membership=self.get_object(), actor=request.user)
+        # Closing a membership can legitimately be refused — a period that has
+        # not started yet has to be removed outright instead of "ended", and a
+        # caller may pass an end date before the start.
+        try:
+            remove_section_member(membership=self.get_object(), actor=request.user)
+        except TeamActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

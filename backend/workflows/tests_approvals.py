@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from audit.models import AuditEntry
@@ -31,6 +32,7 @@ from .models import (
     ApplicationStage,
     ApprovalDecision,
     SectionMember,
+    Team,
     Workflow,
 )
 from .providers import (
@@ -296,14 +298,63 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         self.assertIn("inactive", str(ctx.exception))
 
-    def test_inactive_team_raises_config_error(self):
-        self.admin_team.is_active = False
-        self.admin_team.save(update_fields=["is_active"])
+    def test_retired_team_raises_config_error(self):
+        """A team that has been retired stops routing, and says so.
+
+        Retiring rather than deleting is why the team still exists: the
+        application is pointed at it and the stages that prove who could decide
+        it are its configuration.
+        """
+        self.admin_team.status = Team.Status.INACTIVE
+        self.admin_team.save(update_fields=["status"])
         with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
         self.assertIn("inactive", str(ctx.exception))
+
+    def test_draft_team_raises_config_error(self):
+        """A team still being configured must not route anything.
+
+        This is the case the boolean could not express: the team exists and its
+        workflow is live, but HR has not finished staffing it, so routing to it
+        would strand the employee at a step with nobody to act.
+        """
+        self.admin_team.status = Team.Status.DRAFT
+        self.admin_team.save(update_fields=["status"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("still being set up", str(ctx.exception))
+
+    def test_a_team_that_has_not_started_routing_raises_config_error(self):
+        self.admin_team.effective_from = timezone.localdate() + timedelta(days=7)
+        self.admin_team.save(update_fields=["effective_from"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("does not start until", str(ctx.exception))
+
+    def test_a_team_whose_window_has_closed_raises_config_error(self):
+        self.admin_team.effective_to = timezone.localdate() - timedelta(days=1)
+        self.admin_team.save(update_fields=["effective_to"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("stopped routing applications on", str(ctx.exception))
+
+    def test_a_team_inside_its_window_still_routes(self):
+        """A bounded window is a way to retire a team on a date, not to break it."""
+        self.admin_team.effective_from = timezone.localdate() - timedelta(days=30)
+        self.admin_team.effective_to = timezone.localdate() + timedelta(days=30)
+        self.admin_team.save(update_fields=["effective_from", "effective_to"])
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=self.employee)
+        )
+        self.assertTrue(definitions)
 
     def test_a_workflow_with_no_sections_raises_config_error(self):
         """A team always points at a workflow, but a workflow may be empty.
