@@ -5,11 +5,13 @@ for a submitted leave application. It is the single point of swappability:
 :func:`get_workflow_provider` reads ``settings.WORKFLOW_PROVIDER``.
 
 The default is :class:`DatabaseWorkflowProvider`, which resolves the applicant's
-**team** to the one workflow that team uses, and maps its ``WorkflowStage`` rows
-into ``StageDefinition`` objects. Each stage's approver is found by
-:func:`resolve_stage_approver`: the team member holding that role, or — only when
-the team has none and the role is institution-wide — the role's single
-institution-wide holder. The provider is pure data (no writes): it returns
+**team** to the one workflow that team uses, and maps its ``Section`` rows into
+``StageDefinition`` objects. Each section's approvers are found by
+:func:`resolve_section_approvers`: the section's active members with the applicant
+removed, or — only when the section has no members and its role is
+institution-wide — the role's single institution-wide holder. A section is a set
+of people rather than one, because the application is decided by whichever member
+acts first. The provider is pure data (no writes): it returns
 planned stages only. The assignment service
 (``workflows.services.assign_workflow``) validates them and materialises them as
 ``ApplicationStage`` rows.
@@ -26,7 +28,7 @@ from django.utils.module_loading import import_string
 
 from users.models import User
 
-from .models import ApproverRole, RoleAssignment, TeamMember
+from .models import ApproverRole, RoleAssignment, SectionMember
 
 
 class WorkflowConfigError(ValueError):
@@ -35,15 +37,22 @@ class WorkflowConfigError(ValueError):
 
 @dataclass(frozen=True)
 class StageDefinition:
-    """One planned stage returned by a workflow provider."""
+    """One planned stage returned by a workflow provider.
+
+    ``approver_user_ids`` is the set of people entitled to act on the stage — a
+    section is resolved by whoever acts first, so it is a set, not a person. It
+    is never empty: a section nobody can act for is a configuration error and is
+    refused at resolution time rather than routed to a fallback (invariant 12.7).
+    """
 
     order: int
     role: str
     role_label: str
-    approver_user_id: int | None = None
+    approver_user_ids: tuple[int, ...] = ()
     role_id: int | None = None
     history_scope: str | None = None
     handles_cancellation: bool = False
+    section_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,7 +69,7 @@ class CancellationStageSpec:
     order: int
     role: str
     role_label: str
-    approver_user_id: int | None = None
+    approver_user_ids: tuple[int, ...] = ()
 
 
 class WorkflowProvider(Protocol):
@@ -105,44 +114,73 @@ def _institution_wide_holder_ids(role: ApproverRole) -> list[int]:
     )
 
 
-def resolve_stage_approver(role: ApproverRole, team) -> int:
-    """The user who approves ``role`` for a member of ``team``, or raise.
+def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple[int, ...]:
+    """The people entitled to act for ``section``, or raise.
 
     The single authoritative resolution algorithm:
 
-    1. The team's member holding the role wins whenever there is one. The
-       ``(team, role)`` unique constraint guarantees at most one, so team
-       membership is unambiguous.
-    2. Only when the team has no member for the role, and the role is
-       institution-wide, does the global holder decide — and then there must be
-       exactly one.
+    1. The section's active members, minus the applicant. A section may name any
+       number of members, and the application is decided by whichever of them
+       acts first — so this is a set and its size is not a defect. The applicant
+       is removed here, at resolution time, so an approver can never be the
+       approver of their own leave no matter which surface asks later
+       (invariant 12.3).
+    2. Only when the section has no member **at all** and its role is
+       institution-wide does the global holder decide — and then there must be
+       exactly one, because a global fallback is not a race anyone can see.
     3. Otherwise the configuration is incomplete and the submission is refused.
 
-    Every error names the role, names the team where one exists, and says what
-    HR has to do about it.
-    """
-    membership = TeamMember.objects.filter(team=team, role=role).select_related(
-        "user"
-    ).first()
-    if membership is not None:
-        return membership.user_id
+    The applicant exclusion in step 1 deliberately does not change *which* branch
+    is taken. A section whose only member is the applicant is a section that has
+    a member, so it does not fall through to the global holder: falling through
+    would hand the applicant's own leave to a global holder who may be the very
+    person who was excluded, or would let a global holder approve for a step HR
+    deliberately staffed. The "only member is the applicant" case therefore gets
+    its own error naming the real fix.
 
-    if role.is_institution_wide:
-        holders = _institution_wide_holder_ids(role)
-        if len(holders) == 1:
-            return holders[0]
-        if not holders:
+    Every error names the role, names the section, and says what HR has to do
+    about it.
+    """
+    all_members = tuple(
+        SectionMember.objects.filter(
+            section=section, user__is_active=True
+        )
+        .order_by("user_id")
+        .values_list("user_id", flat=True)
+    )
+    if not all_members:
+        role = section.approver_role
+        if role.is_institution_wide:
+            holders = _institution_wide_holder_ids(role)
+            if len(holders) == 1:
+                return (holders[0],)
+            if not holders:
+                raise WorkflowConfigError(
+                    f'The "{section.name}" section has no members, and the '
+                    f"{role.label} role has no active holder. Add someone to the "
+                    "section, or ask HR to assign one."
+                )
             raise WorkflowConfigError(
-                f"The {role.label} role has no active holder. Ask HR to assign one."
+                f'The "{section.name}" section has no members, and the '
+                f"{role.label} role has multiple active holders. Add someone to "
+                "the section, or ask HR to designate exactly one."
             )
         raise WorkflowConfigError(
-            f"The {role.label} role has multiple active holders. Ask HR to "
-            "designate exactly one."
+            f'The "{section.name}" section has no members. Add at least one '
+            "person who can act for it."
         )
 
+    members = all_members
+    if applicant_id is not None:
+        members = tuple(uid for uid in members if uid != applicant_id)
+    if members:
+        return members
+
     raise WorkflowConfigError(
-        f"The {role.label} role has no holder on the {team.name} team. Add a "
-        "member with this role, or make the role institution-wide."
+        f'The only member of the "{section.name}" section is the applicant '
+        "themself, and an approver cannot approve their own leave. Add "
+        "another member to the section, or ask Human Resources to appoint "
+        "them to a different approver role."
     )
 
 
@@ -201,6 +239,10 @@ class SnapshotStagesMixin:
         rather than on a role name, so an application submitted while a role
         handled cancellations keeps that behaviour after HR retires it from the
         role, and one submitted before it gained the flag never picks it up.
+
+        The approvers come from each stage's ``eligible_approvers`` snapshot,
+        not from ``assigned_approver``: a section is resolved by whoever acts
+        first, and ``assigned_approver`` is null until somebody does.
         """
         from .models import ApplicationStage
 
@@ -211,34 +253,36 @@ class SnapshotStagesMixin:
                 handles_cancellation=True,
             )
             .order_by("stage_order")
-            .only(
-                "stage_order",
-                "role",
-                "role_label",
-                "assigned_approver_id",
-            )
+            .only("stage_order", "role", "role_label")
         )
         return [
             CancellationStageSpec(
                 order=stage.stage_order,
                 role=stage.role,
                 role_label=stage.role_label or stage.role,
-                approver_user_id=stage.assigned_approver_id,
+                approver_user_ids=stage.eligible_approver_ids(),
             )
             for stage in stages
         ]
 
     def get_workflow_member_user_ids(self, application: Any) -> list[int]:
-        """Every user in the original workflow snapshot (event recipients)."""
-        from .models import ApplicationStage
+        """Every user in the original workflow snapshot (event recipients).
+
+        Reads the ``eligible_approvers`` snapshot rather than
+        ``assigned_approver``: a section is resolved by whoever acts first, so
+        ``assigned_approver`` is null until somebody does and would leave the
+        undecided members of every chain out of the recipient list.
+        """
+        from .models import ApplicationStage, ApplicationStageApprover
 
         return list(
-            ApplicationStage.objects.filter(
-                application=application,
-                submission_cycle=_chain_cycle(application),
+            ApplicationStageApprover.objects.filter(
+                stage__application=application,
+                stage__submission_cycle=_chain_cycle(application),
             )
-            .order_by("stage_order")
-            .values_list("assigned_approver_id", flat=True)
+            .order_by("user_id")
+            .values_list("user_id", flat=True)
+            .distinct()
         )
 
 
@@ -246,8 +290,9 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
     """Workflow provider backed by the real HR team and role configuration.
 
     The applicant's :class:`~workflows.models.Team` names the workflow; the
-    workflow's ordered stages name the roles; and each role is resolved to a
-    person by :func:`resolve_stage_approver`.
+    workflow's ordered :class:`~workflows.models.Section` rows are its steps; and
+    each section's members are resolved to a set of people by
+    :func:`resolve_section_approvers`, with the applicant removed.
     """
 
     def get_stage_definitions(self, application: Any) -> list[StageDefinition]:
@@ -265,8 +310,8 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         workflow = team.workflow
         if workflow is None:
             raise WorkflowConfigError(
-                f"The {team.name} team has no approval workflow. Ask HR to set "
-                "one on the team."
+                f"The {team.name} team has no approval workflow. Ask HR to create "
+                "one for it, with at least one section."
             )
         if not workflow.is_active:
             raise WorkflowConfigError(
@@ -283,26 +328,33 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 "earlier, or to point the team at an active workflow."
             )
 
-        stages = list(
-            workflow.stages.order_by("order").select_related("approver_role")
+        sections = list(
+            workflow.sections.filter(is_active=True)
+            .order_by("order")
+            .select_related("approver_role")
+            .prefetch_related("members__user")
         )
-        if not stages:
+        if not sections:
             raise WorkflowConfigError(
-                f"Workflow '{workflow.name}' has no approval stages."
+                f"Workflow '{workflow.name}' has no active approval sections."
             )
 
+        applicant_id = getattr(application, "employee_id", None)
         definitions: list[StageDefinition] = []
-        for stage in stages:
-            role = stage.approver_role
+        for section in sections:
+            role = section.approver_role
             definitions.append(
                 StageDefinition(
-                    order=stage.order,
+                    order=section.order,
                     role=role.code,
                     role_label=role.label,
-                    approver_user_id=resolve_stage_approver(role, team),
+                    approver_user_ids=resolve_section_approvers(
+                        section, applicant_id
+                    ),
                     role_id=role.pk,
                     history_scope=role.history_scope,
                     handles_cancellation=role.handles_cancellation,
+                    section_id=section.pk,
                 )
             )
         return definitions

@@ -19,7 +19,7 @@ from leave.models import LeaveApplication
 from leave.providers.fixture import FixtureRulesProvider
 from leave.services.submission import submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, TODAY, make_user
-from workflows.models import ApplicationStage
+from workflows.models import ApplicationStage, ApplicationStageApprover
 from workflows.services import assign_workflow
 
 from leave.cancellations.models import (
@@ -310,8 +310,12 @@ class RequestServiceTests(CancellationBase):
                 CancellationApprovalStage.Status.WAITING,
             ],
         )
-        self.assertEqual(stages[0].approver_id, self.supervisor.id)
-        self.assertEqual(stages[1].approver_id, self.hod.id)
+        # A cancellation stage is a section: nobody owns it until somebody
+        # acts, so the open stage carries its snapshot and a null claimer.
+        self.assertIsNone(stages[0].approver_id)
+        self.assertIsNone(stages[1].approver_id)
+        self.assertEqual(stages[0].eligible_approver_ids(), (self.supervisor.id,))
+        self.assertEqual(stages[1].eligible_approver_ids(), (self.hod.id,))
         # The application stays approved until the final approval.
         app.refresh_from_db()
         self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
@@ -396,8 +400,18 @@ class DecideServiceTests(CancellationBase):
             )
 
     def test_self_decide_forbidden(self):
+        # The applicant is excluded from their own sections at materialisation,
+        # so this guard is defence in depth against a row that predates it. A
+        # colleague on the section is what lets the chain route at all.
         self.stub.register_employee(self.supervisor)
+        self.stub.workflow.register_approver(
+            "supervisor", make_user("colleague@luanar", role="supervisor")
+        )
         app = self.make_approved(employee=self.supervisor)
+        ApplicationStageApprover.objects.create(
+            stage=app.stages.get(stage_order=1),
+            user=self.supervisor,
+        )
         request = submit_cancellation(
             user=self.supervisor,
             application_id=app.pk,
@@ -965,8 +979,19 @@ class ApproverCancellationApiTests(CancellationBase):
         self.assertEqual(response.data["code"], "comment_required")
 
     def test_self_decision_returns_403_self_application(self):
+        # Defence in depth, as in the service-level case: the applicant is not
+        # in the cancellation stage's snapshot, so the guard is only reachable
+        # by putting them back. A colleague on the section is what lets the
+        # chain route at all.
         self.stub.register_employee(self.supervisor)
+        self.stub.workflow.register_approver(
+            "supervisor", make_user("colleague@luanar", role="supervisor")
+        )
         app = self.make_approved(employee=self.supervisor)
+        ApplicationStageApprover.objects.create(
+            stage=app.stages.get(stage_order=1),
+            user=self.supervisor,
+        )
         submit_cancellation(
             user=self.supervisor,
             application_id=app.pk,
@@ -1008,3 +1033,137 @@ class ApproverCancellationApiTests(CancellationBase):
             f"/api/v1/approvals/cancellations/{request.id}/"
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class SharedSectionCancellationTests(CancellationBase):
+    """A cancellation stage is a section, so it is any-of too.
+
+    The supervisor section with two members behaves like a leave stage with two
+    members: both see the request, either may decide it, and the decision
+    records who acted.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.deputy = make_user(
+            "deputy@luanar", role="supervisor", first_name="Dep", last_name="Ut"
+        )
+        self.stub.workflow.register_approver("supervisor", self.deputy)
+
+    def _open_request(self):
+        app = self.make_approved()
+        submit_cancellation(
+            user=self.employee,
+            application_id=app.pk,
+            reason="Plans changed for the celebration",
+            confirm=True,
+            expected_action="request",
+            today=TODAY,
+        )
+        return CancellationRequest.objects.get(
+            application=app, status=CancellationRequest.Status.PENDING
+        )
+
+    def test_both_members_hold_the_snapshot(self):
+        request = self._open_request()
+        stage = request.stages.get(order=1)
+        self.assertEqual(
+            stage.eligible_approver_ids(),
+            tuple(sorted([self.supervisor.id, self.deputy.id])),
+        )
+        self.assertIsNone(stage.approver_id)
+
+    def test_either_member_may_decide(self):
+        request = self._open_request()
+        # The deputy, who is not the section's lowest-id member, still decides.
+        decided = decide_cancellation(
+            user=self.deputy,
+            request_id=request.pk,
+            decision=DECISION_APPROVE,
+            comment="",
+            stage_version=1,
+            today=TODAY,
+        )
+        stage = decided.stages.get(order=1)
+        self.assertEqual(stage.status, CancellationApprovalStage.Status.APPROVED)
+        # Acting claims the stage, which is when the approver becomes known.
+        self.assertEqual(stage.approver_id, self.deputy.id)
+
+    def test_the_loser_of_a_contested_stage_cannot_decide_afterwards(self):
+        request = self._open_request()
+        decide_cancellation(
+            user=self.supervisor,
+            request_id=request.pk,
+            decision=DECISION_REJECT,
+            comment="Not this time.",
+            stage_version=1,
+            today=TODAY,
+        )
+        with self.assertRaises(RequestNotPendingError):
+            decide_cancellation(
+                user=self.deputy,
+                request_id=request.pk,
+                decision=DECISION_REJECT,
+                comment="Second opinion.",
+                stage_version=2,
+                today=TODAY,
+            )
+
+    def test_a_later_stage_member_cannot_act_early(self):
+        request = self._open_request()
+        with self.assertRaises(NotCurrentApproverError):
+            decide_cancellation(
+                user=self.hod,
+                request_id=request.pk,
+                decision=DECISION_APPROVE,
+                comment="",
+                stage_version=1,
+                today=TODAY,
+            )
+
+    def test_both_members_see_the_request_in_the_pending_tab(self):
+        request = self._open_request()
+        for member in (self.supervisor, self.deputy):
+            self.client.force_authenticate(user=member)
+            response = self.client.get(APPROVER_LIST_URL)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                [row["request_id"] for row in response.data["results"]],
+                [str(request.pk)],
+                member.username,
+            )
+
+    def test_only_the_actor_sees_it_in_the_decided_tab(self):
+        request = self._open_request()
+        decide_cancellation(
+            user=self.deputy,
+            request_id=request.pk,
+            decision=DECISION_REJECT,
+            comment="Not this time.",
+            stage_version=1,
+            today=TODAY,
+        )
+        for member, expected in (
+            (self.deputy, 1),
+            (self.supervisor, 0),
+        ):
+            self.client.force_authenticate(user=member)
+            response = self.client.get(
+                f"{APPROVER_LIST_URL}?tab=decided"
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                len(response.data["results"]), expected, member.username
+            )
+
+    def test_the_stepper_names_the_snapshot_until_somebody_acts(self):
+        request = self._open_request()
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.get(
+            f"/api/v1/approvals/cancellations/{request.id}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stage = response.data["request"]["stages"][0]
+        self.assertIsNone(stage["approver_name"])
+        self.assertEqual(len(stage["eligible_approvers"]), 2)
+        self.assertTrue(response.data["can_decide"])

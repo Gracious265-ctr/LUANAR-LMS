@@ -55,7 +55,7 @@ export default async function TeamsPage() {
           <p className="text-text-secondary">
             The routing unit: an employee belongs to a team, and that
             team&apos;s workflow decides who approves the application. Staff each
-            role the workflow asks for.
+            section the workflow asks for.
           </p>
         </div>
         <Link
@@ -105,8 +105,6 @@ export default async function TeamsPage() {
                       {[
                         team.description,
                         team.campus_name && `Campus: ${team.campus_name}`,
-                        team.workflow_name ||
-                          "Institution-wide workflow",
                         `${team.member_count} member${team.member_count === 1 ? "" : "s"}`,
                       ]
                         .filter(Boolean)

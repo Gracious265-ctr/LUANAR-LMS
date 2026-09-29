@@ -41,7 +41,7 @@ export function ApproverRoleForm({
 
     try {
       if (role) {
-        // The code is the role's identity in saved workflow stages and team
+        // The code is the role's identity in saved workflow sections and team
         // memberships, so it is never rewritten: an existing role is patched
         // without it.
         await updateApproverRole(role.id, { ...input, code: undefined });
@@ -103,8 +103,8 @@ export function ApproverRoleForm({
         />
         <p className="mt-1 text-xs text-text-muted">
           {role
-            ? "The code cannot change once saved: workflow stages and team memberships store it."
-            : "Lowercase letters, numbers, and hyphens. This is what workflow stages store."}
+            ? "The code cannot change once saved: workflow sections and team memberships store it."
+            : "Lowercase letters, numbers, and hyphens. This is what workflow sections store."}
         </p>
       </div>
 

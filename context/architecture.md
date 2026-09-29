@@ -498,29 +498,11 @@ The employee identity must come from the authenticated backend identity, not fro
 
 **A leave application must never skip a mandatory configured approval stage.**
 
-An application can move to the next stage only after the current stage has completed its required action.
+An application can move to the next stage only after the current stage has completed its required action. A workflow is an ordered list of **sections**; each section is a step that runs in exactly that order, and advancement is always to the immediately following section. There is **no bypass and no `skipped` state**: a step is either not reached yet, the open one, or decided.
 
-**Sole exception — the applicant's own position in the queue.** An employee who
-also holds an approver role must never be the approver of record for their own
-leave. Routing therefore **starts after the applicant's last stage** in the chain
-and never travels backwards: every stage at or before that position is bypassed,
-including lower-level stages whose approver is not the applicant, and only the
-stages after it are ever activated. Given `supervisor → HOD → Registrar`, a
-Supervisor's application starts at the HOD, the HOD's starts at the Registrar
-(never at the Supervisor), and a Registrar's has no later approver. Routing is
-strictly forward-only and never restarts. Bypassed stages are kept in the chain as
-`skipped` — they never confer review access on their approver, because the
-application never reached them — and are recorded in the audit log as
-`STAGE_SKIPPED` with the reason per stage (`applicant_is_approver` or
-`before_applicant_stage`).
+The one thing that is removed from a chain is a **person**, not a step. The applicant is excluded from every section's eligibility at submission — a person can never sit in judgment of their own leave — so the question "who can act at this step" is answered from the section's members **minus the applicant**. Because a section holds several members and the first of them to act decides it, an applicant whose own section still has a colleague simply has that colleague decide instead of the step being skipped.
 
-Because a role resolves to a single approver, an application whose **configured
-final stage** resolves to the applicant — that is, there is no stage after the
-applicant's last one — can never be signed off by anyone. Such an
-application is not routed at all: submission is refused with `workflow_unavailable`
-(422) and the request never leaves the employee. The advance-time refusal (409
-`workflow_unavailable`) remains only as defence in depth for applications routed
-before this rule, or whose workflow changed after submission.
+A section that would be left with no eligible member is a configuration error, never a silent bypass: an application whose chain contains such a step is refused at submission with `workflow_unavailable` (422), and the request never leaves the employee. The advance-time refusal (409 `workflow_unavailable`) remains only as defence in depth for applications whose workflow changed after submission.
 
 ---
 
@@ -589,11 +571,12 @@ The audit record must identify the actor, action, timestamp, and relevant previo
 **An approver role is never deleted, and no historical record may be left unrenderable because HR changed the configuration.**
 
 * A role is retired, never removed: the API exposes retirement (`DELETE` → `is_active=False`), and the foreign keys that reference it are `PROTECT`.
-* Retirement is refused while an active workflow, a team, or a holder still needs the role, and the refusal names each blocker. Configured state is never left dangling.
-* Renaming a role must not rewrite the past. Stages, decisions, and cancellations keep the code and label they were routed with.
-* A team has at most one member per role and each person holds at most one role on a team (`(team, role)` and `(team, user)` are unique), and at most one institution-wide holding per person per role (`(user, role)` is unique). Both halves are what make "who approves this" resolvable to a single person.
-* Ambiguity is refused, never guessed: a stage that resolves to two or more institution-wide holders, or to none, aborts the submission and says which role and which team HR must fix.
-* A retired role confers no approver status, and a stage naming it cannot be activated.
+* Retirement is refused while an active workflow or a holder still needs the role, and the refusal names each blocker. Configured state is never left dangling.
+* Renaming a role must not rewrite the past. Sections, decisions, and cancellations keep the code and label they were routed with.
+* A section is identified by its **(role, name)** pair, so reordering a workflow keeps each section's members. A section whose role *or* name changes is a different step and is rebuilt empty — the old roster is deliberately never handed to a new role without HR asking.
+* Membership is held **on the section**, not on the team: a team's workflow's sections are shared, so there is exactly one place a person is recorded as able to act, and every team on the same workflow sees the same roster.
+* A section accepts several members and the first to act claims it; the same person may sit on several sections, but not twice on the one section. A team with no workflow routes nothing, so a workflow is **required** on a team.
+* A retired role confers no approver status, a section naming it cannot be activated, and its members are removed from routing.
 
 ---
 

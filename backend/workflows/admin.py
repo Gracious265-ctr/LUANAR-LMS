@@ -9,10 +9,10 @@ from .models import (
     Delegation,
     Reassignment,
     RoleAssignment,
+    Section,
+    SectionMember,
     Team,
-    TeamMember,
     Workflow,
-    WorkflowStage,
 )
 from .services import (
     approver_role_codes_for,
@@ -21,8 +21,8 @@ from .services import (
 )
 
 
-class WorkflowStageForm(forms.ModelForm):
-    """Inline form for one workflow stage.
+class SectionForm(forms.ModelForm):
+    """Inline form for one workflow section.
 
     ``approver_role`` is chosen by ``code`` rather than by primary key, matching
     the workflow API: a saved workflow reads "hod", and HR picks a role by what it
@@ -36,13 +36,13 @@ class WorkflowStageForm(forms.ModelForm):
     )
 
     class Meta:
-        model = WorkflowStage
+        model = Section
         fields = "__all__"
 
     def clean_order(self):
         order = self.cleaned_data.get("order")
         if order is not None and order < 1:
-            raise ValidationError("Stage order must be 1 or greater.")
+            raise ValidationError("Section order must be 1 or greater.")
         return order
 
     def clean_approver_role(self):
@@ -55,31 +55,40 @@ class WorkflowStageForm(forms.ModelForm):
         return role
 
 
-class WorkflowStageInlineFormSet(BaseInlineFormSet):
-    """Inline formset that rejects repeated approver roles in one workflow."""
+class SectionInlineFormSet(BaseInlineFormSet):
+    """Rejects a workflow whose sections do not have distinct positions.
+
+    ``Section``'s unique constraint on ``(workflow, order)`` would catch this
+    too, but as a database error at save time. Validating in the formset names
+    the problem where HR can act on it, and does so for the whole form rather
+    than failing on whichever row happened to be written first.
+    """
 
     def clean(self):
         super().clean()
-        roles = []
-        for form in self.forms:
-            if not hasattr(form, "cleaned_data") or not form.cleaned_data:
-                continue
-            data = form.cleaned_data
-            if data.get("DELETE"):
-                continue
-            role = data.get("approver_role")
-            if role and role in roles:
-                raise ValidationError(
-                    "An approver role can appear only once in a workflow."
-                )
-            if role:
-                roles.append(role)
+        orders = [
+            form.cleaned_data.get("order")
+            for form in self.forms
+            if form.cleaned_data and not form.cleaned_data.get("DELETE")
+        ]
+        duplicates = {o for o in orders if o is not None and orders.count(o) > 1}
+        if duplicates:
+            raise ValidationError(
+                "Each approval section needs its own position. These numbers are "
+                f"used more than once: {', '.join(str(o) for o in sorted(duplicates))}."
+            )
 
 
-class WorkflowStageInline(admin.TabularInline):
-    model = WorkflowStage
-    form = WorkflowStageForm
-    formset = WorkflowStageInlineFormSet
+class SectionInline(admin.TabularInline):
+    """Workflow sections, in approval order.
+
+    A repeated approver role is deliberately allowed: the same person can sit at
+    more than one point in a chain, which is the point of sections.
+    """
+
+    model = Section
+    form = SectionForm
+    formset = SectionInlineFormSet
     extra = 1
     min_num = 1
     validate_min = True
@@ -101,9 +110,9 @@ class WorkflowAdminForm(forms.ModelForm):
                 cleaned.get("employee_category") or "",
                 (cleaned.get("department") or "").strip(),
             )
-            stages = self.instance.stages.all() if self.instance.pk else []
+            sections = self.instance.sections.all() if self.instance.pk else []
             issues = validate_workflow_for_activation(
-                self.instance.pk, scope, stages
+                self.instance.pk, scope, sections
             )
             if issues:
                 raise ValidationError(
@@ -121,25 +130,27 @@ class WorkflowAdmin(admin.ModelAdmin):
         "department",
         "effective_from",
         "is_active",
-        "stage_summary",
+        "section_summary",
     )
     list_filter = ("employee_category", "is_active")
     search_fields = ("name", "department")
     ordering = ("name",)
-    inlines = [WorkflowStageInline]
+    inlines = [SectionInline]
 
     def get_queryset(self, request):
         # ``stages__approver_role`` as well: the summary renders role labels, so
         # without it the list page runs one query per stage.
-        return super().get_queryset(request).prefetch_related("stages__approver_role")
+        return super().get_queryset(request).prefetch_related(
+            "sections__approver_role"
+        )
 
-    def stage_summary(self, obj):
+    def section_summary(self, obj):
         # ``approver_role`` is a related row now, so show its label rather than
         # the default ``__str__`` — the summary reads "Supervisor → HOD → …".
-        roles = [stage.approver_role.label for stage in obj.stages.all()]
-        return " \u2192 ".join(roles) if roles else "—"
+        labels = [section.approver_role.label for section in obj.sections.all()]
+        return " \u2192 ".join(labels) if labels else "—"
 
-    stage_summary.short_description = "Approval stages"
+    section_summary.short_description = "Approval sections"
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -290,35 +301,45 @@ class CampusAdmin(admin.ModelAdmin):
         return False
 
 
-class TeamMemberInline(admin.TabularInline):
-    model = TeamMember
-    extra = 1
-    raw_id_fields = ("user",)
-
-
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "campus", "workflow", "member_count", "is_active")
+    list_display = ("name", "code", "campus", "workflow", "is_active")
     list_filter = ("is_active", "campus")
     search_fields = ("name", "code", "description")
     raw_id_fields = ("workflow", "campus")
     ordering = ("name",)
-    inlines = [TeamMemberInline]
-
-    @admin.display(description="Members")
-    def member_count(self, obj):
-        return obj.memberships.count()
 
     def has_delete_permission(self, request, obj=None):
         return False
 
 
-@admin.register(TeamMember)
-class TeamMemberAdmin(admin.ModelAdmin):
-    list_display = ("team", "user", "role", "created_at")
-    list_filter = ("role",)
-    search_fields = ("team__name", "user__first_name", "user__last_name", "user__email")
-    raw_id_fields = ("team", "user")
+@admin.register(Section)
+class SectionAdmin(admin.ModelAdmin):
+    list_display = ("name", "workflow", "order", "approver_role", "member_count", "is_active")
+    list_filter = ("is_active", "workflow", "approver_role")
+    search_fields = ("name", "workflow__name")
+    raw_id_fields = ("workflow",)
+    ordering = ("workflow__name", "order")
+
+    @admin.display(description="Members")
+    def member_count(self, obj):
+        return obj.members.count()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SectionMember)
+class SectionMemberAdmin(admin.ModelAdmin):
+    list_display = ("section", "user", "created_at")
+    list_filter = ("section__workflow",)
+    search_fields = (
+        "section__name",
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+    )
+    raw_id_fields = ("section", "user")
 
 
 @admin.register(RoleAssignment)

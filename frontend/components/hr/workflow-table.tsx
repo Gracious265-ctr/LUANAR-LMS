@@ -72,8 +72,8 @@ export function WorkflowTable({ workflows }: { workflows: Workflow[] }) {
                 </span>
               </td>
               <td className="py-3 pr-4 text-text-secondary">
-                {workflow.stages
-                  .map((stage) => stage.approver_role_label)
+                {workflow.sections
+                  .map((section) => section.approver_role_label)
                   .join(" → ")}
               </td>
               <td className="py-3 text-right">

@@ -1,19 +1,32 @@
 import { apiClientUrl } from "./api-client";
 
+/**
+ * One person on one section of a team's workflow. A person may sit on several
+ * sections, so the list of sections they belong to travels with them.
+ */
 export interface TeamMember {
-  id: number;
-  team: number;
   user: number;
   user_name: string;
-  role: string;
-  role_label: string;
-  created_at: string;
+  user_email: string;
+  sections: { id: number; name: string; order: number }[];
+  roles: { id: number; code: string; label: string }[];
 }
 
 export interface TeamStageRole {
   id: number;
   code: string;
   label: string;
+}
+
+/** A team row's read-only summary of one step of the workflow it routes through. */
+export interface TeamSection {
+  id: number;
+  name: string;
+  order: number;
+  is_active: boolean;
+  approver_role: string;
+  approver_role_label: string;
+  member_count: number;
 }
 
 export interface Team {
@@ -23,13 +36,16 @@ export interface Team {
   description: string;
   campus: number | null;
   campus_name: string;
-  workflow: number | null;
+  /** Required: a team with no workflow routes nothing, so it cannot be saved without one. */
+  workflow: number;
   workflow_name: string;
   is_active: boolean;
   /** The roles this team's workflow asks for — the member role picker's options. */
   stage_roles: TeamStageRole[];
   member_count: number;
   members: TeamMember[];
+  /** The steps this team routes through, with how many people can act at each. */
+  sections: TeamSection[];
   created_at: string;
   updated_at: string;
 }
@@ -38,7 +54,7 @@ export interface TeamInput {
   name: string;
   description?: string;
   campus?: number | null;
-  workflow?: number | null;
+  workflow: number;
   is_active?: boolean;
 }
 

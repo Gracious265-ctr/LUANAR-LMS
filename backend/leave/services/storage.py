@@ -2,7 +2,9 @@ import unicodedata
 from pathlib import PurePosixPath
 from uuid import uuid4
 
+from httpx import HTTPStatusError
 from supabase import create_client
+from storage3.exceptions import StorageApiError
 
 from django.conf import settings
 
@@ -107,11 +109,29 @@ def signed_document_url(file_path: str) -> str:
     Signed URLs expire after ``SUPABASE_SIGNED_URL_EXPIRY`` seconds, so reads
     re-sign from the stored ``file_path`` rather than trusting a stale URL
     persisted at upload time.
+
+    A path the bucket cannot sign raises :class:`ValueError`, the same signal an
+    unconfigured client raises, because every caller already treats the two
+    identically: fall back to the URL stored on the row. A row can outlive its
+    object — a seeded row, an object removed out of band — and one such row must
+    not fail the listing that contains it. Only "no such object" (400/404) is
+    translated: a rejected key (401/403) or a broken bucket (5xx) is a real
+    misconfiguration and still raises.
     """
     client = get_supabase_client()
-    result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
-        file_path, settings.SUPABASE_SIGNED_URL_EXPIRY
-    )
+    try:
+        result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+            file_path, settings.SUPABASE_SIGNED_URL_EXPIRY
+        )
+    except (StorageApiError, HTTPStatusError) as exc:
+        status = getattr(exc, "status", None)
+        if status is None:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+        if str(status) in {"400", "404"} or getattr(exc, "code", None) == "not_found":
+            raise ValueError(
+                f"Stored document {file_path!r} is not in the storage bucket."
+            ) from exc
+        raise
     return result["signedURL"]
 
 

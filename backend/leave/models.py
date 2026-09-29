@@ -179,9 +179,12 @@ class LeaveApplication(models.Model):
         max_length=32, unique=True, null=True, blank=True
     )
 
-    # The approver who currently must act on this pending application. Set only
-    # by HR emergency reassignment (Unit 9) for now; Unit 21 (workflow routing)
-    # resolves and writes it as the responsible-approver spine.
+    # The approver who has actually taken up this pending application. A section
+    # is resolved by whoever acts first, so this is null while a stage is still
+    # open and is written the moment one of its eligible members decides (or is
+    # placed there by HR emergency reassignment). The people who may act are
+    # ``Application.current_stage.eligible_approvers`` — this field records who
+    # did, not who could.
     current_approver = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

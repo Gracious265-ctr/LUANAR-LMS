@@ -19,7 +19,7 @@ from .models import (
     Reassignment,
     RoleAssignment,
     Team,
-    TeamMember,
+    SectionMember,
     Workflow,
 )
 from .permissions import IsApproverRoleOrHR
@@ -32,7 +32,8 @@ from .serializers import (
     PendingApplicationSerializer,
     ReassignmentSerializer,
     RoleAssignmentSerializer,
-    TeamMemberSerializer,
+    SectionMemberSerializer,
+    SectionMemberWriteSerializer,
     TeamSerializer,
     WorkflowSerializer,
 )
@@ -49,7 +50,7 @@ from .services import (
     is_approver_user,
     reject_delegation,
     remove_role_assignment,
-    remove_team_member,
+    remove_section_member,
 )
 
 
@@ -67,7 +68,9 @@ class WorkflowViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        return Workflow.objects.prefetch_related("stages")
+        return Workflow.objects.prefetch_related(
+            "sections__approver_role", "sections__members__user"
+        )
 
 
 class DelegateCandidateSerializer(drf_serializers.ModelSerializer):
@@ -392,7 +395,7 @@ class TeamViewSet(
 ):
     """HR-only CRUD for teams (no hard delete).
 
-    Members are edited through :class:`TeamMemberViewSet` rather than as a nested
+    Members are edited through :class:`SectionMemberViewSet` rather than as a nested
     write, so adding or removing one person is its own atomic, audited action
     instead of a whole-team overwrite.
     """
@@ -403,7 +406,9 @@ class TeamViewSet(
 
     def get_queryset(self):
         queryset = Team.objects.select_related("workflow", "campus").prefetch_related(
-            "memberships__user", "memberships__role"
+            "workflow__sections__approver_role",
+            "workflow__sections__members__user",
+            "workflow__sections__members",
         )
         if self.request.query_params.get("include_inactive") != "1":
             queryset = queryset.filter(is_active=True)
@@ -435,24 +440,40 @@ class TeamViewSet(
         )
 
 
-class TeamMemberViewSet(
+class SectionMemberViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Membership of a team, in one role each."""
+    """Who can act for a section.
 
-    serializer_class = TeamMemberSerializer
+    Membership is edited here rather than as part of a whole-workflow write, so
+    adding or removing one person is its own atomic, audited action. A section
+    accepts any number of members and the same person may be a member of several
+    sections; the only rule is "not twice in the same section".
+    """
+
+    serializer_class = SectionMemberWriteSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self):
-        queryset = TeamMember.objects.select_related("team", "user", "role")
-        team = self.request.query_params.get("team")
-        if team:
-            queryset = queryset.filter(team_id=positive_int(team, "team"))
-        return queryset.order_by("team__name", "role__label")
+        queryset = SectionMember.objects.select_related(
+            "section", "section__workflow", "user"
+        )
+        section = self.request.query_params.get("section")
+        if section:
+            queryset = queryset.filter(section_id=positive_int(section, "section"))
+        workflow = self.request.query_params.get("workflow")
+        if workflow:
+            queryset = queryset.filter(
+                section__workflow_id=positive_int(workflow, "workflow")
+            )
+        user = self.request.query_params.get("user")
+        if user:
+            queryset = queryset.filter(user_id=positive_int(user, "user"))
+        return queryset.order_by("section__order", "user__last_name")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -471,14 +492,14 @@ class TeamMemberViewSet(
         except ValidationError as exc:
             return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
         return Response(
-            TeamMemberSerializer(
+            SectionMemberSerializer(
                 membership, context=self.get_serializer_context()
             ).data,
             status=status.HTTP_201_CREATED,
         )
 
     def destroy(self, request, *args, **kwargs):
-        remove_team_member(membership=self.get_object(), actor=request.user)
+        remove_section_member(membership=self.get_object(), actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

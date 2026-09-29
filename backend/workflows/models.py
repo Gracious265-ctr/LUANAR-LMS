@@ -98,8 +98,13 @@ class Team(models.Model):
 
     A team points at exactly one reusable :class:`Workflow`. At submission time
     the applicant's team is what selects the workflow — there is no
-    category/department matching — and the team's members are who actually hold
-    each role in that workflow.
+    category/department matching — and that workflow's
+    :class:`Section` rows are who may act at each step.
+
+    The workflow is **required**. A team with no workflow cannot route an
+    application, so making it optional only ever produced a team HR thought was
+    configured but which silently could not approve anything; refusing to create
+    it puts the problem where it can be fixed.
     """
 
     name = models.CharField(max_length=200, unique=True)
@@ -119,12 +124,10 @@ class Team(models.Model):
     workflow = models.ForeignKey(
         "workflows.Workflow",
         on_delete=models.PROTECT,
-        null=True,
-        blank=True,
         related_name="teams",
         help_text=(
-            "The approval workflow this team's members are routed through. "
-            "Blank means the team cannot route any application yet."
+            "The approval workflow this team is routed through. It owns the "
+            "sections, so its steps define who may act for this team."
         ),
     )
     is_active = models.BooleanField(default=True)
@@ -138,70 +141,39 @@ class Team(models.Model):
         return self.name
 
 
-class TeamMember(models.Model):
-    """One person's holding of one :class:`ApproverRole` within a team.
+class SectionMember(models.Model):
+    """One person eligible to act for a :class:`Section`.
 
-    At most one member per role per team, and at most one role per person per
-    team. A team that genuinely needs two people in the same role introduces a
-    second role rather than storing two rows here.
+    A section may name any number of members: it is resolved by whoever acts
+    first, so several people may hold the same section. The same person may be a
+    member of several sections at once, which is how an approver takes part in
+    more than one step of a chain without the chain needing a second role for
+    them.
+
+    A member holds no role of its own — the role belongs to the section. A member
+    *acts as* the section's role, so the snapshot an in-flight application is
+    judged by (:class:`ApplicationStage`) is fixed at materialisation and cannot
+    shift when HR edits membership later (invariant 12.5).
     """
 
-    team = models.ForeignKey(
-        Team,
-        on_delete=models.CASCADE,
-        related_name="memberships",
-        help_text=(
-            "The team this role is held in. Note the reverse name: the employees "
-            "who belong to a team are Team.members, while the roles they hold "
-            "inside it are Team.memberships."
-        ),
+    section = models.ForeignKey(
+        "workflows.Section", on_delete=models.CASCADE, related_name="members"
     )
     user = models.ForeignKey(
-        User, on_delete=models.PROTECT, related_name="team_memberships"
-    )
-    role = models.ForeignKey(
-        ApproverRole, on_delete=models.PROTECT, related_name="team_memberships"
+        User, on_delete=models.PROTECT, related_name="section_memberships"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["team", "role"]
+        ordering = ["section", "user"]
         constraints = [
             models.UniqueConstraint(
-                fields=["team", "user"], name="teammember_team_user_unique"
-            ),
-            models.UniqueConstraint(
-                fields=["team", "role"], name="teammember_team_role_unique"
-            ),
+                fields=["section", "user"], name="sectionmember_section_user_unique"
+            )
         ]
 
     def __str__(self) -> str:
-        return f"{self.user.get_full_name()} — {self.role.label} ({self.team.name})"
-
-    def clean(self) -> None:
-        """Reject a role the team's workflow does not actually use.
-
-        A member holding a role the workflow never asks for can never be routed
-        an application, so the row would be dead configuration. The error names
-        the role and the workflow so HR can see exactly what to fix.
-        """
-        super().clean()
-        if self.role_id is None or self.team_id is None:
-            return
-        team = self.team
-        if team.workflow_id is None:
-            return
-        used = team.workflow.stages.filter(approver_role_id=self.role_id).exists()
-        if not used:
-            raise ValidationError(
-                {
-                    "role": (
-                        f'"{self.role.label}" is not a stage of the '
-                        f'"{team.workflow.name}" workflow this team uses. Add the '
-                        "role to the workflow's stages first, then add the member."
-                    )
-                }
-            )
+        return f"{self.user.get_full_name()} — {self.section.name}"
 
 
 class RoleAssignment(models.Model):
@@ -296,35 +268,51 @@ class Workflow(models.Model):
         return f"{self.name} ({scope})"
 
 
-class WorkflowStage(models.Model):
-    """One mandatory approver step in a workflow's sequence."""
+class Section(models.Model):
+    """One mandatory approval step in a workflow, with its own approvers.
+
+    A workflow is a sequence of sections. Each section names the role its
+    approvers act as and holds the people who may act for it; the application
+    moves on when one of them decides. A role may appear in more than one
+    section, so one person can sit at several points in the same chain.
+    """
 
     workflow = models.ForeignKey(
-        Workflow, on_delete=models.CASCADE, related_name="stages"
+        Workflow, on_delete=models.CASCADE, related_name="sections"
+    )
+    name = models.CharField(
+        max_length=200,
+        help_text="What this step is for, as HR labels it (e.g. 'Departmental review').",
     )
     order = models.PositiveIntegerField()
     approver_role = models.ForeignKey(
         ApproverRole,
         on_delete=models.PROTECT,
-        related_name="workflow_stages",
-        help_text="The role whose holder approves this stage.",
+        related_name="sections",
+        help_text=(
+            "The role this section's members act as. Held on the section rather "
+            "than on each member so the snapshot an in-flight application is "
+            "judged by is fixed when the chain is materialised."
+        ),
     )
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["order"]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(order__gte=1),
-                name="workflowstage_order_gte_1",
+                name="section_order_gte_1",
             ),
             models.UniqueConstraint(
                 fields=["workflow", "order"],
-                name="workflowstage_workflow_order_unique",
+                name="section_workflow_order_unique",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.order}. {self.approver_role.label}"
+        return f"{self.order}. {self.name} ({self.approver_role.label})"
 
 
 class Delegation(models.Model):
@@ -517,13 +505,6 @@ class ApplicationStage(models.Model):
         # (Unit 18). The application leaves the approver queues and any decision
         # on it returns 409.
         CANCELLED = "cancelled", "Cancelled"
-        # A configured stage that was never activated because its resolved
-        # approver is the applicant themself. An employee who is also an
-        # approver must never be the approver of record for their own leave, so
-        # the stage is bypassed and the application moves to the next approver
-        # in the sequence. The row is kept so the chain stays contiguous and the
-        # snapshot keeps recording the workflow as HR configured it.
-        SKIPPED = "skipped", "Skipped — applicant is the approver"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",
@@ -585,8 +566,28 @@ class ApplicationStage(models.Model):
     assigned_approver = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="application_stages",
-        help_text="The specific user responsible for this stage.",
+        help_text=(
+            "The member of the stage's section who actually decided it, or who "
+            "claimed it by acting. Null while the stage is still open, because a "
+            "section is resolved by whoever acts first — the people entitled to "
+            "act are the eligible_approvers snapshot, not this field."
+        ),
+    )
+    section_ref = models.ForeignKey(
+        "workflows.Section",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="application_stages",
+        help_text=(
+            "The live section this stage was materialised from. Null only for "
+            "rows written before sections existed; the snapshotted role fields "
+            "stay authoritative in that case. Kept for traceability — not for "
+            "reading behaviour."
+        ),
     )
     status = models.CharField(
         max_length=20,
@@ -634,6 +635,74 @@ class ApplicationStage(models.Model):
             f" {self.role_label})"
             f" #{self.application.reference_number or self.application_id}"
         )
+
+    def eligible_approver_ids(self) -> tuple[int, ...]:
+        """The people who were entitled to act, from the snapshot.
+
+        Reads through :class:`ApplicationStageApprover` rather than
+        ``assigned_approver``, because the point of the snapshot is that
+        eligibility does not change when configuration does.
+
+        A caller that prefetched ``eligible_approvers`` is served from that
+        cache, so reading a whole chain's snapshots costs one query rather than
+        one per stage.
+        """
+        if "eligible_approvers" in getattr(
+            self, "_prefetched_objects_cache", {}
+        ):
+            return tuple(
+                sorted(
+                    row.user_id
+                    for row in self.eligible_approvers.all()
+                )
+            )
+        return tuple(
+            self.eligible_approvers.order_by("user_id").values_list(
+                "user_id", flat=True
+            )
+        )
+
+
+class ApplicationStageApprover(models.Model):
+    """Who was entitled to act on a stage when the chain was materialised.
+
+    A section is resolved by whoever acts first, so eligibility is a set rather
+    than a single person. It is snapshotted here, at materialisation, for two
+    reasons: the people entitled to an in-flight application must not change
+    when HR later edits a section's membership (invariant 12.5), and the
+    applicant's own membership is dropped on the way in, so self-approval is
+    prevented by what was *not* written here rather than by a check that has to
+    be remembered at every later read.
+
+    Append-only. Changing who may act on a live application is an explicit
+    administrative operation (reassignment), recorded in the audit log — never a
+    side effect of editing configuration.
+    """
+
+    stage = models.ForeignKey(
+        ApplicationStage, on_delete=models.CASCADE, related_name="eligible_approvers"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="stage_eligibility"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["stage", "user"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stage", "user"],
+                name="stageapprover_stage_user_unique",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["user"], name="idx_stage_elig_user"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.get_full_name()} eligible for stage {self.stage_id}"
 
 
 class ApprovalDecisionLockedError(Exception):

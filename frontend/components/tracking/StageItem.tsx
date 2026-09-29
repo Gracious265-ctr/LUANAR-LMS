@@ -1,4 +1,4 @@
-import { Check, Clock, Minus, RotateCcw, X } from "lucide-react";
+import { Check, Clock, RotateCcw, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -33,11 +33,6 @@ const STATE_MARKER: Record<
     icon: Check,
     markerClass: "border-2 border-border-strong bg-surface-card",
     iconClass: "text-transparent",
-  },
-  skipped: {
-    icon: Minus,
-    markerClass: "border-2 border-border-strong bg-surface-muted",
-    iconClass: "text-text-muted",
   },
 };
 
@@ -154,7 +149,6 @@ const META_LINE: Record<
   rejected: (stage) => `Rejected ${formatDateTime(stage.decided_at)}`,
   returned: (stage) => `Returned for correction ${formatDateTime(stage.decided_at)}`,
   upcoming: () => "Not yet reached",
-  skipped: () => "Skipped — the approval flow starts after your stage",
 };
 
 function metaLine(stage: TrackingStage): string {

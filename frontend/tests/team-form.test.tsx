@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 describe("TeamForm", () => {
-  it("sends a null campus and workflow when neither is chosen", async () => {
+  it("refuses to submit until a workflow is chosen, and sends the chosen ones", async () => {
     vi.mocked(createTeam).mockResolvedValue(makeTeam());
     render(<TeamForm campuses={campuses} workflows={workflows} />);
 
@@ -42,17 +42,48 @@ describe("TeamForm", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
+    expect(
+      await screen.findByText(
+        "Choose the approval workflow this team routes through."
+      )
+    ).toBeInTheDocument();
+    expect(createTeam).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Approval workflow"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
     await waitFor(() =>
       expect(createTeam).toHaveBeenCalledWith({
         name: "Registry",
         description: "",
         campus: null,
-        workflow: null,
+        workflow: 2,
         is_active: true,
       })
     );
     expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/teams");
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("sends a null campus and the chosen workflow as ids", async () => {
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+    render(<TeamForm campuses={campuses} workflows={workflows} />);
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registry" },
+    });
+    fireEvent.change(screen.getByLabelText("Approval workflow"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    await waitFor(() =>
+      expect(createTeam).toHaveBeenCalledWith(
+        expect.objectContaining({ campus: null, workflow: 1 })
+      )
+    );
   });
 
   it("sends the chosen campus and workflow as ids", async () => {
@@ -83,6 +114,9 @@ describe("TeamForm", () => {
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
+    });
+    fireEvent.change(screen.getByLabelText("Approval workflow"), {
+      target: { value: "1" },
     });
     fireEvent.click(screen.getByLabelText("Active team"));
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
@@ -147,12 +181,15 @@ describe("TeamForm", () => {
     expect(createTeam).not.toHaveBeenCalled();
   });
 
-  it("offers the institution-wide workflow as the no-choice default", () => {
+  it("prompts for a workflow instead of defaulting to an institution-wide one", () => {
     render(<TeamForm campuses={campuses} workflows={workflows} />);
 
     expect(
-      screen.getByRole("option", { name: "Institution-wide workflow" })
+      screen.getByRole("option", { name: "Choose a workflow…" })
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Institution-wide workflow" })
+    ).not.toBeInTheDocument();
   });
 
   it("shows why the backend refused the team and stays on the form", async () => {
@@ -163,6 +200,9 @@ describe("TeamForm", () => {
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
+    });
+    fireEvent.change(screen.getByLabelText("Approval workflow"), {
+      target: { value: "1" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 

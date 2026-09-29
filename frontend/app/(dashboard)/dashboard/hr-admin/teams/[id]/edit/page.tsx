@@ -56,8 +56,8 @@ export default async function EditTeamPage({
           Edit {team.name}
         </h2>
         <p className="text-text-secondary">
-          Members are managed on the teams list, so adding or removing one
-          person is its own audited step.
+          The workflow this team routes through owns the approval sections;
+          member staffing happens on the teams list.
         </p>
       </div>
 

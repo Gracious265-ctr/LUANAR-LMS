@@ -12,10 +12,40 @@ const workflow: Workflow = {
   effective_from: "2026-09-01",
   is_active: true,
   state: "active",
-  stages: [
-    { id: 1, order: 1, approver_role: "supervisor", approver_role_label: "Supervisor" },
-    { id: 2, order: 2, approver_role: "hod", approver_role_label: "Head of Department" },
-    { id: 3, order: 3, approver_role: "registrar", approver_role_label: "Registrar" },
+  sections: [
+    {
+      id: 1,
+      name: "Direct supervisor",
+      order: 1,
+      approver_role: "supervisor",
+      approver_role_label: "Supervisor",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
+    {
+      id: 2,
+      name: "Department head",
+      order: 2,
+      approver_role: "hod",
+      approver_role_label: "Head of Department",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
+    {
+      id: 3,
+      name: "Registrar's office",
+      order: 3,
+      approver_role: "registrar",
+      approver_role_label: "Registrar",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
   ],
 };
 
@@ -27,9 +57,29 @@ const anyCategoryWorkflow: Workflow = {
   department: "",
   state: "draft",
   effective_from: null,
-  stages: [
-    { id: 4, order: 1, approver_role: "registrar", approver_role_label: "Registrar" },
-    { id: 5, order: 2, approver_role: "dvc", approver_role_label: "Deputy Vice-Chancellor" },
+  sections: [
+    {
+      id: 4,
+      name: "Registrar's office",
+      order: 1,
+      approver_role: "registrar",
+      approver_role_label: "Registrar",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
+    {
+      id: 5,
+      name: "Deputy Vice-Chancellor",
+      order: 2,
+      approver_role: "dvc",
+      approver_role_label: "Deputy Vice-Chancellor",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
   ],
 };
 
@@ -94,8 +144,18 @@ describe("WorkflowTable", () => {
             name: "Short approval",
             state: "scheduled",
             effective_from: "2026-12-01",
-            stages: [
-              { id: 9, order: 1, approver_role: "hr", approver_role_label: "Human Resources" },
+            sections: [
+              {
+                id: 9,
+                name: "Human Resources",
+                order: 1,
+                approver_role: "hr",
+                approver_role_label: "Human Resources",
+                description: "",
+                is_active: true,
+                members: [],
+                member_count: 0,
+              },
             ],
           },
         ]}
@@ -114,12 +174,17 @@ describe("WorkflowTable", () => {
             ...workflow,
             id: 4,
             name: "Late-joined role",
-            stages: [
+            sections: [
               {
                 id: 10,
+                name: "Chief Auditor",
                 order: 1,
                 approver_role: "chief_auditor",
                 approver_role_label: "Chief Auditor",
+                description: "",
+                is_active: true,
+                members: [],
+                member_count: 0,
               },
             ],
           },

@@ -366,8 +366,25 @@ def _workflow_block(application: LeaveApplication) -> dict:
     }
 
 
-def _stage_block(stage: ApplicationStage, decision: ApprovalDecision | None, responsible_id=None, acting_id=None) -> dict:
-    assigned_name = stage.assigned_approver.get_full_name() or stage.assigned_approver.username
+def _stage_block(
+    stage: ApplicationStage,
+    decision: ApprovalDecision | None,
+    responsible_id=None,
+    acting_id=None,
+) -> dict:
+    """One stage of the review payload.
+
+    A pending section is not yet owned by anyone: ``assigned_approver`` stays
+    null until somebody acts, because several people may be entitled to and the
+    first one to act claims it. ``eligible_approvers`` is therefore the honest
+    answer for a pending stage — who *could* take it — while ``approver`` is only
+    populated once there is someone to name.
+    """
+    assigned_name = (
+        stage.assigned_approver.get_full_name() or stage.assigned_approver.username
+        if stage.assigned_approver_id
+        else None
+    )
     acting_for = None
     approver_name = assigned_name
     if stage.status == ApplicationStage.Status.PENDING and acting_id:
@@ -387,6 +404,13 @@ def _stage_block(stage: ApplicationStage, decision: ApprovalDecision | None, res
         "assigned_approver": assigned_name,
         "approver": approver_name,
         "acting_for": acting_for,
+        # Who was entitled to act, read from the eligibility snapshot taken at
+        # submission. A decided step keeps the record of who *could* have acted.
+        "eligible_approvers": [
+            name
+            for name in (_user_name(uid) for uid in stage.eligible_approver_ids())
+            if name
+        ],
         "assigned_at": _iso(stage.created_at),
         "decided_at": _iso(decision.decided_at if decision else None),
         "comment": decision.comment if decision else None,
@@ -432,31 +456,23 @@ def _current_stage_block(application: LeaveApplication) -> dict | None:
 
 
 def _following_stage_label(application: LeaveApplication, stage) -> str | None:
-    """The role label of the stage that will actually receive the application.
+    """The role label of the stage the application will move to next.
 
-    Resolved the same way ``decide`` advances the chain, so a stage whose
-    approver is the applicant is not advertised as the next stage: the label
-    names the next stage with a valid approver instead.
+    The chain is contiguous and nothing is ever bypassed, so this is simply the
+    next stage by order — the same stage ``decide`` activates. The applicant is
+    not something this has to work around: a section they belong to is decided
+    by their colleagues, and a section they are the only member of was refused
+    at submission.
     """
-    from .services import is_self_approver
-
     following = (
         ApplicationStage.objects.filter(
             application=application,
             submission_cycle=application.workflow_chain_cycle,
             stage_order__gt=stage.stage_order,
         )
-        .exclude(status=ApplicationStage.Status.SKIPPED)
         .order_by("stage_order")
     )
-    return next(
-        (
-            candidate.role_label
-            for candidate in following
-            if not is_self_approver(candidate.assigned_approver_id, application)
-        ),
-        None,
-    )
+    return next((candidate.role_label for candidate in following), None)
 
 
 def _my_decision_block(application: LeaveApplication, user) -> dict | None:

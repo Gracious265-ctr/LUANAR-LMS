@@ -10,8 +10,7 @@ never the current workflow configuration).
 Event type vocabulary is pinned to the frontend ``EVENT_ICONS`` set:
 ``submitted``, ``approved``, ``rejected``, ``correction_requested``,
 ``resubmitted``, ``reassigned``. Stage states stay ``approved | awaiting |
-rejected | returned | skipped | upcoming`` (``skipped`` marks a stage bypassed
-because the applicant was the only active approver for it).
+rejected | returned | upcoming``.
 """
 
 from datetime import datetime
@@ -50,6 +49,9 @@ class DatabaseTrackingProvider(TrackingProvider):
                 submission_cycle=chain_cycle,
             )
             .select_related("assigned_approver__employee_profile")
+            # One extra query for the whole chain rather than one per stage:
+            # the display helpers below read the snapshot for the open stage.
+            .prefetch_related("eligible_approvers")
             .order_by("stage_order")
         )
         decisions = list(
@@ -85,8 +87,10 @@ class DatabaseTrackingProvider(TrackingProvider):
             ),
             None,
         )
-        responsible_id = responsible_approver_id(application)
-        acting_id = acting_approver_id(application)
+        # The chain is already loaded with its snapshots, so the open stage is
+        # handed to the display helpers rather than re-fetched.
+        responsible_id = responsible_approver_id(application, stage=awaiting)
+        acting_id = acting_approver_id(application, stage=awaiting)
         users = self._load_users(acting_id, responsible_id)
 
         return WorkflowTracking(
@@ -185,8 +189,6 @@ class DatabaseTrackingProvider(TrackingProvider):
             return "rejected"
         if stage.status == ApplicationStage.Status.CORRECTION_REQUESTED:
             return "returned"
-        if stage.status == ApplicationStage.Status.SKIPPED:
-            return "skipped"
         return "upcoming"
 
     def _acting_approver(self, acting_id, responsible_id, users) -> TrackedApprover | None:

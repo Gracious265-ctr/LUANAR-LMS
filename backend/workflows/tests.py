@@ -17,18 +17,19 @@ from users.models import User
 from .admin import (
     DelegationAdmin,
     ReassignmentAdmin,
+    SectionForm,
+    SectionInline,
+    SectionInlineFormSet,
     WorkflowAdmin,
     WorkflowAdminForm,
-    WorkflowStageForm,
-    WorkflowStageInlineFormSet,
 )
-from .testing import create_user_with_role, ensure_roles
+from .testing import create_user_with_role, ensure_roles, make_section, make_stage
 from .models import (
     ApproverRole,
     Delegation,
     Reassignment,
+    Section,
     Workflow,
-    WorkflowStage,
 )
 from .services import (
     DelegationActionError,
@@ -41,7 +42,7 @@ from .services import (
     find_conflicting_workflow,
     is_approver_user,
     missing_approver_roles,
-    normalize_stage_sequence,
+    normalize_section_sequence,
     open_request_exists,
     reassign_application,
     reject_delegation,
@@ -52,50 +53,74 @@ from .services import (
 
 SEED_PASSWORD = "testpass123"
 
-VALID_STAGES = [
-    {"order": 1, "approver_role": "supervisor"},
-    {"order": 2, "approver_role": "hod"},
-    {"order": 3, "approver_role": "registrar"},
-    {"order": 4, "approver_role": "dvc"},
+VALID_SECTIONS = [
+    {"order": 1, "name": "Supervisor", "approver_role": "supervisor"},
+    {"order": 2, "name": "HOD", "approver_role": "hod"},
+    {"order": 3, "name": "Registrar", "approver_role": "registrar"},
+    {"order": 4, "name": "DVC", "approver_role": "dvc"},
 ]
 
 
-class StageSequenceTests(TestCase):
-    """Service-level workflow stage-sequence validation."""
+class SectionSequenceTests(TestCase):
+    """Service-level workflow section-sequence validation."""
 
     def test_valid_sequence_normalizes_to_one_based_order(self):
-        result = normalize_stage_sequence(VALID_STAGES)
+        result = normalize_section_sequence(VALID_SECTIONS)
         self.assertEqual(
-            [stage["approver_role"] for stage in result],
+            [section["approver_role"] for section in result],
             ["supervisor", "hod", "registrar", "dvc"],
         )
-        self.assertEqual([stage["order"] for stage in result], [1, 2, 3, 4])
+        self.assertEqual([section["order"] for section in result], [1, 2, 3, 4])
 
     def test_empty_sequence_rejected(self):
         with self.assertRaises(StageSequenceError) as ctx:
-            normalize_stage_sequence([])
-        self.assertEqual(ctx.exception.field, "stages")
+            normalize_section_sequence([])
+        self.assertEqual(ctx.exception.field, "sections")
 
     def test_unknown_approver_role_rejected(self):
         with self.assertRaises(StageSequenceError) as ctx:
-            normalize_stage_sequence([{"order": 1, "approver_role": "employee"}])
+            normalize_section_sequence([{"order": 1, "approver_role": "employee"}])
         self.assertEqual(ctx.exception.field, "approver_role")
 
-    def test_repeated_approver_role_rejected(self):
-        with self.assertRaises(StageSequenceError) as ctx:
-            normalize_stage_sequence(
-                [{"order": 1, "approver_role": "hod"}, {"order": 2, "approver_role": "hod"}]
-            )
-        self.assertEqual(ctx.exception.field, "stages")
+    def test_a_repeated_approver_role_is_allowed(self):
+        """One position may sit at several points in a chain.
+
+        This is the behaviour change sections were made for: the same person can
+        be asked twice, and the same office can sign off at two steps. Only
+        ``order`` has to be unique.
+        """
+        result = normalize_section_sequence(
+            [
+                {"order": 1, "name": "First HOD", "approver_role": "hod"},
+                {"order": 2, "name": "Dean", "approver_role": "dean"},
+                {"order": 3, "name": "Second HOD", "approver_role": "hod"},
+            ]
+        )
+        self.assertEqual(
+            [section["approver_role"] for section in result],
+            ["hod", "dean", "hod"],
+        )
+        self.assertEqual([section["order"] for section in result], [1, 2, 3])
+        self.assertEqual(
+            [section["name"] for section in result],
+            ["First HOD", "Dean", "Second HOD"],
+        )
+
+    def test_a_blank_name_falls_back_to_the_role_label(self):
+        """A saved section is never nameless; HR can still say what it is for."""
+        result = normalize_section_sequence(
+            [{"order": 1, "name": "   ", "approver_role": "hod"}]
+        )
+        self.assertEqual(result[0]["name"], "Head of Department")
 
     def test_non_positive_order_rejected(self):
         with self.assertRaises(StageSequenceError) as ctx:
-            normalize_stage_sequence([{"order": 0, "approver_role": "hod"}])
+            normalize_section_sequence([{"order": 0, "approver_role": "hod"}])
         self.assertEqual(ctx.exception.field, "order")
 
     def test_duplicate_order_rejected(self):
         with self.assertRaises(StageSequenceError) as ctx:
-            normalize_stage_sequence(
+            normalize_section_sequence(
                 [{"order": 1, "approver_role": "hod"}, {"order": 1, "approver_role": "registrar"}]
             )
         self.assertEqual(ctx.exception.field, "order")
@@ -133,8 +158,13 @@ class WorkflowEndpointTests(TestCase):
             employee_category="administration",
             department="",
         )
-        for stage in VALID_STAGES:
-            make_stage(self.workflow, stage["order"], stage["approver_role"])
+        for section in VALID_SECTIONS:
+            make_section(
+                self.workflow,
+                section["order"],
+                section["approver_role"],
+                name=section["name"],
+            )
 
         self.list_url = "/api/v1/workflows/"
         self.detail_url = f"/api/v1/workflows/{self.workflow.id}/"
@@ -184,12 +214,12 @@ class WorkflowEndpointTests(TestCase):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        stages = response.data["stages"]  # type: ignore[index]
+        sections = response.data["sections"]  # type: ignore[index]
         self.assertEqual(
-            [stage["approver_role"] for stage in stages],
+            [section["approver_role"] for section in sections],
             ["supervisor", "hod", "registrar", "dvc"],
         )
-        self.assertEqual([stage["order"] for stage in stages], [1, 2, 3, 4])
+        self.assertEqual([section["order"] for section in sections], [1, 2, 3, 4])
 
     def test_hr_can_create_workflow_with_stages(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -199,9 +229,9 @@ class WorkflowEndpointTests(TestCase):
                 "name": "Dean office approval",
                 "employee_category": "academic",
                 "department": "Faculty of Science",
-                "stages": [
-                    {"order": 1, "approver_role": "hod"},
-                    {"order": 2, "approver_role": "dean"},
+                "sections": [
+                    {"order": 1, "name": "HOD", "approver_role": "hod"},
+                    {"order": 2, "name": "Dean", "approver_role": "dean"},
                 ],
             },
             format="json",
@@ -211,11 +241,11 @@ class WorkflowEndpointTests(TestCase):
         self.assertEqual(payload["name"], "Dean office approval")
         self.assertEqual(payload["department"], "Faculty of Science")
         self.assertEqual(
-            [stage["approver_role"] for stage in payload["stages"]],
+            [stage["approver_role"] for stage in payload["sections"]],
             ["hod", "dean"],
         )
         self.assertTrue(
-            WorkflowStage.objects.filter(
+            Section.objects.filter(
                 workflow_id=payload["id"], order=2, approver_role__code="dean"
             ).exists()
         )
@@ -228,7 +258,9 @@ class WorkflowEndpointTests(TestCase):
                 "name": "University-wide approval",
                 "employee_category": "",
                 "department": "",
-                "stages": [{"order": 1, "approver_role": "registrar"}],
+                "sections": [
+                    {"order": 1, "name": "Registrar", "approver_role": "registrar"}
+                ],
             },
             format="json",
         )
@@ -241,39 +273,39 @@ class WorkflowEndpointTests(TestCase):
         response = self.client.patch(
             self.detail_url,
             {
-                "stages": [
-                    {"order": 1, "approver_role": "dean"},
-                    {"order": 2, "approver_role": "registrar"},
+                "sections": [
+                    {"order": 1, "name": "Dean", "approver_role": "dean"},
+                    {"order": 2, "name": "Registrar", "approver_role": "registrar"},
                 ]
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        stages = response.json()["stages"]
+        sections = response.json()["sections"]
         self.assertEqual(
-            [stage["approver_role"] for stage in stages], ["dean", "registrar"]
+            [section["approver_role"] for section in sections], ["dean", "registrar"]
         )
-        self.assertEqual(WorkflowStage.objects.filter(workflow=self.workflow).count(), 2)
+        self.assertEqual(Section.objects.filter(workflow=self.workflow).count(), 2)
 
     def test_patch_normalizes_submitted_order_to_sequence(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             self.detail_url,
             {
-                "stages": [
-                    {"order": 3, "approver_role": "hod"},
-                    {"order": 1, "approver_role": "registrar"},
+                "sections": [
+                    {"order": 3, "name": "HOD", "approver_role": "hod"},
+                    {"order": 1, "name": "Registrar", "approver_role": "registrar"},
                 ]
             },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [stage["approver_role"] for stage in response.json()["stages"]],
+            [stage["approver_role"] for stage in response.json()["sections"]],
             ["hod", "registrar"],
         )
         self.assertEqual(
-            [stage["order"] for stage in response.json()["stages"]], [1, 2]
+            [stage["order"] for stage in response.json()["sections"]], [1, 2]
         )
 
     def test_missing_name_rejected(self):
@@ -282,7 +314,7 @@ class WorkflowEndpointTests(TestCase):
             self.list_url,
             {
                 "employee_category": "academic",
-                "stages": [{"order": 1, "approver_role": "hod"}],
+                "sections": [{"order": 1, "name": "HOD", "approver_role": "hod"}],
             },
             format="json",
         )
@@ -295,7 +327,7 @@ class WorkflowEndpointTests(TestCase):
             self.list_url,
             {
                 "name": "Academic approval",
-                "stages": [{"order": 1, "approver_role": "hod"}],
+                "sections": [{"order": 1, "name": "HOD", "approver_role": "hod"}],
             },
             format="json",
         )
@@ -305,54 +337,69 @@ class WorkflowEndpointTests(TestCase):
     def test_missing_stages_rejected(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
-            self.list_url, {"name": "No stages", "employee_category": "academic"}
+            self.list_url, {"name": "No sections", "employee_category": "academic"}
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("stages", response.json())
+        self.assertIn("sections", response.json())
 
     def test_empty_stages_rejected(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
-            self.list_url, {"name": "Empty stages", "stages": []}, format="json"
+            self.list_url, {"name": "Empty sections", "sections": []}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("stages", response.json())
+        self.assertIn("sections", response.json())
 
     def test_invalid_approver_role_rejected(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
-            {"name": "Bad role", "stages": [{"order": 1, "approver_role": "employee"}]},
+            {"name": "Bad role", "sections": [{"order": 1, "name": "X", "approver_role": "employee"}]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("approver_role", response.json()["stages"]["0"])
+        self.assertIn("approver_role", response.json()["sections"]["0"])
 
-    def test_repeated_approver_role_rejected(self):
+    def test_repeated_approver_role_is_accepted(self):
+        """The same position may sit at more than one point in a chain.
+
+        This is what sections are for: one person can be asked twice, and the API
+        has to agree with the service validator and the admin that this is a
+        legitimate workflow rather than a mistake.
+        """
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
             {
                 "name": "Repeated role",
-                "stages": [
-                    {"order": 1, "approver_role": "hod"},
-                    {"order": 2, "approver_role": "hod"},
+                "employee_category": "academic",
+                "sections": [
+                    {"order": 1, "name": "First HOD", "approver_role": "hod"},
+                    {"order": 2, "name": "Dean", "approver_role": "dean"},
+                    {"order": 3, "name": "Second HOD", "approver_role": "hod"},
                 ],
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("stages", response.json())
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(
+            [section["approver_role"] for section in response.json()["sections"]],
+            ["hod", "dean", "hod"],
+        )
 
     def test_invalid_order_rejected(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
-            {"name": "Bad order", "stages": [{"order": 0, "approver_role": "hod"}]},
+            {"name": "Bad order", "sections": [{"order": 0, "name": "X", "approver_role": "hod"}]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("order", response.json()["stages"]["0"])
+        # The per-section error is reported against the top-level ``order`` field
+        # rather than ``sections[0]``: ``order`` is a property of the sequence,
+        # not of one section, and DRF's ListSerializer only routes errors to an
+        # index when the failure is attributable to that one row.
+        self.assertIn("order", response.json())
 
     def test_duplicate_order_rejected(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -360,9 +407,9 @@ class WorkflowEndpointTests(TestCase):
             self.list_url,
             {
                 "name": "Duplicate order",
-                "stages": [
-                    {"order": 1, "approver_role": "hod"},
-                    {"order": 1, "approver_role": "dean"},
+                "sections": [
+                    {"order": 1, "name": "One", "approver_role": "hod"},
+                    {"order": 1, "name": "Two", "approver_role": "dean"},
                 ],
             },
             format="json",
@@ -384,67 +431,102 @@ class WorkflowAdminTests(TestCase):
         self.workflow = Workflow.objects.create(name="Admin workflow")
         self.site = AdminSite()
 
-    def test_stage_order_must_be_at_least_one(self):
-        StageInlineForm = inlineformset_factory(
+    def test_section_order_must_be_at_least_one(self):
+        SectionInlineForm = inlineformset_factory(
             Workflow,
-            WorkflowStage,
-            form=WorkflowStageForm,
-            formset=WorkflowStageInlineFormSet,
-            fields=["order", "approver_role"],
+            Section,
+            form=SectionForm,
+            formset=SectionInlineFormSet,
+            fields=["order", "name", "approver_role"],
             extra=1,
         )
-        formset = StageInlineForm(
+        formset = SectionInlineForm(
             data={
-                "stages-TOTAL_FORMS": "1",
-                "stages-INITIAL_FORMS": "0",
-                "stages-MIN_NUM_FORMS": "1",
-                "stages-MAX_NUM_FORMS": "1000",
-                "stages-0-order": "0",
-                "stages-0-approver_role": "hod",
+                "sections-TOTAL_FORMS": "1",
+                "sections-INITIAL_FORMS": "0",
+                "sections-MIN_NUM_FORMS": "1",
+                "sections-MAX_NUM_FORMS": "1000",
+                "sections-0-order": "0",
+                "sections-0-name": "HOD",
+                "sections-0-approver_role": "hod",
             },
             instance=Workflow(),
         )
         self.assertFalse(formset.is_valid())
         self.assertIn("order", formset.errors[0])
 
-    def test_repeated_approver_role_rejected(self):
+    def test_a_role_may_be_repeated_across_sections(self):
+        """The same position can appear twice; sections are what make that legal.
+
+        One person sitting at two points in a chain is a normal thing for HR to
+        configure, and rejecting it here would make the API and the admin
+        disagree about what a workflow is.
+        """
         ensure_roles("hod")
-        StageInlineForm = inlineformset_factory(
+        SectionInlineForm = inlineformset_factory(
             Workflow,
-            WorkflowStage,
-            form=WorkflowStageForm,
-            formset=WorkflowStageInlineFormSet,
-            fields=["order", "approver_role"],
+            Section,
+            form=SectionForm,
+            formset=SectionInlineFormSet,
+            fields=["order", "name", "approver_role"],
             extra=1,
         )
-        formset = StageInlineForm(
+        formset = SectionInlineForm(
             data={
-                "stages-TOTAL_FORMS": "2",
-                "stages-INITIAL_FORMS": "0",
-                "stages-MIN_NUM_FORMS": "1",
-                "stages-MAX_NUM_FORMS": "1000",
-                "stages-0-order": "1",
-                "stages-0-approver_role": "hod",
-                "stages-1-order": "2",
-                "stages-1-approver_role": "hod",
+                "sections-TOTAL_FORMS": "2",
+                "sections-INITIAL_FORMS": "0",
+                "sections-MIN_NUM_FORMS": "1",
+                "sections-MAX_NUM_FORMS": "1000",
+                "sections-0-order": "1",
+                "sections-0-name": "First HOD",
+                "sections-0-approver_role": "hod",
+                "sections-1-order": "2",
+                "sections-1-name": "Second HOD",
+                "sections-1-approver_role": "hod",
+            },
+            instance=Workflow(),
+        )
+        self.assertTrue(formset.is_valid(), formset.errors)
+        self.assertEqual(formset.non_form_errors(), [])
+
+    def test_duplicate_section_order_is_rejected(self):
+        """Repetition is fine for a role, but two steps cannot share a position."""
+        ensure_roles("hod", "dean")
+        SectionInlineForm = inlineformset_factory(
+            Workflow,
+            Section,
+            form=SectionForm,
+            formset=SectionInlineFormSet,
+            fields=["order", "name", "approver_role"],
+            extra=1,
+        )
+        formset = SectionInlineForm(
+            data={
+                "sections-TOTAL_FORMS": "2",
+                "sections-INITIAL_FORMS": "0",
+                "sections-MIN_NUM_FORMS": "1",
+                "sections-MAX_NUM_FORMS": "1000",
+                "sections-0-order": "1",
+                "sections-0-name": "One",
+                "sections-0-approver_role": "hod",
+                "sections-1-order": "1",
+                "sections-1-name": "Two",
+                "sections-1-approver_role": "dean",
             },
             instance=Workflow(),
         )
         self.assertFalse(formset.is_valid())
-        self.assertTrue(
-            any("once" in error for error in formset.non_form_errors())
-        )
 
-    def test_admin_list_prefetches_stages_for_summary(self):
-        make_stage(self.workflow, 1, "hod")
+    def test_admin_list_prefetches_sections_for_summary(self):
+        make_section(self.workflow, 1, "hod")
         second = Workflow.objects.create(name="Second")
-        make_stage(second, 1, "dean")
+        make_section(second, 1, "dean")
         admin = WorkflowAdmin(Workflow, self.site)
-        # workflows + stages + roles: the roles come from the joined prefetch, so
-        # the count is flat in the number of workflows and stages.
+        # workflows + sections + roles: the roles come from the joined prefetch,
+        # so the count is flat in the number of workflows and sections.
         with self.assertNumQueries(3):
             summaries = {
-                obj.pk: admin.stage_summary(obj) for obj in admin.get_queryset(None)
+                obj.pk: admin.section_summary(obj) for obj in admin.get_queryset(None)
             }
         self.assertEqual(summaries[self.workflow.pk], "Head of Department")
         self.assertEqual(summaries[second.pk], "Dean")
@@ -493,16 +575,16 @@ class WorkflowActivationServiceTests(TestCase):
         """
         ensure_roles("dean", "supervisor")
         ApproverRole.objects.filter(code="supervisor").update(is_active=False)
-        stages = [
-            {"order": 1, "approver_role": "dean"},
-            {"order": 2, "approver_role": "supervisor"},
+        sections = [
+            {"order": 1, "name": "Dean", "approver_role": "dean"},
+            {"order": 2, "name": "Supervisor", "approver_role": "supervisor"},
         ]
-        self.assertEqual(missing_approver_roles(stages), ["Supervisor"])
+        self.assertEqual(missing_approver_roles(sections), ["Supervisor"])
 
     def test_missing_approver_roles_ignores_an_unstaffed_active_role(self):
         ensure_roles("supervisor")
         self.assertEqual(
-            missing_approver_roles([{"order": 1, "approver_role": "supervisor"}]), []
+            missing_approver_roles([{"order": 1, "name": "S", "approver_role": "supervisor"}]), []
         )
 
     def test_missing_approver_roles_ignores_an_inactive_holder(self):
@@ -510,7 +592,7 @@ class WorkflowActivationServiceTests(TestCase):
         user.is_active = False
         user.save(update_fields=["is_active"])
         self.assertEqual(
-            missing_approver_roles([{"order": 1, "approver_role": "supervisor"}]), []
+            missing_approver_roles([{"order": 1, "name": "S", "approver_role": "supervisor"}]), []
         )
 
     def test_find_conflicting_workflow_excludes_self_and_drafts(self):
@@ -565,7 +647,7 @@ class WorkflowActivationServiceTests(TestCase):
         issues = validate_workflow_for_activation(
             None,
             ("administration", ""),
-            [{"order": 1, "approver_role": "dean"}],
+            [{"order": 1, "name": "Dean", "approver_role": "dean"}],
         )
         self.assertEqual(len(issues), 2)
         by_field = {issue.field: issue.message for issue in issues}
@@ -594,7 +676,7 @@ class WorkflowActivationEndpointTests(TestCase):
             "name": "Workflow",
             "employee_category": "administration",
             "department": "",
-            "stages": [{"order": 1, "approver_role": "dean"}],
+            "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
         }
         payload.update(overrides)
         return payload
@@ -602,7 +684,7 @@ class WorkflowActivationEndpointTests(TestCase):
     def test_draft_create_needs_no_approvers(self):
         response = self.client.post(
             self.list_url,
-            self._payload(stages=[{"order": 1, "approver_role": "dean"}]),
+            self._payload(sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}]),
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -644,7 +726,7 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{workflow_id}/",
             {
                 "is_active": False,
-                "stages": [{"order": 1, "approver_role": "dean"}],
+                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
@@ -662,7 +744,7 @@ class WorkflowActivationEndpointTests(TestCase):
         response = self.client.post(
             self.list_url,
             self._payload(
-                stages=[{"order": 1, "approver_role": "dean"}],
+                sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}],
                 effective_from=timezone.localdate().isoformat(),
                 is_active=True,
             ),
@@ -672,7 +754,7 @@ class WorkflowActivationEndpointTests(TestCase):
         # The stage field rejects it first, with the actionable message, rather
         # than letting the workflow activate and failing later per applicant.
         self.assertIn(
-            "Dean", response.json()["stages"]["0"]["approver_role"][0]
+            "Dean", response.json()["sections"]["0"]["approver_role"][0]
         )
 
     def test_activation_with_overlapping_scope_rejected(self):
@@ -714,7 +796,7 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{first.json()['id']}/",
             {
                 "is_active": False,
-                "stages": [{"order": 1, "approver_role": "dean"}],
+                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
@@ -754,7 +836,7 @@ class WorkflowActivationEndpointTests(TestCase):
             f"/api/v1/workflows/{academic.json()['id']}/",
             {
                 "employee_category": "administration",
-                "stages": [{"order": 1, "approver_role": "dean"}],
+                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
@@ -764,14 +846,14 @@ class WorkflowActivationEndpointTests(TestCase):
     def test_editing_draft_without_effective_date_is_allowed(self):
         draft = self.client.post(
             self.list_url,
-            self._payload(stages=[{"order": 1, "approver_role": "dean"}]),
+            self._payload(sections=[{"order": 1, "name": "Dean", "approver_role": "dean"}]),
             format="json",
         )
         response = self.client.patch(
             f"/api/v1/workflows/{draft.json()['id']}/",
             {
                 "department": "Registry",
-                "stages": [{"order": 1, "approver_role": "dean"}],
+                "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
@@ -2478,7 +2560,7 @@ class ReassignmentAdminTests(TestCase):
         self.assertEqual(admin.employee_name(reassignment), employee.get_full_name())
 
 class WorkflowSerializerAtomicityTests(TestCase):
-    """A failed audit write rolls back the workflow and its stages."""
+    """A failed audit write rolls back the workflow and its sections."""
 
     def setUp(self):
         from rest_framework.test import APIRequestFactory
@@ -2496,9 +2578,9 @@ class WorkflowSerializerAtomicityTests(TestCase):
             "name": "Atomic rollback flow",
             "employee_category": "academic",
             "department": "Faculty of Science",
-            "stages": [
-                {"order": 1, "approver_role": "hod"},
-                {"order": 2, "approver_role": "dean"},
+            "sections": [
+                {"order": 1, "name": "HOD", "approver_role": "hod"},
+                {"order": 2, "name": "Dean", "approver_role": "dean"},
             ],
         }
 
@@ -2517,7 +2599,7 @@ class WorkflowSerializerAtomicityTests(TestCase):
                 serializer.save()
         self.assertFalse(Workflow.objects.filter(name="Atomic rollback flow").exists())
         self.assertEqual(
-            WorkflowStage.objects.filter(workflow__name="Atomic rollback flow").count(),
+            Section.objects.filter(workflow__name="Atomic rollback flow").count(),
             0,
         )
 
@@ -2541,7 +2623,11 @@ class WorkflowSerializerAtomicityTests(TestCase):
         workflow.refresh_from_db()
         self.assertEqual(workflow.department, "Faculty of Science")
         self.assertEqual(
-            list(workflow.stages.values_list("approver_role__code", flat=True)),
+            list(
+                workflow.sections.order_by("order").values_list(
+                    "approver_role__code", flat=True
+                )
+            ),
             ["dean"],
         )
 
@@ -2591,4 +2677,4 @@ class SpineIntegrityTests(TestCase):
         with self.assertRaises(ProtectedError):
             self.app.delete()
         self.assertTrue(LeaveApplication.objects.filter(pk=self.app.pk).exists())
-from workflows.testing import create_user_with_role, make_stage
+from workflows.testing import create_user_with_role, make_section, make_stage

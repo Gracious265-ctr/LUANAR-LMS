@@ -136,12 +136,17 @@ class RoutingBase(StubProviderMixin, APITestCase):
 class SpineAdvanceTests(RoutingBase):
     def test_approve_advances_current_approver_to_next_stage(self):
         app = self.make_submitted()
-        self.assertEqual(app.current_approver_id, self.supervisor.id)
+        # The stub registers one person per role, so the first section has a
+        # single candidate and that is who may act.
+        self.assertEqual(acting_approver_id(app), self.supervisor.id)
         self.assertEqual(app.current_stage.stage_order, 1)
         self.approve(app, self.supervisor)
         app.refresh_from_db()
         self.assertEqual(app.current_stage.stage_order, 2)
-        self.assertEqual(app.current_approver_id, self.hod.id)
+        self.assertEqual(acting_approver_id(app), self.hod.id)
+        # The decided section recorded its actor; the newly opened one has not
+        # been claimed, so there is no responsible approver on it yet.
+        self.assertIsNone(app.current_approver_id)
 
     def test_reject_keeps_spine_at_the_deciding_stage(self):
         app = self.make_submitted()
@@ -155,7 +160,13 @@ class SpineAdvanceTests(RoutingBase):
         )
         app.refresh_from_db()
         self.assertEqual(app.current_stage.stage_order, 2)
+        # The rejecting approver is recorded as the last person to hold it, and
+        # no further section was opened.
         self.assertEqual(app.current_approver_id, self.hod.id)
+        self.assertNotEqual(
+            app.current_stage.status, ApplicationStage.Status.PENDING
+        )
+        self.assertEqual(app.status, LeaveApplication.Status.REJECTED)
 
     def test_correction_keeps_spine_at_the_deciding_stage(self):
         app = self.make_submitted()
@@ -199,7 +210,10 @@ class DelegationRoutingTests(RoutingBase):
         decision = ApprovalDecision.objects.get(application=app)
         self.assertEqual(decision.approver_id, self.dean.id)
         app.refresh_from_db()
-        self.assertEqual(app.current_approver_id, self.hod.id)
+        # The next section has not been claimed, so the section's single member
+        # is who may act rather than a named approver on the spine.
+        self.assertEqual(acting_approver_id(app), self.hod.id)
+        self.assertIsNone(app.current_approver_id)
 
     def test_spine_falls_back_when_delegation_ends(self):
         self.delegation_for(self.supervisor, self.dean)
@@ -233,24 +247,36 @@ class ReassignmentRoutingTests(RoutingBase):
         stage = app.current_stage
         self.assertEqual(stage.stage_order, 1)
         self.assertEqual(stage.status, ApplicationStage.Status.PENDING)
-        self.assertEqual(stage.assigned_approver_id, self.supervisor.id)
-        self.assertEqual(history.from_approver_id, self.supervisor.id)
+        # Nobody has acted yet, so the stage has no claimant, and the original
+        # member is still on it: reassignment widens the section rather than
+        # taking it away.
+        self.assertIsNone(stage.assigned_approver_id)
+        self.assertEqual(
+            set(stage.eligible_approver_ids()), {self.supervisor.id, self.dean.id}
+        )
+        self.assertIsNone(history.from_approver_id)
         self.assertEqual(history.to_approver_id, self.dean.id)
         self.assertIn(str(app.pk), self.pending_ids(self.dean))
-        self.assertNotIn(str(app.pk), self.pending_ids(self.supervisor))
+        # The original section member keeps their claim: a section is not
+        # transferred, it is widened, so the colleague who was already on it
+        # still sees the application and may still act first.
+        self.assertIn(str(app.pk), self.pending_ids(self.supervisor))
         self.assertTrue(get_decision_authority(self.dean, app).can_decide)
+        self.assertTrue(get_decision_authority(self.supervisor, app).can_decide)
         self.approve(app, self.dean)
         decision = ApprovalDecision.objects.get(application=app)
         self.assertEqual(decision.approver_id, self.dean.id)
         app.refresh_from_db()
         self.assertEqual(app.current_stage.stage_order, 2)
 
-    def test_reassigning_away_from_a_delegated_approver_hands_over_cleanly(self):
-        """The old cover no longer applies once the spine has moved.
+    def test_reassigning_away_from_a_delegated_approver_widens_the_section(self):
+        """Reassignment adds a replacement; it does not revoke the section.
 
-        Reassignment is a spine write and delegation is a query-time overlay, so
-        pointing the spine at someone else takes the application out of the
-        original approver's delegation entirely.
+        The single-approver model could move a spine and take the application
+        away from the outgoing approver's delegate. A section is not a pointer,
+        so the honest effect of adding someone is that the section now has more
+        candidates: HR's replacement, the original approver, and — through the
+        active delegation — their delegate.
         """
         self.delegation_for(self.supervisor, self.dean)
         app = self.make_submitted()
@@ -262,19 +288,24 @@ class ReassignmentRoutingTests(RoutingBase):
         app.refresh_from_db()
 
         self.assertEqual(app.current_approver_id, self.hod.id)
-        self.assertEqual(acting_approver_id(app), self.hod.id)
+        # Three people may now act, so there is no single acting approver to
+        # name; the set is what authority is checked against.
+        self.assertIsNone(acting_approver_id(app))
         self.assertIn(str(app.pk), self.pending_ids(self.hod))
-        self.assertNotIn(str(app.pk), self.pending_ids(self.dean))
+        self.assertIn(str(app.pk), self.pending_ids(self.dean))
+        # The original approver is still on the section but is away under an
+        # active delegation, so it is their delegate who holds it.
         self.assertNotIn(str(app.pk), self.pending_ids(self.supervisor))
+        self.assertTrue(get_decision_authority(self.hod, app).can_decide)
+        self.assertTrue(get_decision_authority(self.dean, app).can_decide)
 
-    def test_reassigning_to_an_away_approver_leaves_their_delegate_acting(self):
-        """Documented consequence, not an accident: the overlay wins.
+    def test_reassigning_to_an_away_approver_still_hands_to_their_delegate(self):
+        """Documented consequence, not an accident: the overlay still wins.
 
-        Reassigning to an approver with active cover moves the spine to them, but
-        ``acting_approver_id`` then hands the application to *their* delegate.
-        The intervention is recorded and the approver owns it on paper while
-        someone else acts — which is why the pending queue reports the acting
-        approver alongside the responsible one.
+        Reassignment adds the approver to the open section, but authority
+        resolves the snapshot through delegation, so an approver HR names while
+        they are away acts through their delegate instead. The section is decided
+        by whoever acts first, not by whoever HR wrote on the spine.
         """
         self.delegation_for(self.hod, self.dvc)
         app = self.make_submitted()
@@ -285,8 +316,11 @@ class ReassignmentRoutingTests(RoutingBase):
         app.refresh_from_db()
 
         self.assertEqual(app.current_approver_id, self.hod.id)
-        self.assertEqual(acting_approver_id(app), self.dvc.id)
+        self.assertIsNone(acting_approver_id(app))
         self.assertTrue(get_decision_authority(self.dvc, app).can_decide)
+        # ...but HR naming someone who is away does not hand them back the
+        # application: the active delegation still overrides them, which is the
+        # whole point of cover.
         self.assertFalse(get_decision_authority(self.hod, app).can_decide)
         self.assertIn(str(app.pk), self.pending_ids(self.dvc))
         self.assertNotIn(str(app.pk), self.pending_ids(self.hod))

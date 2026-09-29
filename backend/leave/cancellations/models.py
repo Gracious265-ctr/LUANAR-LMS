@@ -119,9 +119,16 @@ class CancellationApprovalStage(models.Model):
     """One stage of an ``approved_leave`` cancellation request.
 
     Stages are built from the application's original workflow snapshot, keeping
-    only Supervisor/HOD roles in their original order. Exactly one stage is
-    ``pending`` while the request is open; rejection ends the request and marks
-    later stages ``not_reached``. Withdrawals never create stages.
+    only the stages whose snapshotted role handles cancellations, in original
+    order. Exactly one stage is ``pending`` while the request is open; rejection
+    ends the request and marks later stages ``not_reached``. Withdrawals never
+    create stages.
+
+    A stage is a section, so eligibility is a set: every member of the
+    source stage's :class:`~workflows.models.ApplicationStageApprover` snapshot
+    may act, and the first to do so claims the stage by setting ``approver``.
+    ``approver`` therefore stays null while the stage is open, exactly as
+    ``ApplicationStage.assigned_approver`` does.
     """
 
     class Status(models.TextChoices):
@@ -150,7 +157,13 @@ class CancellationApprovalStage(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="cancellation_stages",
-        help_text="The specific user responsible for this stage.",
+        null=True,
+        blank=True,
+        help_text=(
+            "The user who claimed this stage by deciding it. Null while the "
+            "stage is open: authority comes from the eligible_approvers "
+            "snapshot, not from this field."
+        ),
     )
     status = models.CharField(
         max_length=16,
@@ -180,8 +193,53 @@ class CancellationApprovalStage(models.Model):
             ),
         ]
 
+    def eligible_approver_ids(self) -> tuple[int, ...]:
+        """The people entitled to act on this stage, from the snapshot.
+
+        Reads through :class:`CancellationStageApprover` rather than
+        ``approver``, so a later change to the source workflow's membership
+        cannot alter who may decide an open cancellation request.
+        """
+        return tuple(
+            self.eligible_approvers.order_by("user_id").values_list(
+                "user_id", flat=True
+            )
+        )
+
     def __str__(self) -> str:
         return f"Stage {self.order} ({self.role_label})"
+
+
+class CancellationStageApprover(models.Model):
+    """Who was entitled to act on a cancellation stage when it was created.
+
+    Mirrors ``workflows.ApplicationStageApprover``. The set is snapshotted from
+    the source ``ApplicationStage`` at request time so that HR editing the
+    section afterwards never changes the approvers of an in-flight request.
+    """
+
+    stage = models.ForeignKey(
+        CancellationApprovalStage,
+        on_delete=models.CASCADE,
+        related_name="eligible_approvers",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="cancellation_stage_eligibility",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["stage", "user"],
+                name="cancellation_stage_approver_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Eligible approver {self.user_id} on cancellation stage {self.stage_id}"
 
 
 class BalanceTransactionLockedError(Exception):

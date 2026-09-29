@@ -5,5 +5,5 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  return apiFetch("DELETE", `team-members/${id}/`);
+  return apiFetch("DELETE", `section-members/${id}/`);
 }

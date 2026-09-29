@@ -13,6 +13,17 @@ from decimal import Decimal
 from .models import CancellationApprovalStage, CancellationRequest
 
 
+def _user_name(pk) -> str | None:
+    if pk is None:
+        return None
+    from users.models import User
+
+    user = User.objects.filter(pk=pk).first()
+    if user is None:
+        return None
+    return user.get_full_name() or user.username
+
+
 def eligibility_payload(application, eligibility, today=None):
     """The GET cancellation-eligibility payload (spec 3.4)."""
     from .providers import get_today as _today
@@ -109,10 +120,12 @@ def approver_detail(request: CancellationRequest, user, today=None) -> dict:
         (s for s in stages if s.status == CancellationApprovalStage.Status.PENDING),
         None,
     )
+    # A section is decided by any of its snapshotted members, so authority is
+    # membership in the open stage's set rather than equality with one person.
     can_decide = (
         pending is not None
         and request.status == CancellationRequest.Status.PENDING
-        and pending.approver_id == user.id
+        and user.id in pending.eligible_approver_ids()
     )
     my_stage = next(
         (s for s in stages if s.approver_id == user.id), None
@@ -161,14 +174,29 @@ def approver_detail(request: CancellationRequest, user, today=None) -> dict:
 
 
 def _stage_payload(stage: CancellationApprovalStage) -> dict:
+    """One cancellation stage for the stepper.
+
+    ``approver_name`` is null while the stage is open: a section is resolved by
+    whoever acts first, so nobody owns it until a decision lands.
+    ``eligible_approvers`` carries the snapshot instead.
+    """
+    eligible_names = [
+        name
+        for name in (_user_name(uid) for uid in stage.eligible_approver_ids())
+        if name
+    ]
     return {
         "id": str(stage.id),
         "order": stage.order,
         "role": stage.role,
         "role_label": stage.role_label,
         "status": stage.status,
-        "approver_name": stage.approver.get_full_name()
-        or stage.approver.username,
+        "approver_name": (
+            stage.approver.get_full_name() or stage.approver.username
+            if stage.approver_id
+            else None
+        ),
+        "eligible_approvers": eligible_names,
         "decided_at": _iso(stage.decided_at),
         "comment": stage.comment or None,
     }

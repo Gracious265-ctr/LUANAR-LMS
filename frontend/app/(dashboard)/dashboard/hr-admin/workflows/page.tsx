@@ -31,7 +31,7 @@ export default async function WorkflowsPage() {
           <h2 className="text-2xl font-bold text-text-primary">Workflows</h2>
           <p className="text-text-secondary">
             Define the approval sequence applied to leave applications by
-            employee category and department. Every stage is mandatory and
+            employee category and department. Every section is mandatory and
             executes in order.
           </p>
         </div>

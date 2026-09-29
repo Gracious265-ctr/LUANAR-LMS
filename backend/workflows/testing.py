@@ -1,22 +1,25 @@
-"""Shared builders for approver-role, team, and routing test fixtures.
+"""Shared builders for approver-role, section, and routing test fixtures.
 
 Routing used to be a property of ``User.role``, so a test could express "this
-user is a supervisor" with one keyword argument. It is now a property of the role
-tables, so expressing the same thing takes a role, a team, and a membership row.
-This module is that one-liner, so tests stay readable and — more importantly — so
-they build the *real* graph rather than a parallel one that could drift from what
-the product actually does.
+user is a supervisor" with one keyword argument. It is now a property of the
+configuration tables, so expressing the same thing takes a role, a section, and
+a membership row. This module is that one-liner, so tests stay readable and — more
+importantly — so they build the *real* graph rather than a parallel one that could
+drift from what the product actually does.
 
-Two builders cover almost everything:
+Three builders cover almost everything:
 
 * :func:`make_approver` — one person holding one approver role, institution-wide.
   Enough for roles the routing tests resolve through ``RoleAssignment``.
-* :func:`build_routing` — a full team with a workflow and a member per role, plus
-  employees placed on it. This is the shape
+* :func:`build_routing` — a full team with a workflow, a section per chain step,
+  and a member per section, plus employees placed on the team. This is the shape
   :class:`~workflows.providers.DatabaseWorkflowProvider` reads, so it is what the
   database-provider tests should use.
+* :func:`add_approver_to_section` — a *second* member on an existing section.
+  A section is resolved by whoever acts first, so most routing tests want exactly
+  one member and the interesting cases are the ones that add another.
 
-Both are idempotent on natural keys, so a ``setUp`` can call them freely.
+All are idempotent on natural keys, so a ``setUp`` can call them freely.
 """
 
 from django.contrib.auth import get_user_model
@@ -26,10 +29,10 @@ from users.models import EmployeeProfile
 from .models import (
     ApproverRole,
     RoleAssignment,
+    Section,
+    SectionMember,
     Team,
-    TeamMember,
     Workflow,
-    WorkflowStage,
 )
 
 DEV_PASSWORD = "testpass123"
@@ -167,7 +170,11 @@ def make_approver(
 
 
 def make_workflow(name: str, role_codes, *, is_active: bool = True) -> Workflow:
-    """A workflow whose stages reference the named roles, in order."""
+    """A workflow with one section per named role, in order.
+
+    Sections are named after their role so the fixture reads the way the old
+    ``WorkflowStage`` rows did; pass ``names`` to give them HR-style labels.
+    """
     roles = ensure_roles(*role_codes)
     workflow, _ = Workflow.objects.update_or_create(
         name=name,
@@ -176,18 +183,53 @@ def make_workflow(name: str, role_codes, *, is_active: bool = True) -> Workflow:
             "effective_from": None,
         },
     )
-    workflow.stages.all().delete()
-    WorkflowStage.objects.bulk_create(
+    workflow.sections.all().delete()
+    Section.objects.bulk_create(
         [
-            WorkflowStage(
+            Section(
                 workflow=workflow,
                 order=index,
+                name=roles[code].label,
                 approver_role=roles[code],
             )
             for index, code in enumerate(role_codes, start=1)
         ]
     )
     return workflow
+
+
+def make_section(workflow, order: int, role_code: str, *, name: str | None = None):
+    """One section on ``workflow``, resolving ``role_code`` to its role row."""
+    role = ensure_roles(role_code)[role_code]
+    section, _ = Section.objects.update_or_create(
+        workflow=workflow,
+        order=order,
+        defaults={"name": name or role.label, "approver_role": role},
+    )
+    return section
+
+
+def make_stage(workflow, order: int, role_code: str):
+    """Backwards-compatible alias for :func:`make_section`.
+
+    Tests that read "the second stage" are describing the same thing a section
+    is now; keeping the old name would mean two vocabularies for one concept, so
+    the old name stays only until the call sites are updated.
+    """
+    return make_section(workflow, order, role_code)
+
+
+def add_approver_to_section(section, role_code: str, *, user=None):
+    """Put one more person on ``section`` so it has several possible approvers.
+
+    This is the capability sections exist for: a step two people may act on. The
+    second member is a *set* addition, not a replacement, so the section still
+    routes to whoever the test built first.
+    """
+    roles = ensure_roles(role_code)
+    user = user or make_approver(role_code, roles=roles, institution_wide=False)
+    SectionMember.objects.get_or_create(section=section, user=user)
+    return user
 
 
 def make_team(
@@ -200,11 +242,17 @@ def make_team(
     is_active: bool = True,
     employees=(),
 ) -> Team:
-    """A team with one member per role, plus any employees placed on it.
+    """A team routed by ``workflow``, with the named roles staffed.
 
     ``approvers`` maps a role code to a user, for tests that need the approver to
     be a specific person. Roles not named fall back to
     :func:`make_approver` with the conventional username.
+
+    ``role_codes`` says which sections to staff, and it does **not** have to
+    cover the whole workflow. A section whose role is not listed is left with no
+    member, which is how a test reaches the institution-wide fallback, or a
+    section with nobody to act for it. Use :func:`add_approver_to_section` to put
+    a second person on one of the sections built here.
     """
     roles = ensure_roles(*role_codes)
     workflow = workflow or make_workflow(f"{name} Workflow", role_codes)
@@ -216,11 +264,20 @@ def make_team(
             "is_active": is_active,
         },
     )
-    for role_code in role_codes:
+    wanted = set(role_codes)
+    sections = [
+        section
+        for section in team.workflow.sections.order_by("order").select_related(
+            "approver_role"
+        )
+        if section.approver_role.code in wanted
+    ]
+    for section in sections:
+        role_code = section.approver_role.code
         user = (approvers or {}).get(role_code)
         if user is None:
             user = make_approver(role_code, roles=roles)
-        TeamMember.objects.get_or_create(team=team, role=roles[role_code], user=user)
+        SectionMember.objects.get_or_create(section=section, user=user)
     for employee in employees:
         profile = EmployeeProfile.objects.filter(user=employee).first()
         if profile is None:
@@ -338,17 +395,4 @@ def create_user_with_role(username: str, *, role, **kwargs):
         password=kwargs.pop("password", DEV_PASSWORD),
         role=role,
         **kwargs,
-    )
-
-
-def make_stage(workflow, order: int, role_code: str):
-    """Create a ``WorkflowStage`` for a workflow, resolving ``role_code``.
-
-    ``WorkflowStage.approver_role`` is a FK, so a bare code string cannot be
-    assigned. Tests keep naming stages by code for readability; this does the
-    lookup. Returns the stage.
-    """
-    role = ensure_roles(role_code)[role_code]
-    return WorkflowStage.objects.create(
-        workflow=workflow, order=order, approver_role=role
     )

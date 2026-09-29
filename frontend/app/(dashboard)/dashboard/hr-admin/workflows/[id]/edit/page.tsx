@@ -57,7 +57,7 @@ export default async function EditWorkflowPage({
           Edit workflow
         </h2>
         <p className="text-text-secondary">
-          {workflow.name}. Reorder, add, or remove stages; the sequence is
+          {workflow.name}. Reorder, add, or remove sections; the sequence is
           saved when you submit.
         </p>
       </div>

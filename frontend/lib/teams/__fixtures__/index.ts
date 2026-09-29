@@ -14,7 +14,11 @@ export function makeCampus(overrides: Partial<Campus> = {}): Campus {
   };
 }
 
-/** A team as the API reports it, with its members and stage roles expanded. */
+/**
+ * A team as the API reports it. Members are derived from the workflow's
+ * sections, so the flattening on a team row lists each person with the
+ * sections they sit on.
+ */
 export function makeTeam(overrides: Partial<Team> = {}): Team {
   return {
     id: 4,
@@ -32,22 +36,34 @@ export function makeTeam(overrides: Partial<Team> = {}): Team {
     ],
     member_count: 0,
     members: [],
+    sections: [
+      {
+        id: 1,
+        name: "Direct supervisor",
+        order: 1,
+        is_active: true,
+        approver_role: "supervisor",
+        approver_role_label: "Supervisor",
+        member_count: 0,
+      },
+    ],
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
 
-/** A team membership as the API reports it. */
+/**
+ * A flattened team-member row as the API reports it: the person, the sections
+ * they can act for, and the roles those sections ask for.
+ */
 export function makeTeamMember(overrides: Partial<TeamMember> = {}): TeamMember {
   return {
-    id: 9,
-    team: 4,
     user: 3,
     user_name: "Jane Dean",
-    role: "supervisor",
-    role_label: "Supervisor",
-    created_at: "2026-01-01T00:00:00Z",
+    user_email: "jane.dean@test.luanar",
+    sections: [{ id: 1, name: "Direct supervisor", order: 1 }],
+    roles: [{ id: 1, code: "supervisor", label: "Supervisor" }],
     ...overrides,
   };
 }

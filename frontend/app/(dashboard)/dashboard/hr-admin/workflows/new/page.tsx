@@ -43,7 +43,7 @@ export default async function NewWorkflowPage() {
         </h2>
         <p className="text-text-secondary">
           Build the approval sequence for a category or department. The first
-          stage runs first, then each following stage in order.
+          section runs first, then each following section in order.
         </p>
       </div>
 

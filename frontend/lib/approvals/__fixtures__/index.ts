@@ -173,15 +173,26 @@ export function makeDecidedReview(): ApprovalReview {
   });
 }
 
-/** The applicant held the HOD role, so that stage was bypassed at stage 2. */
-export function makeSelfApprovalReview(): ApprovalReview {
+/**
+ * The applicant sat on the HOD section, so the chain did not stop there: the
+ * applicant's own membership is removed at submission and a colleague on the
+ * same section decided it. Nothing is skipped — a section whose only member is
+ * the applicant is refused instead.
+ */
+export function makeApplicantExcludedReview(): ApprovalReview {
   return makeReview({
     workflow: {
       ...BASE_REVIEW.workflow,
-      current_stage: { order: 3, role: "registrar", role_label: "Registrar", is_final: false, next_role_label: "DVC" },
+      current_stage: {
+        order: 3,
+        role: "registrar",
+        role_label: "Registrar",
+        is_final: false,
+        next_role_label: "DVC",
+      },
       stages: [
         STAGES[0],
-        { ...STAGES[1], status: "skipped", assigned_approver: "Chikondi Mbewe" },
+        { ...STAGES[1], status: "approved", decided_at: "2026-09-22T11:00:00Z" },
         { ...STAGES[2], status: "pending" },
         STAGES[3],
       ],

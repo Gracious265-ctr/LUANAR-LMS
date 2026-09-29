@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApprovalDetail } from "@/components/approvals/approval-detail";
 import {
+  makeApplicantExcludedReview,
   makeDecidedReview,
   makeReview,
-  makeSelfApprovalReview,
 } from "@/lib/approvals/__fixtures__";
 import { fetchApproval } from "@/lib/approvals/service";
 
@@ -44,21 +44,18 @@ describe("ApprovalDetail", () => {
     expect(screen.getByText("Looks good.")).toBeInTheDocument();
   });
 
-  it("shows a stage skipped because the flow starts after the applicant", async () => {
+  it("shows no skipped stage when the applicant sat on a section", async () => {
     mockedFetchApproval.mockResolvedValue({
       ok: true,
-      data: makeSelfApprovalReview(),
+      data: makeApplicantExcludedReview(),
     });
     render(<ApprovalDetail id="app-1" />);
 
-    expect(
-      await screen.findByText(
-          "Skipped — the approval flow starts after the applicant",
-        )
-    ).toBeInTheDocument();
-    // The stage keeps the applicant as its configured approver, so the timeline
-    // still shows who the stage would have gone to.
-    expect(screen.getAllByText("Chikondi Mbewe").length).toBeGreaterThan(0);
+    // The applicant's own membership is removed at submission and a colleague
+    // on the same section decides it, so the chain runs straight through with
+    // nothing bypassed.
+    expect(await screen.findByText("Awaiting your decision")).toBeInTheDocument();
+    expect(screen.queryByText(/Skipped/i)).not.toBeInTheDocument();
     expect(screen.getAllByText("Not yet reached")).toHaveLength(1);
   });
 

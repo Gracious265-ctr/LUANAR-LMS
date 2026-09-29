@@ -185,21 +185,22 @@ class StubRulesProvider:
 def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | None:
     """The lowest-id active user *holding* ``role``, optionally not ``exclude``.
 
-    Resolution goes through the role tables — a team membership or an
+    Resolution goes through the role tables — a section membership or an
     institution-wide assignment — not ``User.role``, which no longer records an
-    approval position. Falls back to institution-wide holders when no team member
-    exists, mirroring :func:`workflows.providers.resolve_stage_approver`.
+    approval position. A section may hold several members, so this is
+    deliberately the lowest id of all of them; a stub that needs a specific
+    person to act registers them explicitly instead.
 
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
-    from workflows.models import ApproverRole, RoleAssignment, TeamMember
+    from workflows.models import ApproverRole, RoleAssignment, SectionMember
 
     role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
     if role_obj is None:
         return None
     holder_ids = set(
-        TeamMember.objects.filter(role=role_obj)
+        SectionMember.objects.filter(section__approver_role=role_obj)
         .values_list("user_id", flat=True)
     ) | set(
         RoleAssignment.objects.filter(role=role_obj).values_list("user_id", flat=True)
@@ -258,7 +259,7 @@ class StubWorkflowProvider:
     """
 
     def __init__(self):
-        self.approvers: dict[str, int] = {}
+        self.approvers: dict[str, set[int]] = {}
         self.default_chain = ("supervisor", "hod", "registrar", "dvc")
         self.strict = False
         self.cancellation_roles = ("supervisor", "hod")
@@ -269,7 +270,8 @@ class StubWorkflowProvider:
         self.default_chain = tuple(roles)
 
     def register_approver(self, role: str, user) -> None:
-        self.approvers[role] = user.id
+        """Add ``user`` to ``role``'s section. Repeatable: sections take any-of."""
+        self.approvers.setdefault(role, set()).add(user.id)
 
     def _filler_approver_id(self, role: str) -> int:
         """A stable, non-applicant approver for an otherwise unstaffed role.
@@ -288,26 +290,41 @@ class StubWorkflowProvider:
         return self._fillers[role]
 
     def get_stage_definitions(self, application):
+        """A planned chain, one definition per step, as a set of approvers.
+
+        A section is decided by whichever eligible person acts first, so the stub
+        resolves to a *set* here exactly as the real provider does, and a role
+        registered more than once is a section with several members.
+
+        The applicant is removed from every set, as the real provider removes
+        them. A section whose members were *only* the applicant therefore
+        resolves to an empty set rather than silently becoming somebody else, and
+        the caller refuses the chain — which is the shape a real
+        single-member section the applicant sits in produces.
+        """
         from workflows.providers import StageDefinition
         from workflows.testing import ensure_roles
 
         roles = ensure_roles(*self.default_chain)
         definitions = []
         for order, code in enumerate(self.default_chain, start=1):
-            approver_id = self.approvers.get(code)
-            if approver_id is None and not self.strict:
-                approver_id = _active_user_id_for_role(
+            members = set(self.approvers.get(code, ()))
+            if not members and not self.strict:
+                fallback = _active_user_id_for_role(
                     code, exclude=application.employee_id
                 )
-                if approver_id is None:
-                    approver_id = self._filler_approver_id(code)
+                if fallback is None:
+                    fallback = self._filler_approver_id(code)
+                members = {fallback}
             role = roles[code]
             definitions.append(
                 StageDefinition(
                     order=order,
                     role=role.code,
                     role_label=role.label,
-                    approver_user_id=approver_id,
+                    approver_user_ids=tuple(
+                        sorted(members - {application.employee_id})
+                    ),
                     role_id=role.pk,
                     history_scope=role.history_scope,
                     handles_cancellation=role.handles_cancellation,
@@ -341,14 +358,14 @@ class StubWorkflowProvider:
                 order=stage.stage_order,
                 role=stage.role,
                 role_label=stage.role_label or stage.role,
-                approver_user_id=stage.assigned_approver_id,
+                approver_user_ids=stage.eligible_approver_ids(),
             )
             for stage in stages
         ]
 
     def get_workflow_member_user_ids(self, application):
         from django.db.models import Min
-        from workflows.models import ApplicationStage
+        from workflows.models import ApplicationStage, ApplicationStageApprover
 
         cycle = (
             ApplicationStage.objects.filter(application=application).aggregate(
@@ -357,11 +374,12 @@ class StubWorkflowProvider:
             or 1
         )
         return list(
-            ApplicationStage.objects.filter(
-                application=application, submission_cycle=cycle
+            ApplicationStageApprover.objects.filter(
+                stage__application=application, stage__submission_cycle=cycle
             )
-            .order_by("stage_order")
-            .values_list("assigned_approver_id", flat=True)
+            .order_by("user_id")
+            .values_list("user_id", flat=True)
+            .distinct()
         )
 
 

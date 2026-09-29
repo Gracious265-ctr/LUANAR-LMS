@@ -29,11 +29,17 @@ export function TeamForm({
     const campus = String(formData.get("campus") || "");
     const workflow = String(formData.get("workflow") || "");
 
+    if (!workflow) {
+      setError("Choose the approval workflow this team routes through.");
+      setLoading(false);
+      return;
+    }
+
     const input: TeamInput = {
       name: String(formData.get("name") || ""),
       description: String(formData.get("description") || ""),
       campus: campus ? Number(campus) : null,
-      workflow: workflow ? Number(workflow) : null,
+      workflow: Number(workflow),
       is_active: formData.get("is_active") === "on",
     };
 
@@ -132,7 +138,7 @@ export function TeamForm({
           defaultValue={team?.workflow ?? ""}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
-          <option value="">Institution-wide workflow</option>
+          <option value="">Choose a workflow…</option>
           {workflows.map((workflow) => (
             <option key={workflow.id} value={workflow.id}>
               {workflow.name}
@@ -140,8 +146,8 @@ export function TeamForm({
           ))}
         </select>
         <p className="mt-1 text-xs text-text-muted">
-          Which chain this team&apos;s applications follow. Without one they
-          follow the institution-wide workflow.
+          The approval chain this team&apos;s applications follow. It owns the
+          sections, so its steps define who may act for this team.
         </p>
       </div>
 

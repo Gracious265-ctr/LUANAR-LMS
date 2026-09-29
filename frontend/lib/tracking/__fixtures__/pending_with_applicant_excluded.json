@@ -1,6 +1,6 @@
 {
   "application": {
-    "id": "app-pending-skipped",
+    "id": "app-pending-applicant-excluded",
     "reference_number": "LV-2026-27-900003",
     "leave_type": {
       "id": 1,
@@ -42,16 +42,16 @@
       "order": 2,
       "role": "hod",
       "role_label": "HOD",
-      "state": "skipped",
+      "state": "approved",
       "approver": {
-        "name": "Test Employee",
-        "designation": "Head of Department",
+        "name": "Ms. Grace Kanyama",
+        "designation": "Deputy Head of Department",
         "is_delegate": false,
         "on_behalf_of": null
       },
       "assigned_at": "2026-10-12T08:32:11Z",
-      "decided_at": null,
-      "comment": null
+      "decided_at": "2026-10-15T10:04:42Z",
+      "comment": "Covering while the HOD is on leave."
     },
     {
       "order": 3,
@@ -81,7 +81,7 @@
   ],
   "events": [
     {
-      "id": "evt-pending_with_skipped_stage-approved-1",
+      "id": "evt-pending_applicant_excluded-approved-1",
       "type": "approved",
       "occurred_at": "2026-10-14T07:15:03Z",
       "stage_order": 1,
@@ -93,7 +93,19 @@
       "resubmission_number": null
     },
     {
-      "id": "evt-pending_with_skipped_stage-submitted",
+      "id": "evt-pending_applicant_excluded-approved-2",
+      "type": "approved",
+      "occurred_at": "2026-10-15T10:04:42Z",
+      "stage_order": 2,
+      "actor": {
+        "name": "Ms. Grace Kanyama",
+        "role_label": "HOD"
+      },
+      "comment": "Covering while the HOD is on leave.",
+      "resubmission_number": null
+    },
+    {
+      "id": "evt-pending_applicant_excluded-submitted",
       "type": "submitted",
       "occurred_at": "2026-10-12T07:15:03Z",
       "stage_order": null,

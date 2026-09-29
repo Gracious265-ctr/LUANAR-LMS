@@ -372,7 +372,7 @@ class CancellationListAPIView(APIView):
             # request whose pending stage belongs to someone else.
             is_current = CancellationApprovalStage.objects.filter(
                 request=OuterRef("pk"),
-                approver=user,
+                eligible_approvers__user=user,
                 status=CancellationApprovalStage.Status.PENDING,
             )
             requests = (
@@ -544,8 +544,8 @@ def _find_cancellation(user, request_id):
     )
     if request_row is None:
         return None
-    assigned = CancellationApprovalStage.objects.filter(
+    entitled = CancellationApprovalStage.objects.filter(
         request=request_row,
-        approver=user,
+        eligible_approvers__user=user,
     ).exclude(status=CancellationApprovalStage.Status.NOT_REACHED)
-    return request_row if assigned.exists() else None
+    return request_row if entitled.exists() else None

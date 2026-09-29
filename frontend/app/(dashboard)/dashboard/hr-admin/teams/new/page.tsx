@@ -42,8 +42,9 @@ export default async function NewTeamPage() {
         </Link>
         <h2 className="mt-2 text-2xl font-bold text-text-primary">New team</h2>
         <p className="text-text-secondary">
-          Create the group an employee belongs to. Give it a workflow, then add
-          the people who will approve.
+          Create the group an employee belongs to. Give it a workflow; that
+          workflow&apos;s sections define who approves, and sections are staffed on
+          the teams list.
         </p>
       </div>
 

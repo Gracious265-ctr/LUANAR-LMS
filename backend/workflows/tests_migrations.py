@@ -189,7 +189,10 @@ class BackfillMigrationTests(MigrationTestCase):
         """At 0011 the code is copied; only 0012 makes it a navigable relation."""
         self.build_legacy_state()
         self.migrate(WORKFLOWS[2])
-        from workflows.models import WorkflowStage  # noqa: PLC0415
+        # Read the model out of the migrated state, not ``workflows.models``:
+        # ``WorkflowStage`` is a historical model and no longer exists in the
+        # live schema.
+        WorkflowStage = self.state(WORKFLOWS[2]).get_model("workflows", "WorkflowStage")
 
         stage = WorkflowStage.objects.get(workflow__name="Faculty chain", order=2)
         self.assertEqual(stage.approver_role.code, "dean")
@@ -314,11 +317,16 @@ class ForeignKeySwapTests(MigrationTestCase):
     """0012 drops the text column; the reverse has to bring the codes back."""
 
     def build_role_backed_stage(self):
-        from workflows.models import (  # noqa: PLC0415
-            ApproverRole,
-            Workflow,
-            WorkflowStage,
-        )
+        """A role-backed stage in the state 0012 operates on.
+
+        ``WorkflowStage`` no longer exists in the live schema, so it is built
+        from the historical state 0012 expects — which is exactly the point:
+        this fixture is the thing 0012 is rewriting.
+        """
+        apps = self.state(WORKFLOWS[2])
+        ApproverRole = apps.get_model("workflows", "ApproverRole")
+        Workflow = apps.get_model("workflows", "Workflow")
+        WorkflowStage = apps.get_model("workflows", "WorkflowStage")
 
         role, _ = ApproverRole.objects.get_or_create(
             code="dean", defaults={"label": "Dean"}
@@ -339,10 +347,17 @@ class ForeignKeySwapTests(MigrationTestCase):
 
     def test_workflow_stages_end_up_with_a_role_reference(self):
         self.migrate(WORKFLOWS[2])
-        from workflows.models import ApproverRole  # noqa: PLC0415
-
         stage = self.build_role_backed_stage()
-        self.assertEqual(stage.approver_role, ApproverRole.objects.get(code="dean"))
+        # Compared on the id, not on object identity: the stage is a historical
+        # model instance and the role is a live one, so ``assertEqual`` would
+        # compare instances of two unrelated classes.
+        self.assertEqual(
+            stage.approver_role_id,
+            self.state(WORKFLOWS[2])
+            .get_model("workflows", "ApproverRole")
+            .objects.get(code="dean")
+            .pk,
+        )
         self.assertIn("approver_role_id", self.stage_columns())
         self.assertNotIn("approver_role", self.stage_columns())
 
@@ -415,17 +430,25 @@ class ModelConstraintTests(MigrationTestCase):
     def test_role_and_team_codes_are_unique(self):
         from django.db import IntegrityError, transaction  # noqa: PLC0415
 
-        from workflows.models import ApproverRole, Campus, Team  # noqa: PLC0415
+        from workflows.models import (  # noqa: PLC0415
+            ApproverRole,
+            Campus,
+            Team,
+            Workflow,
+        )
 
         ApproverRole.objects.create(code="dean", label="Dean")
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 ApproverRole.objects.create(code="dean", label="Dean again")
 
-        Team.objects.create(name="Science", code="science")
+        workflow = Workflow.objects.create(name="Chain", is_active=True)
+        Team.objects.create(name="Science", code="science", workflow=workflow)
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                Team.objects.create(name="Science copy", code="science")
+                Team.objects.create(
+                    name="Science copy", code="science", workflow=workflow
+                )
 
         Campus.objects.create(name="Tehune", code="tehune")
         with self.assertRaises(IntegrityError):
@@ -436,14 +459,30 @@ class ModelConstraintTests(MigrationTestCase):
         from django.db import IntegrityError, transaction  # noqa: PLC0415
 
         from users.models import User  # noqa: PLC0415
-        from workflows.models import ApproverRole, Team, TeamMember  # noqa: PLC0415
+        from workflows.models import (  # noqa: PLC0415
+            ApproverRole,
+            Section,
+            SectionMember,
+            Team,
+            Workflow,
+        )
 
-        science = Team.objects.create(name="Science", code="science")
-        arts = Team.objects.create(name="Arts", code="arts")
+        science_workflow = Workflow.objects.create(
+            name="Science chain", is_active=True
+        )
+        arts_workflow = Workflow.objects.create(name="Arts chain", is_active=True)
+        science = Team.objects.create(
+            name="Science", code="science", workflow=science_workflow
+        )
+        arts = Team.objects.create(name="Arts", code="arts", workflow=arts_workflow)
         supervisor_role = ApproverRole.objects.create(
             code="supervisor", label="Supervisor"
         )
         hod_role = ApproverRole.objects.create(code="hod", label="Head of Department")
+        section = Section.objects.create(
+            workflow=science_workflow, order=1, name="Supervisor",
+            approver_role=supervisor_role,
+        )
 
         one = User.objects.create_user(
             username="one@constraints.test", email="one@constraints.test", password="x"
@@ -452,24 +491,30 @@ class ModelConstraintTests(MigrationTestCase):
             username="two@constraints.test", email="two@constraints.test", password="x"
         )
 
-        TeamMember.objects.create(team=science, user=one, role=supervisor_role)
+        # A section takes any number of people — that is the whole point — so
+        # there is no one-member-per-section constraint left to violate. What
+        # remains is the single rule: not twice in the same section.
+        SectionMember.objects.create(section=section, user=one)
+        SectionMember.objects.create(section=section, user=two)
+        self.assertEqual(SectionMember.objects.filter(section=section).count(), 2)
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                TeamMember.objects.create(team=science, user=two, role=supervisor_role)
-        TeamMember.objects.create(team=science, user=two, role=hod_role)
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                TeamMember.objects.create(team=science, user=two, role=supervisor_role)
-        self.assertEqual(TeamMember.objects.filter(team=science).count(), 2)
+                SectionMember.objects.create(section=section, user=two)
+        self.assertEqual(SectionMember.objects.filter(section=section).count(), 2)
         self.assertIsNotNone(arts.pk)
 
     def test_a_campus_referenced_by_a_team_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
-        from workflows.models import Campus, Team  # noqa: PLC0415
+        from workflows.models import Campus, Team, Workflow  # noqa: PLC0415
 
         campus = Campus.objects.create(name="Tehune", code="tehune")
-        Team.objects.create(name="Tehune team", code="tehune-team", campus=campus)
+        Team.objects.create(
+            name="Tehune team",
+            code="tehune-team",
+            campus=campus,
+            workflow=Workflow.objects.create(name="Chain", is_active=True),
+        )
         with self.assertRaises(ProtectedError):
             campus.delete()
 
@@ -483,16 +528,44 @@ class ModelConstraintTests(MigrationTestCase):
         with self.assertRaises(ProtectedError):
             workflow.delete()
 
-    def test_a_role_referenced_by_a_stage_cannot_be_deleted(self):
+    def test_a_role_referenced_by_a_section_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
-        from workflows.models import ApproverRole, Workflow, WorkflowStage  # noqa: PLC0415
+        from workflows.models import ApproverRole, Section, Workflow  # noqa: PLC0415
 
         role = ApproverRole.objects.create(code="dean", label="Dean")
         workflow = Workflow.objects.create(name="Chain", is_active=True)
-        WorkflowStage.objects.create(workflow=workflow, order=1, approver_role=role)
+        Section.objects.create(
+            workflow=workflow, order=1, name="Dean", approver_role=role
+        )
         with self.assertRaises(ProtectedError):
             role.delete()
+
+    def test_a_role_referenced_by_a_section_member_cannot_be_deleted(self):
+        """Members are people, so a user in a section blocks the user deletion."""
+        from django.db.models import ProtectedError  # noqa: PLC0415
+
+        from django.contrib.auth import get_user_model  # noqa: PLC0415
+
+        from workflows.models import (  # noqa: PLC0415
+            ApproverRole,
+            Section,
+            SectionMember,
+            Workflow,
+        )
+
+        User = get_user_model()
+        role = ApproverRole.objects.create(code="dean", label="Dean")
+        workflow = Workflow.objects.create(name="Chain", is_active=True)
+        section = Section.objects.create(
+            workflow=workflow, order=1, name="Dean", approver_role=role
+        )
+        user = User.objects.create_user(
+            username="dean-in-section", email="dean-in-section@test.luanar"
+        )
+        SectionMember.objects.create(section=section, user=user)
+        with self.assertRaises(ProtectedError):
+            user.delete()
 
 
 class UserRoleMigrationTests(MigrationTestCase):

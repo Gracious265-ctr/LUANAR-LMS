@@ -11,13 +11,37 @@ export { workflowStateBadgeClass } from "./workflows-client";
 
 export type { WorkflowCategoryCode, WorkflowState } from "./workflows-client";
 
-export interface WorkflowStage {
+/**
+ * One step of a workflow. `members` are the people who may act for it: the
+ * section is decided by whichever of them acts first, so a step is not a single
+ * approver but a roster with one seat taken per decision.
+ */
+export interface WorkflowSection {
   id: number;
+  name: string;
   order: number;
   /** The role's stable code. Open-ended: HR can add roles this build never saw. */
   approver_role: string;
   /** The role's label as read, so a chain is readable without a second lookup. */
   approver_role_label: string;
+  description: string;
+  is_active: boolean;
+  members: SectionMember[];
+  member_count: number;
+}
+
+export interface SectionMember {
+  id: number;
+  section: number;
+  section_name: string;
+  section_order: number;
+  workflow: number;
+  approver_role: string;
+  approver_role_label: string;
+  user: number;
+  user_name: string;
+  user_email: string;
+  created_at: string;
 }
 
 export interface Workflow {
@@ -28,12 +52,20 @@ export interface Workflow {
   effective_from: string | null;
   is_active: boolean;
   state: WorkflowState;
-  stages: WorkflowStage[];
+  sections: WorkflowSection[];
 }
 
-export interface WorkflowStageInput {
+export interface WorkflowSectionInput {
+  /**
+   * The section's name is part of its identity: a section whose name or role
+   * changes is a different step and comes back with no members, so the roster
+   * is never handed to a new role without HR asking.
+   */
+  name: string;
   order: number;
   approver_role: string;
+  description?: string;
+  is_active?: boolean;
 }
 
 export interface WorkflowInput {
@@ -42,7 +74,7 @@ export interface WorkflowInput {
   department?: string;
   effective_from?: string | null;
   is_active?: boolean;
-  stages: WorkflowStageInput[];
+  sections: WorkflowSectionInput[];
 }
 
 export interface WorkflowListResponse {

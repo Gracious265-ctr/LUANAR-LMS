@@ -5,12 +5,16 @@ export type TrackingStatus =
   | "correction_required"
   | "cancelled";
 
+/**
+ * No `skipped` state: a section whose only member is the applicant is a
+ * configuration error the backend refuses, so an application never advances
+ * past a step. A step that has not been reached is `upcoming`.
+ */
 export type StageState =
   | "approved"
   | "awaiting"
   | "rejected"
   | "returned"
-  | "skipped"
   | "upcoming";
 
 export type EventType =

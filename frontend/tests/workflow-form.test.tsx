@@ -38,9 +38,29 @@ const workflow: Workflow = {
   effective_from: "2026-09-01",
   is_active: true,
   state: "active",
-  stages: [
-    { id: 1, order: 1, approver_role: "supervisor", approver_role_label: "Supervisor" },
-    { id: 2, order: 2, approver_role: "hod", approver_role_label: "Head of Department" },
+  sections: [
+    {
+      id: 1,
+      name: "Direct supervisor",
+      order: 1,
+      approver_role: "supervisor",
+      approver_role_label: "Supervisor",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
+    {
+      id: 2,
+      name: "Department head",
+      order: 2,
+      approver_role: "hod",
+      approver_role_label: "Head of Department",
+      description: "",
+      is_active: true,
+      members: [],
+      member_count: 0,
+    },
   ],
 };
 
@@ -57,8 +77,8 @@ describe("WorkflowForm", () => {
     expect(screen.getByLabelText("Workflow name")).toBeInTheDocument();
     expect(screen.getByLabelText("Employee category")).toBeInTheDocument();
     expect(screen.getByLabelText("Department / Faculty")).toBeInTheDocument();
-    expect(screen.getByText("Approval stages")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add stage" })).toBeInTheDocument();
+    expect(screen.getByText("Approval sections")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add section" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create workflow" })
     ).toBeInTheDocument();
@@ -79,7 +99,7 @@ describe("WorkflowForm", () => {
 
     // A role this build has no code for is offered like any other, and nothing
     // appears that HR did not create.
-    expect(roleOptions(screen.getByLabelText("Stage 1 approver"))).toEqual([
+    expect(roleOptions(screen.getByLabelText("Section 1 approver"))).toEqual([
       "supervisor",
       "hod",
       "chief_auditor",
@@ -96,8 +116,11 @@ describe("WorkflowForm", () => {
     expect(screen.getByLabelText("Department / Faculty")).toHaveValue(
       "Faculty of Science"
     );
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("supervisor");
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue("hod");
+    expect(screen.getByLabelText("Section 1 approver")).toHaveValue("supervisor");
+    expect(screen.getByLabelText("Section 2 approver")).toHaveValue("hod");
+    expect(screen.getByLabelText("Section 1 name")).toHaveValue(
+      "Direct supervisor"
+    );
     expect(
       screen.getByRole("button", { name: "Save changes" })
     ).toBeInTheDocument();
@@ -128,70 +151,80 @@ describe("WorkflowForm", () => {
     expect(screen.getByLabelText("Active")).toBeChecked();
   });
 
-  it("starts a new workflow with one stage, seeded with the first role", () => {
+  it("starts a new workflow with one section, seeded with the first role", () => {
     render(<WorkflowForm roles={roles} />);
 
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("supervisor");
-    expect(screen.queryByLabelText("Stage 2 approver")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Section 1 approver")).toHaveValue("supervisor");
+    expect(screen.queryByLabelText("Section 2 approver")).not.toBeInTheDocument();
   });
 
-  it("adds a stage and reorders with move controls", () => {
+  it("adds a section and reorders with move controls", () => {
     render(<WorkflowForm roles={roles} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add stage" }));
-    expect(screen.getByLabelText("Stage 2 approver")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add section" }));
+    expect(screen.getByLabelText("Section 2 approver")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Stage 2 approver"), {
+    fireEvent.change(screen.getByLabelText("Section 2 approver"), {
       target: { value: "chief_auditor" },
     });
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue(
+    expect(screen.getByLabelText("Section 2 approver")).toHaveValue(
       "chief_auditor"
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Move stage 2 up" }));
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue(
+    fireEvent.click(screen.getByRole("button", { name: "Move section 2 up" }));
+    expect(screen.getByLabelText("Section 1 approver")).toHaveValue(
       "chief_auditor"
     );
-    expect(screen.getByLabelText("Stage 2 approver")).toHaveValue("supervisor");
+    expect(screen.getByLabelText("Section 2 approver")).toHaveValue("supervisor");
   });
 
-  it("removes a stage with its remove control", () => {
+  it("removes a section with its remove control", () => {
     render(<WorkflowForm workflow={workflow} roles={roles} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove stage 1" }));
-    expect(screen.queryByLabelText("Stage 2 approver")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Stage 1 approver")).toHaveValue("hod");
+    fireEvent.click(screen.getByRole("button", { name: "Remove section 1" }));
+    expect(screen.queryByLabelText("Section 2 approver")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Section 1 approver")).toHaveValue("hod");
   });
 
-  it("disables move-up on the first stage and move-down on the last", () => {
+  it("disables move-up on the first section and move-down on the last", () => {
     render(<WorkflowForm workflow={workflow} roles={roles} />);
 
     expect(
-      screen.getByRole("button", { name: "Move stage 1 up" })
+      screen.getByRole("button", { name: "Move section 1 up" })
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Move stage 2 down" })
+      screen.getByRole("button", { name: "Move section 2 down" })
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Move stage 2 up" })
+      screen.getByRole("button", { name: "Move section 2 up" })
     ).not.toBeDisabled();
   });
 
-  it("keeps a retired role on a saved stage selectable, flagged as inactive", () => {
+  it("keeps a retired role on a saved section selectable, flagged as inactive", () => {
     const retired: ApproverRole[] = [roles[0]];
     render(
       <WorkflowForm
         workflow={{
           ...workflow,
-          stages: [
-            { id: 1, order: 1, approver_role: "hod", approver_role_label: "Head of Department" },
+          sections: [
+            {
+              id: 1,
+              name: "Department head",
+              order: 1,
+              approver_role: "hod",
+              approver_role_label: "Head of Department",
+              description: "",
+              is_active: true,
+              members: [],
+              member_count: 0,
+            },
           ],
         }}
         roles={retired}
       />
     );
 
-    const select = screen.getByLabelText("Stage 1 approver");
+    const select = screen.getByLabelText("Section 1 approver");
     // The value is preserved rather than snapping to whatever role is still
     // active, so saving without a deliberate change cannot reroute a chain.
     expect(select).toHaveValue("hod");
@@ -204,16 +237,16 @@ describe("WorkflowForm", () => {
     render(
       <WorkflowForm
         roles={[]}
-        rolesError="Unable to load approver roles, so a stage cannot be given an approver."
+        rolesError="Unable to load approver roles, so a section cannot be given an approver."
       />
     );
 
     expect(
       screen.getByText(
-        "Unable to load approver roles, so a stage cannot be given an approver."
+        "Unable to load approver roles, so a section cannot be given an approver."
       )
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add stage" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add section" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Create workflow" })).toBeDisabled();
   });
 

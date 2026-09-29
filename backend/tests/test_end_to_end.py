@@ -45,6 +45,7 @@ from workflows.models import (
     ApprovalDecision,
     Delegation,
     Reassignment,
+    Workflow,
 )
 from workflows.providers import DatabaseWorkflowProvider
 from workflows.services import decide, reassign_application
@@ -142,7 +143,11 @@ class EndToEndBase(StubProviderMixin, TestCase):
         return events
 
     def hr_configures_chain(self, roles):
-        """HR configures the approval chain through the real audited endpoint."""
+        """HR configures the approval chain through the real audited endpoint.
+
+        The payload is the nested shape the API takes: a workflow owns ordered
+        *sections*, and each section names the role that may act on it.
+        """
         self.client.force_authenticate(user=self.hr)
         response = self.client.post(
             "/api/v1/workflows/",
@@ -152,8 +157,8 @@ class EndToEndBase(StubProviderMixin, TestCase):
                 "department": "",
                 "is_active": True,
                 "effective_from": timezone.localdate().isoformat(),
-                "stages": [
-                    {"order": index, "approver_role": role}
+                "sections": [
+                    {"order": index, "name": role.title(), "approver_role": role}
                     for index, role in enumerate(roles, start=1)
                 ],
             },
@@ -162,14 +167,30 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         return response.data
 
-    def hr_creates_team(self, workflow_id, roles, approvers):
-        """HR wires the chain into a team and staffs every role on it.
+    def hr_staffs_sections(self, workflow_id, roles, approvers):
+        """HR puts each approver on the section that has to name them.
 
         A workflow alone routes nothing: the applicant's team names the workflow,
-        and each role is resolved to the team's member. Doing this through the
-        real endpoints keeps the journey end-to-end — this is the configuration
-        an HR user actually performs, not a hand-built fixture.
+        and each section resolves to the people on it, minus the applicant.
+        Doing this through the real endpoints keeps the journey end-to-end —
+        this is the configuration an HR user actually performs, not a hand-built
+        fixture.
         """
+        sections = {
+            section.approver_role.code: section.id
+            for section in Workflow.objects.get(pk=workflow_id).sections.all()
+        }
+        for role in roles:
+            response = self.client.post(
+                "/api/v1/section-members/",
+                {"section": sections[role], "user": approvers[role].id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201, response.data)
+
+    def hr_creates_team(self, workflow_id, roles, approvers):
+        """HR creates the team the applicant's team points at."""
+        self.hr_staffs_sections(workflow_id, roles, approvers)
         self.client.force_authenticate(user=self.hr)
         response = self.client.post(
             "/api/v1/teams/",
@@ -181,17 +202,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        team_id = response.data["id"]
-
-
-        for role in roles:
-            response = self.client.post(
-                "/api/v1/team-members/",
-                {"team": team_id, "user": approvers[role].id, "role": role},
-                format="json",
-            )
-            self.assertEqual(response.status_code, 201, response.data)
-        return team_id
+        return response.data["id"]
 
     def place_employee_on_team(self):
         """Put the applicant on the team, the way HR does it."""

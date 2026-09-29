@@ -10,13 +10,20 @@ the one before it:
 1. **Approver roles** — the six roles the product ships with. ``registrar`` and
    ``campus_registrar`` are institution-wide; the rest are team roles.
 2. **Campuses** — reference data teams can optionally belong to.
-3. **Workflows** — ordered chains of roles, e.g. supervisor → hod → registrar →
-   dvc. Stages now reference roles by foreign key.
-4. **Teams** — each points at one workflow and names who holds each role in it.
+3. **Workflows** — ordered chains of *sections*, e.g. supervisor → hod → registrar
+   → dvc. Each section names the role that may act on it and references it by
+   foreign key.
+4. **Teams** — each points at one workflow, and the workflow's sections name who
+   may act on them.
 5. **People** — employees are placed on a team (``EmployeeProfile.team``), which
-   is what selects their workflow; approvers are placed on a team in a role
-   (``TeamMember``), and the registrar is given the role institution-wide
+   is what selects their workflow; approvers are placed on the relevant section
+   (``SectionMember``), and the registrar is given the role institution-wide
    (``RoleAssignment``) because they approve for every team.
+
+Sections may hold several members, in which case whichever of them acts first
+claims the step. The seed gives each section exactly one member so the dev
+dashboard has a predictable pending item per approver; add a second member in the
+admin to try the contested case.
 
 So:
 
@@ -239,15 +246,22 @@ class Command(BaseCommand):
         }
 
     def _seed_workflows(self, roles: dict) -> None:
-        """Workflows whose stages reference approver roles by foreign key.
+        """Workflows whose sections reference approver roles by foreign key.
 
         ``effective_from`` defaults to the active financial year's start so the
-        provider treats the chains as live configuration from day one. Stages
+        provider treats the chains as live configuration from day one. Sections
         are rebuilt on every run rather than only on creation: a role retired in
         the admin would otherwise leave the workflow permanently unactivatable
         with no way to repair it from a seed.
+
+        The rebuild is skipped once an application has snapshotted the chain.
+        ``ApplicationStage.section_ref`` is ``PROTECT`` because the section a
+        running application was materialised from is its frozen history, so the
+        database refuses the delete — and would be right to. Replacing the rows a
+        live chain points at would detach it from the section that defines it, so
+        the repair path is a no-op while anything is in flight.
         """
-        from workflows.models import Workflow, WorkflowStage
+        from workflows.models import ApplicationStage, Section, Workflow
 
         from leave.services import active_financial_year
 
@@ -275,12 +289,15 @@ class Command(BaseCommand):
                     "is_active": True,
                 },
             )
-            workflow.stages.all().delete()
-            WorkflowStage.objects.bulk_create(
+            if ApplicationStage.objects.filter(section_ref__workflow=workflow).exists():
+                continue
+            workflow.sections.all().delete()
+            Section.objects.bulk_create(
                 [
-                    WorkflowStage(
+                    Section(
                         workflow=workflow,
                         order=index,
+                        name=roles[code].label,
                         approver_role=roles[code],
                     )
                     for index, code in enumerate(role_codes, start=1)
@@ -292,13 +309,15 @@ class Command(BaseCommand):
                 )
 
     def _seed_teams(self, roles: dict, campuses: dict) -> None:
-        """Teams, their members, and the institution-wide registrar holding.
+        """Teams, their sections' members, and the institution-wide registrar holding.
 
-        A team has at most one member per role, so the two seeded teams give the
-        hod and dvc users a membership in each while keeping every
-        ``(team, role)`` pair single-occupied.
+        A team points at one workflow, and the workflow's sections are the same
+        rows for every team that uses it. The two seeded teams therefore share
+        their workflows rather than each having a private copy, which is what
+        makes the shared-workflow case real in development; the registrar has no
+        section member at all so their institution-wide holding is what resolves.
         """
-        from workflows.models import RoleAssignment, Team, TeamMember, Workflow
+        from workflows.models import RoleAssignment, SectionMember, Team, Workflow
 
         for spec in SEED_TEAMS:
             workflow = Workflow.objects.get(name=spec["workflow"])
@@ -314,16 +333,26 @@ class Command(BaseCommand):
             )
             if created:
                 self.stdout.write(self.style.SUCCESS(f"Seeded team '{team.name}'."))
+            sections = {
+                section.approver_role_id: section
+                for section in workflow.sections.all()
+            }
             for role_code, username in spec["members"]:
-                TeamMember.objects.update_or_create(
-                    team=team,
-                    role=roles[role_code],
-                    defaults={"user": User.objects.get(username=username)},
+                section = sections.get(roles[role_code].pk)
+                if section is None:
+                    raise CommandError(
+                        f"Team '{team.name}' names '{username}' for role "
+                        f"'{role_code}', but its workflow "
+                        f"'{workflow.name}' has no section for that role."
+                    )
+                SectionMember.objects.update_or_create(
+                    section=section,
+                    user=User.objects.get(username=username),
                 )
 
         # The registrar approves for every team, so their holding is
         # institution-wide rather than a membership in each. This is the row that
-        # makes the "stage role with no team member" case work in development.
+        # makes the "section role with no member" case work in development.
         registrar_role = roles["registrar"]
         registrar = User.objects.get(username="registrar@test.luanar")
         RoleAssignment.objects.get_or_create(user=registrar, role=registrar_role)
@@ -511,7 +540,7 @@ class Command(BaseCommand):
             decide_cancellation,
             submit_cancellation,
         )
-        from workflows.services import decide
+        from workflows.services import decide, eligible_approver_ids
 
         prefix = f"LV-{fy_label}-810"
         if CancellationRequest.objects.filter(
@@ -561,13 +590,24 @@ class Command(BaseCommand):
             # this feature removes — and would break the moment HR reorders a
             # workflow, with a "not_current_stage" error that reads like a
             # routing bug.
+            #
+            # Each step is decided by whoever is entitled to act, read from the
+            # stage's eligibility snapshot. ``assigned_approver`` is null until
+            # somebody claims the stage, so it is never a valid actor here.
             for _ in range(len(SEED_TEAMS) + len(SEED_ROLES)):
                 stage = submitted.current_stage
                 if stage is None:
                     break
+                eligible = eligible_approver_ids(submitted, stage)
+                if not eligible:
+                    raise CommandError(
+                        f"No eligible approver for stage {stage.stage_order} of "
+                        f"{submitted.reference_number} — check the section's "
+                        "membership in HR → Teams."
+                    )
                 submitted = decide(
                     application_id=submitted.pk,
-                    actor=stage.assigned_approver,
+                    actor=User.objects.get(pk=eligible[0]),
                     action="approve",
                     comment="",
                     expected_version=stage.decision_version,
@@ -596,13 +636,19 @@ class Command(BaseCommand):
             would raise ``NotCurrentApproverError`` as soon as a team is
             reconfigured.
             """
-            stage = CancellationApprovalStage.objects.filter(
-                request=request, status=CancellationApprovalStage.Status.PENDING
-            ).order_by("order").first()
+            stage = (
+                CancellationApprovalStage.objects.filter(
+                    request=request,
+                    status=CancellationApprovalStage.Status.PENDING,
+                )
+                .prefetch_related("eligible_approvers")
+                .order_by("order")
+                .first()
+            )
             if stage is None:
                 return request
             return decide_cancellation(
-                user=stage.approver,
+                user=User.objects.get(pk=stage.eligible_approver_ids()[0]),
                 request_id=request.pk,
                 decision=decision,
                 comment=comment,

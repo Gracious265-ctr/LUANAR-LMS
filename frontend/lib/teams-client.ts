@@ -1,4 +1,4 @@
-import type { Campus, CampusInput, Team, TeamInput, TeamMember } from "./teams";
+import type { Campus, CampusInput, Team, TeamInput } from "./teams";
 import { apiErrorMessage } from "./utils";
 
 export async function createTeam(input: TeamInput): Promise<Team> {
@@ -14,18 +14,6 @@ export async function updateTeam(
 
 export async function createCampus(input: CampusInput): Promise<Campus> {
   return send<Campus>("/api/hr/campuses", "POST", input);
-}
-
-export async function addTeamMember(input: {
-  team: number | string;
-  user: number | string;
-  role: string;
-}): Promise<TeamMember> {
-  return send<TeamMember>("/api/hr/team-members", "POST", input);
-}
-
-export async function removeTeamMember(id: number | string): Promise<void> {
-  await send<void>(`/api/hr/team-members/${id}`, "DELETE");
 }
 
 async function send<T>(

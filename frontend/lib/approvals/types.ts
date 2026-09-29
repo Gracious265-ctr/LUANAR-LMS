@@ -11,13 +11,17 @@ export type ApprovalStatus =
   | "draft"
   | "submitted";
 
+/**
+ * No `skipped` status: a step is never bypassed. A chain that cannot be
+ * satisfied by its current membership is refused at submission, so every step
+ * is either still `waiting`, the open `pending` one, or decided.
+ */
 export type StageStatus =
   | "waiting"
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_requested"
-  | "skipped";
+  | "correction_requested";
 
 export interface ApprovalCapabilities {
   is_approver: boolean;

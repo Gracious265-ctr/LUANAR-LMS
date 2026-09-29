@@ -69,7 +69,7 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
     if application.status != LeaveApplication.Status.SUBMITTED:
         return Authority(False, "application_closed")
 
-    from .services import acting_approver_id
+    from .services import user_may_act
 
     stage = _current_stage(application)
     if stage is None:
@@ -78,7 +78,7 @@ def get_decision_authority(user: User, application: LeaveApplication) -> Authori
         return Authority(False, "already_decided")
     if _decided_this_cycle(user, application):
         return Authority(False, "already_decided")
-    if acting_approver_id(application) != user.id:
+    if not user_may_act(user, application):
         return Authority(False, "not_current_stage")
     return Authority(True, None)
 
@@ -140,18 +140,17 @@ def _history_scope_for(stage: ApplicationStage | None) -> str | None:
 def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | None:
     """The application's stage the user can review, or ``None`` (404).
 
-    The user must be the assigned approver of at least one stage (of the live
-    submission cycle) that is neither ``waiting`` nor ``skipped`` — i.e. the
-    application must have reached them, or they must already have decided on it.
-    A ``skipped`` stage was bypassed precisely so that its approver is not on the
-    path (invariant 12.3 sole exception), so it confers no access.
+    The user must be the assigned approver of at least one stage of the live
+    submission cycle that has been reached — i.e. the application must have got
+    to them, or they must already have decided on it. A ``waiting`` stage has
+    not been reached, so it confers no access.
 
     Unit 18: an approver assigned to a cancellation stage may also read the
     approved application's review payload, even though the application is no
     longer ``submitted``. The ``stage`` of such a ``ViewAccess`` is ``None``.
     """
     from leave.cancellations.models import CancellationApprovalStage
-    from .services import acting_approver_id
+    from .services import user_may_act
 
     live_stage = (
         application.stages.filter(
@@ -160,7 +159,7 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         )
         .first()
     )
-    if live_stage is not None and acting_approver_id(application) == user.id:
+    if live_stage is not None and user_may_act(user, application):
         return ViewAccess(
             live_stage.stage_order,
             live_stage.role,
@@ -174,14 +173,7 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
             assigned_approver=user,
             submission_cycle=application.workflow_chain_cycle,
         )
-        .exclude(
-            status__in=(
-                ApplicationStage.Status.WAITING,
-                # A bypassed stage is not a stage the application reached: its
-                # approver was removed from the path, so they get no access.
-                ApplicationStage.Status.SKIPPED,
-            )
-        )
+        .exclude(status=ApplicationStage.Status.WAITING)
         .first()
     )
     if stage is not None:
@@ -196,9 +188,10 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
     cancellation_stage = (
         CancellationApprovalStage.objects.filter(
             request__application=application,
-            approver=user,
+            eligible_approvers__user=user,
         )
         .exclude(status=CancellationApprovalStage.Status.NOT_REACHED)
+        .distinct()
         .order_by("order")
         .first()
     )

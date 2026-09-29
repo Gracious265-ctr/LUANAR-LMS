@@ -1,11 +1,13 @@
-"""Teams, campuses, and institution-wide holdings: the routing configuration.
+"""Teams, sections, campuses, and institution-wide holdings: the routing config.
 
-A team is the unit that decides *who* approves: at submission the applicant's
-team selects the workflow, and the team's members are who hold each role in it.
-These tests cover the whole configuration surface around that fact — the campus
-a team belongs to, the membership that staffs each role, the institution-wide
-holdings that stand in when a role has no team member, and the employee side
-that puts someone on a team at all.
+A team decides *which* workflow applies: at submission the applicant's team
+selects the chain. The chain's sections then decide *who* may act at each step,
+and several members of one section may act with the first to decide taking it.
+
+These tests cover the whole configuration surface around that: the campus a team
+belongs to, the membership that staffs each section, the institution-wide
+holdings that stand in when a section's role has no member, and the employee
+side that puts someone on a team at all.
 """
 
 from django.contrib.auth import get_user_model
@@ -20,19 +22,20 @@ from .models import (
     ApproverRole,
     Campus,
     RoleAssignment,
+    Section,
+    SectionMember,
     Team,
-    TeamMember,
     Workflow,
 )
 from .services import (
     TeamActionError,
-    add_team_member,
+    add_section_member,
     approver_role_codes_for,
     create_role_assignment,
     ensure_role_not_in_use,
     is_approver_user,
     remove_role_assignment,
-    remove_team_member,
+    remove_section_member,
 )
 from .testing import (
     DEV_PASSWORD,
@@ -45,7 +48,7 @@ from .testing import (
 User = get_user_model()
 
 TEAMS_URL = "/api/v1/teams/"
-MEMBERS_URL = "/api/v1/team-members/"
+MEMBERS_URL = "/api/v1/section-members/"
 CAMPUSES_URL = "/api/v1/campuses/"
 ASSIGNMENTS_URL = "/api/v1/role-assignments/"
 
@@ -78,10 +81,10 @@ class ConfigurationAPIBase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         return response.data
 
-    def add_member(self, team_id, user, role_code="supervisor") -> dict:
+    def add_member_to_section(self, section, user) -> dict:
         response = self.client.post(
             MEMBERS_URL,
-            {"team": team_id, "user": user.pk, "role": role_code},
+            {"section": section.pk, "user": user.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
@@ -210,12 +213,16 @@ class TeamAPITests(ConfigurationAPIBase):
         )
         self.assertEqual(entry.actor, self.hr)
 
-    def test_a_team_may_be_created_without_a_workflow(self):
-        """Allowed, but the team cannot route anything until one is set."""
+    def test_a_team_requires_a_workflow(self):
+        """A team with no workflow could never route an application.
+
+        Refusing it at creation puts the problem where HR can fix it, instead of
+        leaving a team that looks configured but approves nothing.
+        """
         response = self.client.post(TEAMS_URL, {"name": "Unrouted"}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        team = Team.objects.get(name="Unrouted")
-        self.assertIsNone(team.workflow_id)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("workflow", response.data)
+        self.assertFalse(Team.objects.filter(name="Unrouted").exists())
 
     def test_a_team_may_be_created_without_a_campus(self):
         team = self.create_team("Non-campus team")
@@ -287,15 +294,23 @@ class TeamAPITests(ConfigurationAPIBase):
         )
         self.assertEqual(row["member_count"], 0)
 
-    def test_listing_nests_members(self):
+    def test_listing_reports_the_workflow_sections(self):
+        """A team reports the sections of the workflow it points at.
+
+        Members live on the sections, not the team, so what a team row shows is
+        the shape of its chain and how many people could act at each step.
+        """
         team = self.create_team()
         approver = make_approver("supervisor", username="sup@teams.test")
-        self.add_member(team["id"], approver)
+        self.add_member_to_section(
+            self.workflow.sections.get(approver_role__code="supervisor"), approver
+        )
         response = self.client.get(TEAMS_URL)
         row = next(r for r in response.data["results"] if r["id"] == team["id"])
-        self.assertEqual(row["member_count"], 1)
-        self.assertEqual(row["members"][0]["role"], "supervisor")
-        self.assertEqual(row["members"][0]["user"], approver.pk)
+        self.assertEqual(
+            [(s["approver_role"], s["member_count"]) for s in row["sections"]],
+            [("supervisor", 1), ("hod", 0)],
+        )
 
     def test_inactive_teams_are_hidden_by_default(self):
         self.create_team()
@@ -319,91 +334,111 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class TeamMembershipTests(ConfigurationAPIBase):
+class SectionMembershipTests(ConfigurationAPIBase):
+    """Who can act for a section.
+
+    The unit here is the *section*, not the team: membership belongs to the
+    workflow's approval steps, which several teams may share. A section takes any
+    number of people and one person may be in several sections, so the only rule
+    left is "not twice in the same section".
+    """
+
     def setUp(self):
         super().setUp()
         self.team = self.create_team()
+        self.section = Section.objects.get(
+            workflow=self.workflow, order=1
+        )
         self.supervisor = make_approver(
             "supervisor", username="sup@teams.test", institution_wide=False
         )
 
-    def test_hr_staffs_a_role(self):
-        membership = self.add_member(self.team["id"], self.supervisor, "supervisor")
-        self.assertEqual(membership["role"], "supervisor")
+    def add_member(self, user, section=None) -> dict:
+        return super().add_member_to_section(section or self.section, user)
+
+    def test_hr_staffs_a_section(self):
+        membership = self.add_member(self.supervisor)
         self.assertEqual(membership["user"], self.supervisor.pk)
+        self.assertEqual(membership["section"], self.section.pk)
         self.assertEqual(
-            TeamMember.objects.get(team_id=self.team["id"], user=self.supervisor).role.code,
+            SectionMember.objects.get(
+                section_id=self.section.pk, user=self.supervisor
+            ).section.approver_role.code,
             "supervisor",
         )
 
     def test_adding_a_member_makes_them_an_approver(self):
         self.assertFalse(is_approver_user(self.supervisor))
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
+        self.add_member(self.supervisor)
         self.assertTrue(is_approver_user(self.supervisor))
         self.assertEqual(approver_role_codes_for(self.supervisor), ["supervisor"])
 
+    def test_a_section_takes_several_members(self):
+        """The reason sections exist: any-of, decided by whoever acts first."""
+        second = make_approver("supervisor", username="sup2@teams.test")
+        self.add_member(self.supervisor)
+        response = self.client.post(
+            MEMBERS_URL,
+            {"section": self.section.pk, "user": second.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(
+            set(
+                SectionMember.objects.filter(section=self.section).values_list(
+                    "user_id", flat=True
+                )
+            ),
+            {self.supervisor.pk, second.pk},
+        )
+
+    def test_the_same_person_may_sit_on_several_sections(self):
+        """One person can hold more than one point in a chain."""
+        hod = self.workflow.sections.get(order=2)
+        self.add_member(self.supervisor)
+        response = self.client.post(
+            MEMBERS_URL, {"section": hod.pk, "user": self.supervisor.pk}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(SectionMember.objects.filter(user=self.supervisor).count(), 2)
+
     def test_membership_is_audited(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
+        self.add_member(self.supervisor)
         entry = AuditEntry.objects.filter(
-            target_type=AuditEntry.TargetType.TEAM,
+            target_type=AuditEntry.TargetType.WORKFLOW,
             action=AuditEntry.Action.CREATED,
         ).order_by("-id").first()
         self.assertEqual(entry.actor, self.hr)
         self.assertIn("Supervisor", entry.reason)
 
-    def test_a_role_held_twice_on_one_team_is_refused(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        second = make_approver("supervisor", username="sup2@teams.test")
+    def test_a_person_cannot_join_one_section_twice(self):
+        self.add_member(self.supervisor)
         response = self.client.post(
             MEMBERS_URL,
-            {"team": self.team["id"], "user": second.pk, "role": "supervisor"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("role", response.data)
-        self.assertIn("already held", response.data["role"][0])
-        self.assertEqual(TeamMember.objects.filter(team_id=self.team["id"]).count(), 1)
-
-    def test_a_person_holds_one_role_per_team(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        response = self.client.post(
-            MEMBERS_URL,
-            {"team": self.team["id"], "user": self.supervisor.pk, "role": "hod"},
+            {"section": self.section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("user", response.data)
+        self.assertIn("already a member", response.data["user"][0])
 
-    def test_a_team_without_a_workflow_takes_no_members(self):
-        unrouted = self.client.post(
-            TEAMS_URL, {"name": "Unrouted team"}, format="json"
-        ).data
+    def test_an_inactive_section_takes_no_members(self):
+        self.section.is_active = False
+        self.section.save(update_fields=["is_active"])
         response = self.client.post(
             MEMBERS_URL,
-            {"team": unrouted["id"], "user": self.supervisor.pk, "role": "supervisor"},
+            {"section": self.section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("workflow", response.data["team"][0])
-
-    def test_an_inactive_team_takes_no_members(self):
-        team = Team.objects.get(pk=self.team["id"])
-        team.is_active = False
-        team.save(update_fields=["is_active"])
-        response = self.client.post(
-            MEMBERS_URL,
-            {"team": team.pk, "user": self.supervisor.pk, "role": "supervisor"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("inactive", response.data["team"][0])
+        self.assertIn("inactive", response.data["section"][0])
 
     def test_an_inactive_user_cannot_be_staffed(self):
         self.supervisor.is_active = False
         self.supervisor.save(update_fields=["is_active"])
         response = self.client.post(
             MEMBERS_URL,
-            {"team": self.team["id"], "user": self.supervisor.pk, "role": "supervisor"},
+            {"section": self.section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -415,90 +450,117 @@ class TeamMembershipTests(ConfigurationAPIBase):
         role.save(update_fields=["is_active"])
         response = self.client.post(
             MEMBERS_URL,
-            {"team": self.team["id"], "user": self.supervisor.pk, "role": "supervisor"},
+            {"section": self.section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("deactivated", response.data["role"][0])
+        self.assertIn("deactivated", response.data["section"][0])
 
-    def test_an_unknown_role_is_rejected(self):
+    def test_an_unknown_section_is_rejected(self):
         response = self.client.post(
             MEMBERS_URL,
-            {"team": self.team["id"], "user": self.supervisor.pk, "role": "wizard"},
+            {"section": 999_999, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("role", response.data)
+        self.assertIn("section", response.data)
 
-    def test_members_can_be_listed_per_team(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        other = self.create_team("Other team")
-        response = self.client.get(f"{MEMBERS_URL}?team={other['id']}")
-        self.assertEqual(response.data["results"], [] if isinstance(response.data, dict) else [])
-        response = self.client.get(f"{MEMBERS_URL}?team={self.team['id']}")
-        rows = response.data["results"]
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["user"], self.supervisor.pk)
+    def test_members_can_be_listed_per_section_and_per_workflow(self):
+        self.add_member(self.supervisor)
+        # Filtering by workflow has to reach the *section's* workflow, not the
+        # team: a second team on the same workflow sees the same members, which
+        # is what sharing a workflow means.
+        shared = self.create_team("Other team")
+        self.assertEqual(shared["workflow"], self.workflow.pk)
+        response = self.client.get(f"{MEMBERS_URL}?workflow={self.workflow.pk}")
+        self.assertEqual(len(response.data["results"]), 1)
+        unrelated = make_workflow("Unrelated chain", ("dean",))
+        response = self.client.get(f"{MEMBERS_URL}?workflow={unrelated.pk}")
+        self.assertEqual(len(response.data["results"]), 0)
+        response = self.client.get(f"{MEMBERS_URL}?section={self.section.pk}")
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["user"], self.supervisor.pk)
 
-    def test_a_bad_team_filter_is_a_client_error(self):
-        response = self.client.get(f"{MEMBERS_URL}?team=not-a-number")
+    def test_members_can_be_listed_for_one_user(self):
+        self.add_member(self.supervisor)
+        response = self.client.get(f"{MEMBERS_URL}?user={self.supervisor.pk}")
+        self.assertEqual(len(response.data["results"]), 1)
+
+    def test_a_bad_section_filter_is_a_client_error(self):
+        response = self.client.get(f"{MEMBERS_URL}?section=not-a-number")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_removing_a_member_revokes_approver_status(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        membership = TeamMember.objects.get(team_id=self.team["id"])
+        self.add_member(self.supervisor)
+        membership = SectionMember.objects.get(section=self.section, user=self.supervisor)
         response = self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(TeamMember.objects.filter(pk=membership.pk).exists())
+        self.assertFalse(SectionMember.objects.filter(pk=membership.pk).exists())
         self.assertFalse(is_approver_user(self.supervisor))
 
+    def test_removal_leaves_a_shared_section_routable(self):
+        """Removing one of several members must not strand the step."""
+        second = make_approver("supervisor", username="sup2@teams.test")
+        self.add_member(self.supervisor)
+        membership = SectionMember.objects.create(section=self.section, user=second)
+        response = self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(
+            SectionMember.objects.filter(section=self.section, user=self.supervisor).exists()
+        )
+
     def test_removal_is_audited(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        membership = TeamMember.objects.get(team_id=self.team["id"])
+        self.add_member(self.supervisor)
+        membership = SectionMember.objects.get(section=self.section, user=self.supervisor)
         self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
         self.assertTrue(
             AuditEntry.objects.filter(
-                target_type=AuditEntry.TargetType.TEAM,
+                target_type=AuditEntry.TargetType.WORKFLOW,
                 action=AuditEntry.Action.CANCELLED,
-                target_id=str(self.team["id"]),
+                target_id=str(self.workflow.pk),
             ).exists()
         )
 
     def test_memberships_cannot_be_edited_in_place(self):
-        """Re-staffing a role is a removal plus an addition, both audited."""
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        membership = TeamMember.objects.get(team_id=self.team["id"])
+        """Re-staffing a section is a removal plus an addition, both audited."""
+        self.add_member(self.supervisor)
+        membership = SectionMember.objects.get(section=self.section, user=self.supervisor)
         response = self.client.patch(
-            f"{MEMBERS_URL}{membership.pk}/", {"role": "hod"}, format="json"
+            f"{MEMBERS_URL}{membership.pk}/",
+            {"section": self.workflow.sections.get(order=2).pk},
+            format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def test_non_hr_cannot_staff_a_role(self):
+    def test_non_hr_cannot_staff_a_section(self):
         self.client.force_authenticate(self.employee)
         response = self.client.post(
             MEMBERS_URL,
-            {"team": self.team["id"], "user": self.supervisor.pk, "role": "supervisor"},
+            {"section": self.section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertFalse(TeamMember.objects.exists())
+        self.assertFalse(SectionMember.objects.exists())
 
-    def test_service_layer_refuses_a_second_holder_of_a_role(self):
-        approver = make_approver("supervisor", username="sup3@teams.test")
-        team = Team.objects.get(pk=self.team["id"])
-        role = ApproverRole.objects.get(code="supervisor")
-        add_team_member(
-            team=team, user=approver, role=role, actor=self.hr
-        )
-        other = make_approver("supervisor", username="sup4@teams.test")
+    def test_service_layer_refuses_a_duplicate_membership(self):
+        self.add_member(self.supervisor)
         with self.assertRaises(TeamActionError) as ctx:
-            add_team_member(team=team, user=other, role=role, actor=self.hr)
-        self.assertEqual(ctx.exception.field, "role")
+            add_section_member(
+                section=self.section, user=self.supervisor, actor=self.hr
+            )
+        self.assertEqual(ctx.exception.field, "user")
+
+    def test_service_layer_allows_a_second_distinct_member(self):
+        """The any-of rule: a section is not one person, and the service agrees."""
+        other = make_approver("supervisor", username="sup5@teams.test")
+        self.add_member(self.supervisor)
+        add_section_member(section=self.section, user=other, actor=self.hr)
+        self.assertEqual(SectionMember.objects.filter(section=self.section).count(), 2)
 
     def test_removing_a_membership_twice_is_a_client_error(self):
-        self.add_member(self.team["id"], self.supervisor, "supervisor")
-        membership = TeamMember.objects.get(team_id=self.team["id"])
-        remove_team_member(membership=membership, actor=self.hr)
+        self.add_member(self.supervisor)
+        membership = SectionMember.objects.get(section=self.section, user=self.supervisor)
+        remove_section_member(membership=membership, actor=self.hr)
         response = self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
@@ -677,7 +739,9 @@ class EmployeeTeamPlacementTests(ConfigurationAPIBase):
 
     def test_approver_roles_are_reported_for_a_approver(self):
         approver = make_approver("supervisor", username="sup@teams.test")
-        self.add_member(self.team["id"], approver, "supervisor")
+        self.add_member_to_section(
+            self.workflow.sections.get(approver_role__code="supervisor"), approver
+        )
         response = self.client.get("/api/v1/employees/")
         row = next(
             r for r in response.data["results"] if r["user_id"] == approver.pk
@@ -697,11 +761,11 @@ class RoutingConfigurationTests(TestCase):
         )
         ensure_roles("supervisor", "hod", "registrar")
 
-    def test_a_team_member_holds_the_role(self):
+    def test_a_section_member_holds_the_role(self):
         person = make_approver("supervisor", username="sup@routing.test")
         team = make_team("Science", ("supervisor", "hod"), approvers={"supervisor": person})
-        member = team.memberships.get(role__code="supervisor")
-        self.assertEqual(member.user, person)
+        section = team.workflow.sections.get(approver_role__code="supervisor")
+        self.assertEqual(section.members.get().user, person)
         self.assertTrue(is_approver_user(person))
 
     def test_a_person_can_hold_roles_on_several_teams(self):
@@ -710,26 +774,40 @@ class RoutingConfigurationTests(TestCase):
         make_team("Arts", ("supervisor",), approvers={"supervisor": person})
         self.assertEqual(approver_role_codes_for(person), ["supervisor"])
 
-    def test_a_removed_membership_frees_the_role_for_reuse(self):
+    def test_a_removed_membership_frees_the_section_for_reuse(self):
+        """Removing one member of a shared section leaves the rest acting.
+
+        A section holds several people, so unlike the old one-holder-per-role
+        rule there is nothing to "reuse" — the step simply carries on with
+        whoever is left, and stays routable.
+        """
         person = make_approver("supervisor", username="reuse@routing.test")
+        second = make_approver("supervisor", username="reuse1@routing.test")
         team = make_team("Science", ("supervisor",), approvers={"supervisor": person})
-        remove_team_member(
-            membership=team.memberships.get(role__code="supervisor"), actor=self.hr
+        section = team.workflow.sections.get(approver_role__code="supervisor")
+        add_section_member(section=section, user=second, actor=self.hr)
+        remove_section_member(
+            membership=section.members.get(user=second), actor=self.hr
         )
-        other = make_approver("supervisor", username="reuse2@routing.test")
-        add_team_member(
-            team=team,
-            user=other,
-            role=ApproverRole.objects.get(code="supervisor"),
-            actor=self.hr,
+        self.assertEqual(
+            list(section.members.values_list("user_id", flat=True)), [person.pk]
         )
-        self.assertEqual(team.memberships.get(role__code="supervisor").user, other)
 
     def test_a_staffed_role_blocks_its_own_retirement(self):
-        make_team("Science", ("supervisor",))
+        """A role in use by a workflow is named once, with its section count.
+
+        Sections and their members are the same blocker seen two ways, so the
+        message merges them: telling HR the "Science Workflow" is a problem
+        twice, once as a section and once as a member, teaches nothing about
+        what to go and fix.
+        """
+        team = make_team("Science", ("supervisor",))
         with self.assertRaises(Exception) as ctx:
             ensure_role_not_in_use(ApproverRole.objects.get(code="supervisor"))
-        self.assertIn("'Science' team", str(ctx.exception))
+        message = str(ctx.exception)
+        self.assertIn(f"the '{team.workflow.name}' workflow", message)
+        self.assertIn("1 section and 1 member", message)
+        self.assertEqual(message.count(f"the '{team.workflow.name}' workflow"), 1)
 
     def test_employee_profiles_expose_their_team(self):
         from users.models import EmployeeProfile
@@ -751,13 +829,13 @@ class RoutingConfigurationTests(TestCase):
         self.assertEqual(profile.team, team)
         self.assertEqual(list(team.members.all()), [profile])
 
-    def test_a_workflow_keeps_its_stages_in_order(self):
+    def test_a_workflow_keeps_its_sections_in_order(self):
         workflow = make_workflow("Ordered", ("supervisor", "hod", "registrar"))
         self.assertEqual(
-            [s.approver_role.code for s in workflow.stages.all()],
+            [s.approver_role.code for s in workflow.sections.all()],
             ["supervisor", "hod", "registrar"],
         )
-        self.assertEqual([s.order for s in workflow.stages.all()], [1, 2, 3])
+        self.assertEqual([s.order for s in workflow.sections.all()], [1, 2, 3])
 
     def test_a_workflow_effective_from_the_future_is_not_selectable(self):
         workflow = make_workflow("Future", ("supervisor",))

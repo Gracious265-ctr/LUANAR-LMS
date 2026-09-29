@@ -36,10 +36,15 @@ def check_workflow_ready(application) -> bool:
             ["No approval workflow is configured for submission."]
         )
 
+    # A section with no eligible approver is a configuration error, and a
+    # well-formed provider raises ``WorkflowConfigError`` naming the section
+    # rather than returning an empty set. This check is the belt to that
+    # braces: a provider that returns an empty set has still failed the gate,
+    # and the message has to say which step is stranded.
     missing = [
-        f"No active approver for the {definition.role_label} stage."
+        f'No active approver for the "{definition.role_label}" approval section.'
         for definition in definitions
-        if definition.approver_user_id is None
+        if not definition.approver_user_ids
     ]
     if missing:
         raise WorkflowUnavailableError(missing)

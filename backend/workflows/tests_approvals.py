@@ -26,12 +26,12 @@ from .events import (
     _reset_consumers_for_tests,
     register_consumer,
 )
-from .testing import grant_approver_role, make_stage, make_team
+from .testing import grant_approver_role, make_approver, make_section, make_team
 from .models import (
     ApplicationStage,
     ApprovalDecision,
+    SectionMember,
     Workflow,
-    WorkflowStage,
 )
 from .providers import (
     DatabaseWorkflowProvider,
@@ -113,9 +113,21 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         )
         return submit_application(user=self.employee, application_id=app.pk)
 
-    def submit_as_approver(self, approver):
-        """Submit a leave application owned by ``approver`` (their own request)."""
+    def submit_as_approver(self, approver, role_code):
+        """Submit a leave application owned by ``approver`` (their own request).
+
+        A second person is put on the approver's own section first. The applicant
+        is removed from every section's eligibility, so a section staffed only by
+        the applicant resolves to nobody and the submission is refused outright —
+        the test would never reach a decision guard at all. Adding a colleague is
+        the configuration the product expects, and it lets the guard be exercised
+        the way a user hits it.
+        """
         self.stub.register_employee(approver)
+        colleague = make_approver(
+            role_code, username=f"cover-{role_code}@{approver.username}"
+        )
+        self.stub.workflow.register_approver(role_code, colleague)
         start = EARLIEST_ANNUAL_START
         app = LeaveApplication.objects.create(
             employee=approver,
@@ -151,7 +163,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         for index, role in enumerate(
             ("supervisor", "hod", "registrar", "dvc"), start=1
         ):
-            make_stage(self.admin_workflow, index, role)
+            make_section(self.admin_workflow, index, role)
         self.academic_workflow = Workflow.objects.create(
             name="Academic chain",
             employee_category=EmployeeProfile.Category.ACADEMIC,
@@ -159,7 +171,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             is_active=True,
         )
         for index, role in enumerate(("hod", "dean", "registrar", "dvc"), start=1):
-            make_stage(self.academic_workflow, index, role)
+            make_section(self.academic_workflow, index, role)
 
         # A team's workflow is what routes its members, so each workflow needs a
         # team behind it — and the employees need to be on one. ``registrar`` is
@@ -192,12 +204,56 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         profile = self._place_on_team(self.supervisor, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
+        # The applicant is the supervisor themself, so the supervisor section
+        # needs a second member: a section resolves to the people who may act
+        # minus the applicant, and one member who *is* the applicant leaves
+        # nobody. This is the any-of shape — two people, first to act decides.
+        supervisor_section = self.admin_workflow.sections.get(
+            approver_role__code="supervisor"
+        )
+        deputy = make_user(
+            "deputy-supervisor@luanar", role="supervisor", first_name="Dep"
+        )
+        EmployeeProfile.objects.create(
+            user=deputy, designation="Deputy", department="Administration", grade="E"
+        )
+        SectionMember.objects.create(section=supervisor_section, user=deputy)
         app = LeaveApplication(employee=self.supervisor)
         definitions = DatabaseWorkflowProvider().get_stage_definitions(app)
         self.assertEqual(
             [d.role for d in definitions],
             ["supervisor", "hod", "registrar", "dvc"],
         )
+        # The applicant is excluded from their own step, and the deputy is who
+        # remains.
+        self.assertEqual(
+            definitions[0].approver_user_ids, (deputy.pk,)
+        )
+
+    def test_a_section_whose_only_member_is_the_applicant_is_refused(self):
+        """Self-approval is a configuration error, not a silently skipped step.
+
+        The old model let a stage resolve to the applicant and skipped it
+        further down the chain. A section has no such fallback: there is nowhere
+        for it to go, so the submission is refused and the message says to add
+        another member.
+        """
+        profile = self._place_on_team(self.supervisor, self.admin_team)
+        profile.category = EmployeeProfile.Category.ADMINISTRATION
+        profile.save()
+        supervisor_section = self.admin_workflow.sections.get(
+            approver_role__code="supervisor"
+        )
+        SectionMember.objects.filter(
+            section=supervisor_section
+        ).exclude(user=self.supervisor).delete()
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.supervisor)
+            )
+        message = str(ctx.exception)
+        self.assertIn("only member", message)
+        self.assertIn("cannot approve their own leave", message)
 
     def test_chain_for_academic_without_department_starts_with_hod(self):
         profile = self._place_on_team(self.employee, self.academic_team)
@@ -219,7 +275,9 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
             LeaveApplication(employee=self.employee)
         )
-        self.assertTrue(all(d.approver_user_id is not None for d in definitions))
+        # Every step resolves to at least one person; a step with nobody is a
+        # configuration error, so the provider would have raised above.
+        self.assertTrue(all(d.approver_user_ids for d in definitions))
 
     def test_no_active_workflow_raises_config_error(self):
         # Deactivate rather than delete: teams PROTECT their workflow, and the
@@ -247,14 +305,20 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         self.assertIn("inactive", str(ctx.exception))
 
-    def test_team_without_a_workflow_raises_config_error(self):
-        self.admin_team.workflow = None
-        self.admin_team.save(update_fields=["workflow"])
+    def test_a_workflow_with_no_sections_raises_config_error(self):
+        """A team always points at a workflow, but a workflow may be empty.
+
+        ``Team.workflow`` is required, so "no workflow" is no longer a state a
+        team can be in. The remaining way to have nothing to route is a workflow
+        with no sections — an empty draft HR has not finished building.
+        """
+        self.admin_workflow.sections.all().delete()
+        self.admin_team.refresh_from_db()
         with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
-        self.assertIn("no approval workflow", str(ctx.exception))
+        self.assertIn("no active approval sections", str(ctx.exception))
 
     def test_future_dated_workflow_raises_config_error(self):
         """A scheduled-but-not-yet-effective workflow must not route anything."""
@@ -281,7 +345,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             effective_from=timezone.localdate(),
             is_active=True,
         )
-        make_stage(exact, 1, "supervisor")
+        make_section(exact, 1, "supervisor")
         maths_team = make_team(
             "Maths team",
             ("supervisor",),
@@ -328,8 +392,11 @@ class AssignmentTests(ApprovalBase):
         self.assertFalse(stages[0].is_final)
         self.assertTrue(stages[-1].is_final)
         self.assertEqual(app.current_stage_id, stages[0].pk)
-        self.assertEqual(app.current_approver_id, self.supervisor.id)
-        self.assertEqual(stages[0].assigned_approver_id, self.supervisor.id)
+        # A section is claimed by whoever acts first, so nothing is assigned at
+        # assignment time. The eligibility snapshot records who *may* act.
+        self.assertIsNone(app.current_approver_id)
+        self.assertIsNone(stages[0].assigned_approver_id)
+        self.assertEqual(stages[0].eligible_approver_ids(), (self.supervisor.id,))
 
     def test_assign_requires_an_active_approver_for_every_stage(self):
         self.stub.workflow.strict = True
@@ -502,7 +569,7 @@ class DecisionServiceTests(ApprovalBase):
         self.assertEqual(ctx.exception.reason, "not_current_stage")
 
     def test_self_approval_is_forbidden(self):
-        app = self.submit_as_approver(self.supervisor)
+        app = self.submit_as_approver(self.supervisor, "supervisor")
         with self.assertRaises(ApprovalNotAllowedError) as ctx:
             decide(
                 application_id=app.pk,
@@ -514,17 +581,23 @@ class DecisionServiceTests(ApprovalBase):
         self.assertEqual(ApprovalDecision.objects.filter(application=app).count(), 0)
 
     def test_self_approval_is_forbidden_at_any_stage(self):
-        """An approver's own application starts after their stage, and they are
-        refused if a live stage still points at them (invariant 12.3)."""
-        app = self.submit_as_approver(self.hod)
-        self.assertEqual(
-            self.stage(app, 1).status, ApplicationStage.Status.SKIPPED
-        )
-        self.assertEqual(
-            get_decision_authority(self.supervisor, app).reason, "not_current_stage"
-        )
+        """The chain starts at section one whatever the applicant holds.
+
+        Nothing is skipped, so the applicant sits on a live pending stage — and
+        is refused there. The refusal is the snapshot, not the spine: they were
+        removed from the stage's eligibility when the chain was materialised,
+        and the guard would refuse them even if the spine named them.
+        """
+        app = self.submit_as_approver(self.hod, "hod")
+        self.assertEqual(self.stage(app, 1).status, ApplicationStage.Status.PENDING)
+        # The Supervisor's own section is untouched by the applicant holding
+        # another role, so the chain opens with them.
+        self.assertTrue(get_decision_authority(self.supervisor, app).can_decide)
         self.assertEqual(
             get_decision_authority(self.hod, app).reason, "self_application"
+        )
+        self.assertNotIn(
+            self.hod.id, self.stage(app, 1).eligible_approver_ids()
         )
         with self.assertRaises(ApprovalNotAllowedError) as ctx:
             decide(
@@ -678,7 +751,7 @@ class ApprovalAPITests(ApprovalBase):
         self.assertEqual(response.status_code, 403)
 
     def test_self_application_decision_returns_403(self):
-        app = self.submit_as_approver(self.supervisor)
+        app = self.submit_as_approver(self.supervisor, "supervisor")
         response = self.client.post(
             self.url(f"{app.pk}/decision/"),
             {"action": "approve", "stage_version": 1},
@@ -690,7 +763,7 @@ class ApprovalAPITests(ApprovalBase):
 
     def test_self_application_review_is_not_reachable(self):
         """The applicant's own stage is bypassed, so it grants no review access."""
-        app = self.submit_as_approver(self.supervisor)
+        app = self.submit_as_approver(self.supervisor, "supervisor")
         response = self.client.get(self.url(f"{app.pk}/"))
         self.assertEqual(response.status_code, 404)
 

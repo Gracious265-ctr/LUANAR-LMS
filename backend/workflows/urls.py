@@ -17,7 +17,7 @@ from .views import (
     DelegationViewSet,
     ReassignmentViewSet,
     RoleAssignmentViewSet,
-    TeamMemberViewSet,
+    SectionMemberViewSet,
     TeamViewSet,
     WorkflowViewSet,
 )
@@ -34,7 +34,9 @@ router.register(
 )
 router.register("teams", TeamViewSet, basename="team")
 router.register("campuses", CampusViewSet, basename="campus")
-router.register("team-members", TeamMemberViewSet, basename="team-member")
+router.register(
+    "section-members", SectionMemberViewSet, basename="section-member"
+)
 
 urlpatterns = [
     path("", include(router.urls)),

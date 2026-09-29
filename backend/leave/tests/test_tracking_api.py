@@ -210,8 +210,12 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_owner_request_runs_a_bounded_number_of_queries(self):
+        # 12, not the 11 the pre-section display needed: one query reads the
+        # open stage's eligibility snapshot, which is where a section's authority
+        # lives. It is fetched once for the whole chain rather than per stage, so
+        # the bound stays flat as chains grow.
         app = self.make_submitted()
-        with self.assertNumQueries(11):
+        with self.assertNumQueries(12):
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 

@@ -16,16 +16,17 @@ from users.models import User
 
 from .models import (
     ApplicationStage,
+    ApplicationStageApprover,
     Campus,
     ApprovalDecision,
     ApproverRole,
     Delegation,
     Reassignment,
     RoleAssignment,
+    Section,
+    SectionMember,
     Team,
-    TeamMember,
     Workflow,
-    WorkflowStage,
 )
 from .policies import is_self_application
 
@@ -52,32 +53,35 @@ class StageSequenceError(ValueError):
         self.index = index
 
 
-def normalize_stage_sequence(stages: list[dict]) -> list[dict]:
-    """Validate and renumber a workflow's stage list in submission order.
+def normalize_section_sequence(sections: list[dict]) -> list[dict]:
+    """Validate and renumber a workflow's section list in approval order.
 
-    A stage names its approver role by ``code`` (``"hod"``) — that is the wire
+    A section names its approver role by ``code`` (``"hod"``) — that is the wire
     contract — or by primary key for convenience. Either way the value is
     resolved against :class:`~workflows.models.ApproverRole`, and the normalized
     payload carries the role's *code* so the sequence round-trips through the API
     without leaking database ids into saved forms.
 
-    Returns a list of ``{"approver_role": code, "order": i + 1}``. Raises
+    A role **may** repeat across sections. That is the point of sections: one
+    person can sit at several points in a chain, and two steps can be performed
+    by the same position. Only ``order`` has to be unique.
+
+    Returns a list of ``{"name", "approver_role", "order"}``. Raises
     :class:`StageSequenceError` for an empty list, an unknown or inactive
-    approver role, a repeated approver role, or a missing/non-positive/duplicate
+    approver role, a missing/blank name, or a missing/non-positive/duplicate
     order.
     """
-    items = list(stages)
+    items = list(sections)
     if not items:
         raise StageSequenceError(
-            "stages", "At least one approval stage is required."
+            "sections", "At least one approval section is required."
         )
 
-    seen_roles: set[int] = set()
     seen_orders: set[int] = set()
     normalized: list[dict] = []
 
     for index, item in enumerate(items):
-        role = _stage_role(item)
+        role = _section_role(item)
         if role is None:
             raise StageSequenceError(
                 "approver_role", "Select a valid approver role.", index
@@ -91,24 +95,28 @@ def normalize_stage_sequence(stages: list[dict]) -> list[dict]:
                 index,
             )
         role = role_row
-        if role.pk in seen_roles:
-            raise StageSequenceError(
-                "stages", "An approver role can appear only once in a workflow.", index
-            )
-        seen_roles.add(role.pk)
+
+        name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
+        name = (name or "").strip() if isinstance(name, str) else ""
+        if not name:
+            # Fall back to the role's own label so a saved workflow is never
+            # nameless; HR still gets to say what the step is for.
+            name = role.label
 
         order = item.get("order")
         if not isinstance(order, int) or isinstance(order, bool) or order < 1:
             raise StageSequenceError(
-                "order", "Stage order must be a positive whole number.", index
+                "order", "Section order must be a positive whole number.", index
             )
         if order in seen_orders:
             raise StageSequenceError(
-                "order", "Stage order numbers must be unique within a workflow.", index
+                "order", "Section order numbers must be unique within a workflow.", index
             )
         seen_orders.add(order)
 
-        normalized.append({"approver_role": role.code, "order": index + 1})
+        normalized.append(
+            {"name": name, "approver_role": role.code, "order": index + 1}
+        )
 
     return normalized
 
@@ -126,20 +134,20 @@ class ActivationIssue:
     message: str
 
 
-def _stage_role(stage) -> int | str | ApproverRole | None:
-    """The approver role a stage payload names, whether dict or model.
+def _section_role(section) -> int | str | ApproverRole | None:
+    """The approver role a section payload names, whether dict or model.
 
     Returns an :class:`ApproverRole`, its primary key, or its code, as named.
     ``None`` means the payload named nothing usable. The ambiguity is harmless
-    because :func:`normalize_stage_sequence` only ever needs to resolve the
+    because :func:`normalize_section_sequence` only ever needs to resolve the
     value against a role, and the choice of code-vs-pk is an input detail.
     """
-    if isinstance(stage, dict):
-        value = stage.get("approver_role")
-    elif isinstance(getattr(stage, "approver_role", None), ApproverRole):
-        return stage.approver_role
+    if isinstance(section, dict):
+        value = section.get("approver_role")
+    elif isinstance(getattr(section, "approver_role", None), ApproverRole):
+        return section.approver_role
     else:
-        value = getattr(stage, "approver_role_id", None)
+        value = getattr(section, "approver_role_id", None)
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, ApproverRole)):
@@ -189,19 +197,19 @@ def scopes_overlap(a: tuple[str, str], b: tuple[str, str]) -> bool:
     )
 
 
-def missing_approver_roles(stages) -> list[str]:
-    """Labels of stage roles that cannot currently be used, in stage order.
+def missing_approver_roles(sections) -> list[str]:
+    """Labels of section roles that cannot currently be used, in section order.
 
     Activation is a configuration check, so the only thing it can know about
-    holder availability without an applicant is whether the *role itself* is
-    usable. A role that has been deactivated is reported; whether a given team
-    actually has somebody holding each active role is resolved per applicant at
+    member availability without an applicant is whether the *role itself* is
+    usable. A role that has been deactivated is reported; whether a given
+    section actually has somebody who can act is resolved per applicant at
     submission time (invariant 12.7 still blocks that submission).
     """
     missing: list[str] = []
     seen: set[int] = set()
-    for stage in stages:
-        role = _stage_role(stage)
+    for section in sections:
+        role = _section_role(section)
         if role is None:
             continue
         if not isinstance(role, ApproverRole):
@@ -283,11 +291,11 @@ def is_approver_user(user) -> bool:
     """Whether ``user`` currently holds at least one active approver role.
 
     The one and only definition of "is an approver", replacing every former
-    role-name check. A person is an approver when they hold an active
-    :class:`~workflows.models.ApproverRole` in at least one of the two places a
-    role can be held:
+    role-name check. A person is an approver when they can act for at least one
+    section whose :class:`~workflows.models.ApproverRole` is active, or when they
+    hold an institution-wide role:
 
-    * a :class:`~workflows.models.TeamMember` row on a team, or
+    * a :class:`~workflows.models.SectionMember` row, or
     * a :class:`~workflows.models.RoleAssignment` row, for an
       institution-wide role.
 
@@ -300,8 +308,8 @@ def is_approver_user(user) -> bool:
     user_id = user.pk if hasattr(user, "pk") else user
     if user_id is None:
         return False
-    if TeamMember.objects.filter(
-        user_id=user_id, role__is_active=True
+    if SectionMember.objects.filter(
+        user_id=user_id, section__approver_role__is_active=True
     ).exists():
         return True
     return RoleAssignment.objects.filter(
@@ -321,9 +329,9 @@ def approver_role_codes_for(user) -> list[str]:
         return []
     user_id = user.pk if hasattr(user, "pk") else user
     codes = set(
-        TeamMember.objects.filter(user_id=user_id, role__is_active=True).values_list(
-            "role__code", flat=True
-        )
+        SectionMember.objects.filter(
+            user_id=user_id, section__approver_role__is_active=True
+        ).values_list("section__approver_role__code", flat=True)
     )
     codes.update(
         RoleAssignment.objects.filter(
@@ -343,9 +351,9 @@ def approver_role_labels_for(user) -> list[str]:
         return []
     user_id = user.pk if hasattr(user, "pk") else user
     labels = set(
-        TeamMember.objects.filter(user_id=user_id, role__is_active=True).values_list(
-            "role__label", flat=True
-        )
+        SectionMember.objects.filter(
+            user_id=user_id, section__approver_role__is_active=True
+        ).values_list("section__approver_role__label", flat=True)
     )
     labels.update(
         RoleAssignment.objects.filter(
@@ -524,47 +532,114 @@ def active_delegations_for_ids(
     return resolved
 
 
-def responsible_approver_id(application) -> int | None:
-    """The configured approver who must act now (Unit 21 spine, D2).
+def eligible_approver_ids(application, stage=None) -> list[int]:
+    """Every person entitled to act on the application's pending stage, right now.
 
-    ``LeaveApplication.current_approver`` is authoritative; the current stage's
-    ``assigned_approver`` is a defensive fallback for rows where the spine has
-    not been materialised.
+    The authorisation half of the spine. A section is resolved by whoever acts
+    first, so the authoritative answer is a *set* read from the stage's
+    eligibility snapshot — never from ``current_approver``, which only records
+    that somebody has already acted. The applicant was removed from the snapshot
+    when the chain was materialised, so self-approval cannot appear here.
+
+    ``stage`` is an optional already-loaded :class:`ApplicationStage`, so a
+    caller that fetched the chain with ``prefetch_related("eligible_approvers")``
+    does not re-read the snapshot row by row.
+    """
+    stage = stage if stage is not None else _current_stage(application)
+    if stage is None:
+        return []
+    return stage.eligible_approver_ids()
+
+
+def _current_stage(application):
+    if application.current_stage_id is None:
+        return None
+    return ApplicationStage.objects.filter(pk=application.current_stage_id).first()
+
+
+def acting_approver_ids(application, eligible: list[int] | None = None) -> list[int]:
+    """The eligible people after delegation is applied.
+
+    Anyone who can act, plus the delegate of any eligible person who has
+    delegated while a delegation covers them. Single-level only: a delegate's own
+    active delegation is never cascaded.
+
+    ``eligible`` lets a caller that has already read the snapshot pass it in
+    rather than have it read again.
+    """
+    if eligible is None:
+        eligible = eligible_approver_ids(application)
+    if not eligible:
+        return []
+    result: list[int] = []
+    for approver_id in eligible:
+        delegation = _active_delegation_for_id(approver_id)
+        if delegation is not None and delegation.delegate_id is not None:
+            result.append(delegation.delegate_id)
+        else:
+            result.append(approver_id)
+    return result
+
+
+def user_may_act(user, application) -> bool:
+    """Whether ``user`` is entitled to decide the application's pending stage.
+
+    The single authoritative authority check for an open section stage, and the
+    only one the decision path should consult. A person's authority comes from
+    being in the stage's eligibility snapshot (or being an eligible approver's
+    active delegate) — never from ``User.role``, and never from holding the same
+    role in some other team's configuration.
+    """
+    user_id = user.id if hasattr(user, "id") else user
+    if user_id is None:
+        return False
+    return user_id in acting_approver_ids(application)
+
+
+def responsible_approver_id(application, stage=None) -> int | None:
+    """The person who has taken up the pending stage, or the sole candidate.
+
+    Display only. An unclaimed section can have many candidates, in which case
+    there is no single "responsible" person and this returns ``None``; the
+    payloads render that as the candidate list. Authorisation never reads this.
+
+    ``stage`` is an optional already-loaded :class:`ApplicationStage`.
     """
     if application.current_approver_id is not None:
         return application.current_approver_id
     if application.current_stage_id is None:
         return None
-    return (
-        ApplicationStage.objects.filter(pk=application.current_stage_id)
-        .values_list("assigned_approver_id", flat=True)
-        .first()
-    )
-
-
-def acting_approver_id(application) -> int | None:
-    """The user entitled to act on the pending application right now (D3).
-
-    The responsible approver acts unless an active delegation names a delegate,
-    in which case the delegate acts. Single-level only: a delegate's own active
-    delegation is never cascaded.
-    """
-    responsible_id = responsible_approver_id(application)
-    if responsible_id is None:
+    stage = stage if stage is not None else _current_stage(application)
+    if stage is None:
         return None
-    delegation = _active_delegation_for_id(responsible_id)
-    if delegation is not None and delegation.delegate_id is not None:
-        return delegation.delegate_id
-    return responsible_id
+    if stage.assigned_approver_id is not None:
+        return stage.assigned_approver_id
+    eligible = stage.eligible_approver_ids()
+    return eligible[0] if len(eligible) == 1 else None
+
+
+def acting_approver_id(application, stage=None) -> int | None:
+    """The single user entitled to act now, or ``None`` when several may.
+
+    Display only; see :func:`user_may_act` for the authority check. Returns
+    ``None`` for an unclaimed section with more than one candidate, because
+    naming one of them would be a guess.
+    """
+    acting = acting_approver_ids(application, eligible_approver_ids(application, stage))
+    return acting[0] if len(acting) == 1 else None
 
 
 def acting_approver_predicate(user) -> Q:
-    """Query predicate selecting applications the user must act on now.
+    """Query predicate selecting applications the user may act on now.
 
-    The user acts on applications currently held by them — except those they
-    have delegated away while an active delegation covers them — and on the
-    applications of every approver whose active delegation currently names the
-    user as delegate. Empty expected when ``user`` is not an approver.
+    The user may act when the pending stage lists them as eligible — except
+    while an active delegation covers them away — and when the pending stage is
+    eligible to somebody whose active delegation names the user as delegate.
+
+    Written as explicit ``__in`` subqueries on ``current_stage_id`` rather than
+    joins through the multi-valued ``eligible_approvers`` relation: a negated
+    condition across a multi-valued join is the shape Django silently splits
+    into a subquery, and the intent here is worth stating outright.
     """
     today = timezone.localdate()
     delegations = Delegation.objects.filter(
@@ -580,10 +655,23 @@ def acting_approver_predicate(user) -> Q:
         .values_list("approver_id", flat=True)
         .distinct()
     )
-    own = Q(current_approver=user) & ~Q(
-        current_approver__in=list(delegated_approver_ids)
+    own = Q(
+        current_stage_id__in=ApplicationStageApprover.objects.filter(user=user).values_list(
+            "stage_id", flat=True
+        )
     )
-    acting = Q(current_approver__in=list(received_approver_ids))
+    if user.pk in delegated_approver_ids:
+        # This user is away under an active delegation, so their own eligibility
+        # does not put anything in their queue. The exclusion is scoped to
+        # *them*: subtracting every stage that also holds some other away
+        # approver would hide a section from a colleague who is available to act
+        # on it, which matters now that a section holds several people.
+        own = Q(pk__in=[])
+    acting = Q(
+        current_stage_id__in=ApplicationStageApprover.objects.filter(
+            user_id__in=received_approver_ids
+        ).values_list("stage_id", flat=True)
+    ) if received_approver_ids else Q(pk__in=[])
     return own | acting
 
 
@@ -853,146 +941,6 @@ def is_self_approver(user_id: int | None, application: LeaveApplication) -> bool
     return is_self_application(user_id, application)
 
 
-def applicant_stage_positions(application: LeaveApplication, definitions) -> list[int]:
-    """The positions in ``definitions`` whose approver is the applicant.
-
-    An employee may hold more than one approver role, so this is a list: the
-    application's path has to clear the applicant's *last* one.
-    """
-    return [
-        index
-        for index, definition in enumerate(definitions)
-        if is_self_approver(definition.approver_user_id, application)
-    ]
-
-
-def select_activatable_stage_index(application: LeaveApplication, definitions) -> int:
-    """Index of the first stage in ``definitions`` that may be activated.
-
-    An employee who is also an approver must never be the approver of record
-    for their own leave. A role resolves to exactly one approver (the lowest-id
-    active user holding it), so a self-match cannot be replaced by another
-    candidate within the stage.
-
-    The applicant's stages are removed from the path, and so is everything before
-    them: the application starts at the first stage *after* the applicant's last
-    one and never travels backwards down the queue. Given
-    ``supervisor -> HOD -> Registrar``:
-
-    * a supervisor's application starts at the HOD;
-    * the HOD's own application starts at the Registrar, never at the
-      Supervisor, because the Supervisor sits below the applicant;
-    * a Registrar's application has no stage after them, so it is not routed at
-      all (:class:`SelfApprovalBlockedError`).
-
-    Bypassed stages are materialised as ``skipped`` so the chain stays contiguous
-    and the snapshot keeps recording the workflow as HR configured it
-    (invariant 12.5).
-
-    Returns the index of the first activatable stage.
-    Raises :class:`SelfApprovalBlockedError` when the applicant holds the last
-    stage, so the caller refuses the operation rather than routing an application
-    that nobody can sign off.
-    """
-    if not definitions:
-        return 0
-    positions = applicant_stage_positions(application, definitions)
-    if not positions:
-        return 0
-    start = positions[-1] + 1
-    if start >= len(definitions):
-        held = ", ".join(
-            definitions[index].role_label for index in positions
-        )
-        if len(positions) == len(definitions):
-            raise SelfApprovalBlockedError(
-                [
-                    "This approval workflow resolves every stage to the applicant "
-                    f"themself ({held}). An approver cannot approve their own "
-                    "leave application, and a mandatory stage cannot be skipped. "
-                    "Human Resources must appoint another active holder of one of "
-                    "these roles, or correct the workflow configuration."
-                ]
-            )
-        raise SelfApprovalBlockedError(
-            [
-                f"The applicant is the approver for the {held} stage, which is "
-                "the last stage of this workflow, so there is no later approver "
-                "to take the application. An approver cannot approve their own "
-                "leave application, and a mandatory stage cannot be skipped. "
-                "Human Resources must appoint the applicant to a different "
-                "approver role, or change the workflow's final stage, before this "
-                "application can be submitted."
-            ]
-        )
-    return start
-
-
-def record_skipped_stages_audit(
-    application: LeaveApplication,
-    skipped_stages,
-    activated_stage=None,
-    actor=None,
-) -> None:
-    """Audit the stages bypassed because they would resolve to the applicant.
-
-    ``actor`` is ``None`` when the skip happens automatically while routing, so
-    the entry identifies the acting user as the system rather than a person; it
-    is the deciding approver when the chain advances past a match.
-    """
-    if not skipped_stages:
-        return
-    skipped = list(skipped_stages)
-    applicant_orders = {
-        stage.stage_order
-        for stage in skipped
-        if is_self_approver(stage.assigned_approver_id, application)
-    }
-    applicant_labels = ", ".join(
-        stage.role_label
-        for stage in skipped
-        if stage.stage_order in applicant_orders
-    )
-    routed_to = (
-        activated_stage.role_label if activated_stage is not None else None
-    )
-    record_audit(
-        actor=actor,
-        action=AuditEntry.Action.STAGE_SKIPPED,
-        target_type=AuditEntry.TargetType.APPLICATION,
-        target_id=application.pk,
-        target_summary=application.reference_number,
-        detail={
-            "reason": "applicant_is_the_approver",
-            "applicant_stage_orders": sorted(applicant_orders),
-            "skipped_stages": [
-                {
-                    "order": stage.stage_order,
-                    "role": stage.role,
-                    "role_label": stage.role_label,
-                    "assigned_approver_id": stage.assigned_approver_id,
-                    "skip_reason": (
-                        "applicant_is_approver"
-                        if stage.stage_order in applicant_orders
-                        else "before_applicant_stage"
-                    ),
-                }
-                for stage in skipped
-            ],
-            "activated_stage_order": (
-                activated_stage.stage_order if activated_stage is not None else None
-            ),
-            "activated_role_label": routed_to,
-        },
-        reason=(
-            f"The applicant is the approver for the {applicant_labels} stage, so "
-            "the application starts after it"
-            + (f" at the {routed_to} stage." if routed_to else ".")
-            + " Stages at or below the applicant are bypassed."
-        ),
-    )
-
-
 def reassign_application(
     *,
     application: LeaveApplication,
@@ -1005,8 +953,16 @@ def reassign_application(
     Validates that the application is pending (``submitted``), the replacement
     is an active user with an approver role, the replacement differs from the
     current approver (when one is set) and from the applicant, and that a
-    reason is supplied. On success, records a :class:`Reassignment` history row
-    and atomically moves ``LeaveApplication.current_approver``.
+    reason is supplied. On success, records a :class:`Reassignment` history row,
+    moves ``LeaveApplication.current_approver``, and adds the replacement to the
+    open stage's eligibility snapshot.
+
+    The snapshot write is what makes the reassignment actionable: authority is
+    read from the snapshot, not from the spine, so without it the replacement
+    would be named as the owner of the application and still be refused a
+    403. The original members are kept rather than replaced — a section is
+    resolved by whoever acts first, so adding HR's replacement widens the
+    section instead of revoking the colleague who was already on it.
     """
     if application.status != LeaveApplication.Status.SUBMITTED:
         raise ReassignmentError(
@@ -1051,6 +1007,14 @@ def reassign_application(
         )
         application.current_approver = to_approver
         application.save(update_fields=["current_approver", "updated_at"])
+        # Authority is read from the stage's eligibility snapshot, so the
+        # replacement has to be added to it. ``get_or_create`` keeps this
+        # idempotent for a second HR intervention that picks the same person.
+        if application.current_stage_id is not None:
+            ApplicationStageApprover.objects.get_or_create(
+                stage_id=application.current_stage_id,
+                user=to_approver,
+            )
         if actor is not None:
             record_audit(
                 actor=actor,
@@ -1074,23 +1038,25 @@ def reassign_application(
 
 
 def assign_workflow(application):
-    """Materialise the configured stage chain for ``application`` (Unit 16).
+    """Materialise the configured section chain for ``application``.
 
     Runs idempotently: if the current submission cycle already has stages, the
     existing live stage is returned unchanged. Otherwise the workflow provider's
-    stage definitions are validated and bulk-created with exactly one ``pending``
+    section definitions are validated and bulk-created with exactly one ``pending``
     stage, and ``application.current_stage`` is pointed at it.
 
-    An employee who is also an approver is never assigned their own
-    application: any leading stage resolving to the applicant is materialised
-    as ``skipped`` and the first stage with a different approver is activated
-    instead (see :func:`select_activatable_stage_index`). When no such stage
-    exists the submission is refused, because a mandatory stage cannot be
-    skipped (invariant 12.3).
+    **The chain always starts at section one, and no section is ever skipped.**
+    An employee who is also an approver is removed from the eligibility snapshot
+    of every section they belong to, by the provider, rather than by bypassing
+    stages here. So a section the applicant belongs to is still decided — by its
+    other members — and a section whose only member is the applicant cannot be
+    routed at all, so the submission is refused there (invariants 12.3, 12.7).
+    The old "start after the applicant's last stage, never travelling backwards"
+    rule is gone: with a set of approvers per section there is nothing to skip.
 
-    Raises :class:`WorkflowAssignmentError` (responsibility of the caller to map
-    to a submisable ``ValidationFailedError``-style failure) when the provider
-    yields no/ill-formed stages or a stage cannot be resolved to an active user.
+    Raises :class:`WorkflowAssignmentError` when the provider yields no/ill-formed
+    sections or a section cannot be resolved to at least one active user other
+    than the applicant.
     Returns the first (pending) stage.
     """
     from .providers import WorkflowConfigError, get_workflow_provider
@@ -1106,29 +1072,31 @@ def assign_workflow(application):
         except WorkflowConfigError as exc:
             raise WorkflowAssignmentError([str(exc)])
         if not definitions:
-            raise WorkflowAssignmentError(["No workflow stages configured."])
+            raise WorkflowAssignmentError(["No workflow sections configured."])
         orders = [definition.order for definition in definitions]
         if sorted(orders) != list(range(1, len(definitions) + 1)):
-            raise WorkflowAssignmentError(["Workflow stages must be ordered 1..N."])
+            raise WorkflowAssignmentError(
+                ["Workflow sections must be ordered 1..N."]
+            )
+        # A section nobody can act for is refused here rather than materialised
+        # and left pending forever. The provider normally raises for this, but
+        # assign_workflow is also reachable with a provider that returns a gap,
+        # and an eligibility row cannot name nobody.
+        unstaffed = [
+            f'No active approver for the "{definition.role_label}" approval section.'
+            for definition in definitions
+            if not definition.approver_user_ids
+        ]
+        if unstaffed:
+            raise WorkflowAssignmentError(unstaffed)
 
-        approvers = []
-        for definition in definitions:
-            if definition.approver_user_id is None:
-                raise WorkflowAssignmentError(
-                    [f"No active user for the {definition.role_label} stage."]
-                )
-            try:
-                approvers.append(User.objects.get(pk=definition.approver_user_id))
-            except User.DoesNotExist:
-                raise WorkflowAssignmentError(
-                    [f"No active user for the {definition.role_label} stage."]
-                )
-
-        try:
-            active_index = select_activatable_stage_index(application, definitions)
-        except SelfApprovalBlockedError as exc:
-            raise WorkflowAssignmentError(exc.messages)
-
+        # Every definition is guaranteed to carry at least one eligible user:
+        # the provider refuses an unsatisfiable section rather than returning a
+        # gap, and it has already removed the applicant. So there is no longer a
+        # "which stages does the applicant hold" question to answer here — the
+        # chain always starts at section one, and self-approval is prevented by
+        # the snapshot rather than by skipping stages.
+        active_index = 0
         last_index = len(definitions) - 1
         stages = [
             ApplicationStage(
@@ -1140,22 +1108,28 @@ def assign_workflow(application):
                 role_ref_id=definition.role_id,
                 history_scope=definition.history_scope or "",
                 handles_cancellation=definition.handles_cancellation,
-                assigned_approver=approver,
+                section_ref_id=definition.section_id,
+                assigned_approver=None,
                 status=_initial_stage_status(index, active_index),
                 is_final=index == last_index,
             )
-            for index, (definition, approver) in enumerate(
-                zip(definitions, approvers)
-            )
+            for index, definition in enumerate(definitions)
         ]
 
         ApplicationStage.objects.bulk_create(stages)
-        record_skipped_stages_audit(
-            application, stages[:active_index], activated_stage=stages[active_index]
+
+        # Snapshot who may act on each section, now. This is what makes an
+        # in-flight application immune to later membership edits (invariant
+        # 12.5) and what self-approval is enforced through.
+        ApplicationStageApprover.objects.bulk_create(
+            ApplicationStageApprover(stage=stage, user_id=user_id)
+            for stage, definition in zip(stages, definitions)
+            for user_id in definition.approver_user_ids
         )
+
         first = stages[active_index]
         application.current_stage = first
-        application.current_approver = first.assigned_approver
+        application.current_approver = None
         application.save(update_fields=["current_stage", "current_approver", "updated_at"])
         return first
 
@@ -1194,17 +1168,17 @@ class ApprovalValidationError(ValueError):
 
 
 def _next_activatable_stage(application, decided_stage):
-    """The stage to activate after ``decided_stage`` was approved.
+    """The next stage to activate after ``decided_stage`` was approved.
 
-    Walks forward through the remaining chain and returns
-    ``(next_stage, skipped_stages)``. A stage whose approver is the applicant is
-    bypassed and returned in ``skipped_stages`` so the caller can mark and audit
-    it; the walk continues in case a later stage has a valid approver.
+    The chain is contiguous and nothing is ever bypassed, so this is simply the
+    next stage by order. It is still looked up under a row lock and its
+    eligibility re-checked, because a stage with no one able to act is a chain
+    that cannot finish and must be reported rather than activated as a dead end.
 
     Raises ``ApprovalValidationError`` when the chain simply ends (a pre-existing
-    malformed chain) and :class:`SelfApprovalBlockedError` when stages remain but
-    every one of them resolves to the applicant — there is then nobody who may
-    act, and a mandatory stage cannot be dropped (invariant 12.3).
+    malformed chain) and :class:`SelfApprovalBlockedError` when the next stage has
+    no eligible approver — which can only happen on a chain materialised before
+    sections, where the applicant used to be skipped forward over.
     """
     remaining = list(
         ApplicationStage.objects.select_for_update()
@@ -1218,30 +1192,19 @@ def _next_activatable_stage(application, decided_stage):
     if not remaining:
         raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
 
-    skipped = []
-    for candidate in remaining:
-        if (
-            candidate.status == ApplicationStage.Status.SKIPPED
-            or is_self_approver(candidate.assigned_approver_id, application)
-        ):
-            skipped.append(candidate)
-            continue
-        return candidate, skipped
-
-    raise SelfApprovalBlockedError(
-        [
-            "This application cannot be advanced: every remaining approval "
-            "stage ("
-            + ", ".join(stage.role_label for stage in remaining)
-            + ") resolves to the applicant themself, so no approver is left to "
-            "sign it off. An approver cannot approve their own leave "
-            "application, and a mandatory stage cannot be skipped. Human "
-            "Resources must appoint the applicant to a different approver role, "
-            "or change the workflow, before this application can be decided. "
-            "Reassigning the current approver will not help, because the "
-            "blocked stage is a later one that reassignment does not reach."
-        ]
-    )
+    candidate = remaining[0]
+    if not candidate.eligible_approvers.exists():
+        raise SelfApprovalBlockedError(
+            [
+                "This application cannot be advanced: nobody can act on the "
+                f"{candidate.role_label} stage, so there is no approver left to "
+                "sign it off. An approver cannot approve their own leave "
+                "application, and a mandatory section cannot be skipped. Human "
+                "Resources must appoint another member of that section, or change "
+                "the workflow, before this application can be decided."
+            ]
+        )
+    return candidate
 
 
 def decide(*, application_id, actor, action: str, comment: str = "", expected_version: int):
@@ -1322,6 +1285,14 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         before_order = stage.stage_order
         before_version = stage.decision_version
 
+        # Claim the stage by acting on it. A section is open to all of its
+        # members, so this is the moment the stage stops being open: the
+        # ``select_for_update`` above is what makes the claim exclusive, and the
+        # optimistic ``decision_version`` check refuses the loser of a race with
+        # 409 rather than letting two people decide the same section.
+        stage.assigned_approver = actor
+        app.current_approver = actor
+
         ApprovalDecision.objects.create(
             application=app,
             stage=stage,
@@ -1335,13 +1306,12 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
 
         stage.decision_version = before_version + 1
         next_stage = None
-        skipped_stages = []
         if action == ApprovalDecision.Action.APPROVE:
             stage.status = ApplicationStage.Status.APPROVED
             if stage.is_final:
                 app.status = LeaveApplication.Status.APPROVED
             else:
-                next_stage, skipped_stages = _next_activatable_stage(app, stage)
+                next_stage = _next_activatable_stage(app, stage)
                 next_stage.status = ApplicationStage.Status.PENDING
         elif action == ApprovalDecision.Action.REJECT:
             stage.status = ApplicationStage.Status.REJECTED
@@ -1352,20 +1322,21 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
 
         # Persist the decided stage first so a single ``pending`` stage always
         # exists at any one moment (enforced by the partial unique constraint).
-        stage.save(update_fields=["status", "decision_version", "updated_at"])
-        if skipped_stages:
-            for skipped in skipped_stages:
-                skipped.status = ApplicationStage.Status.SKIPPED
-            ApplicationStage.objects.bulk_update(skipped_stages, ["status"])
-            record_skipped_stages_audit(
-                app, skipped_stages, activated_stage=next_stage, actor=actor
-            )
+        stage.save(
+            update_fields=[
+                "status",
+                "decision_version",
+                "assigned_approver",
+                "updated_at",
+            ]
+        )
         if next_stage is not None:
             next_stage.save(update_fields=["status", "decision_version", "updated_at"])
             app.current_stage = next_stage
-            # Unit 21 (D2): the spine follows the stage — the next approver is
-            # the configured approver of the freshly-activated stage.
-            app.current_approver = next_stage.assigned_approver
+            # The spine follows the stage. The next section is open, so nobody has
+            # taken it up yet and ``current_approver`` is cleared: its members
+            # are read from the stage's eligibility snapshot.
+            app.current_approver = None
 
         after_status = app.status
         after_order = (
@@ -1484,32 +1455,50 @@ def role_usage_map(roles) -> dict[int, list[str]]:
     if not role_ids:
         return usage
 
-    stage_counts = (
-        WorkflowStage.objects.filter(
-            approver_role_id__in=role_ids, workflow__is_active=True
+    # A section and its members are one blocker from HR's point of view: the
+    # workflow uses this role. Grouping by workflow and merging into a single
+    # clause avoids telling HR the same workflow is a problem twice.
+    section_rows = (
+        Section.objects.filter(
+            approver_role_id__in=role_ids,
+            workflow__is_active=True,
+            is_active=True,
         )
         .values("approver_role_id", "workflow_id", "workflow__name")
         .annotate(count=Count("id"))
-        .order_by("workflow__name")
+        .order_by("workflow__name", "workflow_id")
     )
-    for row in stage_counts:
-        count = row["count"]
-        noun = "stage" if count == 1 else "stages"
-        usage[row["approver_role_id"]].append(
-            f"the '{row['workflow__name']}' workflow ({count} {noun})"
-        )
+    section_counts: dict[tuple[int, str], int] = {}
+    workflow_names: dict[tuple[int, str], str] = {}
+    for row in section_rows:
+        key = (row["approver_role_id"], row["workflow_id"])
+        section_counts[key] = row["count"]
+        workflow_names[key] = row["workflow__name"]
 
-    member_counts = (
-        TeamMember.objects.filter(role_id__in=role_ids, team__is_active=True)
-        .values("role_id", "team_id", "team__name")
+    member_rows = (
+        SectionMember.objects.filter(
+            section__approver_role_id__in=role_ids,
+            section__is_active=True,
+            section__workflow__is_active=True,
+        )
+        .values(
+            "section__approver_role_id",
+            "section__workflow_id",
+        )
         .annotate(count=Count("id"))
-        .order_by("team__name")
     )
-    for row in member_counts:
-        count = row["count"]
-        noun = "member" if count == 1 else "members"
-        usage[row["role_id"]].append(
-            f"the '{row['team__name']}' team ({count} {noun})"
+    member_counts: dict[tuple[int, str], int] = {
+        (row["section__approver_role_id"], row["section__workflow_id"]): row["count"]
+        for row in member_rows
+    }
+
+    for key, section_total in section_counts.items():
+        parts = [f"{section_total} section" + ("" if section_total == 1 else "s")]
+        members = member_counts.get(key, 0)
+        if members:
+            parts.append(f"{members} member" + ("" if members == 1 else "s"))
+        usage[key[0]].append(
+            f"the '{workflow_names[key]}' workflow ({' and '.join(parts)})"
         )
 
     holders = (
@@ -1857,85 +1846,84 @@ def _team_snapshot(team: Team) -> dict:
     }
 
 
-def add_team_member(*, team: Team, user: User, role: ApproverRole, actor) -> TeamMember:
-    """Add one person to a team in one role, refusing unusable configurations."""
+def add_section_member(
+    *, section: Section, user: User, actor
+) -> SectionMember:
+    """Add one person to a section and audit it.
+
+    A section may hold any number of people and the same person may belong to
+    several sections, so the only uniqueness rule left is "not twice in the same
+    section". Unlike the old team membership there is deliberately **no**
+    one-holder-per-role rule and no role argument: the role belongs to the
+    section, and more than one person sharing it is the whole point.
+    """
     with transaction.atomic():
-        if team.workflow_id is None:
+        if not section.is_active:
             raise TeamActionError(
-                "team",
-                f'The "{team.name}" team has no workflow yet. Set one on the team '
-                "before adding members.",
-            )
-        if not team.is_active:
-            raise TeamActionError(
-                "team",
-                f'The "{team.name}" team is inactive. Activate it before adding '
-                "members.",
+                "section",
+                f'The "{section.name}" section is inactive. Activate it before '
+                "adding members.",
             )
         if not user.is_active:
             raise TeamActionError(
                 "user",
                 f"{user.get_full_name() or user.username} is not an active user. "
-                "Activate the account before adding them to a team.",
+                "Activate the account before adding them to a section.",
             )
-        if not role.is_active:
+        if not section.approver_role.is_active:
             raise TeamActionError(
-                "role",
-                f'"{role.label}" is deactivated. Reactivate it in Roles, or pick '
-                "an active role.",
+                "section",
+                f'"{section.approver_role.label}" is deactivated. Reactivate it in '
+                "Roles before adding members to this section.",
             )
-        if TeamMember.objects.filter(team=team, user=user).exists():
+        if SectionMember.objects.filter(section=section, user=user).exists():
             raise TeamActionError(
                 "user",
                 f"{user.get_full_name() or user.username} is already a member of "
-                f'the "{team.name}" team. Remove them from their current role '
-                "first.",
+                f'the "{section.name}" section.',
             )
-        if TeamMember.objects.filter(team=team, role=role).exists():
-            holder = TeamMember.objects.filter(team=team, role=role).first()
-            name = holder.user.get_full_name() or holder.user.username
-            raise TeamActionError(
-                "role",
-                f'"{role.label}" is already held on the "{team.name}" team by '
-                f"{name}. A team has one member per role; create a second role if "
-                "two people are needed.",
-            )
-        membership = TeamMember(team=team, user=user, role=role)
-        # Full clean last: it catches the fields the checks above cannot (a role
-        # the team's workflow does not use, say), and by now the uniqueness rules
-        # have already produced a message that names the blocker.
+        membership = SectionMember(section=section, user=user)
         membership.full_clean()
         membership.save()
         record_audit(
             actor=actor,
             action=AuditEntry.Action.CREATED,
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=team.pk,
-            target_summary=team.name,
+            # The workflow, not one of its teams: a section belongs to the
+            # workflow, several teams may share it, and "the first team that
+            # happens to use this workflow" would attribute the change to a team
+            # whose config did not change.
+            target_type=AuditEntry.TargetType.WORKFLOW,
+            target_id=section.workflow_id,
+            target_summary=f"{section.workflow.name} / {section.name}",
             detail=changed_fields(
                 {},
                 {
                     "member_user_id": user.pk,
                     "member": user.get_full_name() or user.username,
-                    "member_role": role.label,
+                    "section": section.name,
+                    "role": section.approver_role.label,
                 },
             ),
-            reason=f"{user.get_full_name() or user.username} added as {role.label}.",
+            reason=(
+                f"{user.get_full_name() or user.username} added to the "
+                f"{section.name} section as {section.approver_role.label}."
+            ),
         )
     return membership
 
 
-def remove_team_member(*, membership: TeamMember, actor) -> TeamMember:
-    """Remove one team membership and audit it."""
+def remove_section_member(*, membership: SectionMember, actor) -> SectionMember:
+    """Remove one section membership and audit it."""
     with transaction.atomic():
-        team = membership.team
+        section = membership.section
         user = membership.user
-        role = membership.role
+        role = section.approver_role
         detail = changed_fields(
             {
                 "member_user_id": user.pk,
                 "member": user.get_full_name() or user.username,
-                "member_role": role.label,
+                "section": section.name,
+                "role": role.label,
             },
             {},
         )
@@ -1943,32 +1931,33 @@ def remove_team_member(*, membership: TeamMember, actor) -> TeamMember:
         record_audit(
             actor=actor,
             action=AuditEntry.Action.CANCELLED,
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=team.pk,
-            target_summary=team.name,
+            target_type=AuditEntry.TargetType.WORKFLOW,
+            target_id=section.workflow_id,
+            target_summary=f"{section.workflow.name} / {section.name}",
             detail=detail,
-            reason=f"{user.get_full_name() or user.username} removed from {role.label}.",
+            reason=(
+                f"{user.get_full_name() or user.username} removed from the "
+                f"{section.name} section."
+            ),
         )
     return membership
 
 
-def team_stage_roles(team: Team) -> list[ApproverRole]:
-    """The roles the team's workflow actually asks for, in stage order.
+def workflow_section_roles(workflow: Workflow) -> list[ApproverRole]:
+    """The distinct roles a workflow's sections ask for, in first-seen order.
 
-    The role picker is driven by this rather than by the full role list, so HR
-    can only assign a member a role that will route applications.
+    A role may repeat across sections; the picker only needs to know which roles
+    are in play, once each.
     """
-    if team.workflow_id is None:
+    if workflow.pk is None:
         return []
     role_ids = list(
-        team.workflow.stages.order_by("order")
+        workflow.sections.order_by("order")
         .values_list("approver_role", flat=True)
         .distinct()
     )
     if not role_ids:
         return []
-    # Re-fetch as rows (callers need ``code``/``label``, not ids) while keeping
-    # the stage order the ``values_list`` above established.
     by_id = {
         role.pk: role
         for role in ApproverRole.objects.filter(pk__in=role_ids).select_related()

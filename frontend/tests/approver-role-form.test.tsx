@@ -118,7 +118,7 @@ describe("ApproverRoleForm", () => {
     expect(screen.getByLabelText("Code")).toHaveAttribute("readonly");
     expect(
       screen.getByText(
-        "The code cannot change once saved: workflow stages and team memberships store it."
+        "The code cannot change once saved: workflow sections and team memberships store it."
       )
     ).toBeInTheDocument();
   });

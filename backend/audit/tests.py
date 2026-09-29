@@ -21,7 +21,7 @@ from leave.models import (
 )
 from users.models import User
 
-from workflows.models import Delegation, Reassignment, Workflow, WorkflowStage
+from workflows.models import Delegation, Reassignment, Workflow
 from workflows.testing import make_approver
 
 from leave.tests.stubs import (
@@ -599,9 +599,9 @@ class AuditWiringTests(StubProviderMixin, TestCase):
                 "department": "",
                 "is_active": False,
                 "effective_from": None,
-                "stages": [
-                    {"order": 1, "approver_role": "supervisor"},
-                    {"order": 2, "approver_role": "hod"},
+                "sections": [
+                    {"order": 1, "name": "Supervisor", "approver_role": "supervisor"},
+                    {"order": 2, "name": "HOD", "approver_role": "hod"},
                 ],
             },
             format="json",
@@ -611,15 +611,15 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         created = self._entry_for("workflow", workflow_id)
         self.assertEqual(created.action, "created")
         self.assertEqual(
-            created.detail["after"]["stages"], ["supervisor", "hod"]
+            created.detail["after"]["sections"], ["supervisor", "hod"]
         )
 
         response = self.client.patch(
             f"/api/v1/workflows/{workflow_id}/",
             {
-                "stages": [
-                    {"order": 1, "approver_role": "registrar"},
-                    {"order": 2, "approver_role": "dvc"},
+                "sections": [
+                    {"order": 1, "name": "Registrar", "approver_role": "registrar"},
+                    {"order": 2, "name": "DVC", "approver_role": "dvc"},
                 ]
             },
             format="json",
@@ -628,10 +628,10 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         updated = self._entry_for("workflow", workflow_id)
         self.assertEqual(updated.action, "updated")
         self.assertEqual(
-            updated.detail["before"]["stages"], ["supervisor", "hod"]
+            updated.detail["before"]["sections"], ["supervisor", "hod"]
         )
         self.assertEqual(
-            updated.detail["after"]["stages"], ["registrar", "dvc"]
+            updated.detail["after"]["sections"], ["registrar", "dvc"]
         )
 
     def _create_delegation(self, approver, delegate=None, ends_on=None):

@@ -4,6 +4,11 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- Workflow Sections migration (follow-on to Unit 26 — backend complete, frontend complete, docs updated; see "Completed — Workflow Sections (Sections/members) migration" at the end of this file)
+- Dev database fully reset and both dev servers restarted (2026-09-29) — see
+  "Defect Fixes + Operational (2026-09-29, full dev reset — everything cleared)";
+  that pass also fixed three defects the reset exposed, two of them in
+  `seed_approvals_dev`, so the seed now runs clean and is idempotent
 - Unit 26 — HR-Managed Approver Roles and Teams (COMPLETE — implemented and verified, committed as `4352a69`)
 - Unit 25 — End-to-End System (COMPLETE — implemented and verified, committed as `6f9474e`)
 - Unit 24 — Complete Audit and Historical Integrity (COMPLETE — committed as `d4860f3`)
@@ -2191,3 +2196,172 @@ dependencies compile fine in a production build. It was a corrupted Turbopack
 cache. `rm -rf frontend/.next` and a restart fixed it, after which the route
 loads normally. If a single route ever hangs with no headers while its siblings
 are fine, clear `.next` before reading any code.
+
+---
+
+## Completed — Workflow Sections (Sections/members) migration (2026-09-29)
+
+Follow-on to Unit 26. Redesigns the approval workflow from **ordered stages
+with a single approver each** to **ordered Sections, each with a roster of
+members, decided by whichever member acts first** — and changes cancellation
+routing the same way. Not yet committed; no `context/specs/` file (like Unit 26,
+this landed from the same feature request and the authority is
+`context/architecture.md` invariants plus this section).
+
+**Backend — model + migration (`workflows/0009`, `leave/0015`, `0016`,
+`workflows/0017`).**
+- `WorkflowStage` → `Section`: `approver_role` FK, `name`, `order`,
+  `description`, `is_active`, unique `(workflow, order)`. Section identity
+  across a chain write is the **(role, name)** pair, so reordering preserves
+  each section's members; a role/name change rebuilds the section empty
+  (never handed to a new role without HR asking).
+- `SectionMember` (section, user) — any number of members per section; the
+  same person may sit on several sections but not twice on one.
+- `ApplicationStage.approver`/`assigned_approver`+`ApplicationStageApprover`
+  snapshot rows: assignment stays `null` until a claim or reassignment.
+- `CancellationStageSpec.approver_user_ids` eligibility sets +
+  `CancellationStageApprover` snapshot rows + nullable
+  `CancellationApprovalStage.approver` (set on the decision); `leave.0016`
+  backfills existing rows' eligibility.
+
+**Backend — behaviour.**
+- `Team.workflow` is required; workflows are shared, so a team's Sections and
+  members belong to the workflow and are flattened for display only.
+- Providers route through the employee's team workflow; the applicant is
+  excluded from every Section's eligibility, and a Section left with no
+  eligible member refuses submission (`422 workflow_unavailable`) instead of
+  being skipped. No `SKIPPED` stage state exists; `STAGE_SKIPPED` audit rows
+  remain only as historical records.
+- First eligible member claims a stage atomically (`select_for_update`); a
+  concurrent loser gets the existing 409 stage-changed response.
+- Reassignment widens eligibility; active delegation overrides a
+  delegated-away member.
+- `get_workflow_member_user_ids()` reads `ApplicationStageApprover` snapshots
+  instead of the nullable `assigned_approver_id`, which removed a `None`
+  event-recipient bug.
+- Cancellation pending queues expose every eligible member; decided history
+  belongs only to the actor; open stepper stages carry `approver_name: null`
+  plus `eligible_approvers`.
+- E2E seed/API calls use nested `sections` and `/api/v1/section-members/`.
+- Tracking lookup repeated-query optimization; the honest query bound is 12.
+
+**Backend verification.** `leave.tests.test_cancellations`: **52 OK** (nullable
+claimers, snapshot authority, shared sections, queue visibility,
+defence-in-depth self-decision). Full suite **1004 OK**; `makemigrations
+--check` clean; migrations applied to the local DB.
+
+**Frontend — same design on the other side.**
+- `lib/workflows.ts`: `WorkflowStage` → `WorkflowSection` (+`SectionMember`),
+  inputs gain `name`; `lib/teams.ts`: `Team.workflow` now required (TeamInput),
+  `members` are per-person flattened rows with their section list, and a
+  read-only `sections` summary.
+- `components/hr/workflow-form.tsx`: Section editor (name, role, description,
+  active, reorder/add/remove), membership read as counts and staffed on the
+  Teams page.
+- New `lib/section-members-client.ts` (client-safe: kept out of `teams.ts`,
+  which imports the server-only `api-client`) + proxies
+  `app/api/hr/section-members/route.ts` and `[id]/route.ts`.
+- `components/hr/team-member-list.tsx`: section-based roster — pick a person
+  per section, add/remove by section member id; shared-section note. Deleted
+  the dead `team-members` proxies and clients.
+- Removed the `"skipped"` stage/status vocabulary from tracking and approval
+  types, the two timelines, and the fixtures; replaced the
+  `makeSelfApprovalReview`/`pending_with_skipped_stage` fixtures with
+  "a colleague on the applicant's section decided it" (`makeApplicantExcludedReview`,
+  `pending_with_applicant_excluded.json`).
+
+**Frontend verification.** `tsc --noEmit` clean; **63 files / 423 tests OK**
+(rewritten `team-form`, `team-member-list`, `workflow-form`, `workflow-table`,
+`approval-detail`, `tracking-view`); `eslint` clean; `next build` compiles and
+registers `section-members` routes. (A stale `.next` validator referencing the
+deleted `team-members` routes fails the first `next build`; `rm -rf .next`
+fixes it.)
+
+**Context updated alongside.** `architecture.md` invariants **12.3** (no skipped
+stage; the applicant is removed, not a step) and **12.11** (section identity,
+membership on the section, several members decide). `specs/18` amended for the
+any-of eligibility-snapshot cancellation model. This section records the frontend
+and the verification.
+
+**Still open.** Nothing blocking. The workflow form's section-name field is
+optional (the backend falls back to the role label); an empty picker of sections
+to staff appears only when a team's workflow has none. The workflow list still
+reads the first page of `listWorkflows()`.
+
+---
+
+## Defect Fixes + Operational (2026-09-29, full dev reset — everything cleared)
+
+Developer asked for every row removed and every process restarted. Executed
+against the dev database `luanar_leave` after a `pg_dump` to
+`storage/luanar_leave-backup-20260929-103232.sql` (204K, 43 tables). Unlike the
+2026-09-28 reset, **users were cleared too** — nothing was kept.
+
+**Wipe.** `manage.py flush` (TRUNCATE `RESTART IDENTITY CASCADE` on every
+model table, then `migrate`; `django_migrations` is not a model table so flush
+leaves it and the migrate run is a no-op). 702 rows / 43 non-empty tables → 3
+non-empty (`auth_permission` 164, `django_content_type` 41, `django_migrations`
+92) → 610 rows after reseeding.
+
+**Calendar recreated by hand** (no seed exists; `seed_approvals_dev` raises
+`CommandError` without an active FY): `FinancialYear` `2026-06-01 → 2027-05-31`
+active, and the two `PublicHoliday` rows verbatim — `Mother's Day` 2026-10-15,
+`Chrismas Holiday` 2026-12-25 (the spelling in the row is kept as-is). The
+document template needed nothing: `documents.services.get_template()`
+materializes the default on first access, so only HR's edited wording is lost.
+
+**Three defects the reset exposed, all fixed in the working tree.**
+1. **`seed_approvals_dev` could not seed at all** (`_seed_cancellations`).
+   It decided each stage as `actor=stage.assigned_approver`, but under the
+   claim model that field is `None` until somebody acts
+   (`assign_workflow` sets `assigned_approver=None` and snapshots eligibility
+   in `ApplicationStageApprover`). `decide(None)` reached
+   `policies._decided_this_cycle` and raised `AttributeError: 'NoneType' object
+   has no attribute 'id'`. Now reads
+   `workflows.services.eligible_approver_ids()` and acts as the first eligible
+   member, raising a `CommandError` naming the section when a chain has nobody
+   entitled to act — the same shape the cancellation helper already used.
+2. **Re-running the seed crashed** (`_seed_workflows`). It rebuilt a
+   workflow's sections on every run, which is impossible once an application has
+   snapshotted the chain: `ApplicationStage.section_ref` is `PROTECT` because
+   that section *is* the running application's frozen history. The rebuild is
+   now skipped while any stage references the workflow, so the documented
+   "re-running repairs a partially seeded database" contract holds again.
+   Verified: a second run is a no-op (13 applications, 8 sections, unchanged).
+3. **`GET /api/v1/leave-applications/` 500'd** for the seeded employee.
+   `_seed_documents` creates metadata-only rows under `seeded/820/...`, paths
+   that are not in the bucket, and `signed_document_url` raised
+   `StorageApiError`/`httpx.HTTPStatusError` (400/404) past the two callers that
+   only caught `ValueError` — so one unopenable document failed the whole
+   listing. `signed_document_url` now translates "no such object" (400/404) into
+   the `ValueError` every caller already handles, falling back to the stored
+   URL; a rejected key (401/403) or a broken bucket (5xx) still raises. Same
+   shape as the 2026-09-26 "storage misconfiguration 500'd the read endpoint"
+   fix, for the missing-object case it did not cover.
+
+**Storage.** The bucket held 22 objects against 5 `ApprovedLeaveDocument` rows,
+so 17 were unreferenced (16 from before, plus one stranded by the first, aborted
+seed attempt). Deleted all 17 and kept the 5 the live rows point at, rather than
+the literal "empty the bucket" — that leaves the bucket and the database in
+exact agreement. `leave-documents/` was and stays empty.
+
+**What the reset cost** (recoverable from the dump, must be redone in the UI):
+HR's hand-built `itm` "ICT Manager" approver role, the `ICT workfow` workflow
+with its four sections, the `ICT Department` team, the hand-trimmed section
+chains (the admin workflow was down to Supervisor + Registrar), and three manual
+applications `LV-2026-27-000001..000003`. Reference numbers restart at `000001`.
+
+**Verification.** `check` clean; `makemigrations --check` clean; full backend
+suite **1004 tests OK** (run twice — once per storage fix). Live HTTP: login
+200, `auth/me` 200, `leave/me/summary` 200, `leave-applications/` 200 with all 7
+of the employee's applications, `approvals/` 200, unauthenticated
+`leave/me/summary/` 401, `/admin/` 302; frontend `/` and `/dashboard` 307 to
+login, `/login` 200. `frontend/.next` cleared before restart (the route set
+changed — `section-members` — and the tracker records a corrupted Turbopack
+cache failing a single route with no headers).
+
+**Both dev servers now run detached** (`setsid nohup`, logs at
+`/tmp/opencode/django.log` and `/tmp/opencode/next.log`) rather than in the two
+VS Code terminals: `uv run manage.py runserver` (pgid 11362) and `npm run dev`
+(pgid 11169). No `qcluster` — development runs tasks inline.
+

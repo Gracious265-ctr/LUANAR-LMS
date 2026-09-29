@@ -30,7 +30,11 @@ from .events import (
     CancellationEvent,
     emit_cancellation_event,
 )
-from .models import CancellationApprovalStage, CancellationRequest
+from .models import (
+    CancellationApprovalStage,
+    CancellationRequest,
+    CancellationStageApprover,
+)
 from .providers import get_balance_provider, get_today
 
 #: Decision verbs for :func:`decide_cancellation` (spec 3.5).
@@ -165,7 +169,7 @@ def get_eligibility(
     from workflows.providers import get_workflow_provider
 
     stages = get_workflow_provider().get_cancellation_stages(application)
-    if not stages or any(stage.approver_user_id is None for stage in stages):
+    if not stages or any(not stage.approver_user_ids for stage in stages):
         return Eligibility(None, "no_cancellation_approvers", None, None)
 
     deduction = get_balance_provider().get_deduction(application)
@@ -315,9 +319,7 @@ def _request(application, user, reason: str, now) -> CancellationRequest:
     from workflows.providers import get_workflow_provider
 
     stages_spec = get_workflow_provider().get_cancellation_stages(application)
-    if not stages_spec or any(
-        stage.approver_user_id is None for stage in stages_spec
-    ):
+    if not stages_spec or any(not stage.approver_user_ids for stage in stages_spec):
         raise NoCancellationApproversError()
 
     if CancellationRequest.objects.filter(
@@ -340,19 +342,24 @@ def _request(application, user, reason: str, now) -> CancellationRequest:
 
     first = True
     for spec in stages_spec:
-        CancellationApprovalStage.objects.create(
+        stage = CancellationApprovalStage.objects.create(
             request=request,
             order=spec.order,
             role=spec.role,
             # The label comes from the application's own stage snapshot, so a
             # role renamed by HR after submission never rewrites this row.
             role_label=spec.role_label or spec.role,
-            approver_id=spec.approver_user_id,
             status=(
                 CancellationApprovalStage.Status.PENDING
                 if first
                 else CancellationApprovalStage.Status.WAITING
             ),
+        )
+        CancellationStageApprover.objects.bulk_create(
+            [
+                CancellationStageApprover(stage=stage, user_id=user_id)
+                for user_id in sorted(spec.approver_user_ids)
+            ]
         )
         first = False
 
@@ -434,7 +441,7 @@ def decide_cancellation(
         )
         if stage is None:
             raise RequestNotPendingError()
-        if stage.approver_id != user.id:
+        if user.id not in stage.eligible_approver_ids():
             raise NotCurrentApproverError()
 
         comment = (comment or "").strip()
@@ -464,6 +471,10 @@ def _apply_decision(
 ) -> CancellationRequest:
     before_request = _request_state(request)
     before_stage = _stage_state(stage)
+
+    # Acting claims the stage: the section is resolved by whoever decides
+    # first, so this is the moment ``approver`` becomes known.
+    stage.approver = user
 
     if decision == DECISION_REJECT:
         stage.status = CancellationApprovalStage.Status.REJECTED
@@ -526,7 +537,13 @@ def _apply_decision(
             # Persist the decided stage first so the partial unique constraint
             # (exactly one ``pending`` stage per request) holds at every instant.
             stage.save(
-                update_fields=["status", "decided_at", "comment", "updated_at"]
+                update_fields=[
+                    "approver",
+                    "status",
+                    "decided_at",
+                    "comment",
+                    "updated_at",
+                ]
             )
             next_stage.status = CancellationApprovalStage.Status.PENDING
             next_stage.save(update_fields=["status", "updated_at"])
@@ -547,7 +564,13 @@ def _apply_decision(
         ]
     )
     stage.save(
-        update_fields=["status", "decided_at", "comment", "updated_at"]
+        update_fields=[
+            "approver",
+            "status",
+            "decided_at",
+            "comment",
+            "updated_at",
+        ]
     )
 
     record_audit(
@@ -634,5 +657,6 @@ def _stage_state(stage) -> dict:
     return {
         "status": stage.status,
         "order": stage.order,
+        "approver_id": stage.approver_id,
         "comment": stage.comment,
     }

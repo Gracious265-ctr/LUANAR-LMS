@@ -3,6 +3,17 @@
 **Depends on:** Unit 16 (Approver Review and Decision), Unit 14 (Leave Validation and Submission, including its balance logic)
 **Connected to Units 2–11:** not until Unit 20. This unit builds against swappable providers with fixture implementations (see §3.2 and §3.3).
 
+> **Amended 2026-09-29 (Workflow Sections migration).** Unit 18 shipped routing
+> cancellation approval through a **single assigned approver per stage**. The
+> migration to Section-based workflows changed that: a cancellation stage now
+> carries an **eligibility snapshot** (`CancellationStageApprover.approver_user_ids`,
+> copied from the section's members at request creation) and is decided by the
+> **first eligible member to act** — anyone in the snapshot, not one pre-assigned
+> user. `CancellationApprovalStage.approver` is nullable and records *who decided* on
+> the decision. Pending queues expose every eligible member; decided history
+> belongs only to the actor. The lines below that name a single assigned approver
+> are superseded by this design and invariant 12.3 (no skipped stages).
+
 ---
 
 ## 1. Goal
@@ -28,8 +39,8 @@ Additional rules:
 1. **A reason is mandatory** for every cancellation, withdrawal included: 10–1000 characters after trimming.
 2. **A confirmation step is mandatory.** The client sends `confirm: true` and the server rejects the request without it.
 3. **Approver actions:** `Approve` (comment optional) and `Reject` (comment mandatory, max 1000 chars). There is no Return for Correction.
-4. **Approval stages** are built from the application's *original workflow snapshot*, keeping only stages whose role is `Supervisor` or `HOD`, in their original order. Administration workflow → Supervisor → HOD. Academic workflow → HOD only. If the snapshot has no Supervisor/HOD stage the request is refused with `no_cancellation_approvers` (invariant 12.7). There is no silent fallback.
-5. **Sequential:** the next cancellation stage opens only after the previous one is approved (invariant 12.3). Rejection at any stage ends the request.
+4. **Approval stages** are built from the application's *original workflow snapshot*, keeping only sections whose role is `Supervisor` or `HOD`, in their original order. Administration workflow → Supervisor → HOD. Academic workflow → HOD only. If the snapshot has no Supervisor/HOD section the request is refused with `no_cancellation_approvers` (invariant 12.7). There is no silent fallback.
+5. **Sequential, decided by an any-of eligibility snapshot:** the next cancellation stage opens only after the previous one is approved (invariant 12.3). At creation each stage copies its section's members into an eligibility snapshot (the applicant's own membership excluded, as in application routing); the *first eligible member to act* claims the stage, and completion advances to the next. Anyone else in the snapshot receives the existing 409 stage-changed response on a lost race. Rejection at any stage ends the request.
 6. **Rejected cancellation:** the leave stays `Approved`, the balance is untouched, and the employee may file a new request later (one open request at a time). The employee cannot withdraw an open cancellation request.
 7. **Start-date guard at decision time:** the final approving decision is re-checked. If `start_date <= today` by then, approval returns `409 leave_already_started`; the approver can only reject. No background expiry job.
 8. **Balance restoration** happens only on final approval of an approved-leave cancellation, only for leave that had an annual-leave deduction. Maternity, paternity and compassionate leave restore nothing (`balance_restored_days = 0`).
@@ -129,7 +140,10 @@ Create `leave/cancellations/` (models, services, serializers, views, permissions
 Constraints: partial unique constraint `(application)` where `status = 'pending'` (one open request per application).
 
 **`CancellationApprovalStage`**
-`request` FK, `order` int, `role` (Supervisor/HOD), `approver` FK user (assigned specific user, as in Unit 16), `status` (`waiting` | `pending` | `approved` | `rejected` | `not_reached`), `decided_at`, `comment`. Unique `(request, order)`. Exactly one stage is `pending` on an open request.
+`request` FK, `order` int, `role` (Supervisor/HOD), `approver` FK user (nullable — set to the member who actually decided; *amended 2026-09-29*: no longer pre-assigned, see the header note), `status` (`waiting` | `pending` | `approved` | `rejected` | `not_reached`), `decided_at`, `comment`. Unique `(request, order)`. Exactly one stage is `pending` on an open request.
+
+**`CancellationStageApprover`** *(added by the Workflow Sections migration, 2026-09-29)*
+`request` FK, `stage` FK, `user` FK, `approver_user_ids` — an array snapshot of every eligible member at request creation (section members minus the applicant). Membership in this snapshot, not the live team configuration, is what makes a user the pending stage's approver; it also feeds event-recipient resolution so a staging change cannot silently strip a person who could act.
 
 **`LeaveBalanceTransaction`** (append-only; define it here unless Unit 14 already owns one, in which case extend that model instead of creating a duplicate)
 `employee`, `financial_year`, `leave_type`, `application` FK, `cancellation_request` FK (nullable), `type` (`deduction` | `restoration`), `days` (> 0), `carry_forward_eligible` (bool), `created_at`. Constraint: unique `(cancellation_request, type)` where `type = 'restoration'`. No updates or deletes through the API or admin (no `save()` on existing rows beyond creation; override to enforce).
