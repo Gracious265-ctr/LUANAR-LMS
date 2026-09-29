@@ -32,7 +32,7 @@ const alertVariants = cva(
 );
 
 export interface AlertProps
-  extends React.HTMLAttributes<HTMLDivElement>,
+  extends React.ComponentPropsWithRef<"div">,
     VariantProps<typeof alertVariants> {
   /** Announce the message assertively. Defaults to `true` for `rejected`. */
   live?: boolean;

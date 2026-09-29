@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import type { DelegateCandidate } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
+import { Alert } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -136,12 +137,9 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       </div>
 
       {error && (
-        <div
-          role="alert"
-          className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
-        >
+        <Alert tone="rejected" className="md:col-span-2">
           {error}
-        </div>
+        </Alert>
       )}
 
       <div className="md:col-span-2">

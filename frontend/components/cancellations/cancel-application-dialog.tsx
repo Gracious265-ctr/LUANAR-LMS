@@ -13,6 +13,7 @@ import type {
 import { formatDate } from "@/lib/tracking/format";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -140,14 +141,9 @@ const fieldId = useId();
         </div>
 
         {error && (
-          <div
-            role="alert"
-            className={cn(
-              "mt-4 rounded-lg p-3 text-sm",
-              conflict
-                ? "bg-status-pending-subtle text-status-pending"
-                : "bg-status-rejected-subtle text-status-rejected"
-            )}
+          <Alert
+            tone={conflict ? "pending" : "rejected"}
+            className="mt-4 flex-col gap-0"
           >
             {error}
             {conflict && pendingEligibility && (
@@ -160,7 +156,7 @@ const fieldId = useId();
                 Refresh and review the latest state
               </button>
             )}
-          </div>
+          </Alert>
         )}
 
         {step === 1 ? (

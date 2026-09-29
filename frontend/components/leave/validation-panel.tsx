@@ -3,6 +3,7 @@
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 import type { ValidationIssue } from "@/lib/leave-validation";
+import { Alert } from "@/components/ui/alert";
 
 interface ValidationPanelProps {
   issues: ValidationIssue[];
@@ -33,7 +34,7 @@ export function ValidationPanel({
 }: ValidationPanelProps) {
   if (error) {
     return (
-      <div ref={ref} role="alert" className="rounded-lg border border-border-error bg-status-rejected-subtle p-4">
+      <Alert ref={ref} tone="rejected" className="border border-border-error p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2 text-sm text-status-rejected">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -61,7 +62,7 @@ export function ValidationPanel({
             )}
           </div>
         </div>
-      </div>
+      </Alert>
     );
   }
 
@@ -76,12 +77,12 @@ export function ValidationPanel({
 
   if (issues.length > 0) {
     return (
-      <div
+      <Alert
         ref={ref}
+        tone="rejected"
         tabIndex={-1}
-        role="alert"
         aria-live="polite"
-        className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 outline-none"
+        className="flex-col gap-0 border border-border-error p-4 outline-none"
       >
         <p className="text-sm font-semibold text-status-rejected mb-2">
           Your application has {issues.length === 1 ? "a problem" : `${issues.length} problems`}:
@@ -93,7 +94,7 @@ export function ValidationPanel({
             </li>
           ))}
         </ul>
-      </div>
+      </Alert>
     );
   }
 

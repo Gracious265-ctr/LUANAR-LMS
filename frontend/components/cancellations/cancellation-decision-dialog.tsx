@@ -6,6 +6,7 @@ import { useId, useRef, useState } from "react";
 import { postCancellationDecision } from "@/lib/cancellations/service";
 import type { CancellationDetail } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -183,12 +184,9 @@ function CancellationDecisionDialogInner({
 
           <div aria-live="polite">
             {error && !fieldError && (
-              <div
-                role="alert"
-                className="mt-4 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected"
-              >
+              <Alert tone="rejected" className="mt-4">
                 {error}
-              </div>
+              </Alert>
             )}
           </div>
 

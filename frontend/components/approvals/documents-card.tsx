@@ -6,6 +6,7 @@ import { useState } from "react";
 import { formatDateTime, formatSize } from "@/lib/approvals/format";
 import { fetchDocumentDownload } from "@/lib/approvals/service";
 import type { ApprovalReview } from "@/lib/approvals/types";
+import { Alert } from "@/components/ui/alert";
 
 import { Panel } from "./panel";
 
@@ -65,12 +66,9 @@ export function DocumentsCard({ data }: { data: ApprovalReview }) {
         </ul>
       )}
       {error && (
-        <p
-          role="alert"
-          className="mt-3 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected"
-        >
+        <Alert tone="rejected" className="mt-3">
           {error}
-        </p>
+        </Alert>
       )}
     </Panel>
   );

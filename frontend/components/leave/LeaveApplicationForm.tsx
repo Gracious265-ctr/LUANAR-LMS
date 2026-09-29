@@ -14,6 +14,7 @@ import { SupportingDocumentsUploader } from "./SupportingDocumentsUploader";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
@@ -180,21 +181,15 @@ const [loadError, setLoadError] = useState<string | null>(null);
   return (
     <div className="space-y-6">
       {loadError && (
-        <div
-          role="alert"
-          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 text-sm text-status-rejected"
-        >
+        <Alert tone="rejected" className="border border-border-error p-4">
           {loadError}
-        </div>
+        </Alert>
       )}
 
       {createError && (
-        <div
-          role="alert"
-          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 text-sm text-status-rejected"
-        >
+        <Alert tone="rejected" className="border border-border-error p-4">
           {createError}
-        </div>
+        </Alert>
       )}
 
       <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
@@ -238,13 +233,16 @@ const [loadError, setLoadError] = useState<string | null>(null);
             {reasonError && <FieldError message={reasonError} id="reason-error" />}
           </Field>
           {topIssues.length > 0 && (
-            <div role="alert" className="rounded-lg border border-border-error bg-status-rejected-subtle p-3">
+            <Alert
+              tone="rejected"
+              className="flex-col gap-0 border border-border-error p-3"
+            >
               {topIssues.map((issue) => (
                 <p key={issue.code} className="text-sm text-status-rejected">
                   {issue.message}
                 </p>
               ))}
-            </div>
+            </Alert>
           )}
         </div>
       </div>

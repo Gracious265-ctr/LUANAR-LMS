@@ -12,6 +12,7 @@ import type {
   DecisionBriefing,
 } from "@/lib/approvals/types";
 import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -213,14 +214,9 @@ function DecisionDialogInner({
 
           <div aria-live="polite">
             {error && !fieldError && !conflict && (
-              <div
-                role="alert"
-                className={cn(
-                  "mt-4 rounded-lg p-3 text-sm",
-                  blocked
-                    ? "bg-status-pending-subtle text-status-pending"
-                    : "bg-status-rejected-subtle text-status-rejected"
-                )}
+              <Alert
+                tone={blocked ? "pending" : "rejected"}
+                className="mt-4 flex-col gap-0"
               >
                 {error}
                 {blocked && (
@@ -231,7 +227,7 @@ function DecisionDialogInner({
                     decided.
                   </p>
                 )}
-              </div>
+              </Alert>
             )}
           </div>
 

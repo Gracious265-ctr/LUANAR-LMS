@@ -16,6 +16,7 @@ import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveReviewSummary } from "@/components/leave/leave-review-summary";
 import { BalanceCard } from "@/components/leave/balance-card";
 import { ValidationPanel } from "@/components/leave/validation-panel";
+import { Alert } from "@/components/ui/alert";
 
 type NetworkError = {
   message: string;
@@ -154,9 +155,9 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
             />
 
       {submitError && (
-        <div
-          role="alert"
-          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 flex items-start justify-between gap-3"
+        <Alert
+          tone="rejected"
+          className="items-start justify-between gap-3 border border-border-error p-4"
         >
           <div className="flex items-start gap-2 text-sm text-status-rejected">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -169,7 +170,7 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
           >
             Dismiss
           </button>
-        </div>
+        </Alert>
       )}
 
       <div className="flex justify-end gap-3">
