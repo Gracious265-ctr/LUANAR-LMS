@@ -211,10 +211,28 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                     order=stage.order,
                     role=role,
                     role_label=STAGE_ROLE_LABELS.get(role, role),
-                    approver_user_id=_first_active_user_id(role),
+                    approver_user_id=_resolve_stage_approver(role, application),
                 )
             )
         return definitions
+
+
+def _resolve_stage_approver(role: str, application) -> int | None:
+    """The approver for a stage of ``application``.
+
+    Every role resolves to the lowest-id active user holding it, except
+    ``supervisor`` (plans, Unit 25 D20/D21): the employee's assigned
+    ``EmployeeProfile.supervisor`` wins when set, otherwise the fallback is the
+    same lowest-id active supervisor. This retroactively applies to the existing
+    leave applications too — a pending chain already materialised keeps its
+    assigned approver, so only newly-submitted chains pick up the change.
+    """
+    if role == "supervisor":
+        profile = getattr(application.employee, "employee_profile", None)
+        assigned = getattr(profile, "supervisor_id", None)
+        if assigned is not None:
+            return assigned
+    return _first_active_user_id(role)
 
 
 def _chain_cycle(application) -> int:

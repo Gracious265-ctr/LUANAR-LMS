@@ -37,6 +37,7 @@ function makeEmployee(id: number, role: UserRole, name: string): Employee {
     grade: "G",
     appointment_date: "2020-01-01",
     is_active: true,
+  supervisor: null,
   };
 }
 

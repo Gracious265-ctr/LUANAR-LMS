@@ -50,6 +50,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
         allow_blank=True,
     )
     is_active = serializers.BooleanField(source="user.is_active", required=False)
+    supervisor = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+        help_text="The employee's assigned supervisor (used to resolve the workflow supervisor stage).",
+    )
 
     class Meta:
         model = EmployeeProfile
@@ -68,6 +74,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "gender",
             "grade",
             "appointment_date",
+            "supervisor",
             "is_active",
         ]
 
@@ -165,6 +172,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "gender": instance.gender,
             "grade": instance.grade,
             "appointment_date": instance.appointment_date,
+            "supervisor_id": instance.supervisor_id,
         }
 
     def _audit(

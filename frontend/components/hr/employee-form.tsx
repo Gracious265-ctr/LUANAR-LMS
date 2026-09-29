@@ -6,6 +6,9 @@ import Link from "next/link";
 
 import type { Employee, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
+import { Field, Input, Select } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "academic", label: "Academic" },
@@ -27,11 +30,13 @@ export function EmployeeForm({
   endpoint,
   method,
   gradeOptions = [],
+  supervisorOptions = [],
 }: {
   employee?: Employee;
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
+  supervisorOptions?: { id: number; full_name: string }[];
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -57,6 +62,9 @@ export function EmployeeForm({
           department: formData.get("department"),
           category: formData.get("category"),
           grade: formData.get("grade"),
+          supervisor: formData.get("supervisor")
+            ? Number(formData.get("supervisor"))
+            : null,
           appointment_date: formData.get("appointment_date") || null,
           is_active: formData.get("is_active") === "on",
         }),
@@ -82,55 +90,34 @@ export function EmployeeForm({
       onSubmit={handleSubmit}
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
-        <label
-          htmlFor="first_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          First name
-        </label>
-        <input
+      <Field label="First name" htmlFor="first_name">
+        <Input
           id="first_name"
           name="first_name"
           required
           defaultValue={employee?.first_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="last_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Last name
-        </label>
-        <input
+      <Field label="Last name" htmlFor="last_name">
+        <Input
           id="last_name"
           name="last_name"
           required
           defaultValue={employee?.last_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="email"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Email
-        </label>
-        <input
+      <Field label="Email" htmlFor="email">
+        <Input
           id="email"
           name="email"
           type="email"
           required
           defaultValue={employee?.email}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="name@luanar.ac.mw"
         />
-      </div>
+      </Field>
 
       <div>
         <label
@@ -153,72 +140,48 @@ export function EmployeeForm({
         </select>
       </div>
 
-      <div>
-        <label
-          htmlFor="designation"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Designation
-        </label>
-        <input
+      <Field label="Designation" htmlFor="designation">
+        <Input
           id="designation"
           name="designation"
           defaultValue={employee?.designation}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Lecturer"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="department"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Department / Faculty
-        </label>
-        <input
+      <Field label="Department / Faculty" htmlFor="department">
+        <Input
           id="department"
           name="department"
           defaultValue={employee?.department}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Bunda College"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="category"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Category
-        </label>
-        <select
+      <Field label="Category" htmlFor="category">
+        <Select
           id="category"
           name="category"
           defaultValue={employee?.category ?? "academic"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
           {CATEGORIES.map((category) => (
             <option key={category.value} value={category.value}>
               {category.label}
             </option>
           ))}
-        </select>
-      </div>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="grade"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Grade
-        </label>
-        <input
+      <Field
+        label="Grade"
+        htmlFor="grade"
+        hint="Choose from configured grades or type a custom one."
+      >
+        <Input
           id="grade"
           name="grade"
           list={gradeOptions.length > 0 ? "grade-options" : undefined}
           defaultValue={employee?.grade}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Select a grade or type one"
         />
         {gradeOptions.length > 0 && (
@@ -228,28 +191,37 @@ export function EmployeeForm({
                 <option key={grade} value={grade} />
               ))}
             </datalist>
-            <p className="mt-1 text-xs text-text-muted">
-              Choose from configured grades or type a custom one.
-            </p>
           </>
         )}
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="appointment_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Date of appointment
-        </label>
-        <input
+      <Field label="Date of appointment" htmlFor="appointment_date">
+        <Input
           id="appointment_date"
           name="appointment_date"
           type="date"
           defaultValue={employee?.appointment_date ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
+
+      <Field
+        label="Supervisor"
+        htmlFor="supervisor"
+        hint="Used to route the supervisor approval stage for leave day plans when the workflow requires it."
+      >
+        <Select
+          id="supervisor"
+          name="supervisor"
+          defaultValue={employee?.supervisor ? String(employee.supervisor) : ""}
+        >
+          <option value="">No assigned supervisor</option>
+          {supervisorOptions.map((supervisor) => (
+            <option key={supervisor.id} value={supervisor.id}>
+              {supervisor.full_name}
+            </option>
+          ))}
+        </Select>
+      </Field>
 
       <label className="flex items-center gap-2 md:col-span-2">
         <input
@@ -262,22 +234,16 @@ export function EmployeeForm({
       </label>
 
       {error && (
-        <div className="text-sm text-status-rejected bg-status-rejected-subtle rounded-md p-3 md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : employee ? "Save changes" : "Create employee"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/employees"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

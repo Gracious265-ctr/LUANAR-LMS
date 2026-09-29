@@ -63,5 +63,18 @@ class EmployeeProfile(models.Model):
     grade = models.CharField(max_length=20, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
 
+    # The employee's assigned supervisor (Unit 25 plans). HR sets this on the
+    # employee record; the workflow provider resolves the workflow's
+    # ``supervisor`` stage to this user and falls back to the lowest-id active
+    # supervisor when it is unset, keeping every existing seeded chain intact.
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supervised_employees",
+        help_text="The employee's assigned supervisor, used to resolve the workflow supervisor stage.",
+    )
+
     def __str__(self) -> str:
         return f"{self.user.get_full_name()} ({self.department or 'No department'})"

@@ -24,6 +24,7 @@ export interface Employee {
   category: EmployeeCategory;
   grade: string;
   appointment_date: string | null;
+  supervisor: number | null;
   is_active: boolean;
 }
 
@@ -37,6 +38,7 @@ export interface EmployeeInput {
   category?: EmployeeCategory;
   grade?: string;
   appointment_date?: string | null;
+  supervisor?: number | null;
   is_active?: boolean;
 }
 

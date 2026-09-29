@@ -17,6 +17,7 @@ const activeEmployee: Employee = {
   category: "academic",
   grade: "G",
   appointment_date: "2015-01-10",
+  supervisor: null,
   is_active: true,
 };
 
