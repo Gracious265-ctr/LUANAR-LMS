@@ -1,7 +1,7 @@
 "use client";
 
-import { CalendarX2, CheckCircle2, ChevronLeft, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { CalendarX2, CheckCircle2, ChevronLeft, Loader2 } from "lucide-react";
+import { useId, useRef, useState } from "react";
 
 import { confirmLabel, consequenceLine } from "@/lib/cancellations/labels";
 import { submitCancellation } from "@/lib/cancellations/service";
@@ -13,6 +13,12 @@ import type {
 import { formatDate } from "@/lib/tracking/format";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MAX_REASON = 1000;
 const MIN_REASON = 10;
@@ -58,34 +64,12 @@ function CancelApplicationDialogInner({
 const reasonRef = useRef<HTMLTextAreaElement>(null);
 const [pendingEligibility, setPendingEligibility] =
   useState<CancellationEligibility | null>(null);
-const titleId = useId();
+const fieldId = useId();
   const counterId = useId();
   const errorId = useId();
 
   const trimmed = reason.trim();
   const reasonValid = trimmed.length >= MIN_REASON && trimmed.length <= MAX_REASON;
-
-  const previousFocus = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocus.current = document.activeElement as HTMLElement | null;
-    requestAnimationFrame(() => reasonRef.current?.focus());
-    return () => {
-      previousFocus.current?.focus?.();
-    };
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    },
-    [busy, onClose]
-  );
-
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
 
   function nextStep() {
     if (!reasonValid) {
@@ -127,39 +111,32 @@ const titleId = useId();
     : "—";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[10vh]"
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
     >
-      <div
-        data-testid="cancel-dialog-overlay"
-        onClick={() => !busy && onClose()}
-        className="fixed inset-0 bg-black/40"
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-lg rounded-xl border border-border-default bg-surface-card p-6 shadow-lg">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 id={titleId} className="text-lg font-semibold text-text-primary">
-              {action === "withdraw" ? "Withdraw application" : "Request cancellation"}
-            </h3>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {application.reference_number} · {application.leave_type?.name || "Leave"} ·{" "}
-              {dateRange} · {application.working_days} working day
-              {application.working_days === 1 ? "" : "s"}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close dialog"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+      <DialogContent
+        className="gap-0 max-h-[calc(100vh-4rem)] overflow-y-auto"
+        showCloseButton={!busy}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          reasonRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+      >
+        <div>
+          <DialogTitle>
+            {action === "withdraw" ? "Withdraw application" : "Request cancellation"}
+          </DialogTitle>
+          <DialogDescription className="mt-0.5">
+            {application.reference_number} · {application.leave_type?.name || "Leave"} ·{" "}
+            {dateRange} · {application.working_days} working day
+            {application.working_days === 1 ? "" : "s"}
+          </DialogDescription>
         </div>
 
         {error && (
@@ -196,14 +173,14 @@ const titleId = useId();
           >
             <div>
               <label
-                htmlFor={`${titleId}-reason`}
+                htmlFor={fieldId}
                 className="mb-1 block text-sm font-medium text-text-primary"
               >
                 Reason (required)
               </label>
               <textarea
                 ref={reasonRef}
-                id={`${titleId}-reason`}
+                id={fieldId}
                 name="reason"
                 rows={4}
                 maxLength={MAX_REASON}
@@ -302,7 +279,7 @@ const titleId = useId();
             </div>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

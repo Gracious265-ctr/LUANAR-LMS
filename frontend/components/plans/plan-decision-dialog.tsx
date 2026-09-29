@@ -1,7 +1,7 @@
 "use client";
 
-import { Loader2, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
+import { useId, useRef, useState } from "react";
 
 import { formatDate } from "@/lib/plans/format";
 import { PLAN_ACTION_META } from "@/lib/plans/labels";
@@ -12,6 +12,12 @@ import type {
   PlanDetail,
 } from "@/lib/plans/types";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MAX_COMMENT = 1000;
 
@@ -57,7 +63,6 @@ function PlanDecisionDialogInner({
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const titleId = useId();
   const counterId = useId();
   const errorId = useId();
 
@@ -70,22 +75,6 @@ function PlanDecisionDialogInner({
           data.blocks[data.blocks.length - 1].end_date
         )}`
       : "—";
-
-  useEffect(() => {
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    },
-    [busy, onClose]
-  );
-
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
 
   const validatedConfirm = requiresComment ? comment.trim().length > 0 : true;
 
@@ -127,31 +116,28 @@ function PlanDecisionDialogInner({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
     >
-      <div className="w-full max-w-md rounded-xl border border-border-default bg-surface-card p-6 shadow-xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <h2 id={titleId} className="text-lg font-semibold text-text-primary">
-              {meta.shortLabel} plan
-            </h2>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {employee.name} · {dateRange}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-md p-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
+      <DialogContent
+        className="max-w-md gap-0 max-h-[calc(100vh-4rem)] overflow-y-auto"
+        showCloseButton={!busy}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          textareaRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+      >
+        <div className="mb-4">
+          <DialogTitle>{meta.shortLabel} plan</DialogTitle>
+          <DialogDescription className="mt-0.5">
+            {employee.name} · {dateRange}
+          </DialogDescription>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
@@ -239,7 +225,7 @@ function PlanDecisionDialogInner({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
