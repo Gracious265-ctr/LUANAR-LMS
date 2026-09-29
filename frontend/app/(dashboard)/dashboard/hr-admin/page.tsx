@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeftRight, CalendarCheck2, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, Users, Workflow } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function HRAdminPage() {
   const user = await getCurrentUser();
@@ -172,10 +173,10 @@ export default async function HRAdminPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 text-sm text-text-muted shadow-subtle">
+      <Card className="text-sm text-text-muted">
         Remaining document generation (rendering real approved applications)
         lands in later units that depend on active leave applications.
-      </div>
+      </Card>
     </div>
   );
 }

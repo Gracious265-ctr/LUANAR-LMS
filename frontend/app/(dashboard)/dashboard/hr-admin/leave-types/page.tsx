@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { LeaveTypeTable } from "@/components/hr/leave-type-table";
 import { getCurrentUser } from "@/lib/auth";
 import { listLeaveTypes } from "@/lib/leave-rules";
+import { Card } from "@/components/ui/card";
 
 export default async function LeaveTypesPage() {
   const user = await getCurrentUser();
@@ -43,7 +44,7 @@ export default async function LeaveTypesPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Leave types
         </h3>
@@ -54,7 +55,7 @@ export default async function LeaveTypesPage() {
         ) : leaveTypes ? (
           <LeaveTypeTable leaveTypes={leaveTypes.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

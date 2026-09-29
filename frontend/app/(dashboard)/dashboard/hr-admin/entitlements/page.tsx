@@ -11,6 +11,7 @@ import {
 import { currentDateIso } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 export default async function EntitlementsPage({
   searchParams,
@@ -113,7 +114,7 @@ export default async function EntitlementsPage({
           )}
         </form>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle lg:col-span-2">
+        <Card className="lg:col-span-2">
           <h3 className="mb-4 text-lg font-semibold text-text-primary">
             Configuration
           </h3>
@@ -127,7 +128,7 @@ export default async function EntitlementsPage({
               today={currentDateIso()}
             />
           ) : null}
-        </div>
+        </Card>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { listEmployees } from "@/lib/employees";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 export default async function EmployeesPage({
   searchParams,
@@ -69,7 +70,7 @@ export default async function EmployeesPage({
         </Button>
       </form>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         {error ? (
           <div className="py-12 text-center text-sm text-status-rejected bg-status-rejected-subtle rounded-lg">
             {error}
@@ -77,7 +78,7 @@ export default async function EmployeesPage({
         ) : employees ? (
           <EmployeeTable employees={employees.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

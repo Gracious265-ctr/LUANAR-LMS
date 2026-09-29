@@ -8,6 +8,7 @@ import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
 import { ApplicationCard } from "./ApplicationCard";
+import { Card } from "@/components/ui/card";
 
 export function ApplicationsList() {
   const { applications, loading, error, refetch } = useLeaveApplications();
@@ -35,12 +36,12 @@ export function ApplicationsList() {
 
   if (error) {
     return (
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+      <Card className="text-center">
         <p className="text-status-rejected text-sm">{error}</p>
         <Button onClick={refetch} variant="link" size="sm" className="mt-2 h-auto text-text-link">
           Try again
         </Button>
-      </div>
+      </Card>
     );
   }
 
@@ -63,7 +64,7 @@ export function ApplicationsList() {
       </div>
 
       {applications.length === 0 ? (
-        <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-12 text-center">
+        <Card className="text-center">
           <FileText className="h-12 w-12 mx-auto text-text-disabled mb-4" />
           <h3 className="text-lg font-semibold text-text-primary mb-2">
             No applications yet
@@ -78,7 +79,7 @@ export function ApplicationsList() {
             <Plus className="h-4 w-4" />
             New Application
           </Link>
-        </div>
+        </Card>
       ) : (
         <div className="grid gap-4">
           {applications.map((app) => (

@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { WorkflowTable } from "@/components/hr/workflow-table";
 import { getCurrentUser } from "@/lib/auth";
 import { listWorkflows } from "@/lib/workflows";
+import { Card } from "@/components/ui/card";
 
 export default async function WorkflowsPage() {
   const user = await getCurrentUser();
@@ -44,7 +45,7 @@ export default async function WorkflowsPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           All workflows
         </h3>
@@ -55,7 +56,7 @@ export default async function WorkflowsPage() {
         ) : workflows ? (
           <WorkflowTable workflows={workflows.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

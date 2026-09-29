@@ -7,6 +7,7 @@ import {
   listPendingApplications,
   listReassignments,
 } from "@/lib/reassignments";
+import { Card } from "@/components/ui/card";
 
 export default async function ReassignmentsPage() {
   const user = await getCurrentUser();
@@ -44,7 +45,7 @@ export default async function ReassignmentsPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Pending applications
         </h3>
@@ -55,9 +56,9 @@ export default async function ReassignmentsPage() {
         ) : pending ? (
           <PendingApplicationsTable applications={pending.results} />
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Reassignment history
         </h3>
@@ -68,7 +69,7 @@ export default async function ReassignmentsPage() {
         ) : history ? (
           <ReassignmentTable reassignments={history.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

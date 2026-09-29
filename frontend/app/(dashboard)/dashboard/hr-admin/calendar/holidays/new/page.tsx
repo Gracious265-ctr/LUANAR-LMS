@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { PublicHolidayForm } from "@/components/hr/public-holiday-form";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function NewHolidayPage() {
   const user = await getCurrentUser();
@@ -33,9 +34,9 @@ export default async function NewHolidayPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <PublicHolidayForm />
-      </div>
+      </Card>
     </div>
   );
 }

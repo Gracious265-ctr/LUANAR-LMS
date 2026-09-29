@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 export default async function CalendarPage({
   searchParams,
@@ -67,7 +68,7 @@ export default async function CalendarPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -94,9 +95,9 @@ export default async function CalendarPage({
         ) : financialYears ? (
           <FinancialYearTable years={financialYears.results} />
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -149,7 +150,7 @@ export default async function CalendarPage({
         ) : holidays ? (
           <PublicHolidayTable holidays={holidays.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

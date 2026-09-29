@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
 
 export function LeaveDocumentTemplateEditor({
   template,
@@ -203,7 +204,7 @@ export function LeaveDocumentTemplateEditor({
           />
         </Field>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-4">
+        <Card className="shadow-none">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">
               Data fields
@@ -302,7 +303,7 @@ export function LeaveDocumentTemplateEditor({
               </div>
             ))
           )}
-        </div>
+        </Card>
 
         <Field label="Closing wording" htmlFor="template-closing">
           <Textarea
@@ -316,7 +317,7 @@ export function LeaveDocumentTemplateEditor({
           />
         </Field>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-4">
+        <Card className="shadow-none">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">
               Signature areas
@@ -382,7 +383,7 @@ export function LeaveDocumentTemplateEditor({
               </div>
             ))
           )}
-        </div>
+        </Card>
 
         <Field label="Footer" htmlFor="template-footer">
           <Input

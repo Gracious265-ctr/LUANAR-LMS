@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 const PLAN_STATUSES = Object.keys(PLAN_STATUS_META) as PlanStatus[];
 const BLOCK_STATUSES = Object.keys(BLOCK_STATUS_META) as BlockStatus[];
@@ -148,7 +149,7 @@ export function PlanAdminView() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
+      <Card className="overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="size-5 animate-spin text-text-muted" />
@@ -226,7 +227,7 @@ export function PlanAdminView() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
       <p className={cn("text-sm text-text-secondary")}>
         In draft or submitted — the chain has yet to act. Approved plans with a

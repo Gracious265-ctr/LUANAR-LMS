@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 /**
  * Approver queue of cancellation requests (Unit 18, spec 2.3). Two-inner tabs
@@ -73,13 +74,13 @@ export function CancellationRequestsTable() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
+      <Card className="text-center">
         <p className="text-sm text-status-rejected">{error}</p>
         <Button type="button" onClick={retry} variant="primary" className="mt-4">
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
           Retry
         </Button>
-      </div>
+      </Card>
     );
   }
 
@@ -103,7 +104,7 @@ export function CancellationRequestsTable() {
       {loading ? (
         <SkeletonRows count={4} />
       ) : !data || data.results.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-10 text-center shadow-subtle">
+        <Card className="text-center">
           <SlidersHorizontal
             className="mx-auto h-8 w-8 text-text-muted"
             aria-hidden="true"
@@ -118,7 +119,7 @@ export function CancellationRequestsTable() {
               ? "Requests will appear here when an employee asks to cancel approved leave."
               : "Requests you have decided on will appear here."}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
           <CancellationTable rows={data.results} />
@@ -138,7 +139,7 @@ export function CancellationRequestsTable() {
 function CancellationTable({ rows }: { rows: CancellationRow[] }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle lg:block">
+      <Card className="hidden overflow-hidden lg:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -159,7 +160,7 @@ function CancellationTable({ rows }: { rows: CancellationRow[] }) {
             ))}
           </TableBody>
         </Table>
-      </div>
+      </Card>
 
       <ul className="space-y-3 lg:hidden">
         {rows.map((row) => (

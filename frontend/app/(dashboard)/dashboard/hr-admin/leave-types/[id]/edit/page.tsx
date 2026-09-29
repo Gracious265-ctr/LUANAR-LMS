@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { LeaveTypeForm } from "@/components/hr/leave-type-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaveType } from "@/lib/leave-rules";
+import { Card } from "@/components/ui/card";
 
 export default async function EditLeaveTypePage({
   params,
@@ -46,9 +47,9 @@ export default async function EditLeaveTypePage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <LeaveTypeForm leaveType={leaveType} />
-      </div>
+      </Card>
     </div>
   );
 }

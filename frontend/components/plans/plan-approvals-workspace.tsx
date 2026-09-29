@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { PlanStatusBadge } from "./plan-status-badge";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 type Tab = "pending" | "decided";
 
@@ -108,7 +109,7 @@ export function PlanApprovalsWorkspace() {
           }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
+        <Card className="overflow-hidden">
           <ul className="divide-y divide-border-default">
             {data.results.map((item) => (
               <PlanApprovalRow key={item.id} item={item} />
@@ -137,7 +138,7 @@ export function PlanApprovalsWorkspace() {
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

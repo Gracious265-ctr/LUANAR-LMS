@@ -17,6 +17,7 @@ import { SupportingDocumentsCard } from "./supporting-documents-card";
 import { TrackingError } from "./TrackingError";
 import { TrackingHeader } from "./TrackingHeader";
 import { TrackingSkeleton } from "./TrackingSkeleton";
+import { Card } from "@/components/ui/card";
 
 export function TrackingView({ applicationId }: { applicationId: string }) {
   const [result, setResult] = useState<TrackingResult | null>(() => null);
@@ -164,7 +165,7 @@ function NotFoundState({
   actionLabel?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center">
+    <Card className="shadow-none text-center">
       <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
       <p className="mx-auto mt-2 max-w-md text-sm break-words text-text-secondary">
         {message}
@@ -185,6 +186,6 @@ function NotFoundState({
           </Link>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

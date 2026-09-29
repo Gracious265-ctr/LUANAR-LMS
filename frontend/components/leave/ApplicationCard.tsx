@@ -20,6 +20,7 @@ import {
   type LeaveApplication,
 } from "@/lib/leave-api";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 interface ApplicationCardProps {
   application: LeaveApplication;
@@ -86,7 +87,7 @@ export function ApplicationCard({
     application.reason;
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-5">
+    <Card>
       <div className="flex items-start justify-between mb-3">
         <div className="flex flex-wrap items-center gap-2">
           <FileText className="h-4 w-4 text-text-muted" />
@@ -210,6 +211,6 @@ export function ApplicationCard({
           </Link>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

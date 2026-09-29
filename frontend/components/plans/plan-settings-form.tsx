@@ -7,6 +7,7 @@ import { fetchPlanSettings, updatePlanSettings } from "@/lib/plans/service";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { FormError } from "@/components/ui/form-error";
+import { Card } from "@/components/ui/card";
 
 function windowOpensOn(leadDays: number): string {
   return new Date(Date.now() - (leadDays - 1) * 86400000)
@@ -79,7 +80,7 @@ export function PlanSettingsForm() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-5 shadow-subtle">
+      <Card>
         {loading ? (
           <div className="flex justify-center py-6">
             <Loader2 className="size-5 animate-spin text-text-muted" />
@@ -113,7 +114,7 @@ export function PlanSettingsForm() {
             are in their window now.
           </p>
         )}
-      </div>
+      </Card>
 
       {error && <FormError>{error}</FormError>}
       {saved && (

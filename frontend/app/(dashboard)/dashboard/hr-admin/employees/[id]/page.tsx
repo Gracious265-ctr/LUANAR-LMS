@@ -10,6 +10,7 @@ import {
   listEntitlements,
 } from "@/lib/entitlements";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 const SUPERVISOR_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -81,7 +82,7 @@ export default async function EmployeeDetailPage({
         <p className="text-text-secondary">{employee.email}</p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Profile details
         </h3>
@@ -92,7 +93,7 @@ export default async function EmployeeDetailPage({
           gradeOptions={gradeOptions}
           supervisorOptions={supervisorOptions}
         />
-      </div>
+      </Card>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { FormEvent, Suspense, useState } from "react";
 import { Field, Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
+import { Card } from "@/components/ui/card";
 
 function LoginForm() {
   const router = useRouter();
@@ -47,7 +48,7 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-page">
-      <div className="w-full max-w-md p-8 bg-surface-card rounded-xl shadow-card">
+      <Card className="border-0 w-full max-w-md shadow-card">
         <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           LUANAR Leave Management
         </h1>
@@ -84,7 +85,7 @@ function LoginForm() {
             {loading ? "Signing in..." : "Sign in"}
           </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }

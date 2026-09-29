@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 function useDebounced(value: string, delay = 300): string {
   const [debounced, setDebounced] = useState(value);
@@ -133,17 +134,17 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
+        <Card className="text-center">
           <p className="text-sm text-status-rejected">{error}</p>
           <Button type="button" onClick={retry} variant="primary" className="mt-4">
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Retry
           </Button>
-        </div>
+        </Card>
       ) : loading ? (
         <SkeletonRows count={6} />
       ) : !data || data.results.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-10 text-center shadow-subtle">
+        <Card className="text-center">
           <SlidersHorizontal
             className="mx-auto h-8 w-8 text-text-muted"
             aria-hidden="true"
@@ -158,7 +159,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
               ? "New applications will appear here as they are submitted."
               : "Applications you have decided on will appear here."}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
           <ApprovalTable rows={data.results} tab={tab} />
@@ -184,7 +185,7 @@ function ApprovalTable({
 }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle md:block">
+      <Card className="hidden overflow-hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -205,7 +206,7 @@ function ApprovalTable({
             ))}
           </TableBody>
         </Table>
-      </div>
+      </Card>
 
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (

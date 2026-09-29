@@ -1,6 +1,7 @@
 import type { ApplicationDetail } from "@/lib/audit";
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { AuditActionPill, auditChangesText } from "./audit-meta";
+import { Card } from "@/components/ui/card";
 
 export function ApplicationHistoryView({
   application,
@@ -9,7 +10,7 @@ export function ApplicationHistoryView({
 }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="text-lg font-semibold text-text-primary">
           Application summary
         </h3>
@@ -52,9 +53,9 @@ export function ApplicationHistoryView({
             <span className="text-text-secondary">{application.reason}</span>
           </div>
         )}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Documents
         </h3>
@@ -90,13 +91,13 @@ export function ApplicationHistoryView({
             ))}
           </ul>
         )}
-      </div>
+      </Card>
 
       {application.status === "approved" && (
         <ApprovedDocumentCard applicationId={application.id} audience="hr" />
       )}
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Reassignment history
         </h3>        {application.reassignments.length === 0 ? (
@@ -125,9 +126,9 @@ export function ApplicationHistoryView({
             ))}
           </ul>
         )}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Audit trail
         </h3>
@@ -156,7 +157,7 @@ export function ApplicationHistoryView({
             ))}
           </ol>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

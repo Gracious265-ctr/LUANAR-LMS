@@ -18,6 +18,7 @@ import { BalanceCard } from "@/components/leave/balance-card";
 import { ValidationPanel } from "@/components/leave/validation-panel";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type NetworkError = {
   message: string;
@@ -64,9 +65,9 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
 
   if (loadError) {
     return (
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+      <Card className="text-center">
         <p className="text-status-rejected text-sm">{loadError}</p>
-      </div>
+      </Card>
     );
   }
 

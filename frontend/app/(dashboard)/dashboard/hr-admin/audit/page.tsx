@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 type AuditSearchParams = Promise<{
   action?: string | string[];
@@ -83,7 +84,7 @@ export default async function AuditPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Finalized leave
         </h3>
@@ -98,9 +99,9 @@ export default async function AuditPage({
         ) : finalized ? (
           <FinalizedLeaveTable applications={finalized.results} />
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -177,7 +178,7 @@ export default async function AuditPage({
         ) : entries ? (
           <AuditEntriesTable entries={entries.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

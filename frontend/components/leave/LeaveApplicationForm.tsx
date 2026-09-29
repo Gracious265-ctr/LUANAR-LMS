@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
@@ -160,7 +161,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
 
   if (submitted) {
     return (
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+      <Card className="text-center">
         <div className="text-lg font-semibold text-text-primary mb-2">
           Application No Longer Editable
         </div>
@@ -174,7 +175,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
         >
           Back to Applications
         </Link>
-      </div>
+      </Card>
     );
   }
 
@@ -192,7 +193,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
         </Alert>
       )}
 
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      <Card>
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Leave Details
         </h3>
@@ -245,9 +246,9 @@ const [loadError, setLoadError] = useState<string | null>(null);
             </Alert>
           )}
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      <Card>
         <SupportingDocumentsUploader
           applicationId={currentId}
           documents={documents}
@@ -256,7 +257,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
           onDocumentsChange={setDocuments}
           onEnsureDraft={ensureDraftCreated}
         />
-      </div>
+      </Card>
 
       {saveStatus !== "idle" && (
         <div className="text-sm text-text-muted">

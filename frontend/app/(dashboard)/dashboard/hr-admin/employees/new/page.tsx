@@ -9,6 +9,7 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
+import { Card } from "@/components/ui/card";
 
 const SUPERVISOR_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -59,14 +60,14 @@ export default async function NewEmployeePage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <EmployeeForm
           endpoint="/api/hr/employees"
           method="POST"
           gradeOptions={gradeOptions}
           supervisorOptions={supervisorOptions}
         />
-      </div>
+      </Card>
     </div>
   );
 }

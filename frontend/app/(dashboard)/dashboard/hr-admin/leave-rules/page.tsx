@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 const TABS: { value: EffectiveFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -147,7 +148,7 @@ export default async function LeaveRulesPage({
         </div>
       )}
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           {effective === "all"
             ? "All rules"
@@ -162,7 +163,7 @@ export default async function LeaveRulesPage({
         ) : rules ? (
           <LeaveRuleTable rules={rules.results} today={currentDateIso()} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

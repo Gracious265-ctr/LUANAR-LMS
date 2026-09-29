@@ -10,6 +10,7 @@ import {
   listDelegations,
   type DelegationState,
 } from "@/lib/delegations";
+import { Card } from "@/components/ui/card";
 
 type StateFilter = DelegationState | "";
 
@@ -86,7 +87,7 @@ export default async function DelegationsPage({
         ))}
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           {state ? `${delegationStateLabel(state)} delegations` : "All delegations"}
         </h3>
@@ -97,7 +98,7 @@ export default async function DelegationsPage({
         ) : delegations ? (
           <DelegationTable delegations={delegations.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

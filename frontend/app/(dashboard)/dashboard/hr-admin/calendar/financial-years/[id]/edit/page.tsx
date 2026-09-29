@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { FinancialYearForm } from "@/components/hr/financial-year-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getFinancialYear } from "@/lib/financial-years";
+import { Card } from "@/components/ui/card";
 
 export default async function EditFinancialYearPage({
   params,
@@ -47,9 +48,9 @@ export default async function EditFinancialYearPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <FinancialYearForm financialYear={financialYear} />
-      </div>
+      </Card>
     </div>
   );
 }

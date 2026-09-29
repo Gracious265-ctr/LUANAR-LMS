@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { type LeaveApplication, getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { SubmissionConfirmation } from "@/components/leave/submission-confirmation";
+import { Card } from "@/components/ui/card";
 
 export function SubmittedClient({ applicationId }: { applicationId: string }) {
   const router = useRouter();
@@ -43,9 +44,9 @@ export function SubmittedClient({ applicationId }: { applicationId: string }) {
 
   if (error) {
     return (
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+      <Card className="text-center">
         <p className="text-status-rejected text-sm">{error}</p>
-      </div>
+      </Card>
     );
   }
 

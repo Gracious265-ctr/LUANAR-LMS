@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LeaveDocumentTemplateEditor } from "@/components/hr/leave-document-template-editor";
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaveDocumentTemplate } from "@/lib/leave-document-template";
+import { Card } from "@/components/ui/card";
 
 export default async function LeaveDocumentTemplatePage() {
   const user = await getCurrentUser();
@@ -41,9 +42,9 @@ export default async function LeaveDocumentTemplatePage() {
           {templateError}
         </div>
       ) : template ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <LeaveDocumentTemplateEditor template={template} />
-        </div>
+        </Card>
       ) : null}
     </div>
   );

@@ -3,6 +3,7 @@ import { Calendar, Clock, FileText, ShieldCheck } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaveSummary } from "@/lib/leave-summary";
+import { Card } from "@/components/ui/card";
 
 const APPROVER_ROLES = ["supervisor", "hod", "dean", "registrar", "dvc"];
 
@@ -74,7 +75,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Recent Activity */}
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      <Card>
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Recent Activity
         </h3>
@@ -84,7 +85,7 @@ export default async function DashboardPage() {
             Your leave applications and approvals will appear here.
           </p>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -110,7 +111,7 @@ function StatCard({
   variant: keyof typeof STAT_CARD_VARIANTS;
 }) {
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-5">
+    <Card>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-text-secondary">{title}</span>
         <div className={`p-2 rounded-lg ${STAT_CARD_VARIANTS[variant]}`}>
@@ -119,6 +120,6 @@ function StatCard({
       </div>
       <div className="text-3xl font-semibold tracking-tight text-text-primary">{value}</div>
       <p className="text-sm text-text-muted mt-1">{subtitle}</p>
-    </div>
+    </Card>
   );
 }

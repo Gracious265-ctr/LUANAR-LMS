@@ -21,6 +21,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
 
 const MAX_REASON = 1000;
 const MIN_REASON = 10;
@@ -233,7 +234,7 @@ const fieldId = useId();
           </form>
         ) : (
           <form onSubmit={submit} className="mt-4">
-            <div className="rounded-xl border border-border-default bg-surface-card p-4">
+            <Card className="shadow-none">
               <p className="text-sm font-medium text-text-primary">Reason</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-text-secondary">{trimmed}</p>
               <p className="mt-3 text-sm font-medium text-text-primary">What happens next</p>
@@ -244,7 +245,7 @@ const fieldId = useId();
                   eligibility.restoration_financial_year
                 )}
               </p>
-            </div>
+            </Card>
 
             <div className="mt-5 flex items-center gap-3">
               <Button

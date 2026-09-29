@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { DelegationForm } from "@/components/hr/delegation-form";
 import { getCurrentUser } from "@/lib/auth";
 import { listEmployees } from "@/lib/employees";
+import { Card } from "@/components/ui/card";
 
 export default async function NewDelegationPage() {
   const user = await getCurrentUser();
@@ -44,15 +45,15 @@ export default async function NewDelegationPage() {
       </div>
 
       {employeesError ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
             {employeesError}
           </div>
-        </div>
+        </Card>
       ) : (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <DelegationForm employees={employees?.results ?? []} />
-        </div>
+        </Card>
       )}
     </div>
   );

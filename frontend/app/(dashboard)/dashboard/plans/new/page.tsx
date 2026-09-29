@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { PlanForm } from "@/components/plans/plan-form";
 import { getCurrentUser } from "@/lib/auth";
 import { listLeaveTypes } from "@/lib/leave-rules";
+import { Card } from "@/components/ui/card";
 
 export const metadata = {
   title: "New plan",
@@ -43,9 +44,9 @@ export default async function NewPlanPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <PlanForm leaveTypes={leaveTypes} />
-      </div>
+      </Card>
     </div>
   );
 }

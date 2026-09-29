@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getWorkflow } from "@/lib/workflows";
+import { Card } from "@/components/ui/card";
 
 export default async function EditWorkflowPage({
   params,
@@ -47,9 +48,9 @@ export default async function EditWorkflowPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <WorkflowForm workflow={workflow} />
-      </div>
+      </Card>
     </div>
   );
 }

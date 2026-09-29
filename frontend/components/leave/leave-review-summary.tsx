@@ -5,6 +5,7 @@ import { CalendarDays, FileText, Pencil, Upload } from "lucide-react";
 
 import type { ValidationResult } from "@/lib/leave-validation";
 import type { LeaveApplication } from "@/lib/leave-api";
+import { Card } from "@/components/ui/card";
 
 interface LeaveReviewSummaryProps {
   application: LeaveApplication;
@@ -29,7 +30,7 @@ export function LeaveReviewSummary({
   const financialYear = validation?.financial_year;
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+    <Card>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-text-primary">Summary</h2>
         <Link
@@ -98,7 +99,7 @@ export function LeaveReviewSummary({
           </ul>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

@@ -10,6 +10,7 @@ import type {
   ValidationResult,
 } from "@/lib/leave-validation";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 interface SubmissionConfirmationProps {
   application: SubmittedApplication;
@@ -50,7 +51,7 @@ export function SubmissionConfirmation({
   };
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-success shadow-subtle p-8 text-center">
+    <Card className="border-border-success text-center">
       <CheckCircle2 className="h-16 w-16 mx-auto text-brand-secondary mb-4" />
       <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">
         Application submitted
@@ -133,6 +134,6 @@ export function SubmissionConfirmation({
           Back to dashboard
         </Link>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function NewWorkflowPage() {
   const user = await getCurrentUser();
@@ -34,9 +35,9 @@ export default async function NewWorkflowPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <WorkflowForm />
-      </div>
+      </Card>
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 type DecisionKind = "approve" | "reject" | "cancel" | null;
 
@@ -153,7 +154,7 @@ export function DelegationReview({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <dl className="divide-y divide-border-default">
           <DetailRow label="Approver">
             <span className="font-medium">{delegation.approver_name}</span>
@@ -182,7 +183,7 @@ export function DelegationReview({
             </DetailRow>
           )}
         </dl>
-      </div>
+      </Card>
 
       {showApproveReject && (
         <div className="flex items-center gap-3">
