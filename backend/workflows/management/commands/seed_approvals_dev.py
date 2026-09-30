@@ -47,7 +47,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from leave.models import LeaveApplication
+from leave.models import LeaveApplication, LeaveType
 from leave.services.submission import submit_application
 from leave.services.working_days import holidays_in_range
 from users.models import EmployeeProfile, User
@@ -158,6 +158,10 @@ class Command(BaseCommand):
         "seed_dev_users first."
     )
 
+    # Resolved from the leave type code in `handle` rather than hardcoded, since
+    # primary keys depend on whatever else has written to the table.
+    annual_leave_type_id: int | None = None
+
     def handle(self, *args, **options):
         if not settings.DEBUG:
             raise CommandError("seed_approvals_dev only runs with DEBUG=true.")
@@ -169,6 +173,17 @@ class Command(BaseCommand):
         )
 
         SeedUsersCommand().handle()
+
+        # Annual leave is looked up by code rather than pinned to a primary key:
+        # the sequence depends on what else has written to LeaveType in this
+        # database, and a hardcoded id makes this seed fail on any database that
+        # is not pristine.
+        annual = LeaveType.objects.filter(code="annual").first()
+        if annual is None:
+            raise CommandError(
+                "No 'annual' leave type found. Run seed_dev_users first."
+            )
+        self.annual_leave_type_id = annual.pk
 
         fy = active_financial_year()
         fy_label = (
@@ -477,7 +492,7 @@ class Command(BaseCommand):
             start = self._suitable_start(user, seq)
             return LeaveApplication.objects.create(
                 employee=user,
-                leave_type_id=1,
+                leave_type_id=self.annual_leave_type_id,
                 start_date=start,
                 end_date=start + timedelta(days=6),
                 reason=f"{label} leave (seeded)",
@@ -624,7 +639,7 @@ class Command(BaseCommand):
             )
             application = LeaveApplication.objects.create(
                 employee=employee,
-                leave_type_id=1,
+                leave_type_id=self.annual_leave_type_id,
                 start_date=start,
                 end_date=start + timedelta(days=6),
                 reason=f"Cancellation scenario {seq} (seeded)",
@@ -792,7 +807,7 @@ class Command(BaseCommand):
 
         corrected = LeaveApplication.objects.create(
             employee=employee,
-            leave_type_id=1,
+            leave_type_id=self.annual_leave_type_id,
             start_date=start,
             end_date=start + timedelta(days=6),
             reason="Document replacement scenario (seeded)",
@@ -809,7 +824,7 @@ class Command(BaseCommand):
 
         draft = LeaveApplication.objects.create(
             employee=employee,
-            leave_type_id=1,
+            leave_type_id=self.annual_leave_type_id,
             start_date=start + timedelta(days=21),
             end_date=start + timedelta(days=27),
             reason="Draft with documents (seeded)",

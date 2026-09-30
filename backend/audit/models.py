@@ -62,6 +62,11 @@ class AuditEntry(models.Model):
         CANCELLATION_APPROVED = "cancellation_approved", "Cancellation approved"
         CANCELLATION_REJECTED = "cancellation_rejected", "Cancellation rejected"
         BALANCE_RESTORED = "balance_restored", "Leave balance restored"
+        PLAN_SUBMITTED = "plan_submitted", "Plan submitted"
+        PLAN_APPROVED = "plan_approved", "Plan approved"
+        PLAN_REJECTED = "plan_rejected", "Plan rejected"
+        PLAN_CONFIRMED = "plan_confirmed", "Plan block confirmed"
+        PLAN_RELEASED = "plan_released", "Plan block released"
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""
@@ -83,6 +88,7 @@ class AuditEntry(models.Model):
         DOCUMENT_TEMPLATE = "document-template", "Document template"
         CANCELLATION = "cancellation", "Cancellation request"
         BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
+        PLAN = "plan", "Leave day plan"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

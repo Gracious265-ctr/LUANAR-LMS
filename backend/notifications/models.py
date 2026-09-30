@@ -82,14 +82,29 @@ class NotificationOutbox(models.Model):
         null=True,
         blank=True,
     )
+    plan = models.ForeignKey(
+        "plans.LeaveDayPlan",
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+    )
+    plan_block = models.ForeignKey(
+        "plans.LeavePlanBlock",
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+    )
     kind = models.CharField(max_length=32, db_index=True)
     submission_cycle = models.PositiveSmallIntegerField(default=1)
     role_label = models.CharField(
         max_length=32,
         default="",
         help_text="Who the row concerns: the stage role for a decision email, "
-        "'approver' / 'delegate' for a delegation email, or 'from_approver' / "
-        "'to_approver' for a reassignment email.",
+        "'approver' / 'delegate' for a delegation email, "
+        "'from_approver' / 'to_approver' for a reassignment email, or "
+        "'owner' for a leave day plan lifecycle email.",
     )
     recipient_email = models.EmailField()
     subject = models.CharField(max_length=200, default="")
@@ -118,16 +133,36 @@ class NotificationOutbox(models.Model):
                         application__isnull=False,
                         delegation__isnull=True,
                         reassignment__isnull=True,
+                        plan__isnull=True,
+                        plan_block__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
                         delegation__isnull=False,
                         reassignment__isnull=True,
+                        plan__isnull=True,
+                        plan_block__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
                         delegation__isnull=True,
                         reassignment__isnull=False,
+                        plan__isnull=True,
+                        plan_block__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=True,
+                        reassignment__isnull=True,
+                        plan__isnull=False,
+                        plan_block__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=True,
+                        reassignment__isnull=True,
+                        plan__isnull=True,
+                        plan_block__isnull=False,
                     )
                 ),
                 name="one_notification_subject",
@@ -150,6 +185,16 @@ class NotificationOutbox(models.Model):
                 fields=["reassignment", "kind", "role_label"],
                 condition=models.Q(reassignment__isnull=False),
                 name="one_outbox_row_per_reassignment_kind_role",
+            ),
+            models.UniqueConstraint(
+                fields=["plan", "kind", "submission_cycle", "role_label"],
+                condition=models.Q(plan__isnull=False),
+                name="one_outbox_row_per_plan_kind_cycle_role",
+            ),
+            models.UniqueConstraint(
+                fields=["plan_block", "kind", "role_label"],
+                condition=models.Q(plan_block__isnull=False),
+                name="one_outbox_row_per_plan_block_kind_role",
             ),
         ]
 

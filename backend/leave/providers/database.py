@@ -72,6 +72,41 @@ def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
     return Decimal(restored) - Decimal(deducted)
 
 
+def _plan_reservation_net(employee_id: int, financial_year_label: str) -> Decimal:
+    """Reserved capacity minus released capacity from the plan ledger.
+
+    An approved leave day plan reserves its annual-deducting blocks' working
+    days up front, so those days are already spoken for when somebody applies
+    for the same leave later. Explicit releases (the employee declining, HR
+    releasing, or the block auto-lapsing at its start date) return them.
+    ``confirm`` rows never touch capacity because the ``reserve`` row already
+    held the days.
+
+    Imported lazily: the plans app depends on this provider for validation, so a
+    module-level import would be circular.
+    """
+    from django.db.models import Q, Sum
+
+    from plans.models import PlanBalanceTransaction
+
+    delta = PlanBalanceTransaction.objects.filter(
+        employee_id=employee_id,
+        financial_year=financial_year_label,
+    ).aggregate(
+        reserved=Sum(
+            "days",
+            filter=Q(type=PlanBalanceTransaction.Type.RESERVE),
+        ),
+        released=Sum(
+            "days",
+            filter=Q(type=PlanBalanceTransaction.Type.RELEASE),
+        ),
+    )
+    reserved = delta["reserved"] or Decimal(0)
+    released = delta["released"] or Decimal(0)
+    return Decimal(reserved) - Decimal(released)
+
+
 class DatabaseRulesProvider:
     """Read-only provider backed by the HR-track tables (Units 2-5)."""
 
@@ -147,5 +182,9 @@ class DatabaseRulesProvider:
 
         entitlement = resolved_annual_entitlement(profile.grade)
         days = entitlement.days if entitlement is not None else 0
-        net = Decimal(days) + _ledger_net(employee_id, financial_year_label)
+        net = (
+            Decimal(days)
+            + _ledger_net(employee_id, financial_year_label)
+            - _plan_reservation_net(employee_id, financial_year_label)
+        )
         return max(net, Decimal(0))
