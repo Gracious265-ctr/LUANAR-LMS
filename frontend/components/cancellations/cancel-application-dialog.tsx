@@ -1,7 +1,7 @@
 "use client";
 
-import { CalendarX2, CheckCircle2, ChevronLeft, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { CalendarX2, CheckCircle2, ChevronLeft, Loader2 } from "lucide-react";
+import { useId, useRef, useState } from "react";
 
 import { confirmLabel, consequenceLine } from "@/lib/cancellations/labels";
 import { submitCancellation } from "@/lib/cancellations/service";
@@ -13,6 +13,15 @@ import type {
 import { formatDate } from "@/lib/tracking/format";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
 
 const MAX_REASON = 1000;
 const MIN_REASON = 10;
@@ -58,34 +67,12 @@ function CancelApplicationDialogInner({
 const reasonRef = useRef<HTMLTextAreaElement>(null);
 const [pendingEligibility, setPendingEligibility] =
   useState<CancellationEligibility | null>(null);
-const titleId = useId();
+const fieldId = useId();
   const counterId = useId();
   const errorId = useId();
 
   const trimmed = reason.trim();
   const reasonValid = trimmed.length >= MIN_REASON && trimmed.length <= MAX_REASON;
-
-  const previousFocus = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocus.current = document.activeElement as HTMLElement | null;
-    requestAnimationFrame(() => reasonRef.current?.focus());
-    return () => {
-      previousFocus.current?.focus?.();
-    };
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    },
-    [busy, onClose]
-  );
-
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
 
   function nextStep() {
     if (!reasonValid) {
@@ -127,63 +114,53 @@ const titleId = useId();
     : "—";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[10vh]"
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
     >
-      <div
-        data-testid="cancel-dialog-overlay"
-        onClick={() => !busy && onClose()}
-        className="fixed inset-0 bg-black/40"
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-lg rounded-xl border border-border-default bg-surface-card p-6 shadow-lg">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 id={titleId} className="text-lg font-semibold text-text-primary">
-              {action === "withdraw" ? "Withdraw application" : "Request cancellation"}
-            </h3>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {application.reference_number} · {application.leave_type?.name || "Leave"} ·{" "}
-              {dateRange} · {application.working_days} working day
-              {application.working_days === 1 ? "" : "s"}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close dialog"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+      <DialogContent
+        className="gap-0 max-h-[calc(100vh-4rem)] overflow-y-auto"
+        showCloseButton={!busy}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          reasonRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+      >
+        <div>
+          <DialogTitle>
+            {action === "withdraw" ? "Withdraw application" : "Request cancellation"}
+          </DialogTitle>
+          <DialogDescription className="mt-0.5">
+            {application.reference_number} · {application.leave_type?.name || "Leave"} ·{" "}
+            {dateRange} · {application.working_days} working day
+            {application.working_days === 1 ? "" : "s"}
+          </DialogDescription>
         </div>
 
         {error && (
-          <div
-            role="alert"
-            className={cn(
-              "mt-4 rounded-md p-3 text-sm",
-              conflict
-                ? "bg-status-pending-subtle text-status-pending"
-                : "bg-status-rejected-subtle text-status-rejected"
-            )}
+          <Alert
+            tone={conflict ? "pending" : "rejected"}
+            className="mt-4 flex-col gap-0"
           >
             {error}
             {conflict && pendingEligibility && (
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => onActionChanged(pendingEligibility)}
-                className="mt-2 block font-medium text-brand-primary hover:underline"
+                variant="link"
+                size="sm"
+                className="mt-2 h-auto block"
               >
                 Refresh and review the latest state
-              </button>
+              </Button>
             )}
-          </div>
+          </Alert>
         )}
 
         {step === 1 ? (
@@ -196,14 +173,14 @@ const titleId = useId();
           >
             <div>
               <label
-                htmlFor={`${titleId}-reason`}
+                htmlFor={fieldId}
                 className="mb-1 block text-sm font-medium text-text-primary"
               >
                 Reason (required)
               </label>
               <textarea
                 ref={reasonRef}
-                id={`${titleId}-reason`}
+                id={fieldId}
                 name="reason"
                 rows={4}
                 maxLength={MAX_REASON}
@@ -235,7 +212,7 @@ const titleId = useId();
               </div>
             </div>
 
-            <div className="mt-4 flex items-start gap-3 rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+            <div className="mt-4 flex items-start gap-3 rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
               <CalendarX2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <p>
                 {consequenceLine(
@@ -247,24 +224,17 @@ const titleId = useId();
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-primary px-4 py-2 font-medium text-white hover:bg-brand-primary-hover focus:outline-none focus:ring-2 focus:ring-brand-primary/40"
-              >
+              <Button type="submit" variant="primary">
                 Continue
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-              >
+              </Button>
+              <Button type="button" onClick={onClose} variant="secondary">
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
           <form onSubmit={submit} className="mt-4">
-            <div className="rounded-md border border-border-default bg-surface-card p-4">
+            <Card className="shadow-none">
               <p className="text-sm font-medium text-text-primary">Reason</p>
               <p className="mt-1 whitespace-pre-wrap text-sm text-text-secondary">{trimmed}</p>
               <p className="mt-3 text-sm font-medium text-text-primary">What happens next</p>
@@ -275,34 +245,31 @@ const titleId = useId();
                   eligibility.restoration_financial_year
                 )}
               </p>
-            </div>
+            </Card>
 
             <div className="mt-5 flex items-center gap-3">
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => setStep(1)}
-                className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                variant="secondary"
+                size="sm"
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 Back
-              </button>
-              <button
-                type="submit"
-                disabled={busy}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-brand-primary px-4 py-2 font-medium text-white hover:bg-brand-primary-hover focus:outline-none focus:ring-2 focus:ring-brand-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              </Button>
+              <Button type="submit" disabled={busy} variant="primary" className="flex-1">
                 {busy ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 ) : (
                   <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                 )}
                 {busy ? "Submitting…" : confirmLabel(action)}
-              </button>
+              </Button>
             </div>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

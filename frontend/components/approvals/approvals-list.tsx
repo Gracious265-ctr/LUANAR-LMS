@@ -11,8 +11,20 @@ import type {
   ApprovalTab,
 } from "@/lib/approvals/types";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination } from "@/components/ui/pagination";
+import { Button } from "@/components/ui/button";
 
 import { ActionBadge, StatusBadge } from "./badges";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 function useDebounced(value: string, delay = 300): string {
   const [debounced, setDebounced] = useState(value);
@@ -77,7 +89,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
     <div className={cn("space-y-6", !headerless && "mx-auto max-w-5xl")}>
       {!headerless && (
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Approvals</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-text-primary">Approvals</h1>
           <p className="text-sm text-text-secondary">
             Applications waiting for your decision.
           </p>
@@ -85,43 +97,25 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div
-          role="tablist"
-          aria-label="Approvals list"
-          className="inline-flex rounded-lg border border-border-default bg-surface-card p-1"
+        <Tabs
+          value={tab}
+          className="contents"
+          onValueChange={(next) => switchTab(next as ApprovalTab)}
         >
-          <button
-            role="tab"
-            aria-selected={tab === "pending"}
-            onClick={() => switchTab("pending")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "pending"
-                ? "bg-brand-primary-subtle text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Pending my decision
-            {data && tab === "pending" && (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
-                {data.count}
-              </span>
-            )}
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "decided"}
-            onClick={() => switchTab("decided")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === "decided"
-                ? "bg-brand-primary-subtle text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            Decided by me
-          </button>
-        </div>
+          <TabsList variant="segmented" aria-label="Approvals list">
+            <TabsTrigger variant="segmented" value="pending">
+              Pending my decision
+              {data && tab === "pending" && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
+                  {data.count}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger variant="segmented" value="decided">
+              Decided by me
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="relative w-full sm:w-72">
           <Search
@@ -140,21 +134,17 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
+        <Card className="text-center">
           <p className="text-sm text-status-rejected">{error}</p>
-          <button
-            type="button"
-            onClick={retry}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
+          <Button type="button" onClick={retry} variant="primary" className="mt-4">
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             Retry
-          </button>
-        </div>
+          </Button>
+        </Card>
       ) : loading ? (
         <SkeletonRows count={6} />
       ) : !data || data.results.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-10 text-center shadow-subtle">
+        <Card className="text-center">
           <SlidersHorizontal
             className="mx-auto h-8 w-8 text-text-muted"
             aria-hidden="true"
@@ -169,10 +159,10 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
               ? "New applications will appear here as they are submitted."
               : "Applications you have decided on will appear here."}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
-          <Table rows={data.results} tab={tab} />
+          <ApprovalTable rows={data.results} tab={tab} />
           <Pagination
             page={page}
             hasPrevious={Boolean(data.previous) || page > 1}
@@ -186,7 +176,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
   );
 }
 
-function Table({
+function ApprovalTable({
   rows,
   tab,
 }: {
@@ -195,41 +185,39 @@ function Table({
 }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle md:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-4 py-3 font-medium">Reference</th>
-              <th className="px-4 py-3 font-medium">Employee</th>
-              <th className="px-4 py-3 font-medium">Leave type</th>
-              <th className="px-4 py-3 font-medium">Dates</th>
-              <th className="px-4 py-3 font-medium">Days</th>
-              <th className="px-4 py-3 font-medium">Submitted</th>
-              {tab === "decided" && (
-                <th className="px-4 py-3 font-medium">Your decision</th>
-              )}
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="w-8 px-2 py-3" />
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="hidden overflow-hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Reference</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Leave type</TableHead>
+              <TableHead>Dates</TableHead>
+              <TableHead>Days</TableHead>
+              <TableHead>Submitted</TableHead>
+              {tab === "decided" && <TableHead>Your decision</TableHead>}
+              <TableHead>Status</TableHead>
+              <TableHead className="w-8 px-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.id} row={row} tab={tab} desktop />
+              <ApprovalTableRow key={row.id} row={row} tab={tab} desktop />
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (
-          <TableRow key={row.id} row={row} tab={tab} />
+          <ApprovalTableRow key={row.id} row={row} tab={tab} />
         ))}
       </ul>
     </>
   );
 }
 
-function TableRow({
+function ApprovalTableRow({
   row,
   tab,
   desktop,
@@ -242,33 +230,33 @@ function TableRow({
 
   if (desktop) {
     return (
-      <tr className="relative border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
-        <td className="px-4 py-3 font-medium text-text-primary">
+      <TableRow className="relative">
+        <TableCell className="font-medium text-text-primary">
           <Link
             href={`/dashboard/approvals/${row.id}`}
             className="after:absolute after:inset-0 after:content-['']"
           >
             {row.reference}
           </Link>
-        </td>
-        <td className="px-4 py-3">
+        </TableCell>
+        <TableCell>
           <span className="font-medium text-text-primary">{row.employee_name}</span>
           <span className="mt-0.5 block text-xs text-text-muted">
             {row.department || "—"}
           </span>
-        </td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">
           {row.leave_type.name || "—"}
-        </td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">
           {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
-        </td>
-        <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
-        <td className="px-4 py-3 text-text-secondary">
+        </TableCell>
+        <TableCell className="text-text-secondary">{row.working_days}</TableCell>
+        <TableCell className="text-text-secondary">
           {formatDateTime(row.submitted_at) || "—"}
-        </td>
+        </TableCell>
         {tab === "decided" && (
-          <td className="px-4 py-3">
+          <TableCell>
             {decision ? (
               <>
                 <ActionBadge action={decision.action} />
@@ -279,15 +267,15 @@ function TableRow({
             ) : (
               <span className="text-text-muted">—</span>
             )}
-          </td>
+          </TableCell>
         )}
-        <td className="px-4 py-3">
+        <TableCell>
           <StatusBadge status={row.status} />
-        </td>
-        <td className="px-2 py-3">
+        </TableCell>
+        <TableCell className="px-2">
           <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
     );
   }
 
@@ -329,41 +317,5 @@ function SkeletonRows({ count }: { count: number }) {
         />
       ))}
     </div>
-  );
-}
-
-function Pagination({
-  page,
-  hasPrevious,
-  hasNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <nav aria-label="Pagination" className="flex items-center justify-between">
-      <button
-        type="button"
-        disabled={!hasPrevious}
-        onClick={onPrevious}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Previous
-      </button>
-      <span className="text-sm text-text-muted">Page {page}</span>
-      <button
-        type="button"
-        disabled={!hasNext}
-        onClick={onNext}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Next
-      </button>
-    </nav>
   );
 }

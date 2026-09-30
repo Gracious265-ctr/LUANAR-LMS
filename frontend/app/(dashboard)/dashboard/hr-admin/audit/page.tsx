@@ -4,12 +4,21 @@ import { redirect } from "next/navigation";
 import { AuditEntriesTable } from "@/components/hr/audit-entries-table";
 import { FinalizedLeaveTable } from "@/components/hr/finalized-leave-table";
 import { getCurrentUser } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import {
   ACTION_LABELS,
   listAuditEntries,
   listFinalizedApplications,
   TARGET_TYPE_LABELS,
 } from "@/lib/audit";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 type AuditSearchParams = Promise<{
   action?: string | string[];
@@ -68,14 +77,14 @@ export default async function AuditPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Audit View</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Audit View</h2>
         <p className="text-text-secondary">
           Review finalized leave applications and the administrative audit trail
           of actions taken across the system.
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Finalized leave
         </h3>
@@ -84,15 +93,15 @@ export default async function AuditPage({
           documents, reassignment history, and full audit trail.
         </p>
         {finalizedError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {finalizedError}
           </div>
         ) : finalized ? (
           <FinalizedLeaveTable applications={finalized.results} />
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -105,48 +114,53 @@ export default async function AuditPage({
           </div>
           <form
             method="get"
-            className="flex flex-wrap items-end gap-3 rounded-md border border-border-default bg-surface-page p-3"
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-surface-page p-3"
           >
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
+            <div className="text-sm">
+              <label
+                htmlFor="action"
+                className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted"
+              >
                 Action
-              </span>
-              <select
-                name="action"
-                defaultValue={action || ""}
-                className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              </label>
+              <Select name="action" defaultValue={action || ""}>
+                <SelectTrigger id="action" className="w-auto">
+                  <SelectValue placeholder="All actions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All actions</SelectItem>
+                  {Object.entries(ACTION_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm">
+              <label
+                htmlFor="target_type"
+                className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted"
               >
-                <option value="">All actions</option>
-                {Object.entries(ACTION_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
                 Target
-              </span>
-              <select
-                name="target_type"
-                defaultValue={targetType || ""}
-                className="rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              >
-                <option value="">All targets</option>
-                {Object.entries(TARGET_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="submit"
-              className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-            >
+              </label>
+              <Select name="target_type" defaultValue={targetType || ""}>
+                <SelectTrigger id="target_type" className="w-auto">
+                  <SelectValue placeholder="All targets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All targets</SelectItem>
+                  {Object.entries(TARGET_TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" variant="primary">
               Apply
-            </button>
+            </Button>
             {hasFilters && (
               <Link
                 href="/dashboard/hr-admin/audit"
@@ -158,13 +172,13 @@ export default async function AuditPage({
           </form>
         </div>
         {entriesError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {entriesError}
           </div>
         ) : entries ? (
           <AuditEntriesTable entries={entries.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

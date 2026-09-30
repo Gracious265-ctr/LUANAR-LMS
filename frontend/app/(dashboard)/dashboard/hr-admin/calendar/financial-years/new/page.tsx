@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { FinancialYearForm } from "@/components/hr/financial-year-form";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function NewFinancialYearPage() {
   const user = await getCurrentUser();
@@ -25,7 +26,7 @@ export default async function NewFinancialYearPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to leave calendar
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           New financial year
         </h2>
         <p className="text-text-secondary">
@@ -34,9 +35,9 @@ export default async function NewFinancialYearPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <FinancialYearForm />
-      </div>
+      </Card>
     </div>
   );
 }

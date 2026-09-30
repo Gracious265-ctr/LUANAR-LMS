@@ -2,6 +2,8 @@ import { formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 import type { ReactNode } from "react";
+import { badgeVariants } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 /**
  * Full-width card composed purely from response fields (backend authority: the
@@ -22,7 +24,10 @@ export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
     >
       <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${meta.badgeClass}`}
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+            badgeVariants({ tone: meta.badgeTone })
+          )}
         >
           <Icon className="h-6 w-6" aria-hidden="true" />
         </div>

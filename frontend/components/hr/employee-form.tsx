@@ -6,6 +6,17 @@ import Link from "next/link";
 
 import type { Employee, TeamOption, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
+import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "academic", label: "Academic" },
@@ -40,6 +51,7 @@ export function EmployeeForm({
   teamsError?: string;
 }) {
   const router = useRouter();
+  const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -49,27 +61,26 @@ export function EmployeeForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+    const teamValue = String(formData.get("team") || "");
 
-      const teamValue = String(formData.get("team") || "");
-
-      try {
-        const response = await fetch(endpoint, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            first_name: formData.get("first_name"),
-            last_name: formData.get("last_name"),
-            email: formData.get("email"),
-            role: formData.get("role"),
-            designation: formData.get("designation"),
-            department: formData.get("department"),
-            category: formData.get("category"),
-            grade: formData.get("grade"),
-            appointment_date: formData.get("appointment_date") || null,
-            team: teamValue ? Number(teamValue) : null,
-            is_active: formData.get("is_active") === "on",
-          }),
-        });
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: formData.get("first_name"),
+          last_name: formData.get("last_name"),
+          email: formData.get("email"),
+          role: formData.get("role"),
+          designation: formData.get("designation"),
+          department: formData.get("department"),
+          category: formData.get("category"),
+          grade: formData.get("grade"),
+          appointment_date: formData.get("appointment_date") || null,
+          team: teamValue && teamValue !== "none" ? Number(teamValue) : null,
+          is_active: formData.get("is_active") === "on",
+        }),
+      });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -91,171 +102,119 @@ export function EmployeeForm({
       onSubmit={handleSubmit}
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
-        <label
-          htmlFor="first_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          First name
-        </label>
-        <input
+      <Field label="First name" htmlFor="first_name">
+        <Input
           id="first_name"
           name="first_name"
           required
           defaultValue={employee?.first_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="last_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Last name
-        </label>
-        <input
+      <Field label="Last name" htmlFor="last_name">
+        <Input
           id="last_name"
           name="last_name"
           required
           defaultValue={employee?.last_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="email"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Email
-        </label>
-        <input
+      <Field label="Email" htmlFor="email">
+        <Input
           id="email"
           name="email"
           type="email"
           required
           defaultValue={employee?.email}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="name@luanar.ac.mw"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="role"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Role
-        </label>
-        <select
-          id="role"
-          name="role"
-          defaultValue={employee?.role ?? "employee"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {ROLES.map((role) => (
-            <option key={role.value} value={role.value}>
-              {role.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Field label="Role" htmlFor="role">
+        <Select name="role" defaultValue={employee?.role ?? "employee"}>
+          <SelectTrigger id="role">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLES.map((role) => (
+              <SelectItem key={role.value} value={role.value}>
+                {role.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="team"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Team
-        </label>
-        <select
-          id="team"
+<Field
+        label="Team"
+        htmlFor="team"
+        error={teamsError || null}
+        hint="Leave applications from this employee follow the team's chain. Only a team in force routes anything, so a team still being set up will not."
+      >
+        <Select
           name="team"
-          defaultValue={employee?.team ?? ""}
+          defaultValue={String(employee?.team ?? "none")}
           disabled={teamsError !== ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <option value="">No team</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-              {teamNote(team) ? ` (${teamNote(team)})` : ""}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          {teamsError ||
-            "Leave applications from this employee follow the team's chain. Only a team in force routes anything, so a team still being set up will not."}
-        </p>
-      </div>
+          <SelectTrigger id="team">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No team</SelectItem>
+            {teams.map((team) => (
+              <SelectItem key={team.id} value={String(team.id)}>
+                {team.name}
+                {teamNote(team) ? ` (${teamNote(team)})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="designation"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Designation
-        </label>
-        <input
+      <Field label="Designation" htmlFor="designation">
+        <Input
           id="designation"
           name="designation"
           defaultValue={employee?.designation}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Lecturer"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="department"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Department / Faculty
-        </label>
-        <input
+      <Field label="Department / Faculty" htmlFor="department">
+        <Input
           id="department"
           name="department"
           defaultValue={employee?.department}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Bunda College"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="category"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Category
-        </label>
-        <select
-          id="category"
-          name="category"
-          defaultValue={employee?.category ?? "academic"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {CATEGORIES.map((category) => (
-            <option key={category.value} value={category.value}>
-              {category.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Field label="Category" htmlFor="category">
+        <Select name="category" defaultValue={employee?.category ?? "academic"}>
+          <SelectTrigger id="category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((category) => (
+              <SelectItem key={category.value} value={category.value}>
+                {category.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="grade"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Grade
-        </label>
-        <input
+      <Field
+        label="Grade"
+        htmlFor="grade"
+        hint="Choose from configured grades or type a custom one."
+      >
+        <Input
           id="grade"
           name="grade"
           list={gradeOptions.length > 0 ? "grade-options" : undefined}
           defaultValue={employee?.grade}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Select a grade or type one"
         />
         {gradeOptions.length > 0 && (
@@ -265,28 +224,19 @@ export function EmployeeForm({
                 <option key={grade} value={grade} />
               ))}
             </datalist>
-            <p className="mt-1 text-xs text-text-muted">
-              Choose from configured grades or type a custom one.
-            </p>
           </>
         )}
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="appointment_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Date of appointment
-        </label>
-        <input
+      <Field label="Date of appointment" htmlFor="appointment_date">
+        <DatePicker
           id="appointment_date"
-          name="appointment_date"
-          type="date"
-          defaultValue={employee?.appointment_date ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          value={appointmentDate}
+          onChange={setAppointmentDate}
         />
-      </div>
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="appointment_date" value={appointmentDate} />
+      </Field>
 
       <label className="flex items-center gap-2 md:col-span-2">
         <input
@@ -299,22 +249,16 @@ export function EmployeeForm({
       </label>
 
       {error && (
-        <div className="text-sm text-status-rejected bg-status-rejected-subtle rounded-md p-3 md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : employee ? "Save changes" : "Create employee"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/employees"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

@@ -1,9 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { format, parseISO } from "date-fns";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 
 import { DelegationForm } from "@/components/hr/delegation-form";
 import type { Employee } from "@/lib/employees";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
+import { openSelect, selectOption } from "./helpers/select";
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -24,8 +27,33 @@ const employees: Employee[] = [
   makeEmployee({ id: 8, full_name: "Sam Staff", approver_roles: [] }),
 ];
 
+/** October 2026 is the calendar's default month, so day lookups are stable. */
+const TODAY = new Date(2026, 9, 5);
+
+/** Day buttons carry a `"PPPP"` aria-label, e.g. "Thursday, October 15th, 2026". */
+function dayButton(iso: string): HTMLElement {
+  return within(screen.getByRole("grid")).getByRole("button", {
+    name: format(parseISO(iso), "PPPP"),
+  });
+}
+
+/** Opens the period popover and picks a start day, optionally an end day. */
+function pickPeriod(
+  user: ReturnType<typeof userEvent.setup>,
+  from: string,
+  to?: string
+) {
+  fireEvent.click(screen.getByLabelText("Period"));
+  fireEvent.click(dayButton(from));
+  if (to) {
+    fireEvent.click(dayButton(to));
+  }
+}
+
 describe("DelegationForm", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(TODAY);
     vi.mocked(createDelegation).mockResolvedValue({
       id: 1,
       approver: 3,
@@ -48,48 +76,43 @@ describe("DelegationForm", () => {
     });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders the delegation request fields", () => {
     render(<DelegationForm employees={employees} />);
 
     expect(screen.getByLabelText("Approver")).toBeInTheDocument();
     expect(screen.getByLabelText("Delegate nomination")).toBeInTheDocument();
-    expect(screen.getByLabelText("Starts on")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ends on")).toBeInTheDocument();
+    expect(screen.getByLabelText("Period")).toBeInTheDocument();
     expect(screen.getByLabelText("Request reason")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create delegation request" })
     ).toBeInTheDocument();
   });
 
-  it("only offers users with an approver role as options", () => {
+  it("only offers users with an approver role as options", async () => {
+    const user = userEvent.setup();
     render(<DelegationForm employees={employees} />);
 
-    const approver = screen.getByLabelText("Approver");
-    const options = Array.from(approver.querySelectorAll("option")).map(
-      (option) => option.textContent
-    );
-    expect(options).toEqual([
-      "Select the approver",
-      "Jane Dean",
-      "Bob HOD",
-    ]);
+    await openSelect(screen.getByLabelText("Approver"), { user });
+
+    expect(screen.getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["Select the approver", "Jane Dean", "Bob HOD"]);
   });
 
-  it("submits the create shape with delegate and reason", () => {
+  it("submits the create shape with delegate and reason", async () => {
+    const user = userEvent.setup();
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
-    fireEvent.change(screen.getByLabelText("Delegate nomination"), {
-      target: { value: "5" },
-    });
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
-    fireEvent.change(screen.getByLabelText("Ends on"), {
-      target: { value: "2026-11-01" },
-    });
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
+    await selectOption(
+      screen.getByLabelText("Delegate nomination"),
+      "Bob HOD",
+      { user }
+    );
+    pickPeriod(user, "2026-10-01", "2026-10-15");
     fireEvent.change(screen.getByLabelText("Request reason"), {
       target: { value: "Attending a conference" },
     });
@@ -102,20 +125,17 @@ describe("DelegationForm", () => {
       approver: 3,
       delegate: 5,
       starts_on: "2026-10-01",
-      ends_on: "2026-11-01",
+      ends_on: "2026-10-15",
       request_reason: "Attending a conference",
     });
   });
 
-  it("sends null when no delegate nomination or end date is chosen", () => {
+  it("sends null when no delegate nomination or end date is chosen", async () => {
+    const user = userEvent.setup();
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
-    fireEvent.change(screen.getByLabelText("Starts on"), {
-      target: { value: "2026-10-01" },
-    });
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
+    pickPeriod(user, "2026-10-01");
 
     fireEvent.click(
       screen.getByRole("button", { name: "Create delegation request" })
@@ -130,21 +150,30 @@ describe("DelegationForm", () => {
     });
   });
 
-  it("drops the nominated approver from the delegate list", () => {
+  it("drops the nominated approver from the delegate list", async () => {
+    const user = userEvent.setup();
     render(<DelegationForm employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Approver"), {
-      target: { value: "3" },
-    });
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
+    await openSelect(screen.getByLabelText("Delegate nomination"), { user });
 
-    const delegate = screen.getByLabelText("Delegate nomination");
-    const options = Array.from(delegate.querySelectorAll("option")).map(
-      (option) => option.textContent
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent)
+    ).toEqual(["No nomination", "Bob HOD"]);
+  });
+
+  it("refuses to submit without a start date", async () => {
+    const user = userEvent.setup();
+    render(<DelegationForm employees={employees} />);
+
+    await selectOption(screen.getByLabelText("Approver"), "Jane Dean", { user });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create delegation request" })
     );
-    expect(options).toEqual([
-      "No nomination",
-      "Bob HOD",
-    ]);
+
+    expect(createDelegation).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose a start date.")).toBeInTheDocument();
   });
 
   it("provides a cancel link back to the delegations index", () => {

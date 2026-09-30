@@ -1,6 +1,7 @@
 "use client";
 
 import { Wallet } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 interface BalanceCardProps {
   availableBalance: string | null;
@@ -18,7 +19,7 @@ export function BalanceCard({
   financialYear,
 }: BalanceCardProps) {
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+    <Card>
       <div className="flex items-center gap-2 text-text-secondary mb-4">
         <Wallet className="h-4 w-4" />
         <h3 className="text-base font-semibold text-text-primary">
@@ -33,13 +34,13 @@ export function BalanceCard({
       <dl className="grid grid-cols-2 gap-4">
         <div>
           <dt className="text-xs text-text-muted mb-1">Available balance</dt>
-          <dd className="text-2xl font-bold text-text-primary">
+          <dd className="text-2xl font-semibold tracking-tight text-text-primary">
             {availableBalance ?? "—"}
           </dd>
         </div>
         <div>
           <dt className="text-xs text-text-muted mb-1">Balance if approved</dt>
-          <dd className="text-2xl font-bold text-brand-secondary">
+          <dd className="text-2xl font-semibold tracking-tight text-brand-secondary">
             {balanceAfter ?? "—"}
           </dd>
         </div>
@@ -47,6 +48,6 @@ export function BalanceCard({
       <p className="text-xs text-text-muted mt-4">
         Nothing is deducted until your application is finally approved.
       </p>
-    </div>
+    </Card>
   );
 }

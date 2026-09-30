@@ -13,12 +13,14 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { STATUS_META } from "@/lib/tracking/labels";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 import {
   deleteLeaveApplication,
   type LeaveApplication,
 } from "@/lib/leave-api";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 interface ApplicationCardProps {
   application: LeaveApplication;
@@ -28,12 +30,12 @@ interface ApplicationCardProps {
 
 const CARD_STATUS_META: Record<
   LeaveApplication["status"],
-  { label: string; icon: LucideIcon; badgeClass: string }
+  { label: string; icon: LucideIcon; badgeTone: BadgeTone }
 > = {
   draft: {
     label: "Draft",
     icon: FileText,
-    badgeClass: "bg-status-cancelled-subtle text-status-cancelled",
+    badgeTone: "draft",
   },
   submitted: STATUS_META.pending,
   approved: STATUS_META.approved,
@@ -46,15 +48,10 @@ function StatusPill({ status }: { status: LeaveApplication["status"] }) {
   const meta = CARD_STATUS_META[status];
   const Icon = meta.icon;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
-        meta.badgeClass
-      )}
-    >
+    <Badge tone={meta.badgeTone}>
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {meta.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -90,7 +87,7 @@ export function ApplicationCard({
     application.reason;
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-5">
+    <Card>
       <div className="flex items-start justify-between mb-3">
         <div className="flex flex-wrap items-center gap-2">
           <FileText className="h-4 w-4 text-text-muted" />
@@ -172,29 +169,35 @@ export function ApplicationCard({
           {confirming ? (
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="text-xs text-status-rejected">Delete?</span>
-              <button
+              <Button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="text-xs font-medium text-status-rejected hover:underline"
+                variant="link"
+                size="sm"
+                className="h-auto text-status-rejected"
               >
                 {deleting ? "..." : "Yes"}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setConfirming(false)}
-                className="text-xs font-medium text-text-muted hover:underline"
+                variant="link"
+                size="sm"
+                className="h-auto text-text-muted"
               >
                 No
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
+            <Button
               type="button"
               aria-label="Delete draft"
               onClick={() => setConfirming(true)}
-              className="ml-auto p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-auto w-auto rounded p-1.5 hover:text-status-rejected"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
       ) : (
@@ -208,6 +211,6 @@ export function ApplicationCard({
           </Link>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

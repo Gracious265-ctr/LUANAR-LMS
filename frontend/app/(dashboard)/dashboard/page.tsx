@@ -4,6 +4,7 @@ import { Calendar, Clock, FileText, ShieldCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { getLeaveSummary } from "@/lib/leave-summary";
+import { Card } from "@/components/ui/card";
 
 export default async function DashboardPage() {
   // All three reads are independent, and the first two are already resolved by
@@ -30,7 +31,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Dashboard</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Dashboard</h2>
         <p className="text-text-secondary">
           Welcome back, {user.full_name}
         </p>
@@ -82,7 +83,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Recent Activity */}
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      <Card>
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Recent Activity
         </h3>
@@ -92,7 +93,7 @@ export default async function DashboardPage() {
             Your leave applications and approvals will appear here.
           </p>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -118,15 +119,15 @@ function StatCard({
   variant: keyof typeof STAT_CARD_VARIANTS;
 }) {
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-5">
+    <Card>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-medium text-text-secondary">{title}</span>
         <div className={`p-2 rounded-lg ${STAT_CARD_VARIANTS[variant]}`}>
           {icon}
         </div>
       </div>
-      <div className="text-3xl font-bold text-text-primary">{value}</div>
+      <div className="text-3xl font-semibold tracking-tight text-text-primary">{value}</div>
       <p className="text-sm text-text-muted mt-1">{subtitle}</p>
-    </div>
+    </Card>
   );
 }

@@ -6,6 +6,7 @@ import { ReassignmentForm } from "@/components/hr/reassignment-form";
 import { getCurrentUser } from "@/lib/auth";
 import { listEmployees } from "@/lib/employees";
 import { listPendingApplications } from "@/lib/reassignments";
+import { Card } from "@/components/ui/card";
 
 export default async function NewReassignmentPage({
   searchParams,
@@ -60,7 +61,7 @@ export default async function NewReassignmentPage({
           <ArrowLeft className="h-4 w-4" />
           Back to reassignments
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           Reassign application
         </h2>
         <p className="text-text-secondary">
@@ -70,18 +71,18 @@ export default async function NewReassignmentPage({
       </div>
 
       {employeesError ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+        <Card>
+          <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
             {employeesError}
           </div>
-        </div>
+        </Card>
       ) : (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <ReassignmentForm
             application={application}
             employees={employees?.results ?? []}
           />
-        </div>
+        </Card>
       )}
     </div>
   );

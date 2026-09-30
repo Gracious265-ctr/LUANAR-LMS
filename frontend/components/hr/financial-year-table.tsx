@@ -1,8 +1,18 @@
 import Link from "next/link";
 
 import type { FinancialYear } from "@/lib/financial-years";
+import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink } from "./edit-action-link";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function FinancialYearTable({
   years,
@@ -13,80 +23,74 @@ export function FinancialYearTable({
 }) {
   if (years.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No financial years configured
-        </p>
-        <p className="mt-1 text-sm">
-          Add a financial year so leave applications can be validated against
-          it.
-        </p>
-      </div>
+      <EmptyState
+        title="No financial years configured"
+        description="Add a financial year so leave applications can be validated against it."
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Start</th>
-            <th className="py-3 pr-4">End</th>
-            <th className="py-3 pr-4">Status</th>
-            <th className="py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {years.map((year) => {
-            const status =
-              year.is_active
-                ? "active"
-                : year.start_date > today
-                  ? "upcoming"
-                  : "past";
-            return (
-              <tr
-                key={year.id}
-                className="border-b border-border-default transition-colors hover:bg-surface-hover"
-              >
-                <td className="py-3 pr-4">
-                  <Link
-                    href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    {year.start_date}
-                  </Link>
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {year.end_date}
-                </td>
-                <td className="py-3">
-                  <span
-                    className={
-                      status === "active"
-                        ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                        : status === "upcoming"
-                          ? "inline-block rounded-full bg-brand-primary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-primary"
-                          : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-                    }
-                  >
-                    {status === "active"
-                      ? "Active"
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Start</TableHead>
+          <TableHead>End</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {years.map((year) => {
+          const status =
+            year.is_active
+              ? "active"
+              : year.start_date > today
+                ? "upcoming"
+                : "past";
+          return (
+            <TableRow
+              key={year.id}
+            >
+              <TableCell>
+                <Link
+                  href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  {year.start_date}
+                </Link>
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {year.end_date}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  size="sm"
+                  tone={
+                    status === "active"
+                      ? "info"
                       : status === "upcoming"
-                        ? "Upcoming"
-                        : "Past"}
-                  </span>
-                </td>
-                <td className="py-3 text-right">
-                  <EditActionLink
-                    href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                        ? "brand"
+                        : "muted"
+                  }
+                  className="font-medium"
+                >
+                  {status === "active"
+                    ? "Active"
+                    : status === "upcoming"
+                      ? "Upcoming"
+                      : "Past"}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                <EditActionLink
+                  href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
+                />
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

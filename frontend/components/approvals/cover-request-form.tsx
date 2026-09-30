@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 
 import type { DelegateCandidate } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { DateRangePicker } from "@/components/ui/date-picker";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * Self-service cover request for an approver.
@@ -16,6 +27,8 @@ import { createDelegation } from "@/lib/delegations-client";
  */
 export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate[] }) {
   const router = useRouter();
+  const [startsOn, setStartsOn] = useState("");
+  const [endsOn, setEndsOn] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +39,14 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
 
     const formData = new FormData(event.currentTarget);
     const delegateValue = String(formData.get("delegate") || "");
-    const endsOn = String(formData.get("ends_on") || "");
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!startsOn) {
+      setError("Choose a start date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       await createDelegation({
@@ -53,39 +73,24 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       data-testid="cover-request-form"
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
-        <label
-          htmlFor="cover_starts_on"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Starts on
-        </label>
-        <input
+      <Field
+        label="Period"
+        htmlFor="cover_starts_on"
+        hint="Leave the end blank to stay open-ended until HR cancels it."
+      >
+        <DateRangePicker
           id="cover_starts_on"
-          name="starts_on"
-          type="date"
-          required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          from={startsOn}
+          to={endsOn}
+          onRangeChange={(from, to) => {
+            setStartsOn(from);
+            setEndsOn(to);
+          }}
         />
-      </div>
-
-      <div>
-        <label
-          htmlFor="cover_ends_on"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Ends on
-        </label>
-        <input
-          id="cover_ends_on"
-          name="ends_on"
-          type="date"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          Leave blank to stay open-ended until HR cancels it.
-        </p>
-      </div>
+        {/* The trigger is a <button>, so the names still have to reach FormData. */}
+        <input type="hidden" name="starts_on" value={startsOn} />
+        <input type="hidden" name="ends_on" value={endsOn} />
+      </Field>
 
       <div>
         <label
@@ -94,18 +99,19 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
         >
           Nominate a delegate
         </label>
-        <select
-          id="cover_delegate"
-          name="delegate"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          <option value="">No nomination</option>
-          {candidates.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.full_name}
-            </option>
-          ))}
-        </select>
+        <Select name="delegate">
+          <SelectTrigger id="cover_delegate" aria-label="Nominate a delegate">
+            <SelectValue placeholder="No nomination" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">No nomination</SelectItem>
+            {candidates.map((candidate) => (
+              <SelectItem key={candidate.id} value={String(candidate.id)}>
+                {candidate.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="mt-1 text-xs text-text-muted">
           Optional. HR confirms the delegate or picks someone else on approval.
         </p>
@@ -128,22 +134,15 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
       </div>
 
       {error && (
-        <div
-          role="alert"
-          className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
-        >
+        <Alert tone="rejected" className="md:col-span-2">
           {error}
-        </div>
+        </Alert>
       )}
 
       <div className="md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={loading} variant="primary">
           {loading ? "Submitting..." : "Request cover"}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { ApproverRoleForm } from "@/components/hr/approver-role-form";
 import { getApproverRole } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function EditRolePage({
   params,
@@ -38,7 +39,7 @@ export default async function EditRolePage({
           <ArrowLeft className="h-4 w-4" />
           Back to roles
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           Edit {role.label}
         </h2>
         <p className="text-text-secondary">
@@ -48,9 +49,9 @@ export default async function EditRolePage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <ApproverRoleForm role={role} />
-      </div>
+      </Card>
     </div>
   );
 }

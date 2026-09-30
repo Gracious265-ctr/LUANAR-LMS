@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApprovalsWorkspace } from "@/components/approvals/approvals-workspace";
@@ -65,7 +66,8 @@ describe("ApprovalsWorkspace", () => {
     expect(screen.queryByText("applications queue")).not.toBeInTheDocument();
   });
 
-  it("opens the cover panel with the request form and the approver's rows", () => {
+  it("opens the cover panel with the request form and the approver's rows", async () => {
+    const user = userEvent.setup();
     render(
       <ApprovalsWorkspace
         canRequestCover
@@ -74,7 +76,7 @@ describe("ApprovalsWorkspace", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Cover" }));
+    await user.click(screen.getByRole("tab", { name: "Cover" }));
 
     expect(
       screen.getByRole("button", { name: "Request cover" })
@@ -87,7 +89,8 @@ describe("ApprovalsWorkspace", () => {
     );
   });
 
-  it("shows the load error instead of a stale empty list", () => {
+  it("shows the load error instead of a stale empty list", async () => {
+    const user = userEvent.setup();
     render(
       <ApprovalsWorkspace
         canRequestCover
@@ -97,16 +100,17 @@ describe("ApprovalsWorkspace", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Cover" }));
+    await user.click(screen.getByRole("tab", { name: "Cover" }));
 
     expect(screen.getByText("Unable to load your delegations.")).toBeInTheDocument();
     expect(screen.queryByText("No delegations found")).toBeNull();
   });
 
-  it("keeps the other queues reachable", () => {
+  it("keeps the other queues reachable", async () => {
+    const user = userEvent.setup();
     render(<ApprovalsWorkspace canRequestCover delegations={[]} candidates={[]} />);
 
-    fireEvent.click(
+    await user.click(
       screen.getByRole("tab", { name: "Cancellation requests" })
     );
     expect(screen.getByText("cancellations queue")).toBeInTheDocument();

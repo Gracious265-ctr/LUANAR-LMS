@@ -8,6 +8,7 @@ import { CancellationDetailPanel } from "@/components/cancellations/cancellation
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { approvalVerb } from "@/lib/approvals/labels";
 import { fetchApproval } from "@/lib/approvals/service";
+import { Button } from "@/components/ui/button";
 import type {
   ApprovalAction,
   ApprovalReview,
@@ -24,6 +25,7 @@ import { DocumentsCard } from "./documents-card";
 import { EmployeeInfoCard } from "./employee-info-card";
 import { LeaveHistoryCard } from "./leave-history-card";
 import { Panel } from "./panel";
+import { Badge } from "@/components/ui/badge";
 
 export function ApprovalDetail({
   id,
@@ -106,13 +108,9 @@ export function ApprovalDetail({
       <div className="mx-auto max-w-2xl">
         <Panel title="Something went wrong">
           <p className="text-sm text-status-rejected">{error}</p>
-          <button
-            type="button"
-            onClick={retry}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
+          <Button type="button" onClick={retry} variant="primary" className="mt-4">
             Retry
-          </button>
+          </Button>
         </Panel>
       </div>
     );
@@ -147,13 +145,17 @@ export function ApprovalDetail({
         <span className="font-medium text-text-primary">{app.reference}</span>
         <StatusBadge status={data.workflow.state} />
         {resubmission && (
-          <span className="inline-flex items-center rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+          <Badge
+            size="sm"
+            tone="neutral"
+            className="font-medium"
+          >
             Resubmission #{app.submission_cycle}
-          </span>
+          </Badge>
         )}
       </div>
 
-      <h1 className="text-2xl font-bold text-text-primary">{app.reference}</h1>
+      <h1 className="text-xl font-mono font-semibold tracking-tight text-text-primary">{app.reference}</h1>
 
       {cancellationRequestId && (
         <CancellationDetailPanel
@@ -250,9 +252,9 @@ function MobileDecisionButton({
         ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm font-medium text-status-rejected"
         : "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-correction bg-status-correction-subtle px-3 py-2 text-sm font-medium text-status-correction";
   return (
-    <button type="button" onClick={onClick} className={className}>
+    <Button type="button" onClick={onClick} className={className}>
       {icon}
       {label}
-    </button>
+    </Button>
   );
 }

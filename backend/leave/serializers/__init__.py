@@ -21,7 +21,7 @@ from ..services import (
     normalize_leave_code,
     resolve_leave_rule,
 )
-from ..services.storage import signed_document_url
+from ..services.storage import safe_signed_document_url
 
 
 class GradeEntitlementSerializer(AuditedModelSerializer):
@@ -335,10 +335,7 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_file_url(self, obj) -> str:
-        try:
-            return signed_document_url(obj.file_path)
-        except ValueError:
-            return obj.file_url
+        return safe_signed_document_url(obj.file_path, fallback=obj.file_url)
 
     def get_retired_by(self, obj):
         if obj.retired_by is None:

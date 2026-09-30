@@ -11,6 +11,18 @@ import type {
 } from "@/lib/leave-document-template";
 import { updateLeaveDocumentTemplate } from "@/lib/leave-document-template-client";
 import { DocumentTemplatePreview } from "./document-template-preview";
+import { Field, Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
 
 export function LeaveDocumentTemplateEditor({
   template,
@@ -154,53 +166,34 @@ export function LeaveDocumentTemplateEditor({
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="space-y-6">
-        <div>
-          <label
-            htmlFor="template-title"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Document title
-          </label>
-          <input
+        <Field
+          label="Document title"
+          htmlFor="template-title"
+          hint="Shown at the top of the approved leave document."
+        >
+          <Input
             id="template-title"
             value={title}
             onChange={(event) => {
               setTitle(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-          <p className="mt-1 text-xs text-text-muted">
-            Shown at the top of the approved leave document.
-          </p>
-        </div>
+        </Field>
 
-        <div>
-          <label
-            htmlFor="template-header"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Header
-          </label>
-          <input
+        <Field label="Header" htmlFor="template-header">
+          <Input
             id="template-header"
             value={header}
             onChange={(event) => {
               setHeader(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
-        <div>
-          <label
-            htmlFor="template-intro"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Opening wording
-          </label>
-          <textarea
+        <Field label="Opening wording" htmlFor="template-intro">
+          <Textarea
             id="template-intro"
             rows={3}
             value={intro}
@@ -208,38 +201,41 @@ export function LeaveDocumentTemplateEditor({
               setIntro(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-4">
+        <Card className="shadow-none">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">
               Data fields
             </h3>
             <div className="flex items-center gap-2">
-              <select
-                aria-label="Add data field"
-                value={newFieldKey}
-                onChange={(event) => setNewFieldKey(event.target.value)}
-                className="rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              >
-                <option value="">Add field</option>
-                {availableFields.map((field) => (
-                  <option key={field.key} value={field.key}>
-                    {field.label}
-                  </option>
-                ))}
-              </select>
-              <button
+              <Select value={newFieldKey} onValueChange={setNewFieldKey}>
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Add data field"
+                  className="w-auto px-2 py-1.5"
+                >
+                  <SelectValue placeholder="Add field" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableFields.map((field) => (
+                    <SelectItem key={field.key} value={field.key}>
+                      {field.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
                 type="button"
                 onClick={addField}
                 disabled={!newFieldKey}
                 aria-label="Add selected field"
-                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
+                size="sm"
               >
                 <Plus className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -256,61 +252,61 @@ export function LeaveDocumentTemplateEditor({
             fields.map((field, index) => (
               <div
                 key={field.key}
-                className="mb-2 flex items-center gap-2 rounded-md border border-border-default bg-surface-page p-2"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-border-default bg-surface-page p-2"
               >
                 <span className="w-32 shrink-0 text-xs text-text-muted">
                   {field.key}
                 </span>
-                <input
+                <Input
                   aria-label={`Edit label: ${field.key}`}
                   value={field.label}
                   onChange={(event) =>
                     updateFieldLabel(index, event.target.value)
                   }
-                  className="min-w-0 flex-1 rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                  className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  <Button
                     type="button"
                     aria-label={`Move ${field.key} up`}
                     disabled={index === 0}
                     onClick={() => updateFieldOrder(index, -1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Move ${field.key} down`}
                     disabled={index === fields.length - 1}
                     onClick={() => updateFieldOrder(index, 1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronDown className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Remove ${field.key}`}
                     disabled={fields.length <= 1}
                     onClick={() => removeField(index)}
-                    className="rounded p-1 text-status-rejected hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1 text-status-rejected"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))
           )}
-        </div>
+        </Card>
 
-        <div>
-          <label
-            htmlFor="template-closing"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Closing wording
-          </label>
-          <textarea
+        <Field label="Closing wording" htmlFor="template-closing">
+          <Textarea
             id="template-closing"
             rows={2}
             value={closing}
@@ -318,23 +314,18 @@ export function LeaveDocumentTemplateEditor({
               setClosing(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-4">
+        <Card className="shadow-none">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-text-primary">
               Signature areas
             </h3>
-            <button
-              type="button"
-              onClick={addSignatureArea}
-              className="flex items-center gap-1 rounded-md bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-            >
+            <Button type="button" onClick={addSignatureArea} variant="secondary" size="sm">
               <Plus className="h-4 w-4" />
               Add signature
-            </button>
+            </Button>
           </div>
 
           {signatureAreas.length === 0 ? (
@@ -345,81 +336,74 @@ export function LeaveDocumentTemplateEditor({
             signatureAreas.map((area, index) => (
               <div
                 key={`${area.label}-${index}`}
-                className="mb-2 flex items-center gap-2 rounded-md border border-border-default bg-surface-page p-2"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-border-default bg-surface-page p-2"
               >
-                <input
+                <Input
                   aria-label={`Signature area ${index + 1} label`}
                   value={area.label}
                   onChange={(event) =>
                     updateSignatureLabel(index, event.target.value)
                   }
-                  className="min-w-0 flex-1 rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                  className="w-auto min-w-0 flex-1 px-2 py-1.5"
                 />
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
+                  <Button
                     type="button"
                     aria-label={`Move signature ${index + 1} up`}
                     disabled={index === 0}
                     onClick={() => updateSignatureOrder(index, -1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronUp className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Move signature ${index + 1} down`}
                     disabled={index === signatureAreas.length - 1}
                     onClick={() => updateSignatureOrder(index, 1)}
-                    className="rounded p-1 text-text-secondary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1"
                   >
                     <ChevronDown className="h-4 w-4" />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     aria-label={`Remove signature ${index + 1}`}
                     onClick={() => removeSignature(index)}
-                    className="rounded p-1 text-status-rejected hover:bg-surface-hover"
+                    variant="ghost"
+                    size="icon"
+                    className="h-auto w-auto p-1 text-status-rejected"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))
           )}
-        </div>
+        </Card>
 
-        <div>
-          <label
-            htmlFor="template-footer"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Footer
-          </label>
-          <input
+        <Field label="Footer" htmlFor="template-footer">
+          <Input
             id="template-footer"
             value={footer}
             onChange={(event) => {
               setFooter(event.target.value);
               setSaved(false);
             }}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
-        </div>
+        </Field>
 
         {error && (
-          <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-            {error}
-          </div>
+          <FormError>{error}</FormError>
         )}
 
         <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" loading={loading}>
             {loading ? "Saving..." : "Save template"}
-          </button>
+          </Button>
           {saved && (
             <span className="text-sm text-text-muted">
               Template saved — preview reflects the saved configuration.

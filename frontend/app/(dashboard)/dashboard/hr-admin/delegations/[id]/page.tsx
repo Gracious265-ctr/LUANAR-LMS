@@ -6,6 +6,7 @@ import { DelegationReview } from "@/components/hr/delegation-review";
 import { getCurrentUser } from "@/lib/auth";
 import { getDelegation } from "@/lib/delegations";
 import { listEmployees } from "@/lib/employees";
+import { Card } from "@/components/ui/card";
 
 export default async function DelegationDetailPage({
   params,
@@ -40,7 +41,7 @@ export default async function DelegationDetailPage({
   return (
     <div className="space-y-6">
       {employeesError && (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <Link
             href="/dashboard/hr-admin/delegations"
             className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
@@ -48,10 +49,10 @@ export default async function DelegationDetailPage({
             <ArrowLeft className="h-4 w-4" />
             Back to delegations
           </Link>
-          <div className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+          <div className="mt-4 rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
             {employeesError}
           </div>
-        </div>
+        </Card>
       )}
       {!employeesError && (
         <DelegationReview

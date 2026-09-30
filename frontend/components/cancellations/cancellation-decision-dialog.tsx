@@ -1,11 +1,19 @@
 "use client";
 
 import { Check, Loader2, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { postCancellationDecision } from "@/lib/cancellations/service";
 import type { CancellationDetail } from "@/lib/cancellations/types";
 import { cn } from "@/lib/utils";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MAX_COMMENT = 1000;
 
@@ -50,32 +58,11 @@ function CancellationDecisionDialogInner({
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const titleId = useId();
+  const fieldId = useId();
   const counterId = useId();
   const errorId = useId();
 
   const requiresComment = kind === "reject";
-  const previousFocus = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocus.current = document.activeElement as HTMLElement | null;
-    requestAnimationFrame(() => textareaRef.current?.focus());
-    return () => {
-      previousFocus.current?.focus?.();
-    };
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
-    },
-    [busy, onClose]
-  );
-
-  useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
 
   const validatedConfirm = requiresComment ? comment.trim().length > 0 : true;
 
@@ -117,37 +104,28 @@ function CancellationDecisionDialogInner({
   const label = isApprove ? "Approve cancellation" : "Reject cancellation";
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[12vh]"
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !busy) onClose();
+      }}
     >
-      <div
-        data-testid="cancellation-decision-overlay"
-        onClick={() => !busy && onClose()}
-        className="fixed inset-0 bg-black/40"
-        aria-hidden="true"
-      />
-      <div className="relative w-full max-w-lg rounded-xl border border-border-default bg-surface-card p-6 shadow-lg">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 id={titleId} className="text-lg font-semibold text-text-primary">
-              {label}
-            </h3>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {data.application.reference} · {data.application.leave_type.name || "Leave"}
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close dialog"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+      <DialogContent
+        className="gap-0 max-h-[calc(100vh-4rem)] overflow-y-auto"
+        showCloseButton={!busy}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          textareaRef.current?.focus();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busy) event.preventDefault();
+        }}
+      >
+        <div>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription className="mt-0.5">
+            {data.application.reference} · {data.application.leave_type.name || "Leave"}
+          </DialogDescription>
         </div>
 
         <p className="mt-4 text-sm text-text-secondary">
@@ -159,21 +137,21 @@ function CancellationDecisionDialogInner({
         </p>
 
         <p className="mt-4 text-sm font-medium text-text-primary">Employee&apos;s reason</p>
-        <p className="mt-1 whitespace-pre-wrap rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+        <p className="mt-1 whitespace-pre-wrap rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
           {data.request.reason}
         </p>
 
         <form onSubmit={submit} className="mt-4">
           <div>
             <label
-              htmlFor={`${titleId}-comment`}
+              htmlFor={fieldId}
               className="mb-1 block text-sm font-medium text-text-primary"
             >
               {isApprove ? "Comment (optional)" : "Reason (required)"}
             </label>
             <textarea
               ref={textareaRef}
-              id={`${titleId}-comment`}
+              id={fieldId}
               name="comment"
               rows={4}
               maxLength={MAX_COMMENT}
@@ -207,23 +185,20 @@ function CancellationDecisionDialogInner({
 
           <div aria-live="polite">
             {error && !fieldError && (
-              <div
-                role="alert"
-                className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
-              >
+              <Alert tone="rejected" className="mt-4">
                 {error}
-              </div>
+              </Alert>
             )}
           </div>
 
           <div className="mt-5 flex items-center gap-3">
-            <button
+            <Button
               type="submit"
+              variant="secondary"
               disabled={busy || !validatedConfirm}
               className={cn(
-                "inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 font-medium focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
                 isApprove
-                  ? "bg-[#009119] text-white hover:bg-[#008017] focus:ring-[#009119]/40"
+                  ? "border border-transparent bg-[#009119] text-white hover:bg-[#008017]"
                   : "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover"
               )}
             >
@@ -235,15 +210,10 @@ function CancellationDecisionDialogInner({
                 <X className="h-4 w-4" aria-hidden="true" />
               )}
               {busy ? "Submitting…" : isApprove ? "Approve" : "Reject"}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onClose}
-              className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            </Button>
+            <Button type="button" disabled={busy} onClick={onClose} variant="secondary">
               Cancel
-            </button>
+            </Button>
             {data.leave_started && (
               <span className="inline-flex items-center gap-1 text-xs text-status-pending">
                 <RefreshCw className="h-3 w-3" aria-hidden="true" />
@@ -252,7 +222,7 @@ function CancellationDecisionDialogInner({
             )}
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -3,6 +3,7 @@ import { UserCheck } from "lucide-react";
 import { CoverRequestForm } from "@/components/approvals/cover-request-form";
 import { DelegationTable } from "@/components/hr/delegation-table";
 import type { DelegateCandidate, Delegation } from "@/lib/delegations";
+import { Card } from "@/components/ui/card";
 
 export const COVER_BASE_HREF = "/dashboard/cover";
 
@@ -27,7 +28,7 @@ export function CoverPanel({
 }) {
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-1 text-lg font-semibold text-text-primary">
           Request cover
         </h3>
@@ -36,9 +37,9 @@ export function CoverPanel({
           can nominate a delegate, or leave the choice to HR.
         </p>
         <CoverRequestForm candidates={candidates} />
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex items-center gap-2">
           <UserCheck className="h-5 w-5 text-text-secondary" />
           <h3 className="text-lg font-semibold text-text-primary">
@@ -46,7 +47,7 @@ export function CoverPanel({
           </h3>
         </div>
         {error || !delegations ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {error || "Unable to load your delegations. Please try again."}
           </div>
         ) : (
@@ -56,7 +57,7 @@ export function CoverPanel({
             emptyHint="You have no delegation requests. Use the form above when you need someone to approve while you are away."
           />
         )}
-      </div>
+      </Card>
     </div>
   );
 }

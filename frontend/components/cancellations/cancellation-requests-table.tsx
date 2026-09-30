@@ -11,7 +11,18 @@ import type {
   CancellationRow,
   CancellationTab,
 } from "@/lib/cancellations/types";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Pagination } from "@/components/ui/pagination";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card } from "@/components/ui/card";
 
 /**
  * Approver queue of cancellation requests (Unit 18, spec 2.3). Two-inner tabs
@@ -63,59 +74,37 @@ export function CancellationRequestsTable() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
+      <Card className="text-center">
         <p className="text-sm text-status-rejected">{error}</p>
-        <button
-          type="button"
-          onClick={retry}
-          className="mt-4 inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
+        <Button type="button" onClick={retry} variant="primary" className="mt-4">
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
           Retry
-        </button>
-      </div>
+        </Button>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div
-        role="tablist"
-        aria-label="Cancellation requests"
-        className="inline-flex rounded-lg border border-border-default bg-surface-card p-1"
+      <Tabs
+        value={tab}
+        className="contents"
+        onValueChange={(next) => switchTab(next as CancellationTab)}
       >
-        <button
-          role="tab"
-          aria-selected={tab === "pending"}
-          onClick={() => switchTab("pending")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-            tab === "pending"
-              ? "bg-brand-primary-subtle text-brand-primary"
-              : "text-text-secondary hover:text-text-primary"
-          )}
-        >
-          Pending
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "decided"}
-          onClick={() => switchTab("decided")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-            tab === "decided"
-              ? "bg-brand-primary-subtle text-brand-primary"
-              : "text-text-secondary hover:text-text-primary"
-          )}
-        >
-          Decided by me
-        </button>
-      </div>
+        <TabsList variant="segmented" aria-label="Cancellation requests">
+          <TabsTrigger variant="segmented" value="pending">
+            Pending
+          </TabsTrigger>
+          <TabsTrigger variant="segmented" value="decided">
+            Decided by me
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {loading ? (
         <SkeletonRows count={4} />
       ) : !data || data.results.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-10 text-center shadow-subtle">
+        <Card className="text-center">
           <SlidersHorizontal
             className="mx-auto h-8 w-8 text-text-muted"
             aria-hidden="true"
@@ -130,10 +119,10 @@ export function CancellationRequestsTable() {
               ? "Requests will appear here when an employee asks to cancel approved leave."
               : "Requests you have decided on will appear here."}
           </p>
-        </div>
+        </Card>
       ) : (
         <>
-          <Table rows={data.results} />
+          <CancellationTable rows={data.results} />
           <Pagination
             page={page}
             hasPrevious={Boolean(data.previous) || page > 1}
@@ -147,80 +136,80 @@ export function CancellationRequestsTable() {
   );
 }
 
-function Table({ rows }: { rows: CancellationRow[] }) {
+function CancellationTable({ rows }: { rows: CancellationRow[] }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle lg:block">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-              <th className="px-4 py-3 font-medium">Reference</th>
-              <th className="px-4 py-3 font-medium">Employee</th>
-              <th className="px-4 py-3 font-medium">Leave type</th>
-              <th className="px-4 py-3 font-medium">Leave dates</th>
-              <th className="px-4 py-3 font-medium">Days</th>
-              <th className="px-4 py-3 font-medium">Requested on</th>
-              <th className="px-4 py-3 font-medium">Current stage</th>
-              <th className="px-4 py-3 font-medium">Starts</th>
-              <th className="w-8 px-2 py-3" />
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="hidden overflow-hidden lg:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Reference</TableHead>
+              <TableHead>Employee</TableHead>
+              <TableHead>Leave type</TableHead>
+              <TableHead>Leave dates</TableHead>
+              <TableHead>Days</TableHead>
+              <TableHead>Requested on</TableHead>
+              <TableHead>Current stage</TableHead>
+              <TableHead>Starts</TableHead>
+              <TableHead className="w-8 px-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.request_id} row={row} desktop />
+              <CancellationTableRow key={row.request_id} row={row} desktop />
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
       <ul className="space-y-3 lg:hidden">
         {rows.map((row) => (
-          <TableRow key={row.request_id} row={row} />
+          <CancellationTableRow key={row.request_id} row={row} />
         ))}
       </ul>
     </>
   );
 }
 
-function TableRow({ row, desktop }: { row: CancellationRow; desktop?: boolean }) {
+function CancellationTableRow({ row, desktop }: { row: CancellationRow; desktop?: boolean }) {
   const body = (
     <>
-      <td className="px-4 py-3 font-medium text-text-primary">{row.reference}</td>
-      <td className="px-4 py-3">
+      <TableCell className="font-medium text-text-primary">{row.reference}</TableCell>
+      <TableCell>
         <span className="font-medium text-text-primary">{row.employee_name}</span>
         {desktop && (
           <span className="mt-0.5 block text-xs text-text-muted">
             {row.leave_type.name || "—"}
           </span>
         )}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">{row.leave_type.name || "—"}</td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">{row.leave_type.name || "—"}</TableCell>
+      <TableCell className="text-text-secondary">
         {formatDate(row.start_date) || "—"} → {formatDate(row.end_date) || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">{row.working_days}</td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">{row.working_days}</TableCell>
+      <TableCell className="text-text-secondary">
         {formatDateTime(row.requested_at) || "—"}
-      </td>
-      <td className="px-4 py-3 text-text-secondary">
+      </TableCell>
+      <TableCell className="text-text-secondary">
         {row.current_stage_role_label || "—"}
-      </td>
-      <td className="px-4 py-3">
+      </TableCell>
+      <TableCell>
         <StartsLabel row={row} />
-      </td>
+      </TableCell>
       {desktop && (
-        <td className="px-2 py-3">
+        <TableCell className="px-2">
           <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        </td>
+        </TableCell>
       )}
     </>
   );
 
   if (desktop) {
     return (
-      <tr className="border-b border-border-default last:border-b-0 transition-colors hover:bg-surface-hover">
+      <TableRow>
         <RowLink row={row}>{body}</RowLink>
-      </tr>
+      </TableRow>
     );
   }
 
@@ -293,41 +282,5 @@ function SkeletonRows({ count }: { count: number }) {
         />
       ))}
     </div>
-  );
-}
-
-function Pagination({
-  page,
-  hasPrevious,
-  hasNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <nav aria-label="Pagination" className="flex items-center justify-between">
-      <button
-        type="button"
-        disabled={!hasPrevious}
-        onClick={onPrevious}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Previous
-      </button>
-      <span className="text-sm text-text-muted">Page {page}</span>
-      <button
-        type="button"
-        disabled={!hasNext}
-        onClick={onNext}
-        className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        Next
-      </button>
-    </nav>
   );
 }

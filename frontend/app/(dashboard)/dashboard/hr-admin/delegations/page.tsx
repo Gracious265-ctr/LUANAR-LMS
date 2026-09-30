@@ -10,6 +10,7 @@ import {
   listDelegations,
   type DelegationState,
 } from "@/lib/delegations";
+import { Card } from "@/components/ui/card";
 
 type StateFilter = DelegationState | "";
 
@@ -55,7 +56,7 @@ export default async function DelegationsPage({
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Delegations</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Delegations</h2>
           <p className="text-text-secondary">
             Review approver unavailability requests, approve a delegate, reject
             with a reason, or cancel active cover.
@@ -86,18 +87,18 @@ export default async function DelegationsPage({
         ))}
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           {state ? `${delegationStateLabel(state)} delegations` : "All delegations"}
         </h3>
         {delegationsError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {delegationsError}
           </div>
         ) : delegations ? (
           <DelegationTable delegations={delegations.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

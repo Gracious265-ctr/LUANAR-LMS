@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { LeaveRuleForm } from "@/components/hr/leave-rule-form";
 import { getCurrentUser } from "@/lib/auth";
 import { listLeaveTypes } from "@/lib/leave-rules";
+import { Card } from "@/components/ui/card";
 
 export default async function NewLeaveRulePage() {
   const user = await getCurrentUser();
@@ -34,7 +35,7 @@ export default async function NewLeaveRulePage() {
           <ArrowLeft className="h-4 w-4" />
           Back to leave rules
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">New rule</h2>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">New rule</h2>
         <p className="text-text-secondary">
           Define how a leave type can be taken, effective from a chosen date.
           A future-effective rule joins the current one without changing it.
@@ -42,14 +43,14 @@ export default async function NewLeaveRulePage() {
       </div>
 
       {typesError && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+        <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
           {typesError}
         </div>
       )}
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <LeaveRuleForm leaveTypes={leaveTypes?.results ?? []} />
-      </div>
+      </Card>
     </div>
   );
 }

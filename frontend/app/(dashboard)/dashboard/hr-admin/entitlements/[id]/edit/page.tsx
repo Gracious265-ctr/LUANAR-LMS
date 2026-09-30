@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { EntitlementForm } from "@/components/hr/entitlement-form";
 import { getCurrentUser } from "@/lib/auth";
 import { getEntitlement } from "@/lib/entitlements";
+import { Card } from "@/components/ui/card";
 
 export default async function EditEntitlementPage({
   params,
@@ -38,7 +39,7 @@ export default async function EditEntitlementPage({
           <ArrowLeft className="h-4 w-4" />
           Back to entitlements
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           Edit entitlement
         </h2>
         <p className="text-text-secondary">
@@ -47,13 +48,13 @@ export default async function EditEntitlementPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <EntitlementForm
           entitlement={entitlement}
           endpoint={`/api/hr/entitlements/${entitlement.id}`}
           method="PATCH"
         />
-      </div>
+      </Card>
     </div>
   );
 }

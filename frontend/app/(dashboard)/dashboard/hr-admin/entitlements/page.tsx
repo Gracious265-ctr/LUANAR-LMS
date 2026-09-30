@@ -9,6 +9,9 @@ import {
   resolveEntitlement,
 } from "@/lib/entitlements";
 import { currentDateIso } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 export default async function EntitlementsPage({
   searchParams,
@@ -49,7 +52,7 @@ export default async function EntitlementsPage({
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Entitlements</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Entitlements</h2>
           <p className="text-text-secondary">
             Configure grade ranges and annual leave entitlements. Grade ranges
             must not overlap; change an existing band by editing its rule.
@@ -78,19 +81,16 @@ export default async function EntitlementsPage({
           </p>
           <div className="relative mt-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-            <input
+            <Input
               name="grade"
               defaultValue={queryGrade}
               placeholder="e.g. G"
-              className="w-full rounded-md border border-input-border bg-input-background py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              className="pl-9 pr-3"
             />
           </div>
-          <button
-            type="submit"
-            className="mt-3 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Button type="submit" variant="secondary" className="mt-3">
             Resolve
-          </button>
+          </Button>
 
           {queryGrade && (
             <div className="mt-4 rounded-md bg-brand-primary-subtle p-3 text-sm">
@@ -114,12 +114,12 @@ export default async function EntitlementsPage({
           )}
         </form>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle lg:col-span-2">
+        <Card className="lg:col-span-2">
           <h3 className="mb-4 text-lg font-semibold text-text-primary">
             Configuration
           </h3>
           {listError ? (
-            <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+            <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
               {listError}
             </div>
           ) : entitlements ? (
@@ -128,7 +128,7 @@ export default async function EntitlementsPage({
               today={currentDateIso()}
             />
           ) : null}
-        </div>
+        </Card>
       </div>
     </div>
   );

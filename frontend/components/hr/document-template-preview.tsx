@@ -32,7 +32,7 @@ export function DocumentTemplatePreview({
         </p>
       )}
 
-      <h3 className="mb-6 text-center text-2xl font-bold tracking-wide">
+      <h3 className="mb-6 text-center text-xl font-semibold tracking-tight">
         {template.title}
       </h3>
 

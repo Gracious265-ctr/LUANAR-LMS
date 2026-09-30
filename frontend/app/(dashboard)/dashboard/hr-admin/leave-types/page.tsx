@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { LeaveTypeTable } from "@/components/hr/leave-type-table";
 import { getCurrentUser } from "@/lib/auth";
 import { listLeaveTypes } from "@/lib/leave-rules";
+import { Card } from "@/components/ui/card";
 
 export default async function LeaveTypesPage() {
   const user = await getCurrentUser();
@@ -28,7 +29,7 @@ export default async function LeaveTypesPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Leave types</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave types</h2>
           <p className="text-text-secondary">
             Manage the registry of leave types the university offers. Leave
             rules for each type are configured from the Leave Rules page.
@@ -43,18 +44,18 @@ export default async function LeaveTypesPage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Leave types
         </h3>
         {listError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {listError}
           </div>
         ) : leaveTypes ? (
           <LeaveTypeTable leaveTypes={leaveTypes.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

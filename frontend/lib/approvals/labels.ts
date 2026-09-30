@@ -10,11 +10,12 @@ import {
 } from "lucide-react";
 
 import type { ApprovalAction, ApprovalStatus } from "./types";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export interface StatusMeta {
   label: string;
   icon: LucideIcon;
-  badgeClass: string;
+  badgeTone: BadgeTone;
   textClass: string;
   dotClass: string;
 }
@@ -23,49 +24,49 @@ export const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
   pending: {
     label: "Pending Approval",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
   correction_required: {
     label: "Correction Required",
     icon: RotateCcw,
-    badgeClass: "bg-status-correction-subtle text-status-correction",
+    badgeTone: "correction",
     textClass: "text-status-correction",
     dotClass: "bg-status-correction",
   },
   cancelled: {
     label: "Cancelled",
     icon: XCircle,
-    badgeClass: "bg-status-cancelled-subtle text-status-cancelled",
+    badgeTone: "cancelled",
     textClass: "text-status-cancelled",
     dotClass: "bg-status-cancelled",
   },
   draft: {
     label: "Draft",
     icon: FileText,
-    badgeClass: "bg-surface-secondary text-text-secondary",
+    badgeTone: "draft",
     textClass: "text-text-secondary",
     dotClass: "bg-text-muted",
   },
   submitted: {
     label: "Submitted",
     icon: Clock,
-    badgeClass: "bg-surface-secondary text-text-secondary",
+    badgeTone: "draft",
     textClass: "text-text-secondary",
     dotClass: "bg-text-muted",
   },
@@ -75,8 +76,8 @@ export interface ActionMeta {
   label: string;
   shortLabel: string;
   icon: LucideIcon;
-  /** Classes used by the action buttons once a decision is recorded. */
-  badgeClass: string;
+  /** The `tone` key this action renders with on an <ActionBadge>. */
+  badgeTone: BadgeTone;
   /** Solid button classes for the decision panel / dialog confirm. */
   buttonClass: string;
 }
@@ -86,7 +87,7 @@ export const ACTION_META: Record<ApprovalAction, ActionMeta> = {
     label: "Approved",
     shortLabel: "Approve",
     icon: Check,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     buttonClass:
       "bg-[#009119] text-white hover:bg-[#008017] focus:ring-2 focus:ring-[#009119]/40",
   },
@@ -94,7 +95,7 @@ export const ACTION_META: Record<ApprovalAction, ActionMeta> = {
     label: "Rejected",
     shortLabel: "Reject",
     icon: X,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     buttonClass:
       "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover",
   },
@@ -102,7 +103,7 @@ export const ACTION_META: Record<ApprovalAction, ActionMeta> = {
     label: "Returned for Correction",
     shortLabel: "Return for Correction",
     icon: RotateCcw,
-    badgeClass: "bg-status-correction-subtle text-status-correction",
+    badgeTone: "correction",
     buttonClass:
       "border border-status-correction bg-status-correction-subtle text-status-correction hover:bg-surface-hover",
   },

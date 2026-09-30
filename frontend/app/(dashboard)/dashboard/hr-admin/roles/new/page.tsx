@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { ApproverRoleForm } from "@/components/hr/approver-role-form";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function NewRolePage() {
   const user = await getCurrentUser();
@@ -25,7 +26,9 @@ export default async function NewRolePage() {
           <ArrowLeft className="h-4 w-4" />
           Back to roles
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">New role</h2>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
+          New role
+        </h2>
         <p className="text-text-secondary">
           Define an approver position. Once it exists you can name it in a
           workflow stage, staff it on a team, or give one person it
@@ -33,9 +36,9 @@ export default async function NewRolePage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <ApproverRoleForm />
-      </div>
+      </Card>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { EntitlementForm } from "@/components/hr/entitlement-form";
 import { getCurrentUser } from "@/lib/auth";
+import { Card } from "@/components/ui/card";
 
 export default async function NewEntitlementPage() {
   const user = await getCurrentUser();
@@ -25,7 +26,7 @@ export default async function NewEntitlementPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to entitlements
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
           New entitlement
         </h2>
         <p className="text-text-secondary">
@@ -34,9 +35,9 @@ export default async function NewEntitlementPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <EntitlementForm endpoint="/api/hr/entitlements" method="POST" />
-      </div>
+      </Card>
     </div>
   );
 }

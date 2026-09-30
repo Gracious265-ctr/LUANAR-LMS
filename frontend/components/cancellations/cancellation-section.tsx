@@ -14,6 +14,7 @@ import type {
   SubmitCancellationResult,
 } from "@/lib/cancellations/types";
 import type { ApplicationSummary } from "@/lib/tracking/types";
+import { Button } from "@/components/ui/button";
 
 import { CancelApplicationDialog } from "./cancel-application-dialog";
 import { CancellationCard } from "./cancellation-card";
@@ -102,14 +103,15 @@ export function CancellationSection({
     <div className="space-y-4">
       <div className="flex items-center justify-end gap-3">
         {action ? (
-          <button
+          <Button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground transition-colors hover:bg-button-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
+            variant="primary"
+            className="min-h-11"
           >
             <CalendarX2 className="h-4 w-4" aria-hidden="true" />
             {actionLabel(action)}
-          </button>
+          </Button>
         ) : (
           eligibility?.cancellation_blocked_reason && (
             <p className="text-xs text-text-muted">

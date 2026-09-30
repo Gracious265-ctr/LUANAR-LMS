@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -143,5 +143,26 @@ describe("DashboardShell", () => {
     expect(
       screen.queryByRole("button", { name: /theme|dark mode/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("renders the hide toggle at the top of the sidebar", () => {
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
+    expect(nav).toHaveClass("w-64");
+  });
+
+  it("collapses and re-expands the sidebar from the top toggle", () => {
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(nav).toHaveClass("w-16");
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+    expect(nav).toHaveClass("w-64");
+    expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
   });
 });

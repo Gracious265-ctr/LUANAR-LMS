@@ -12,6 +12,7 @@ import {
 import type { CancellationDetail } from "@/lib/cancellations/types";
 import { formatDate } from "@/lib/tracking/format";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 import { CancellationDecisionDialog } from "./cancellation-decision-dialog";
 import { CancellationStageStepper } from "./cancellation-stage-stepper";
@@ -122,7 +123,7 @@ export function CancellationDetailPanel({
         {data.leave_started && (
           <div
             role="note"
-            className="flex items-start gap-2 rounded-md bg-status-pending-subtle p-3 text-sm text-status-pending"
+            className="flex items-start gap-2 rounded-lg bg-status-pending-subtle p-3 text-sm text-status-pending"
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>Leave has started; this request can only be rejected.</p>
@@ -210,7 +211,7 @@ function CancellationDecisionSection({
 }) {
   if (!data.can_decide) {
     return (
-      <div className="rounded-md border border-border-default bg-surface-muted p-3">
+      <div className="rounded-lg border border-border-default bg-surface-muted p-3">
         <p className="text-sm text-text-secondary">
           {data.my_decision ? (
             <>
@@ -240,24 +241,28 @@ function CancellationDecisionSection({
 
   return (
     <div className="space-y-2.5">
-      <button
+      <Button
         type="button"
         disabled={data.leave_started}
         title={data.leave_started ? "Leave has started; this request can only be rejected." : undefined}
         onClick={onApprove}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[#009119] px-4 py-2.5 font-medium text-white hover:bg-[#008017] focus:outline-none focus:ring-2 focus:ring-[#009119]/40 disabled:cursor-not-allowed disabled:opacity-50"
+        variant="primary"
+        size="lg"
+        className="w-full bg-[#009119] text-white hover:bg-[#008017] border border-transparent"
       >
         <Check className="h-4 w-4" aria-hidden="true" />
         Approve
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         onClick={onReject}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2.5 font-medium text-status-rejected hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-status-rejected/40"
+        variant="secondary"
+        size="lg"
+        className="w-full border-status-rejected bg-status-rejected-subtle text-status-rejected"
       >
         <XCircle className="h-4 w-4" aria-hidden="true" />
         Reject
-      </button>
+      </Button>
     </div>
   );
 }

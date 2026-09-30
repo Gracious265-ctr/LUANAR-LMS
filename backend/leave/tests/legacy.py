@@ -1688,17 +1688,28 @@ class SupportingDocumentSerializationTest(TestCase):
 
     def test_file_url_is_re_signed_from_file_path(self):
         with mock.patch(
-            "leave.serializers.signed_document_url",
+            "leave.serializers.safe_signed_document_url",
             return_value="fresh://signed-url",
         ) as signed:
             data = SupportingDocumentSerializer(self.doc).data
-        signed.assert_called_once_with("leave-documents/abcd/notes.pdf")
+        signed.assert_called_once_with("leave-documents/abcd/notes.pdf", fallback=self.doc.file_url)
         self.assertEqual(data["file_url"], "fresh://signed-url")
 
     def test_serialization_falls_back_to_stored_url_when_storage_unconfigured(self):
         with mock.patch(
-            "leave.serializers.signed_document_url",
+            "leave.services.storage.signed_document_url",
             side_effect=ValueError("Supabase credentials are not configured."),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertEqual(data["file_url"], "stale://signed-url")
+
+    def test_serialization_falls_back_to_stored_url_when_object_missing(self):
+        """A missing storage object (404) must not 500 the document list."""
+        from storage3.exceptions import StorageApiError
+
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            side_effect=StorageApiError("Object not found", code="404", status=404),
         ):
             data = SupportingDocumentSerializer(self.doc).data
         self.assertEqual(data["file_url"], "stale://signed-url")
@@ -1727,7 +1738,7 @@ class SupportingDocumentSerializationTest(TestCase):
 
     def test_stored_url_is_never_used_for_serialization(self):
         with mock.patch(
-            "leave.serializers.signed_document_url",
+            "leave.serializers.safe_signed_document_url",
             return_value="fresh://signed-url",
         ):
             data = SupportingDocumentSerializer(self.doc).data

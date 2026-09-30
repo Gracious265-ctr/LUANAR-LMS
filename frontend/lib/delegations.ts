@@ -6,7 +6,7 @@ import type { DelegationState } from "./delegations-client";
 export { DELEGATION_STATE_CODES } from "./delegations-client";
 export { DELEGATION_STATE_LABELS } from "./delegations-client";
 export { delegationStateLabel } from "./delegations-client";
-export { delegationStateBadgeClass } from "./delegations-client";
+export { delegationStateTone } from "./delegations-client";
 
 export type { DelegationState } from "./delegations-client";
 

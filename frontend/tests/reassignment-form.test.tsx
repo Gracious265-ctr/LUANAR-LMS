@@ -1,10 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { ReassignmentForm } from "@/components/hr/reassignment-form";
 import type { Employee } from "@/lib/employees";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
 import type { PendingApplication } from "@/lib/reassignments";
+import { openSelect, selectOption } from "./helpers/select";
 
 vi.mock("@/lib/reassignments-client", async (importOriginal) => {
   const actual =
@@ -85,18 +87,15 @@ describe("ReassignmentForm", () => {
     ).toHaveAttribute("required");
   });
 
-  it("offers approver-role users except the applicant", () => {
+  it("offers approver-role users except the applicant", async () => {
+    const user = userEvent.setup();
     render(<ReassignmentForm application={application} employees={employees} />);
 
-    const select = screen.getByLabelText("Replacement approver");
-    const options = Array.from(select.querySelectorAll("option")).map(
-      (option) => option.textContent
-    );
-    expect(options).toEqual([
-      "Select the replacement approver",
-      "Jane Dean",
-      "Bob HOD",
-    ]);
+    await openSelect(screen.getByLabelText("Replacement approver"), { user });
+
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent)
+    ).toEqual(["Select the replacement approver", "Jane Dean", "Bob HOD"]);
   });
 
   it("warns when the current approver is away and their delegate is acting", () => {
@@ -138,7 +137,8 @@ describe("ReassignmentForm", () => {
     expect(screen.queryByText(/acting as delegate/)).not.toBeInTheDocument();
   });
 
-  it("excludes the current approver from the options", () => {
+  it("excludes the current approver from the options", async () => {
+    const user = userEvent.setup();
     render(
       <ReassignmentForm
         application={{ ...application, current_approver: 3, current_approver_name: "Jane Dean" }}
@@ -146,19 +146,22 @@ describe("ReassignmentForm", () => {
       />
     );
 
-    const select = screen.getByLabelText("Replacement approver");
-    const options = Array.from(select.querySelectorAll("option")).map(
-      (option) => option.textContent
-    );
-    expect(options).toEqual(["Select the replacement approver", "Bob HOD"]);
+    await openSelect(screen.getByLabelText("Replacement approver"), { user });
+
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent)
+    ).toEqual(["Select the replacement approver", "Bob HOD"]);
   });
 
-  it("submits the reassign shape with application, to_approver, and reason", () => {
+  it("submits the reassign shape with application, to_approver, and reason", async () => {
+    const user = userEvent.setup();
     render(<ReassignmentForm application={application} employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Replacement approver"), {
-      target: { value: "3" },
-    });
+    await selectOption(
+      screen.getByLabelText("Replacement approver"),
+      "Jane Dean",
+      { user }
+    );
     fireEvent.change(screen.getByLabelText("Reassignment reason"), {
       target: { value: "Urgent case" },
     });
@@ -178,11 +181,14 @@ describe("ReassignmentForm", () => {
     vi.mocked(reassignApplication).mockRejectedValue(
       new Error("to_approver: The application is already assigned to this approver.")
     );
+    const user = userEvent.setup();
     render(<ReassignmentForm application={application} employees={employees} />);
 
-    fireEvent.change(screen.getByLabelText("Replacement approver"), {
-      target: { value: "3" },
-    });
+    await selectOption(
+      screen.getByLabelText("Replacement approver"),
+      "Jane Dean",
+      { user }
+    );
     fireEvent.change(screen.getByLabelText("Reassignment reason"), {
       target: { value: "Try again" },
     });

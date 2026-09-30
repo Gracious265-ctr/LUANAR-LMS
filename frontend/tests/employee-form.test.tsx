@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmployeeForm } from "@/components/hr/employee-form";
+import type { Employee } from "@/lib/employees";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
+import { openSelect, selectOption, selectedValue } from "./helpers/select";
 
-const HOD_EMPLOYEE = makeEmployee({
+const HOD_EMPLOYEE: Employee = makeEmployee({
   id: 1,
   user_id: 2,
   email: "hod@test.luanar",
@@ -15,9 +18,11 @@ const HOD_EMPLOYEE = makeEmployee({
   approver_roles: ["hod"],
   designation: "Head of Department",
   team: 4,
+  team_name: "Bunda College Faculty",
 });
 
-function submitPayload(role: string) {
+/** `roleLabel` is the visible option text, e.g. "Approver". */
+async function submitPayload(roleLabel: string) {
   fireEvent.change(screen.getByLabelText("First name"), {
     target: { value: "Test" },
   });
@@ -27,13 +32,17 @@ function submitPayload(role: string) {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: "new.employee@test.luanar" },
   });
-  fireEvent.change(screen.getByLabelText("Role"), { target: { value: role } });
+  await selectOption(screen.getByLabelText("Role"), roleLabel, { user });
   fireEvent.click(screen.getByRole("button", { name: "Create employee" }));
 }
+
+/** Shared so the module-level `submitPayload` can drive the Radix selects. */
+let user: ReturnType<typeof userEvent.setup>;
 
 describe("EmployeeForm", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    user = userEvent.setup();
   });
 
   afterEach(() => {
@@ -74,24 +83,20 @@ describe("EmployeeForm", () => {
     expect(gradeInput).toHaveValue("M");
   });
 
-  it("offers the three system roles, and no approver positions", () => {
+  it("offers the three system roles, and no approver positions", async () => {
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
 
-    const roleSelect = screen.getByLabelText("Role") as HTMLSelectElement;
-    const options = Array.from(roleSelect.options).map((option) => ({
-      value: option.value,
-      label: option.textContent,
-    }));
+    await openSelect(screen.getByLabelText("Role"));
+
+    const options = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
     // Approver positions are held on a team or granted institution-wide, so
     // they are not chosen here.
-    expect(options).toEqual([
-      { value: "employee", label: "Employee" },
-      { value: "approver", label: "Approver" },
-      { value: "hr", label: "Human Resources" },
-    ]);
+    expect(options).toEqual(["Employee", "Approver", "Human Resources"]);
   });
 
-  it("offers the teams it was given and defaults to no team", () => {
+  it("offers the teams it was given and defaults to no team", async () => {
     render(
       <EmployeeForm
         endpoint="/api/hr/employees"
@@ -103,14 +108,16 @@ describe("EmployeeForm", () => {
       />
     );
 
-    const teamSelect = screen.getByLabelText("Team") as HTMLSelectElement;
-    expect(teamSelect).toHaveValue("");
-    expect(
-      Array.from(teamSelect.options).map((option) => option.textContent)
-    ).toEqual(["No team", "Bunda College Faculty", "Registry"]);
+    const teamSelect = screen.getByLabelText("Team");
+    await openSelect(teamSelect);
+
+    const options = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(options).toEqual(["No team", "Bunda College Faculty", "Registry"]);
   });
 
-  it("says which teams would not route, rather than letting HR assign into a trap", () => {
+  it("says which teams would not route, rather than letting HR assign into a trap", async () => {
     // An employee in a team that is not routing only finds out when they
     // submit, which is a bad time to find out. The reason is on the option.
     render(
@@ -141,10 +148,13 @@ describe("EmployeeForm", () => {
       />
     );
 
-    const teamSelect = screen.getByLabelText("Team") as HTMLSelectElement;
-    expect(
-      Array.from(teamSelect.options).map((option) => option.textContent)
-    ).toEqual([
+    const teamSelect = screen.getByLabelText("Team");
+    await openSelect(teamSelect);
+
+    const options = screen
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(options).toEqual([
       "No team",
       "Registry",
       "New Team (still being set up)",
@@ -166,7 +176,9 @@ describe("EmployeeForm", () => {
       />
     );
 
-    expect(screen.getByLabelText("Team")).toHaveValue("4");
+    expect(selectedValue(screen.getByLabelText("Team"))).toBe(
+      "Bunda College Faculty"
+    );
   });
 
   it("submits the chosen team, and null when the employee has none", async () => {
@@ -178,8 +190,8 @@ describe("EmployeeForm", () => {
         teams={[{ id: 4, name: "Bunda College Faculty", status: "active", is_effective: true }]}
       />
     );
-    fireEvent.change(screen.getByLabelText("Team"), { target: { value: "4" } });
-    submitPayload("employee");
+    await selectOption(screen.getByLabelText("Team"), "Bunda College Faculty", { user });
+    await submitPayload("Employee");
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(
@@ -189,7 +201,7 @@ describe("EmployeeForm", () => {
 
     vi.mocked(fetch).mockClear();
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    submitPayload("employee");
+    await submitPayload("Employee");
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(
@@ -218,7 +230,7 @@ describe("EmployeeForm", () => {
     const { unmount } = render(
       <EmployeeForm endpoint="/api/hr/employees" method="POST" />
     );
-    expect(screen.getByLabelText("Role")).toHaveValue("employee");
+    expect(selectedValue(screen.getByLabelText("Role"))).toBe("Employee");
 
     unmount();
 
@@ -229,14 +241,14 @@ describe("EmployeeForm", () => {
         method="PATCH"
       />
     );
-    expect(screen.getByLabelText("Role")).toHaveValue("approver");
+    expect(selectedValue(screen.getByLabelText("Role"))).toBe("Approver");
   });
 
   it("submits the default Employee role in the payload", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
 
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    submitPayload("employee");
+    await submitPayload("Employee");
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     const init = vi.mocked(fetch).mock.calls[0][1];
@@ -247,7 +259,7 @@ describe("EmployeeForm", () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
 
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    submitPayload("approver");
+    await submitPayload("Approver");
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     const init = vi.mocked(fetch).mock.calls[0][1];

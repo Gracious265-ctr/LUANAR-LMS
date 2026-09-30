@@ -17,12 +17,13 @@ import type {
   TrackingStage,
   TrackingStatus,
 } from "./types";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export interface StatusMeta {
   label: string;
   icon: LucideIcon;
-  /** Badge classes (subtle fill + text), e.g. "bg-status-pending-subtle text-status-pending". */
-  badgeClass: string;
+  /** The `tone` key this status renders with on a <Badge>. */
+  badgeTone: BadgeTone;
   /** Text colour classes for status text elsewhere. */
   textClass: string;
   /** Solid dot colour used by the stepper / timeline. */
@@ -33,35 +34,35 @@ export const STATUS_META: Record<TrackingStatus, StatusMeta> = {
   pending: {
     label: "Pending Approval",
     icon: Clock,
-    badgeClass: "bg-status-pending-subtle text-status-pending",
+    badgeTone: "pending",
     textClass: "text-status-pending",
     dotClass: "bg-status-pending",
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
-    badgeClass: "bg-status-approved-subtle text-status-approved",
+    badgeTone: "approved",
     textClass: "text-status-approved",
     dotClass: "bg-status-approved",
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
-    badgeClass: "bg-status-rejected-subtle text-status-rejected",
+    badgeTone: "rejected",
     textClass: "text-status-rejected",
     dotClass: "bg-status-rejected",
   },
   correction_required: {
     label: "Correction Required",
     icon: RotateCcw,
-    badgeClass: "bg-status-correction-subtle text-status-correction",
+    badgeTone: "correction",
     textClass: "text-status-correction",
     dotClass: "bg-status-correction",
   },
   cancelled: {
     label: "Cancelled",
     icon: Ban,
-    badgeClass: "bg-status-cancelled-subtle text-status-cancelled",
+    badgeTone: "cancelled",
     textClass: "text-status-cancelled",
     dotClass: "bg-status-cancelled",
   },

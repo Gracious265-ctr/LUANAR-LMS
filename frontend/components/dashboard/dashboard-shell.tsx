@@ -3,18 +3,18 @@
 import React, { memo, useCallback, useState } from "react";
 import {
   ArrowLeftRight,
-  Bell,
   Calendar,
   CalendarDays,
   CalendarRange,
-  ChevronDown,
   ChevronsRight,
   ClipboardList,
   FileText,
   History,
   Home,
   LogOut,
+  ShieldCheck,
   Tags,
+  User,
   UserCheck,
   UserCog,
   Users,
@@ -25,6 +25,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
+import { Button } from "@/components/ui/button";
 
 interface User {
   id: number;
@@ -124,9 +125,9 @@ const Sidebar = memo(function Sidebar({
         open ? "w-64" : "w-16"
       )}
     >
-      <TitleSection open={open} user={user} />
+      <TitleSection open={open} user={user} onToggle={() => setOpen(!open)} />
 
-      <div className="flex-1 space-y-1 overflow-y-auto pb-20 pr-0.5">
+      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
         <Option
           Icon={Home}
           title="Dashboard"
@@ -164,15 +165,20 @@ const Sidebar = memo(function Sidebar({
         )}
         {showHR && (
           <>
+            {open && (
+              <div className="px-3 pb-1 pt-3 text-xs font-medium text-text-secondary">
+                Human Resources
+              </div>
+            )}
             <Option
-              Icon={Users}
+              Icon={ShieldCheck}
               title="HR Administration"
               href="/dashboard/hr-admin"
               currentPath={currentPath}
               open={open}
             />
             <Option
-              Icon={Users}
+              Icon={User}
               title="Employees"
               href="/dashboard/hr-admin/employees"
               currentPath={currentPath}
@@ -252,7 +258,6 @@ const Sidebar = memo(function Sidebar({
         )}
       </div>
 
-      <ToggleClose open={open} setOpen={setOpen} />
     </nav>
   );
 });
@@ -303,72 +308,46 @@ const Option = memo(function Option({
   );
 });
 
-const TitleSection = memo(function TitleSection({ open, user }: { open: boolean; user: User }) {
-  return (
-    <div className="mb-6 shrink-0 border-b border-border-default pb-4">
-      <div className="flex cursor-pointer items-center justify-between rounded-md p-2 transition-colors hover:bg-surface-hover">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 shrink-0 place-content-center rounded-lg bg-brand-primary text-brand-primary-foreground font-bold text-sm shadow-sm">
-            L
-          </div>
-
-          {open && (
-            <div className={cn("transition-opacity duration-200", open ? "opacity-100" : "opacity-0")}>
-              <div className="flex items-center gap-2">
-                <div>
-                  <span className="block text-sm font-semibold text-text-primary">
-                    {user.full_name}
-                  </span>
-                  <span className="block text-xs text-text-muted">
-                    {ROLE_LABELS[user.role] || user.role}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-{open && (
-        <ChevronDown className="h-4 w-4 text-text-muted" />
-      )}
-    </div>
-    </div>
-  );
-});
-
-const ToggleClose = memo(function ToggleClose({
+const TitleSection = memo(function TitleSection({
   open,
-  setOpen,
+  user,
+  onToggle,
 }: {
   open: boolean;
-  setOpen: (v: boolean) => void;
+  user: User;
+  onToggle: () => void;
 }) {
   return (
-    <button
-      onClick={() => setOpen(!open)}
-      aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-      className="absolute bottom-0 left-0 right-0 border-t border-border-default transition-colors hover:bg-surface-hover"
-    >
-      <div className="flex items-center p-3">
-        <div className="grid size-10 place-content-center">
-          <ChevronsRight
-            className={cn(
-              "h-4 w-4 transition-transform duration-200 text-text-muted",
-              open ? "rotate-180" : ""
-            )}
-          />
+    <div className="mb-6 shrink-0 border-b border-border-default pb-4">
+      {open ? (
+        <div className="flex items-center justify-between rounded-md p-2 transition-colors hover:bg-surface-hover">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 shrink-0 place-content-center rounded-lg bg-brand-primary text-brand-primary-foreground font-medium text-sm shadow-sm">
+              L
+            </div>
+
+            <div>
+              <span className="block text-sm font-semibold text-text-primary">
+                {user.full_name}
+              </span>
+              <span className="block text-xs text-text-muted">
+                {ROLE_LABELS[user.role] || user.role}
+              </span>
+            </div>
+          </div>
+
+          <Button type="button" onClick={onToggle} aria-label="Hide sidebar" title="Hide sidebar" variant="ghost" size="icon" className="h-auto w-auto p-1.5">
+            <ChevronsRight className="h-4 w-4 rotate-180" />
+          </Button>
         </div>
-        {open && (
-          <span
-            className={cn(
-              "text-sm font-medium text-text-secondary transition-opacity duration-200",
-              open ? "opacity-100" : "opacity-0"
-            )}
-          >
-            Hide
-          </span>
-        )}
-      </div>
-    </button>
+      ) : (
+        <div className="flex flex-col items-center py-1">
+          <Button type="button" onClick={onToggle} aria-label="Show sidebar" title="Show sidebar" variant="ghost" size="icon" className="size-9">
+            <ChevronsRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
   );
 });
 
@@ -382,24 +361,13 @@ const Header = memo(function Header({
   return (
     <header className="flex items-center justify-between px-6 py-4 bg-surface-card border-b border-border-default shadow-subtle">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Leave Management</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-text-primary">Leave Management</h1>
         <p className="text-sm text-text-secondary">Welcome back, {user.full_name}</p>
       </div>
       <div className="flex items-center gap-4">
-        <button
-          aria-label="Notifications"
-          className="relative p-2 rounded-lg bg-surface-card border border-border-default text-text-secondary hover:text-text-primary transition-colors"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute -top-1 -right-1 h-3 w-3 bg-status-rejected rounded-full" />
-        </button>
-        <button
-          onClick={onLogout}
-          aria-label="Sign out"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-border-default bg-surface-card text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
-        >
+        <Button onClick={onLogout} aria-label="Sign out" variant="secondary" size="icon" className="size-10 rounded-lg">
           <LogOut className="h-4 w-4" />
-        </button>
+        </Button>
         <div className="flex items-center gap-3">
           <div className="text-right">
             <p className="text-sm font-medium text-text-primary">{user.full_name}</p>

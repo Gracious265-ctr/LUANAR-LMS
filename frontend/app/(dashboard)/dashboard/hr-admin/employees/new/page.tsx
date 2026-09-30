@@ -10,6 +10,7 @@ import {
 } from "@/lib/entitlements";
 import { listTeams } from "@/lib/teams";
 import type { TeamOption } from "@/lib/employees";
+import { Card } from "@/components/ui/card";
 
 const TEAMS_ERROR =
   "Teams could not be loaded, so this employee cannot be placed in a team. Reload the page, or create a team first.";
@@ -50,13 +51,13 @@ export default async function NewEmployeePage() {
           <ArrowLeft className="h-4 w-4" />
           Back to employees
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">New employee</h2>
+        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">New employee</h2>
         <p className="text-text-secondary">
           Create an employee record. A login account is created automatically.
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <EmployeeForm
           endpoint="/api/hr/employees"
           method="POST"
@@ -64,7 +65,7 @@ export default async function NewEmployeePage() {
           teams={teams}
           teamsError={teamsError}
         />
-      </div>
+      </Card>
     </div>
   );
 }

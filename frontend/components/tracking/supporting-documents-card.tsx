@@ -8,6 +8,7 @@ import { formatSize } from "@/lib/approvals/format";
 import { formatDateTime } from "@/lib/tracking/format";
 import type { TrackingDocument } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 /**
  * Read-only supporting documents card for the tracking detail page.
@@ -83,16 +84,17 @@ export function SupportingDocumentsCard({
                     : ""}
                 </p>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() =>
                   window.open(doc.file_url, "_blank", "noopener,noreferrer")
                 }
-                className="inline-flex items-center gap-1.5 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover transition-colors shrink-0"
+                variant="secondary"
+                size="sm"
               >
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                 Open
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -100,11 +102,12 @@ export function SupportingDocumentsCard({
 
       {archived.length > 0 && (
         <div className="mt-3 border-t border-border-default pt-2">
-          <button
+          <Button
             type="button"
             onClick={() => setArchiveOpen((open) => !open)}
             aria-expanded={archiveOpen}
-            className="flex w-full items-center justify-between rounded-md px-1.5 py-2 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+            variant="ghost"
+            className="h-auto w-full justify-between"
           >
             <span>
               Archived ({archived.length})
@@ -116,7 +119,7 @@ export function SupportingDocumentsCard({
               )}
               aria-hidden="true"
             />
-          </button>
+          </Button>
           {archiveOpen && (
             <ul className="mt-1 space-y-1">
               {archived.map((doc) => {
@@ -145,15 +148,17 @@ export function SupportingDocumentsCard({
                       </p>
                     </div>
                     {doc.retire_reason === "replaced" && (
-                      <button
+                      <Button
                         type="button"
                         onClick={() =>
                           window.open(doc.file_url, "_blank", "noopener,noreferrer")
                         }
-                        className="shrink-0 rounded-md border border-input-border bg-input-background px-2.5 py-1 text-xs font-medium text-text-primary hover:bg-surface-hover transition-colors"
+                        variant="secondary"
+                        size="sm"
+                        className="shrink-0"
                       >
                         Open
-                      </button>
+                      </Button>
                     )}
                   </li>
                 );

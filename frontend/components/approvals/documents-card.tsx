@@ -6,6 +6,8 @@ import { useState } from "react";
 import { formatDateTime, formatSize } from "@/lib/approvals/format";
 import { fetchDocumentDownload } from "@/lib/approvals/service";
 import type { ApprovalReview } from "@/lib/approvals/types";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 import { Panel } from "./panel";
 
@@ -51,26 +53,24 @@ export function DocumentsCard({ data }: { data: ApprovalReview }) {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => openDocument(doc.id)}
-                disabled={busyId !== null}
-                className="inline-flex items-center gap-1.5 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm font-medium text-text-primary hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button
+  type="button"
+  onClick={() => openDocument(doc.id)}
+  disabled={busyId !== null}
+  variant="secondary"
+  size="sm"
+>
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
                 {busyId === doc.id ? "Opening…" : "View"}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
       {error && (
-        <p
-          role="alert"
-          className="mt-3 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected"
-        >
+        <Alert tone="rejected" className="mt-3">
           {error}
-        </p>
+        </Alert>
       )}
     </Panel>
   );

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
+import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "./StatusBadge";
+import { Badge } from "@/components/ui/badge";
 
 export function TrackingHeader({
   data,
@@ -37,28 +39,29 @@ export function TrackingHeader({
               Last refreshed {formatDateTime(lastRefreshed.toISOString())}
             </p>
           )}
-          <button
+          <Button
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border-default bg-surface-card px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            variant="secondary"
+            className="min-h-11"
           >
             <meta.icon className="h-4 w-4" aria-hidden="true" />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="break-words font-mono text-lg font-bold text-text-primary">
+        <h1 className="break-words font-mono text-lg font-semibold text-text-primary">
           {application.reference_number}
         </h1>
         <StatusBadge status={status} />
         {data.has_open_cancellation_request && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
+          <Badge tone="pending">
             <Clock className="h-3.5 w-3.5" aria-hidden="true" />
             Cancellation requested
-          </span>
+          </Badge>
         )}
       </div>
 

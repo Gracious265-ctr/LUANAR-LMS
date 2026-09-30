@@ -6,7 +6,7 @@ import { ApprovalsList } from "@/components/approvals/approvals-list";
 import { CoverPanel } from "@/components/approvals/cover-panel";
 import { CancellationRequestsTable } from "@/components/cancellations/cancellation-requests-table";
 import type { DelegateCandidate, Delegation } from "@/lib/delegations";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type WorkspaceView = "applications" | "cancellations" | "cover";
 
@@ -43,34 +43,25 @@ export function ApprovalsWorkspace({
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Approvals</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-text-primary">Approvals</h1>
         <p className="text-sm text-text-secondary">
           Review and decide on leave applications and cancellation requests.
         </p>
       </div>
 
-      <div
-        role="tablist"
-        aria-label="Approvals workspace"
-        className="inline-flex rounded-lg border border-border-default bg-surface-card p-1"
+      <Tabs
+        value={view}
+        className="contents"
+        onValueChange={(next) => setView(next as WorkspaceView)}
       >
-        {tabs.map((tab) => (
-          <button
-            key={tab.value}
-            role="tab"
-            aria-selected={view === tab.value}
-            onClick={() => setView(tab.value)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-              view === tab.value
-                ? "bg-brand-primary-subtle text-brand-primary"
-                : "text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+        <TabsList variant="segmented" aria-label="Approvals workspace">
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.value} variant="segmented" value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {view === "applications" ? (
         <ApprovalsList headerless />

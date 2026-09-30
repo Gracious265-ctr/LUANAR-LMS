@@ -6,6 +6,9 @@ import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
 import { createLeaveType, updateLeaveType } from "@/lib/leave-rules-client";
+import { Input, Field } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
   const router = useRouter();
@@ -40,59 +43,40 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Name
-        </label>
-        <input
+      <Field label="Name" htmlFor="name">
+        <Input
           id="name"
           name="name"
           required
           defaultValue={leaveType?.name}
           placeholder="e.g. Study leave"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="code"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Code
-        </label>
-        <input
+      <Field
+        label="Code"
+        htmlFor="code"
+        hint="Short slug used to identify this type. Leave blank to derive it from the name."
+      >
+        <Input
           id="code"
           name="code"
           defaultValue={leaveType?.code}
           placeholder="Optional; derived from name"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Short slug used to identify this type. Leave blank to derive it from the name.
-        </p>
-      </div>
+      </Field>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : leaveType ? "Save changes" : "Create leave type"}
-        </button>
+        </Button>
         <Link
           href="/dashboard/hr-admin/leave-types"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className={buttonVariants({ variant: "secondary" })}
         >
           Cancel
         </Link>

@@ -16,6 +16,9 @@ import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveReviewSummary } from "@/components/leave/leave-review-summary";
 import { BalanceCard } from "@/components/leave/balance-card";
 import { ValidationPanel } from "@/components/leave/validation-panel";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type NetworkError = {
   message: string;
@@ -62,9 +65,9 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
 
   if (loadError) {
     return (
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-8 text-center">
+      <Card className="text-center">
         <p className="text-status-rejected text-sm">{loadError}</p>
-      </div>
+      </Card>
     );
   }
 
@@ -120,7 +123,7 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <LinkBack href={`/dashboard/leave/${application.id}/edit`} label="Back to draft" />
-        <h1 className="text-2xl font-bold text-text-primary">
+        <h1 className="text-xl font-semibold tracking-tight text-text-primary">
           Review your application
         </h1>
       </div>
@@ -154,22 +157,24 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
             />
 
       {submitError && (
-        <div
-          role="alert"
-          className="rounded-lg border border-border-error bg-status-rejected-subtle p-4 flex items-start justify-between gap-3"
+        <Alert
+          tone="rejected"
+          className="items-start justify-between gap-3 border border-border-error p-4"
         >
           <div className="flex items-start gap-2 text-sm text-status-rejected">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{submitError.message}</span>
           </div>
-          <button
+          <Button
             type="button"
             onClick={() => setSubmitError(null)}
-            className="text-xs font-medium text-text-muted hover:text-text-primary shrink-0"
+            variant="link"
+            size="sm"
+            className="h-auto shrink-0 text-text-muted hover:no-underline"
           >
             Dismiss
-          </button>
-        </div>
+          </Button>
+        </Alert>
       )}
 
       <div className="flex justify-end gap-3">
@@ -178,11 +183,13 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
           label="Back to edit"
           button
         />
-        <button
+        <Button
           type="button"
           onClick={handleSubmit}
           disabled={submitDisabled}
-          className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          variant="primary"
+          size="lg"
+          className="bg-brand-secondary text-brand-secondary-foreground border-transparent hover:bg-brand-secondary-hover"
         >
           {submitting ? (
             <>
@@ -192,7 +199,7 @@ export function ReviewSummaryClient({ applicationId }: { applicationId: string }
           ) : (
             "Submit application"
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

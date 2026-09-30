@@ -135,6 +135,22 @@ def signed_document_url(file_path: str) -> str:
     return result["signedURL"]
 
 
+def safe_signed_document_url(file_path: str, fallback: str = "") -> str:
+    """Best-effort re-sign for list/detail listings.
+
+    Storage failures — an unconfigured client (``ValueError``), a missing
+    object (``StorageApiError`` 404), or a network error — must degrade the
+    payload instead of failing the whole request, so this falls back to the
+    stored URL. The approved-document and approver-download views deliberately
+    keep the exception: there a fresh URL is a promise that must be withdrawn
+    rather than replaced by an expired one.
+    """
+    try:
+        return signed_document_url(file_path)
+    except Exception:
+        return fallback
+
+
 def delete_document(file_path: str) -> None:
     client = get_supabase_client()
     client.storage.from_(settings.SUPABASE_BUCKET).remove([file_path])

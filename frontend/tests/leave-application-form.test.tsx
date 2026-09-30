@@ -137,4 +137,34 @@ describe("LeaveApplicationForm", () => {
       await screen.findByRole("alert")
     ).toHaveTextContent(/could not load this draft/i);
   });
+
+  it("shows the stored calculated days in the preview when validation has no count", async () => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/leave/leave-applications/app-1/")) {
+        return new Response(JSON.stringify(application("draft")), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/leave/leave-types/")) {
+        return new Response("[]", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/leave/validate/")) {
+        return new Response(
+          JSON.stringify({ ...VALIDATION_RESULT, working_days: null }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
+
+    expect(await screen.findByText("Working Days")).toBeInTheDocument();
+    expect(await screen.findByText("3")).toBeInTheDocument();
+  });
 });

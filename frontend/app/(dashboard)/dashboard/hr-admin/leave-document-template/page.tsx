@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LeaveDocumentTemplateEditor } from "@/components/hr/leave-document-template-editor";
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaveDocumentTemplate } from "@/lib/leave-document-template";
+import { Card } from "@/components/ui/card";
 
 export default async function LeaveDocumentTemplatePage() {
   const user = await getCurrentUser();
@@ -25,7 +26,7 @@ export default async function LeaveDocumentTemplatePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">
           Approved Leave Document Template
         </h2>
         <p className="text-text-secondary">
@@ -37,13 +38,13 @@ export default async function LeaveDocumentTemplatePage() {
       </div>
 
       {templateError ? (
-        <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+        <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
           {templateError}
         </div>
       ) : template ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <Card>
           <LeaveDocumentTemplateEditor template={template} />
-        </div>
+        </Card>
       ) : null}
     </div>
   );

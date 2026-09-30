@@ -11,6 +11,8 @@ import {
 } from "@/lib/entitlements";
 import { listTeams } from "@/lib/teams";
 import type { TeamOption } from "@/lib/employees";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 const TEAMS_ERROR =
   "Teams could not be loaded, so this employee's team cannot be changed. Reload the page to try again.";
@@ -64,23 +66,21 @@ export default async function EmployeeDetailPage({
           Back to employees
         </Link>
         <div className="mt-2 flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-text-primary">
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
             {employee.full_name || employee.email}
           </h2>
-          <span
-            className={
-              employee.is_active
-                ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-            }
-          >
-            {employee.is_active ? "Active" : "Inactive"}
-          </span>
+          <Badge
+            tone={employee.is_active ? "info" : "muted"}
+          size="sm"
+          className="font-medium"
+        >
+          {employee.is_active ? "Active" : "Inactive"}
+        </Badge>
         </div>
         <p className="text-text-secondary">{employee.email}</p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Profile details
         </h3>
@@ -92,7 +92,7 @@ export default async function EmployeeDetailPage({
           teams={teams}
           teamsError={teamsError}
         />
-      </div>
+      </Card>
     </div>
   );
 }

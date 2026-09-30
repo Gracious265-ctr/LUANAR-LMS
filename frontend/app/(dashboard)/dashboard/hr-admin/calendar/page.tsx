@@ -5,10 +5,19 @@ import { Plus } from "lucide-react";
 import { FinancialYearTable } from "@/components/hr/financial-year-table";
 import { PublicHolidayTable } from "@/components/hr/public-holiday-table";
 import { getCurrentUser } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import {
   listFinancialYears,
   listPublicHolidays,
 } from "@/lib/financial-years";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 export default async function CalendarPage({
   searchParams,
@@ -51,7 +60,7 @@ export default async function CalendarPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-text-primary">Leave calendar</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave calendar</h2>
         <p className="text-text-secondary">
           Configure the university&apos;s financial years and public holidays.
           The system uses the active financial year when validating leave
@@ -59,7 +68,7 @@ export default async function CalendarPage({
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -80,15 +89,15 @@ export default async function CalendarPage({
         </div>
 
         {yearsError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {yearsError}
           </div>
         ) : financialYears ? (
           <FinancialYearTable years={financialYears.results} />
         ) : null}
-      </div>
+      </Card>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">
@@ -108,24 +117,22 @@ export default async function CalendarPage({
         </div>
 
         <form method="get" className="mb-4 flex items-center gap-2">
-          <select
-            name="year"
-            defaultValue={yearFilter}
-            className="rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-          >
-            <option value="">All years</option>
-            {availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            className="rounded-md border border-border-default bg-button-secondary px-4 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Select name="year" defaultValue={yearFilter}>
+            <SelectTrigger size="sm" aria-label="Year" className="w-auto py-1.5">
+              <SelectValue placeholder="All years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All years</SelectItem>
+              {availableYears.map((year) => (
+                <SelectItem key={year} value={year}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" variant="secondary" size="sm">
             Filter
-          </button>
+          </Button>
           {yearFilter && (
             <Link
               href="/dashboard/hr-admin/calendar"
@@ -137,13 +144,13 @@ export default async function CalendarPage({
         </form>
 
         {holidaysError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {holidaysError}
           </div>
         ) : holidays ? (
           <PublicHolidayTable holidays={holidays.results} />
         ) : null}
-      </div>
+      </Card>
     </div>
   );
 }

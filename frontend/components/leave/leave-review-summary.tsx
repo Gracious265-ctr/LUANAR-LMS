@@ -5,6 +5,7 @@ import { CalendarDays, FileText, Pencil, Upload } from "lucide-react";
 
 import type { ValidationResult } from "@/lib/leave-validation";
 import type { LeaveApplication } from "@/lib/leave-api";
+import { Card } from "@/components/ui/card";
 
 interface LeaveReviewSummaryProps {
   application: LeaveApplication;
@@ -14,21 +15,24 @@ interface LeaveReviewSummaryProps {
 
 /**
  * Summary card for the review screen. Working days come from the server's
- * validation result (never recomputed client-side).
+ * validation result when available, falling back to the application's stored
+ * calculated days so the row still reads while validation is pending,
+ * unavailable, or precondition checks prevent a live count. Days are never
+ * recomputed client-side.
  */
 export function LeaveReviewSummary({
   application,
   leaveTypeName,
   validation,
 }: LeaveReviewSummaryProps) {
-  const workingDays = validation?.working_days ?? application.calculated_days;
+  const workingDays = validation?.working_days ?? application.calculated_days ?? null;
   const calendarDays = validation?.calendar_days;
   const financialYear = validation?.financial_year;
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+    <Card>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-text-primary">Summary</h2>
+        <h2 className="text-xl font-semibold text-text-primary">Summary</h2>
         <Link
           href={`/dashboard/leave/${application.id}/edit`}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
@@ -95,7 +99,7 @@ export function LeaveReviewSummary({
           </ul>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -120,7 +124,7 @@ function Row({
       </div>
       <span
         className={`text-sm text-text-primary text-right ${
-          emphasis ? "text-lg font-bold" : multiline ? "whitespace-pre-wrap" : ""
+          emphasis ? "text-lg font-semibold" : multiline ? "whitespace-pre-wrap" : ""
         }`}
       >
         {value}

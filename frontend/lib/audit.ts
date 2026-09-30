@@ -75,6 +75,11 @@ export const ACTION_LABELS: Record<string, string> = {
   submitted: "Submitted",
   document_generated: "Approved document generated",
   document_failed: "Document generation failed",
+  plan_submitted: "Plan submitted",
+  plan_approved: "Plan approved",
+  plan_rejected: "Plan rejected",
+  plan_confirmed: "Plan block confirmed",
+  plan_released: "Plan block released",
 };
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {
@@ -92,6 +97,7 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   reassignment: "Reassignment",
   "document-template": "Document template",
   application: "Application",
+  plan: "Leave day plan",
 };
 
 export async function listAuditEntries(options: {
