@@ -215,6 +215,10 @@ export function auditEditHref(entry: AuditEntry): string | null {
       return `/dashboard/hr-admin/employees/${entry.target_id}`;
     case "document-template":
       return "/dashboard/hr-admin/leave-document-template";
+    // A plan is read through its own page, so an entry links there rather than
+    // to the HR sweep: the entry names one plan, not the list.
+    case "plan":
+      return `/dashboard/plans/${entry.target_id}`;
     default:
       return null;
   }

@@ -12,6 +12,7 @@ import {
   History,
   Home,
   LogOut,
+  NotebookTabs,
   ShieldCheck,
   Tags,
   User,
@@ -25,6 +26,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
+import { PlansNavItem } from "@/components/plans/plans-nav-item";
 import { Button } from "@/components/ui/button";
 
 interface User {
@@ -40,6 +42,8 @@ interface DashboardShellProps {
   isApprover: boolean;
   /** Pending approvals for the nav badge; 0 when unknown or not an approver. */
   pendingApprovals: number;
+  /** The caller's reserved blocks awaiting confirmation, for the plans badge. */
+  planPendingConfirmations?: number;
   children: React.ReactNode;
 }
 
@@ -55,6 +59,7 @@ export function DashboardShell({
   user,
   isApprover,
   pendingApprovals,
+  planPendingConfirmations,
   children,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -85,6 +90,7 @@ export function DashboardShell({
           user={user}
           isApprover={isApprover}
           pendingApprovals={pendingApprovals}
+          planPendingConfirmations={planPendingConfirmations}
           showCover={showCover}
           showHR={showHR}
         />
@@ -105,6 +111,7 @@ const Sidebar = memo(function Sidebar({
   user,
   isApprover,
   pendingApprovals,
+  planPendingConfirmations,
   showCover,
   showHR,
 }: {
@@ -114,6 +121,7 @@ const Sidebar = memo(function Sidebar({
   user: User;
   isApprover: boolean;
   pendingApprovals: number;
+  planPendingConfirmations?: number;
   showCover: boolean;
   showHR: boolean;
 }) {
@@ -149,6 +157,7 @@ const Sidebar = memo(function Sidebar({
           currentPath={currentPath}
           open={open}
         />
+        <PlansNavItem open={open} pendingConfirmations={planPendingConfirmations} />
         <ApprovalsNavItem
           open={open}
           isApprover={isApprover}
@@ -244,6 +253,13 @@ const Sidebar = memo(function Sidebar({
               Icon={FileText}
               title="Document Template"
               href="/dashboard/hr-admin/leave-document-template"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={NotebookTabs}
+              title="Leave Day Plans"
+              href="/dashboard/hr-admin/plans"
               currentPath={currentPath}
               open={open}
             />

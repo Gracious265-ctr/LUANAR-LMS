@@ -3,15 +3,17 @@ import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { getCurrentUser } from "@/lib/auth";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
+import { loadPlanCapabilities } from "@/lib/plans/capabilities";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [user, capabilities] = await Promise.all([
+  const [user, capabilities, planCapabilities] = await Promise.all([
     getCurrentUser(),
     loadApprovalCapabilities(),
+    loadPlanCapabilities(),
   ]);
   if (!user) redirect("/login");
 
@@ -24,6 +26,7 @@ export default async function DashboardLayout({
       user={user}
       isApprover={capabilities?.is_approver ?? false}
       pendingApprovals={capabilities?.pending_count ?? 0}
+      planPendingConfirmations={planCapabilities?.pending_confirmation_count ?? 0}
     >
       {children}
     </DashboardShell>
