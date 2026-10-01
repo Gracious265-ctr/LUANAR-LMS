@@ -65,6 +65,12 @@ class AuditEntry(models.Model):
         PLAN_SUBMITTED = "plan_submitted", "Plan submitted"
         PLAN_APPROVED = "plan_approved", "Plan approved"
         PLAN_REJECTED = "plan_rejected", "Plan rejected"
+        PASSWORD_SET_REQUESTED = (
+            "password_set_requested",
+            "Password set link requested",
+        )
+        PASSWORD_SET = "password_set", "Password set"
+        PASSWORD_CHANGED = "password_changed", "Password changed"
         PLAN_CONFIRMED = "plan_confirmed", "Plan block confirmed"
         PLAN_RELEASED = "plan_released", "Plan block released"
 
@@ -89,6 +95,7 @@ class AuditEntry(models.Model):
         CANCELLATION = "cancellation", "Cancellation request"
         BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
         PLAN = "plan", "Leave day plan"
+        USER_ACCOUNT = "useraccount", "User account"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

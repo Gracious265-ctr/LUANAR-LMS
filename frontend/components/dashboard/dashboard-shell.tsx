@@ -11,6 +11,7 @@ import {
   FileText,
   History,
   Home,
+  KeyRound,
   LogOut,
   NotebookTabs,
   ShieldCheck,
@@ -172,6 +173,16 @@ const Sidebar = memo(function Sidebar({
             open={open}
           />
         )}
+        {/* Everyone's own account, so it sits below the role-specific items
+            rather than inside the HR group: it is the one destination that does
+            not depend on what the person can do. */}
+        <Option
+          Icon={KeyRound}
+          title="My Account"
+          href="/dashboard/account"
+          currentPath={currentPath}
+          open={open}
+        />
         {showHR && (
           <>
             {open && (

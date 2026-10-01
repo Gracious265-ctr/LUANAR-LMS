@@ -3,7 +3,10 @@
 The same discipline as :mod:`notifications.tests`, applied to the delegation
 subject family: a real ``Delegation`` row, a real service call (which emits on
 commit), and assertions against the durable append-only ``NotificationOutbox``
-rows plus the console backend's ``mail.outbox``.
+rows plus the locmem backend's ``mail.outbox``.
+
+Dispatch is queued, so a queue call writes the rows and a worker sends them; the
+suite asserts those halves apart exactly as ``config.settings.test`` documents.
 """
 
 from __future__ import annotations
@@ -25,9 +28,10 @@ from notifications.delegations import (
     DELEGATION_CANCELLED,
     DELEGATION_REJECTED,
     DELEGATION_REQUESTED,
-    send_delegation_email,
+    queue_delegation_email,
 )
 from notifications.models import NotificationOutbox, NotificationOutboxLockedError
+from notifications.tasks import deliver_notification
 from workflows.models import Delegation
 from workflows.services import DelegationActionError
 from workflows.testing import make_approver
@@ -72,20 +76,28 @@ class DelegationEmailTests(TestCase):
             )
         )
 
+    def _deliver_all(self, delegation):
+        """Run the delivery task for every row the queue call produced."""
+        rows = self._rows(delegation)
+        for row in rows:
+            deliver_notification(row.pk, recipients=[row.recipient_email])
+            row.refresh_from_db()  # the task marks its own copy, not this one
+        return rows
+
     def test_request_notifies_only_a_nominated_delegate(self):
         delegation = self._delegation(delegate=self.hod)
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
 
-        rows = self._rows(delegation)
+        rows = self._deliver_all(delegation)
         self.assertEqual([row.role_label for row in rows], [DELEGATE])
         self.assertEqual(rows[0].recipient_email, self.hod.email)
-        self.assertEqual(rows[0].state, "sent")
+        self.assertEqual([row.state for row in rows], ["sent"])
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.dean.get_full_name(), mail.outbox[0].subject)
 
     def test_request_without_a_nomination_sends_nothing(self):
         delegation = self._delegation()
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
 
         self.assertEqual(self._rows(delegation), [])
         self.assertEqual(mail.outbox, [])
@@ -94,13 +106,14 @@ class DelegationEmailTests(TestCase):
         delegation = self._delegation(
             delegate=self.hod, status=Delegation.Status.APPROVED
         )
-        send_delegation_email(delegation.pk, DELEGATION_APPROVED)
+        queue_delegation_email(delegation.pk, DELEGATION_APPROVED)
 
-        rows = self._rows(delegation)
+        rows = self._deliver_all(delegation)
         self.assertEqual([row.role_label for row in rows], [APPROVER, DELEGATE])
         self.assertEqual(
             {row.recipient_email for row in rows}, {self.dean.email, self.hod.email}
         )
+        self.assertEqual([row.state for row in rows], ["sent", "sent"])
         self.assertEqual(len(mail.outbox), 2)
         # The delegate's copy tells them they are now acting.
         delegate_mail = next(m for m in mail.outbox if m.to == [self.hod.email])
@@ -110,7 +123,7 @@ class DelegationEmailTests(TestCase):
         delegation = self._delegation(
             delegate=self.hod, status=Delegation.Status.REJECTED
         )
-        send_delegation_email(delegation.pk, DELEGATION_REJECTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REJECTED)
 
         self.assertEqual(
             [row.role_label for row in self._rows(delegation)], [APPROVER, DELEGATE]
@@ -118,7 +131,7 @@ class DelegationEmailTests(TestCase):
 
     def test_cancellation_notifies_the_approver_when_no_delegate_was_set(self):
         delegation = self._delegation(status=Delegation.Status.CANCELLED)
-        send_delegation_email(delegation.pk, DELEGATION_CANCELLED)
+        queue_delegation_email(delegation.pk, DELEGATION_CANCELLED)
 
         rows = self._rows(delegation)
         self.assertEqual([row.role_label for row in rows], [APPROVER])
@@ -126,16 +139,20 @@ class DelegationEmailTests(TestCase):
 
     def test_re_emitting_one_kind_is_idempotent(self):
         delegation = self._delegation(delegate=self.hod)
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
 
         self.assertEqual(len(self._rows(delegation)), 1)
+
+        self._deliver_all(delegation)
+        # A second delivery run finds the row already sent and sends nothing.
+        self._deliver_all(delegation)
         self.assertEqual(len(mail.outbox), 1)
 
     def test_distinct_kinds_each_get_a_row(self):
         delegation = self._delegation(delegate=self.hod)
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
-        send_delegation_email(delegation.pk, DELEGATION_APPROVED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_APPROVED)
 
         self.assertEqual(len(self._rows(delegation)), 3)
 
@@ -147,27 +164,33 @@ class DelegationEmailTests(TestCase):
             ends_on=self.today + timedelta(days=4),
             decision_reason="Dean is on study leave",
         )
-        send_delegation_email(delegation.pk, DELEGATION_APPROVED)
+        queue_delegation_email(delegation.pk, DELEGATION_APPROVED)
 
+        self._deliver_all(delegation)
         body = mail.outbox[0].body
         self.assertIn(self.today.isoformat(), body)
         self.assertIn((self.today + timedelta(days=4)).isoformat(), body)
         self.assertIn("Dean is on study leave", body)
 
-    def test_send_failure_records_failed_and_isolates(self):
+    def test_delivery_failure_records_failed_and_isolates(self):
         delegation = self._delegation(delegate=self.hod)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+
         with mock.patch(
-            "notifications.delegations.send_mail", side_effect=RuntimeError("smtp down")
+            "notifications.tasks.send_mail", side_effect=RuntimeError("smtp down")
         ):
-            send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+            self._deliver_all(delegation)
 
         row = self._rows(delegation)[0]
         self.assertEqual(row.state, "failed")
         self.assertIn("smtp down", row.error)
+        # The delegation itself is untouched by a dead relay.
+        delegation.refresh_from_db()
+        self.assertEqual(delegation.status, Delegation.Status.REQUESTED)
 
     def test_delegation_outbox_rows_are_append_only(self):
         delegation = self._delegation(delegate=self.hod)
-        send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+        queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
         row = self._rows(delegation)[0]
         with self.assertRaises(NotificationOutboxLockedError):
             NotificationOutbox.objects.filter(pk=row.pk).update(state="pending")
@@ -180,7 +203,7 @@ class DelegationEmailTests(TestCase):
         try:
             with transaction.atomic():
                 transaction.on_commit(
-                    lambda: send_delegation_email(delegation.pk, DELEGATION_REQUESTED)
+                    lambda: queue_delegation_email(delegation.pk, DELEGATION_REQUESTED)
                 )
                 raise RuntimeError("rollback")
         except RuntimeError:

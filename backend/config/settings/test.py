@@ -21,6 +21,36 @@ PASSWORD_HASHERS = [
 # assertions could never hold.
 Q_CLUSTER = {**Q_CLUSTER, "sync": False}  # noqa: F405
 
+# The suite must never reach a real mail relay.
+#
+# Django's test runner swaps in the locmem backend for the duration of the run,
+# but that is an accident of the harness rather than a stated guarantee: once a
+# developer configures real SMTP credentials in `.env`, a notification test that
+# forgets to stub the send would quietly deliver mail to whatever address the
+# seeded user happens to carry. Pinning the backend here makes the isolation
+# explicit and independent of the local environment, the same argument as the
+# Supabase clearing below.
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+EMAIL_HOST = ""
+EMAIL_HOST_USER = ""
+EMAIL_HOST_PASSWORD = ""
+DEFAULT_FROM_EMAIL = "no-reply@test.luanar"
+
+# Dispatch is asynchronous, so the suite asserts the *enqueue* contract and runs
+# ``notifications.tasks.deliver_notification`` explicitly where the test is about
+# delivery (see the documents suite for the same split).
+NOTIFICATIONS_SYNC_SEND = False
+
+# Never rewrite recipients in the suite: a test that wants the override turns it
+# on deliberately.
+EMAIL_DEV_RECIPIENT_OVERRIDE = []
+
+# Pinned so a password-set link is deterministic and, more importantly, so a
+# developer's local ``FRONTEND_URL`` can never leak into an assertion. ``DEBUG``
+# is on under the test settings, which is what lets this stay plain HTTP.
+FRONTEND_URL = "https://app.test.luanar"
+PASSWORD_SET_TOKEN_LIFETIME_HOURS = 72
+
 # The suite must never reach a real storage backend.
 #
 # `.env` is read at import time, so once a developer configures real Supabase

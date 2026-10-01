@@ -1,27 +1,27 @@
 """Unit 22 — decision-email consumer (the first real approval-bus consumer).
 
-``send_decision_email`` is registered on the Unit 16 approval-event bus (now a
+``queue_decision_email`` is registered on the Unit 16 approval-event bus (now a
 real registry). ``decide()`` emits on commit, so this runs only after the
 decision is durable. Discipline:
 
 * **Idempotent** — the outbox row is found with ``get_or_create`` on
   ``(application, kind, submission_cycle, role_label)``; a re-emitted event
-  finds the existing row and returns without sending a second email.
-* **Isolated** — send failures record ``failed`` on the outbox row and are
-  swallowed so one dead email backend can never take down the decision commit.
-* **Console backend in dev** — ``EMAIL_BACKEND`` is ``console``; tests assert
-  through Django's ``mail.outbox``. No SMTP credentials in the tree.
+  finds the existing row and returns without queueing a second email.
+* **Isolated** — this module only writes the row and hands it to
+  :mod:`notifications.tasks`, where the send happens. A delivery failure records
+  ``failed`` on the outbox row and is logged; it can never take down the decision
+  commit.
+* **Transport from settings** — the backend is whatever ``EMAIL_BACKEND`` says
+  (console until ``.env`` configures a relay). No SMTP credentials in the tree.
 """
 
 from __future__ import annotations
 
-from django.conf import settings
-from django.core.mail import send_mail
-
 from workflows.events import APPLICATION_FINALISED, ApprovalEvent
 
 #: The domain these notifications belong to (kept in the body/subject for now).
-#: Shared with :mod:`notifications.delegations` so both mail paths agree.
+#: The send site in :mod:`notifications.tasks` uses it for the fallback
+#: ``From:`` address when no relay is configured.
 LEAVE_DOMAIN = "luanar.ac.mw"
 
 
@@ -74,9 +74,16 @@ def _decision_recipients(event: ApprovalEvent) -> list[str]:
     return recipients
 
 
-def send_decision_email(event: ApprovalEvent) -> None:
-    """Enqueue + send one decision email; record ``sent``/``failed`` on the outbox."""
+def queue_decision_email(event: ApprovalEvent) -> None:
+    """Record one decision email and hand it to the delivery task.
+
+    The row is written here; :func:`notifications.tasks.deliver_notification`
+    sends it. ``DECISION_RECORDED`` therefore lands in the outbox as ``pending``
+    and reaches the owner as soon as a worker picks it up — the decision it
+    describes is already durable either way.
+    """
     from notifications.models import NotificationOutbox
+    from notifications.tasks import enqueue_delivery
 
     recipients = _decision_recipients(event)
     row, created = NotificationOutbox.objects.get_or_create(
@@ -93,26 +100,17 @@ def send_decision_email(event: ApprovalEvent) -> None:
     if not created:
         return  # already delivered in a previous broadcast — idempotent
 
-    try:
-        send_mail(
-            subject=row.subject,
-            message=row.body,
-            from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{LEAVE_DOMAIN}",
-            recipient_list=recipients,
-            fail_silently=False,
-        )
-    except Exception as exc:  # noqa: BLE001 — consumer-level isolation
-        row.mark_failed(str(exc))
-        return
-
-    row.mark_sent()
+    # The row records the owner as its subject; a finalised application also goes
+    # to the approver who finalised, so the full list travels with the task
+    # rather than being re-derived from the row.
+    enqueue_delivery(row, recipients=recipients)
 
 
 def register_decision_email_consumer() -> None:
     """Attach the email dispatcher to the Unit 16 bus."""
     from workflows.events import register_consumer
 
-    register_consumer(send_decision_email)
+    register_consumer(queue_decision_email)
 
 
 class NotificationSeamUnresolvableError(Exception):

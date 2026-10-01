@@ -81,3 +81,68 @@ class EmployeeProfile(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.get_full_name()} ({self.department or 'No department'})"
+
+
+class PasswordSetToken(models.Model):
+    """One single-use secret that lets a person set their own password.
+
+    HR creates accounts without a password (``EmployeeSerializer.create`` calls
+    ``set_unusable_password()``), so before this existed a new employee had no
+    way in at all: the only way to give them one was a superuser typing it into
+    Django admin. This is the token that fixes that, and it is emailed like every
+    other message the system sends.
+
+    The design keeps three properties that matter more than the convenience:
+
+    * **Only the hash is stored.** ``token_hash`` is the SHA-256 of the secret,
+        so a leaked database row cannot be turned back into a usable link.
+    * **One live link per account.** Issuing a new one stamps ``invalidated_at``
+        on the outstanding tokens, so an older link in an old inbox stops working
+        the moment HR resends. ``used_at`` stays reserved for a real consumption,
+        which is what keeps "consumed" and "superseded" distinguishable.
+    * **Time-boxed.** ``expires_at`` is set at issuance, and :meth:`is_usable`
+        is the single definition of "still good" that the request and confirm
+        paths both go through.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_set_tokens",
+    )
+    token_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text="SHA-256 of the emailed secret. The secret itself is never stored.",
+    )
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+    issued_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="HR who reissued this link, or null when the user requested it themselves.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "expires_at"])]
+
+    def __str__(self) -> str:
+        return f"password-set token for {self.user_id} (expires {self.expires_at:%Y-%m-%d})"
+
+    def is_usable(self, now=None) -> bool:
+        """True while this token can still set a password."""
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        return (
+            self.used_at is None
+            and self.invalidated_at is None
+            and self.expires_at > now
+            and self.user.is_active
+        )

@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 import { Field, Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Card } from "@/components/ui/card";
@@ -11,6 +13,11 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/dashboard";
+  // Set by the account page after a successful change, which signs the caller
+  // out here. Without it this screen looks like an unexplained logout; the
+  // point of a password change is that somebody watching for the consequences
+  // should be told, and this is the only place the user is guaranteed to read.
+  const justChanged = searchParams.get("changed") === "1";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -56,6 +63,15 @@ function LoginForm() {
           Sign in to your account
         </p>
 
+        {justChanged && (
+          <div className="mb-6">
+            <Alert tone="approved">
+              Your password was changed and every session was signed out. Sign in
+              again with your new password.
+            </Alert>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Email" htmlFor="email">
             <Input
@@ -84,6 +100,15 @@ function LoginForm() {
           <Button type="submit" variant="primary" className="w-full" loading={loading}>
             {loading ? "Signing in..." : "Sign in"}
           </Button>
+
+          <div className="text-center text-sm text-text-secondary">
+            <Link
+              href="/forgot-password"
+              className="text-accent underline-offset-2 hover:underline"
+            >
+              Forgotten your password?
+            </Link>
+          </div>
         </form>
       </Card>
     </div>

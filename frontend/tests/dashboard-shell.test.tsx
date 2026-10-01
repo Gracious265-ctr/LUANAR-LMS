@@ -62,8 +62,26 @@ describe("DashboardShell", () => {
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("My Applications")).toBeInTheDocument();
     expect(screen.getByText("New Application")).toBeInTheDocument();
-    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
-    expect(screen.queryByText("Account")).not.toBeInTheDocument();
+  });
+
+  it("offers My Account to every role, since it is nobody's job", () => {
+    // Not inside the HR group: this is the one destination that does not depend
+    // on what the person can do, so hiding it from an ordinary employee would
+    // make their own password unreachable.
+    renderShell(mockUser);
+    expect(screen.getByText("My Account")).toBeInTheDocument();
+
+    renderShell({ ...mockUser, role: "hr" });
+    expect(screen.getAllByText("My Account").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("links My Account to the account page", () => {
+    renderShell(mockUser);
+
+    expect(screen.getByText("My Account").closest("a")).toHaveAttribute(
+      "href",
+      "/dashboard/account",
+    );
   });
 
   it("hides Approvals from a caller the server does not call an approver", () => {

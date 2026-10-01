@@ -388,11 +388,13 @@ class EmployeeEndpointTests(TestCase):
         self.employee_user.refresh_from_db()
         self.assertEqual(self.employee_user.role, User.Role.EMPLOYEE)
 
-    def test_a_hr_created_employee_is_inactive_so_holds_no_approver_roles(self):
+    def test_a_hr_created_employee_holds_no_approver_roles(self):
         """A brand-new employee account cannot approve anything yet.
 
-        HR-created employees start inactive, and an inactive user is not an
-        approver regardless of any holding, so the reported roles stay empty.
+        Not because it starts inactive — it does not, and that used to be an
+        accident of form-encoded requests being read as ``is_active=false`` —
+        but because holding a position is a separate fact from existing. The
+        account has no role assignment until HR puts them on a team.
         """
         grant_approver_role(self.hr_user, "dean")
         self.client.force_authenticate(user=self.hr_user)
@@ -405,8 +407,21 @@ class EmployeeEndpointTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertFalse(response.data["is_active"])  # type: ignore[index]
+        self.assertTrue(response.data["is_active"])  # type: ignore[index]
         self.assertEqual(response.data["approver_roles"], [])  # type: ignore[index]
+
+    def test_a_deactivated_employee_holds_no_approver_roles(self):
+        """Deactivation is what takes an existing holder out of the chain."""
+        grant_approver_role(self.employee_user, "dean")
+        self.client.force_authenticate(user=self.hr_user)
+        before = self.client.get(self.detail_url)
+        self.assertEqual(before.data["approver_roles"], ["dean"])  # type: ignore[index]
+
+        self.client.patch(self.detail_url, {"is_active": False})
+
+        after = self.client.get(self.detail_url)
+        self.assertFalse(after.data["is_active"])  # type: ignore[index]
+        self.assertEqual(after.data["approver_roles"], [])  # type: ignore[index]
 
     def test_placing_an_employee_on_a_team_is_audited(self):
         team = make_team("Audit team", ("supervisor",))

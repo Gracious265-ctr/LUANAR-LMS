@@ -124,7 +124,41 @@ uv run manage.py qcluster
 `config.settings.test` pins `sync` back to `False`, because the suite asserts
 that a render is *enqueued* and then runs it explicitly.
 
-### 6. File Storage
+**Scheduled jobs** (plan housekeeping: lapsing overdue blocks and block
+confirmation reminders) are a `django_q.Schedule` row created by
+`plans/migrations/0002_schedule_plan_housekeeping.py`, daily at 06:00. A schedule
+needs a live worker — `uv run manage.py qcluster` — so run one in any environment
+where reminders should actually fire.
+
+### 6. Email Notifications
+
+Every email is one append-only `NotificationOutbox` row: a composer writes the row
+and hands it to `notifications/tasks.py`, which is the only module that calls
+`send_mail`. Rows start `pending`, move to `sent`/`failed` through the delivery
+task, and are inspectable in Django admin (read-only) — so "did the mail go out,
+to whom, and if not why?" is answerable without a shell.
+
+Delivery is queued on commit with Django-Q2:
+
+```bash
+# in any environment where mail should actually leave the machine
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=<gmail address>
+EMAIL_HOST_PASSWORD=<app password>
+EMAIL_USE_TLS=True
+DEFAULT_FROM_EMAIL=<an address the account may send as>
+```
+
+* Without these, `EMAIL_BACKEND` defaults to the console backend and nothing is
+  sent — copy `backend/.env.example` for the full list.
+* Run `uv run manage.py qcluster` to deliver queued mail, or set
+  `NOTIFICATIONS_SYNC_SEND=True` on a single-process dev server to send inline.
+* `EMAIL_DEV_RECIPIENT_OVERRIDE` routes every notification to one inbox for
+  smoke tests; it is honoured only when `DEBUG=True` and refused otherwise.
+
+### 7. File Storage
 
 Supporting documents and generated approved-leave PDFs are stored in Supabase
 Storage. Copy `.env.example` to `.env` and set:
@@ -171,6 +205,44 @@ name in the table is the *position* each person is expected to hold, not a
 system role. Which approval roles a person actually holds is seeded by
 `seed_approvals_dev` as `TeamMember` / `RoleAssignment` rows, which is what
 decides what each of them can approve.
+
+These are fixtures. `@test.luanar` is not a deliverable domain, so every
+notification to them fails on a real SMTP relay, and a published password on a
+database anyone else can reach is a hole. Once you are working with real people,
+retire them:
+
+```bash
+cd backend
+uv run manage.py retire_demo_users          # deactivate + strip the password
+uv run manage.py retire_demo_users --undo   # back again
+```
+
+They are deactivated rather than deleted, and that is not a shortcut. Roughly two
+dozen foreign keys point at `users.User` with `PROTECT` — audit entries, approval
+decisions, delegations, approver role assignments, balance transactions — so a
+demo account with any history refuses to be deleted at all. Deactivation stops the
+accounts signing in and drops them out of approver resolution
+(`workflows.services.is_approver_user`), while every application, decision and
+audit row stays where it is. Re-running `seed_dev_users` does not revive them.
+
+Keep the command: it also seeds the leave types, grade entitlements, leave rules
+and financial year the system cannot run without.
+
+### Real users
+
+Real employees need no seed command and no superuser typing a password into
+Django admin. HR adds a person on the Employees page and a set-password link is
+emailed to them automatically; they follow it, choose their own password, and sign
+in. If the mail is lost, the employee's row has a **Send password link** action.
+
+In order: superuser, then employees, then approver roles, then the team and its
+members, then the financial year. The seed command is still the quick way to get
+leave types, entitlements, rules and the financial year in place.
+
+Once someone is signed in they can change their own password from **My Account**
+in the sidebar. It asks for the current password, emails the account a notice,
+and signs every session out including the one they changed it from — so they
+land back on the sign-in page with a message saying why.
 
 ### Admin / Django-Q2 task inspection
 
@@ -308,7 +380,7 @@ luanar-lms/
 │   ├── users/         # User model and authentication
 │   ├── leave/         # Leave domain (grade entitlements, leave types/rules; applications later)
 │   ├── workflows/     # Approval workflow configuration (workflows, stages)
-│   ├── notifications/ # Notifications domain (stub)
+│   ├── notifications/ # Notification outbox + email delivery (django-q2 worker)
 │   ├── documents/     # Documents domain (stub)
 │   └── audit/         # Audit domain (stub)
 ├── storage/           # File storage (TBD)

@@ -135,6 +135,15 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/min",
+        # Asking for a set-password link is throttled harder than confirming one:
+        # a request emails a real person, so a shared office IP must not be able
+        # to mail the same person all afternoon. Confirming a 32-byte secret is
+        # not guessable, so it only needs the same rough ceiling as login.
+        "password_set_request": "5/hour",
+        "password_set_confirm": "20/hour",
+        # Per user, not per IP: a shared office address must not let one person's
+        # attempts lock a colleague out of changing their own password.
+        "password_change": "10/hour",
     },
 }
 
@@ -144,6 +153,12 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": False,
+    # A fingerprint of the password is written into every token, and tokens that
+    # no longer match the account's current hash are rejected. Since this app
+    # neither rotates nor blacklists refresh tokens, this is the entire of
+    # session revocation — without it, changing a password would leave every
+    # other device signed in for the rest of the refresh token's 24 hours.
+    "CHECK_REVOKE_TOKEN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
@@ -167,8 +182,54 @@ Q_CLUSTER = {
     "orm": "default",
 }
 
-# Email (console backend for development)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email. Google SMTP during development and testing, replaceable with the
+# LUANAR institutional relay through ``.env`` alone: the transport is selected
+# here rather than hard-coded, so a tree with no credentials still prints to the
+# console instead of failing a login against smtp.gmail.com.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+# A relay that has stopped answering must not hold a request open indefinitely:
+# the delivery runs on a worker, but a wedged socket still costs that worker.
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+# Gmail refuses a ``From:`` address it is not authorised to send as, so the
+# composers' ``no-reply@luanar.ac.mw`` fallback only survives on the console
+# backend. ``notifications.tasks`` turns a real SMTP backend with this unset into
+# a recorded failure with an explanation instead of a silent 550.
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
+
+# Notification dispatch. ``False`` hands delivery to a django-q2 worker;
+# ``True`` runs it inline at the enqueue point, which is what a single-process
+# development server needs so a submitted application still sends its mail.
+NOTIFICATIONS_SYNC_SEND = env.bool("NOTIFICATIONS_SYNC_SEND", default=False)
+
+# Development-only recipient override. The seeded users carry undeliverable
+# addresses (``@test.luanar``), so a live SMTP smoke test would otherwise 550 on
+# every recipient. This routes the messages into one real inbox instead, and is
+# honoured *only* under ``DEBUG`` — outside it, the override is refused and the
+# real recipients are used, so it can never mask a wrong recipient in
+# production.
+EMAIL_DEV_RECIPIENT_OVERRIDE = env.list("EMAIL_DEV_RECIPIENT_OVERRIDE", default=[])
+
+# The absolute base URL of the Next.js app. Password-set links are only usable
+# outside the backend, so this is what turns a token into something a person can
+# click; ``notifications.accounts`` refuses to put a live secret on a plain-HTTP
+# link when DEBUG is off.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
+
+# How long a set-password link stays usable. Deliberately generous: the mail
+# reaches an inbox that is read at a human pace, and a 72h window still bounds a
+# leaked inbox search result. Issuing a new link invalidates the previous one.
+PASSWORD_SET_TOKEN_LIFETIME_HOURS = env.int(
+    "PASSWORD_SET_TOKEN_LIFETIME_HOURS", default=72
+)
 
 # Supabase Storage
 SUPABASE_URL = env("SUPABASE_URL", default="")

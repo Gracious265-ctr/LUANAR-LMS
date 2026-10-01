@@ -24,12 +24,10 @@ each get their own durable delivery record.
 
 from __future__ import annotations
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 
 from .models import NotificationOutbox
-from .services import LEAVE_DOMAIN, NotificationSeamUnresolvableError
+from .services import NotificationSeamUnresolvableError
 
 #: Delegation lifecycle kinds broadcast on commit.
 DELEGATION_REQUESTED = "delegation_requested"
@@ -130,12 +128,14 @@ def _load_delegation(delegation_id: int):
     return delegation
 
 
-def send_delegation_email(delegation_id: int, kind: str) -> None:
-    """Enqueue + send one delegation email per interested party.
+def queue_delegation_email(delegation_id: int, kind: str) -> None:
+    """Record one delegation email per interested party and queue delivery.
 
-    The row is re-read from the database rather than taken from the caller, so
-    the mail always describes the durable state.
+    The subject is re-read from the database rather than taken from the caller,
+    so the mail always describes the durable state.
     """
+    from .tasks import enqueue_delivery
+
     delegation = _load_delegation(delegation_id)
 
     for role_label, user in _recipients(delegation, kind):
@@ -154,27 +154,15 @@ def send_delegation_email(delegation_id: int, kind: str) -> None:
         if not created:
             continue  # already delivered in a previous broadcast — idempotent
 
-        try:
-            send_mail(
-                subject=row.subject,
-                message=row.body,
-                from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{LEAVE_DOMAIN}",
-                recipient_list=[row.recipient_email],
-                fail_silently=False,
-            )
-        except Exception as exc:  # noqa: BLE001 — consumer-level isolation
-            row.mark_failed(str(exc))
-            continue
-
-        row.mark_sent()
+        enqueue_delivery(row, recipients=[row.recipient_email])
 
 
 def notify_delegation(delegation_id: int, kind: str) -> None:
-    """Send delegation mail once the surrounding transaction has committed."""
+    """Queue delegation mail once the surrounding transaction has committed."""
 
     def _run() -> None:
         try:
-            send_delegation_email(delegation_id, kind)
+            queue_delegation_email(delegation_id, kind)
         except Exception:
             return  # a dead consumer must never surface at the call site
 

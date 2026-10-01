@@ -32,12 +32,10 @@ place to repeat.
 
 from __future__ import annotations
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 
 from .models import NotificationOutbox
-from .services import LEAVE_DOMAIN, NotificationSeamUnresolvableError
+from .services import NotificationSeamUnresolvableError
 
 #: Reassignment kinds broadcast on commit.
 APPLICATION_REASSIGNED = "application_reassigned"
@@ -138,12 +136,14 @@ def _load_reassignment(reassignment_id: int):
     return reassignment
 
 
-def send_reassignment_email(reassignment_id: int) -> None:
-    """Enqueue + send one reassignment email per affected approver.
+def queue_reassignment_email(reassignment_id: int) -> None:
+    """Record one reassignment email per affected approver and queue delivery.
 
-    The row is re-read from the database rather than taken from the caller, so
-    the mail always describes the durable state.
+    The subject is re-read from the database rather than taken from the caller,
+    so the mail always describes the durable state.
     """
+    from .tasks import enqueue_delivery
+
     reassignment = _load_reassignment(reassignment_id)
 
     for role_label, user in _recipients(reassignment):
@@ -162,27 +162,15 @@ def send_reassignment_email(reassignment_id: int) -> None:
         if not created:
             continue  # already delivered in a previous broadcast — idempotent
 
-        try:
-            send_mail(
-                subject=row.subject,
-                message=row.body,
-                from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{LEAVE_DOMAIN}",
-                recipient_list=[row.recipient_email],
-                fail_silently=False,
-            )
-        except Exception as exc:  # noqa: BLE001 — consumer-level isolation
-            row.mark_failed(str(exc))
-            continue
-
-        row.mark_sent()
+        enqueue_delivery(row, recipients=[row.recipient_email])
 
 
 def notify_reassignment(reassignment_id: int) -> None:
-    """Send reassignment mail once the surrounding transaction has committed."""
+    """Queue reassignment mail once the surrounding transaction has committed."""
 
     def _run() -> None:
         try:
-            send_reassignment_email(reassignment_id)
+            queue_reassignment_email(reassignment_id)
         except Exception:
             return  # a dead consumer must never surface at the call site
 

@@ -31,7 +31,8 @@ from leave.tests.stubs import (
     make_user,
 )
 from notifications.models import NotificationOutbox
-from notifications.services import send_decision_email
+from notifications.services import queue_decision_email
+from notifications.tasks import deliver_notification
 from users.models import EmployeeProfile
 from workflows.events import (
     APPLICATION_FINALISED,
@@ -129,15 +130,27 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.place_employee_on_team()
 
     def capture_events(self):
-        """Register an event-capturing consumer, restoring the real bus after."""
+        """Register an event-capturing consumer, restoring the real bus after.
+
+        django-q2's ``async_task`` is stubbed so the journey never writes to the
+        ORM broker; :meth:`deliver_pending` then runs the delivery task for real,
+        which is how the journeys below read ``mail.outbox``.
+        """
         events = []
         previous = list(_consumers)
         _reset_consumers_for_tests()
+        self.async_task = mock.patch("django_q.tasks.async_task").start()
+        self.addCleanup(mock.patch.stopall)
         # Keep Unit 22's real email consumer on the bus; only add observation.
-        register_consumer(send_decision_email)
+        register_consumer(queue_decision_email)
         register_consumer(events.append)
         self.addCleanup(_restore_consumers, previous)
         return events
+
+    def deliver_pending(self):
+        """Run the queued delivery for every pending outbox row."""
+        for row in NotificationOutbox.objects.filter(state="pending"):
+            deliver_notification(row.pk)
 
     def hr_creates_team(self, roles, approvers):
         """HR configures the team and its chain, then puts it into force.
@@ -294,6 +307,7 @@ class FullApprovalJourneyTests(EndToEndBase):
         self.assertIsNone(revision.changes, "the first revision has no predecessor")
 
         # The employee is told the outcome.
+        self.deliver_pending()
         self.assertTrue(
             any(app.reference_number in message.subject for message in mail.outbox)
         )
@@ -371,6 +385,7 @@ class RejectionJourneyTests(EndToEndBase):
             application=app, status=ApplicationStage.Status.PENDING
         )
         self.assertEqual(pending.count(), 0)
+        self.deliver_pending()
         self.assertTrue(
             any(app.reference_number in message.subject for message in mail.outbox)
         )
@@ -481,11 +496,18 @@ class CancellationJourneyTests(EndToEndBase):
 class DelegationJourneyTests(EndToEndBase):
     def test_an_approved_delegate_can_decide_the_approvers_stage(self):
         app = self.submit()
+        # The window is expressed relative to today rather than as fixed dates,
+        # because a delegation only covers an approver while it is in effect
+        # (``workflows.services._active_delegation_for_id`` filters on the local
+        # date). Hard-coded dates here made this test start failing the day the
+        # window passed, with a "not_current_stage" error that pointed at the
+        # approval chain rather than at an expired delegation.
+        today = timezone.localdate()
         delegation = Delegation.objects.create(
             approver=self.supervisor,
             delegate=self.dean,
-            starts_on=date(2026, 9, 21),
-            ends_on=date(2026, 9, 30),
+            starts_on=today - timedelta(days=2),
+            ends_on=today + timedelta(days=2),
             requested_by=self.supervisor,
             status=Delegation.Status.APPROVED,
         )

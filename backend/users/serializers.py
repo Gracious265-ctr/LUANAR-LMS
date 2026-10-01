@@ -9,8 +9,29 @@ from workflows.models import Team
 from workflows.services import approver_role_codes_for
 
 from .models import EmployeeProfile
+from .services import request_password_set
 
 User = get_user_model()
+
+
+class OptionalBooleanField(serializers.BooleanField):
+    """A boolean whose absence means "leave it alone", not "False".
+
+    ``BooleanField`` sets ``default_empty_html = False``, which is correct for a
+    real HTML form — an unchecked checkbox is absent and means False. It is wrong
+    for an optional API field: any client that posts multipart or form-encoded
+    (a ``curl -F``, an HTML form, and DRF's own test client by default) sends no
+    ``is_active`` at all, and DRF then supplies False. Creating an employee that
+    way silently produced a *deactivated* account, which looks like an HR mistake
+    and is not one.
+
+    With this subclass an absent value resolves to True — "an account is active
+    unless something says otherwise" — while an explicit ``false`` from any format
+    still arrives as False. :meth:`EmployeeSerializer.update` additionally checks
+    ``initial_data`` so an omitted key cannot flip an account back on either.
+    """
+
+    default_empty_html = True
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -33,6 +54,64 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
+class PasswordSetRequestSerializer(serializers.Serializer):
+    """Serializer for the "I have no password" request.
+
+    Deliberately carries no field beyond the address: whether a link is sent is
+    not the requester's business, and a response that varied would turn this into
+    an account-enumeration oracle.
+    """
+
+    email = serializers.EmailField()
+
+
+class PasswordSetValidateSerializer(serializers.Serializer):
+    """Serializer for the pre-flight check the set-password page calls."""
+
+    token = serializers.CharField(max_length=200, trim_whitespace=False)
+
+
+class PasswordSetConfirmSerializer(serializers.Serializer):
+    """Serializer for setting a new password.
+
+    ``validate_password`` runs against the *account's* validators in the service
+    (it needs the user object for the similarity check), so this only enforces
+    that something was actually submitted.
+    """
+
+    token = serializers.CharField(max_length=200, trim_whitespace=False)
+    password = serializers.CharField(write_only=True, allow_blank=False)
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """Serializer for changing a password from a live session.
+
+    Two rules that are cheap here and would be a real gap if left out:
+
+    * the current password is required, so a stolen access token on its own
+      cannot take the account over — it is checked in the service, against the
+      stored hash;
+    * the confirmation must match, so a typo in a field the user cannot see is
+      caught before it becomes their password.
+
+    Strength is deliberately *not* checked here. ``validate_password`` needs the
+    user object and runs in the service, alongside the check that the new value
+    differs from the current one, so that all three password problems report
+    through one code path.
+    """
+
+    current_password = serializers.CharField(write_only=True, allow_blank=False)
+    new_password = serializers.CharField(write_only=True, allow_blank=False)
+    confirm_password = serializers.CharField(write_only=True, allow_blank=False)
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError(
+                {"confirm_password": "The two passwords do not match."}
+            )
+        return attrs
+
+
 class EmployeeSerializer(serializers.ModelSerializer):
     """HR-facing serializer for employee records and their linked account."""
 
@@ -51,7 +130,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         required=False,
         allow_blank=True,
     )
-    is_active = serializers.BooleanField(source="user.is_active", required=False)
+    is_active = OptionalBooleanField(source="user.is_active", required=False)
     team = serializers.PrimaryKeyRelatedField(
         queryset=Team.objects.all(),
         required=False,
@@ -138,6 +217,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
             instance = EmployeeProfile.objects.create(user=user, **validated_data)
             self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
+
+            # A new account cannot sign in until someone sets its password, and
+            # this is the moment HR has just made one: mail the link here rather
+            # than leaving it to a manual step HR will forget. Queued, not sent
+            # inline, and only while the account still has no usable password —
+            # attaching an existing person's employee record must never mail
+            # them a reset link.
+            if not user.has_usable_password():
+                request_password_set(user.email, actor=current_actor(self))
         return instance
 
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
@@ -151,8 +239,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 user.username = user_data["email"]
 
             for field in ("first_name", "last_name", "is_active"):
-                if field in user_data:
-                    setattr(user, field, user_data[field])
+                # ``is_active`` is checked against the submitted data as well as
+                # the validated data: DRF fills the key in for form-encoded
+                # requests, and a PATCH that never mentioned it must not change
+                # whether the account is active.
+                if field not in user_data:
+                    continue
+                if field == "is_active" and "is_active" not in self.initial_data:
+                    continue
+                setattr(user, field, user_data[field])
 
             if "role" in user_data:
                 user.role = user_data["role"] or User.Role.EMPLOYEE

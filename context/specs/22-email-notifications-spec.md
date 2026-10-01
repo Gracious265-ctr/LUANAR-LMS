@@ -98,3 +98,104 @@ the Unit-23 review finding:
 * Tracker: mark Unit 22 complete; Next Up = Unit 24 (delegation routing).
 
 **Awaiting developer approval before Phase 2 begins (per §20 discipline).**
+
+---
+
+## 5. Phase 3 — as built (delivery made real)
+
+Unit 22 shipped the outbox and the bus as specified above, but the **transport was
+never finished**: `EMAIL_BACKEND` stayed hard-coded to the console backend, the
+composers called `send_mail` inline from whatever request happened to emit the
+event, and `employee_notification_state` on a cancellation request could never move
+because `leave/cancellations/events.py` was still the Unit-18 no-op sink. Mail that
+"was established" therefore never reached anybody. This section records the delta.
+
+### 5.1 Deltas to D6
+
+D6 ("`send_mail` with `EMAIL_BACKEND=console` in dev, set state from the real
+exception outcome") assumed the send happens inside the service. That was the
+reason notifications failed quietly: a synchronous send ties mail delivery to a web
+request and to whatever relay happens to answer it.
+
+As built:
+
+* **Transport is env-configured.** `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`,
+  `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `EMAIL_USE_SSL`,
+  `EMAIL_TIMEOUT`, `DEFAULT_FROM_EMAIL` are read in `config/settings/base.py`. With
+  none set the console backend remains the default, so no credential is required to
+  develop and nothing silently ships a hard-coded relay.
+* **`tasks.py` is the single send site.** No composer imports `send_mail`. Each
+  composer writes an append-only row and calls `enqueue_delivery()`.
+* **Delivery is queued on commit** with Django-Q2 (the ORM broker already required by
+  §8 of the architecture doc): `async_task("notifications.tasks.deliver_notification",
+  row_id, recipients)`. A row is `pending` until a worker runs it; `NOTIFICATIONS_SYNC_SEND=True`
+  runs it inline for a single-process dev server.
+* **Failure isolation is the same discipline, moved.** The task re-reads the row,
+  records `failed` + the error, logs, and never raises — so a broker outage or a
+  dead relay cannot undo a decision that already committed.
+* **`DEFAULT_FROM_EMAIL` is validated against the transport.** Gmail rejects a
+  `From:` the account is not authorised to send as, which would otherwise fill the
+  outbox with unexplained 550s; with SMTP and no `DEFAULT_FROM_EMAIL` the row records
+  `failed` with that explanation.
+
+### 5.2 New subject family: cancellations
+
+The cancellation bus is now a real registry (`register_consumer` /
+`emit_cancellation_event`, mirroring `workflows/events.py`), and
+`notifications/cancellations.py` composes one email per event for the employee.
+`NotificationOutbox` gains a `cancellation` FK plus the
+`one_outbox_row_per_cancellation_kind_role` constraint, so idempotency follows the
+same rule as every other family.
+
+This family uniquely keeps a second, user-facing state column:
+`CancellationRequest.employee_notification_state`. The composer marks it `pending`
+when it queues, and `deliver_notification` reconciles it to `sent`/`failed` after
+the attempt, so the request and the outbox can never disagree.
+
+### 5.3 Scheduled reminders
+
+Plan housekeeping (`plans.tasks.run_plan_housekeeping` — lapsing overdue blocks and
+block-confirmation reminders) is a `django_q.Schedule` row created by
+`plans/migrations/0002_schedule_plan_housekeeping.py` (daily 06:00). Reminder emails
+were never sent because nothing scheduled the job. A schedule needs a live
+`qcluster`; `Q_CLUSTER["sync"]` does not affect cron rows.
+
+### 5.4 Operations
+
+* **Read-only admin** (`notifications/admin.py`): the outbox is inspectable by
+  HR/support (state, recipient, error) and cannot be edited by hand, matching its
+  append-only rule.
+* **`EMAIL_DEV_RECIPIENT_OVERRIDE`** routes every notification to one real inbox so
+  SMTP can be smoke-tested against seeded `@test.luanar` addresses. Honoured only
+  when `DEBUG=True`; with `DEBUG=False` it is refused and logged as an error.
+* **Tests** pin the two halves apart: a queue call leaves the row `pending`, and
+  `deliver_notification(row.pk, recipients=[...])` is what sends. `notifications/`
+  covers all five families, plus transport-level cases (override gate, `From:`
+  validation, broker outage, idempotent re-delivery).
+
+## 6. As-built addition: the account family (2026-10-01)
+
+The families above all describe something that happened to a person. The outbox
+also carries one email about a login itself: the **set-password link** a new
+employee needs, because HR creates accounts without a password and cannot know
+one.
+
+* **Subject** — `user` (`NotificationOutbox.user`, `notifications/migrations/
+  0007`), the only row about a login rather than a business event. The check
+  constraint gained a seventh arm so a row still has exactly one subject.
+* **No unique constraint, deliberately.** Every other family is idempotent by a
+  partial unique constraint, because a re-emitted event must not send twice. A
+  *resent* link must send again, so the account family has no such constraint and
+  keeps one row per issuance. Single use is guaranteed by the token instead
+  (`users.PasswordSetToken`: 72h, only its SHA-256 stored, invalidated when
+  superseded and consumed on use).
+* **Composer** — `notifications/accounts.py`, queued through the same single send
+  site, so it retries, records `sent`/`failed`, and honours the development
+  recipient override like everything else.
+* **Security posture** — the request endpoint answers identically for every
+  address (no enumeration), is throttled at 5/hour because each accepted request
+  mails a real person, and refuses to build a link over plain HTTP outside
+  `DEBUG`. The token is scrubbed from the URL in the browser on arrival.
+* **Audit** — `PASSWORD_SET_REQUESTED` / `PASSWORD_SET` on a `USER_ACCOUNT`
+  target, extending the Unit 24 vocabulary deliberately: "who asked for this and
+  when" is the question a password reset always invites later.

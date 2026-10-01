@@ -3,7 +3,10 @@
 The same discipline as :mod:`notifications.tests_delegations`, applied to the
 reassignment subject family: a real ``Reassignment`` row, a real service call
 (which emits on commit), and assertions against the durable append-only
-``NotificationOutbox`` rows plus the console backend's ``mail.outbox``.
+``NotificationOutbox`` rows plus the locmem backend's ``mail.outbox``.
+
+Dispatch is queued, so a queue call writes the rows and a worker sends them; the
+suite asserts those halves apart exactly as ``config.settings.test`` documents.
 """
 
 from __future__ import annotations
@@ -20,11 +23,12 @@ from django.utils import timezone
 
 from leave.models import LeaveApplication
 from notifications.models import NotificationOutbox
+from notifications.tasks import deliver_notification
 from notifications.reassignments import (
     APPLICATION_REASSIGNED,
     FROM_APPROVER,
     TO_APPROVER,
-    send_reassignment_email,
+    queue_reassignment_email,
 )
 from workflows.models import Reassignment
 from workflows.services import ReassignmentError, reassign_application
@@ -84,12 +88,20 @@ class ReassignmentEmailTests(TestCase):
             ).order_by("role_label")
         )
 
+    def _deliver_all(self, reassignment):
+        """Run the delivery task for every row the queue call produced."""
+        rows = self._rows(reassignment)
+        for row in rows:
+            deliver_notification(row.pk, recipients=[row.recipient_email])
+            row.refresh_from_db()  # the task marks its own copy, not this one
+        return rows
+
     def test_both_approvers_are_notified(self):
         reassignment = self._reassignment(from_approver=self.dean)
 
-        send_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
 
-        rows = self._rows(reassignment)
+        rows = self._deliver_all(reassignment)
         self.assertEqual(
             [row.role_label for row in rows], [FROM_APPROVER, TO_APPROVER]
         )
@@ -102,7 +114,8 @@ class ReassignmentEmailTests(TestCase):
     def test_each_side_hears_about_its_own_half_of_the_move(self):
         reassignment = self._reassignment(from_approver=self.dean)
 
-        send_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
+        self._deliver_all(reassignment)
 
         new_mail = next(m for m in mail.outbox if m.to == [self.hod.email])
         old_mail = next(m for m in mail.outbox if m.to == [self.dean.email])
@@ -115,9 +128,9 @@ class ReassignmentEmailTests(TestCase):
     def test_initial_assignment_notifies_only_the_new_approver(self):
         reassignment = self._reassignment(from_approver=None)
 
-        send_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
 
-        rows = self._rows(reassignment)
+        rows = self._deliver_all(reassignment)
         self.assertEqual([row.role_label for row in rows], [TO_APPROVER])
         self.assertEqual(rows[0].recipient_email, self.hod.email)
         self.assertEqual(len(mail.outbox), 1)
@@ -125,10 +138,14 @@ class ReassignmentEmailTests(TestCase):
     def test_re_emitting_is_idempotent(self):
         reassignment = self._reassignment(from_approver=self.dean)
 
-        send_reassignment_email(reassignment.pk)
-        send_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
 
         self.assertEqual(len(self._rows(reassignment)), 2)
+
+        self._deliver_all(reassignment)
+        # Re-running the task finds both rows already sent and sends nothing.
+        self._deliver_all(reassignment)
         self.assertEqual(len(mail.outbox), 2)
 
     def test_two_reassignments_of_one_application_both_notify(self):
@@ -142,12 +159,14 @@ class ReassignmentEmailTests(TestCase):
         first = reassign_application(
             application=app, to_approver=self.hod, actor=self.hr, reason="First"
         )
-        send_reassignment_email(first.pk)
+        queue_reassignment_email(first.pk)
+        self._deliver_all(first)
         app.refresh_from_db()
         second = reassign_application(
             application=app, to_approver=self.dean, actor=self.hr, reason="Second"
         )
-        send_reassignment_email(second.pk)
+        queue_reassignment_email(second.pk)
+        self._deliver_all(second)
 
         self.assertEqual(len(self._rows(first)), 2)
         self.assertEqual(len(self._rows(second)), 2)
@@ -160,14 +179,14 @@ class ReassignmentEmailTests(TestCase):
 
     def test_a_dead_backend_records_failed_without_raising(self):
         reassignment = self._reassignment(from_approver=self.dean)
+        queue_reassignment_email(reassignment.pk)
 
         with mock.patch(
-            "notifications.reassignments.send_mail",
+            "notifications.tasks.send_mail",
             side_effect=OSError("mail backend is down"),
         ):
-            send_reassignment_email(reassignment.pk)
+            rows = self._deliver_all(reassignment)
 
-        rows = self._rows(reassignment)
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(row.state == "failed" for row in rows))
         self.assertIn("mail backend is down", rows[0].error)
@@ -176,7 +195,7 @@ class ReassignmentEmailTests(TestCase):
         app = self._app(approver=self.dean)
 
         with mock.patch(
-            "notifications.reassignments.send_mail",
+            "notifications.tasks.send_mail",
             side_effect=OSError("mail backend is down"),
         ):
             with self.captureOnCommitCallbacks(execute=True):
@@ -196,7 +215,7 @@ class ReassignmentEmailTests(TestCase):
         self.hod.save(update_fields=["email"])
         reassignment = self._reassignment(from_approver=self.dean)
 
-        send_reassignment_email(reassignment.pk)
+        queue_reassignment_email(reassignment.pk)
 
         self.assertEqual(
             [row.role_label for row in self._rows(reassignment)], [FROM_APPROVER]
@@ -206,7 +225,7 @@ class ReassignmentEmailTests(TestCase):
         from notifications.services import NotificationSeamUnresolvableError
 
         with self.assertRaises(NotificationSeamUnresolvableError):
-            send_reassignment_email(Reassignment.objects.none().values_list(
+            queue_reassignment_email(Reassignment.objects.none().values_list(
                 "pk", flat=True
             ).first() or 999999)
 

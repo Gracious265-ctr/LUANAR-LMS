@@ -4,6 +4,26 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Real users, real inboxes (2026-10-01)** — mail could reach nobody: HR creates
+  accounts with `set_unusable_password()` and there was no way for a real person
+  to obtain a password, so a new employee could not sign in and could never
+  receive a notification. Added the set-password flow (72h single-use emailed
+  link, hash-only storage, no account enumeration, throttled, audited, queued
+  through the outbox's new `user` subject family), auto-send on employee create,
+  an HR resend action, and a `retire_demo_users` command that deactivates the
+  `@test.luanar` demo accounts without touching their history. Also fixed a real
+  bug this surfaced: DRF read an absent boolean in a form-encoded request as
+  `False`, so creating an employee with `curl -F` produced a **deactivated**
+  account. Backend 1198 tests OK, frontend 574 tests OK. See "Completed — Real
+  users, real inboxes (2026-10-01)" at the end of this file.
+- **Email delivery made real (2026-09-30)** — the outbox existed but mail never
+  left the machine: console backend hard-coded, sends inline, cancellation bus
+  still a no-op sink, housekeeping unscheduled. All four fixed (env-configured
+  SMTP, single queued send site via django-q2, cancellation consumer + subject
+  family, `django_q.Schedule` row) plus read-only outbox admin. Backend 1151 tests
+  OK. See "Completed — Email delivery made real (2026-09-30)" at the end of this
+  file. Live SMTP verification still needs the user's Gmail credentials in
+  `backend/.env`.
 - **Team Management (Units 1–10) COMPLETE** — backend, frontend, and docs; see
   "Completed — Team Management (Units 1–10)" at the end of this file. Team
   lifecycle is one authoritative field, membership is effective-dated, and a
@@ -2498,3 +2518,402 @@ validate/activate contract.
 workflow list screen it fed are gone: a team owns its chain one-to-one and the
 chain is written inside the team write, so there is no list to page. A team's
 lifecycle is `Team.status` alone.
+
+---
+
+## Completed — Email delivery made real (2026-09-30)
+
+Email notifications were "established" — outbox model, five subject families,
+composers, tests — but **no mail had ever left the machine**. Three independent
+gaps, all confirmed by reading the code:
+
+1. **Transport never configured.** `config/settings/base.py` hard-coded
+   `django.core.mail.backends.console.EmailBackend`; there were no SMTP settings,
+   no `DEFAULT_FROM_EMAIL`, and no env reading. `.env.example` had no email block.
+2. **Send was inline.** Each composer called `send_mail` itself, inside whatever
+   request emitted the event — so mail was bound to a web request and to whatever
+   relay answered it.
+3. **Two notification paths were dead code.** `leave/cancellations/events.py` was
+   still the Unit-18 **no-op sink** (so no cancellation could ever notify, and
+   `employee_notification_state` could never move off `not_required`), and
+   `plans.tasks.run_plan_housekeeping` existed but **nothing scheduled it** (so
+   block-confirmation reminders never fired).
+
+### Delivered
+
+- **Env-configured transport** (`config/settings/base.py`): `EMAIL_BACKEND`, host,
+  port, user, password, `EMAIL_USE_TLS`/`EMAIL_USE_SSL`, `EMAIL_TIMEOUT`,
+  `DEFAULT_FROM_EMAIL`, `NOTIFICATIONS_SYNC_SEND`, `EMAIL_DEV_RECIPIENT_OVERRIDE`.
+  Console stays the default, so development needs no credentials. Google SMTP
+  (`smtp.gmail.com:587` + TLS + an app password) is documented in `.env.example`
+  with placeholders only; **the user pastes the real credentials into
+  `backend/.env`**.
+- **`notifications/tasks.py`** — the single `send_mail` call site.
+  `deliver_notification(outbox_id, recipients=None)` re-reads the row (idempotent:
+  a non-`pending` row is a no-op), records `sent`/`failed` with the error, and
+  never raises. `enqueue_delivery()` dispatches through `django_q.tasks.async_task`
+  on `transaction.on_commit`; a broker outage is logged and the row stays `pending`.
+  SMTP without `DEFAULT_FROM_EMAIL` fails loudly on the row (Gmail rejects an
+  unauthorised `From:`), instead of filling the outbox with unexplained 550s.
+  `EMAIL_DEV_RECIPIENT_OVERRIDE` is honoured **only** under `DEBUG` and refused
+  (error log) otherwise.
+- **Composers queue instead of send**: `send_decision_email` → `queue_decision_email`
+  (recipient list for a finalised application travels with the task — the row
+  records the owner, the mail goes to owner + finalising approver),
+  `queue_delegation_email`, `queue_reassignment_email`, and `notifications/plans.py`
+  routed through the same helper (its plan-assignment notification previously
+  bypassed `on_commit` entirely).
+- **Cancellation notifications**: the bus is real now
+  (`register_consumer`/`emit_cancellation_event`, mirroring `workflows/events.py`),
+  `notifications/cancellations.py` composes one email per event for the employee,
+  and `NotificationOutbox` gains a `cancellation` FK with
+  `one_outbox_row_per_cancellation_kind_role` (migration `notifications/0006`).
+  This family keeps `employee_notification_state` too, so the composer marks it
+  `pending` when it queues and the delivery task reconciles it to `sent`/`failed`.
+- **Housekeeping scheduled**: `plans/migrations/0002_schedule_plan_housekeeping.py`
+  creates the `django_q.Schedule` row (daily 06:00) for
+  `plans.tasks.run_plan_housekeeping`.
+- **Read-only admin** (`notifications/admin.py`): the outbox is inspectable
+  (state, recipient, error, filters, search) and cannot be edited by hand, matching
+  its append-only rule.
+- **Docs**: `DEVELOPER-GUIDE.md` (the "change the wording"/"make mail go out"
+  recipes now name the real modules — they pointed at `subscribers.py`,
+  `templates.py`, `dispatcher.py`, which do not exist), `README.md` (new "Email
+  Notifications" section + worker requirement), `context/architecture.md` (§8 now
+  describes the outbox → on-commit → worker path), and
+  `context/specs/22-email-notifications-spec.md` §5 records the delta to D6.
+
+### Verification
+
+Backend **1151 tests OK** (was 1137 before this pass: 14 transport-level tests in
+`notifications/tasks_tests.py`, 11 cancellation tests in
+`notifications/tests_cancellations.py`, plus the queue-contract rewrites in
+`tests_delegations.py`/`tests_reassignments.py` and the end-to-end journeys).
+`makemigrations --check` clean; `migrate` applies `notifications/0006` +
+`plans/0002`.
+
+### Still open (operational, not code)
+
+- **No live SMTP verification yet** — it needs the user's Gmail credentials in
+  `backend/.env`. Until then, `EMAIL_DEV_RECIPIENT_OVERRIDE=<inbox>` +
+  `NOTIFICATIONS_SYNC_SEND=True` is the fastest single-process check.
+- **A worker must run for queued mail and for cron jobs**: `uv run manage.py
+  qcluster`. `Q_CLUSTER["sync"]` affects `async_task` only, never a schedule row.
+
+## Completed — Real users, real inboxes (2026-10-01)
+
+The email pipeline worked, but it could reach nobody who mattered. `HR creates
+account` ended in `set_unusable_password()` and stayed there: the only ways to
+give a real person a password were a superuser typing it into Django admin or the
+`seed_dev_users` password `testpass123`. An HR-created employee could not
+authenticate, so every notification the system sends them was undeliverable —
+which is the whole point of a queued outbox.
+
+### The set-password flow
+
+- **Model** — `users.PasswordSetToken`: the secret is `secrets.token_urlsafe(32)`
+  and only its SHA-256 is stored; `expires_at` (72h, `PASSWORD_SET_TOKEN_
+  LIFETIME_HOURS`), `used_at` for a real consumption, `invalidated_at` for a
+  superseded one. Keeping those two apart is what makes "used" and "replaced"
+  distinguishable in the audit trail, and `is_usable()` is the single definition of
+  "still good" that both request and confirm go through.
+- **Service** — `users/services.py`: `request_password_set(email, actor=None)` and
+  `confirm_password_set(token, password)`, plus `token_is_usable` for the page's
+  pre-flight. Passwords go through Django's configured validators against the
+  account, so the similarity check works; a weak password fails *without*
+  consuming the link, so the person can try again.
+- **One live link per account.** Issuing a link stamps `invalidated_at` on the
+  outstanding ones, so a link that leaked into an old inbox dies the moment HR
+  resends.
+- **No enumeration.** `request_password_set` returns `None` for an unknown,
+  deactivated or address-less account, and the endpoint answers with the same 202
+  body in every case. The refusal is logged, never returned.
+- **Endpoints** — `POST /api/v1/auth/password-set/request/` (throttled
+  `password_set_request`, 5/hour, because each accepted request mails a real
+  person), `GET .../validate/`, `POST .../confirm/` (throttled
+  `password_set_confirm`, 20/hour). No auto-login on confirm: the caller already
+  knows the password, so a session there would only add a fixation surface.
+- **Mail** — the outbox gained a `user` subject family
+  (`notifications/migrations/0007`), and `notifications/accounts.py` queues it
+  through the same single send site as everything else, so it retries, records
+  `sent`/`failed` and honours the development recipient override. This family
+  deliberately has **no** unique constraint, unlike every other subject family:
+  re-emitting an event must not send twice, but reissuing a link must. The
+  single-use token is what guarantees one link cannot be used twice.
+- **HTTPS guard** — `FRONTEND_URL` is new backend configuration, and a password
+  link over plain HTTP is refused outside `DEBUG` rather than sent.
+- **Audit** — `PASSWORD_SET_REQUESTED` / `PASSWORD_SET` actions and a
+  `USER_ACCOUNT` target type, a deliberate extension of Unit 24's pinned
+  vocabulary (`audit/migrations/0014`).
+
+### HR's side
+
+- Creating an employee queues the first link automatically. Gated on
+  `not user.has_usable_password()`, so attaching an employee record to somebody
+  who already has a password never mails them a reset link.
+- `POST /api/v1/employees/{id}/password-set-link/` resends — the ordinary case of
+  lost or filtered mail. Refused with a 400 for an account with no address or a
+  deactivated one, and HR-only like the rest of the viewset.
+
+### Frontend
+
+`frontend/lib/password-set.ts` and three same-origin proxy routes (the Django URL
+never reaches the browser), `app/(auth)/set-password/page.tsx` and
+`app/(auth)/forgot-password/page.tsx`, and a link from the login page. The token
+is read once into a ref and scrubbed from the URL on mount, so it cannot leak into
+history or a referrer, and a pre-flight validates it before anyone is asked to
+type a password.
+
+### Retiring the demo accounts
+
+`uv run manage.py retire_demo_users` deactivates the seven `@test.luanar` accounts
+and strips their passwords, writing one `DEACTIVATED` audit entry each
+(actor-less — a maintenance command, not a person). It is idempotent and
+reversible with `--undo`.
+
+Deleting them was the obvious answer and is not available: ~2 dozen foreign keys
+point at `users.User` with `PROTECT` (audit, decisions, delegations/reassignments,
+`RoleAssignment`, `SectionMember`, balance transactions), which
+`test_deleting_the_account_instead_is_refused` pins. Deactivation achieves what is
+actually wanted — no authentication, and no approver routing
+(`workflows/services.py:344` gates on `is_active`) — with every row left in place.
+`seed_dev_users` stays, because it also seeds leave types, entitlements, rules and
+the financial year, and its `update_or_create` never touches `is_active`, so it
+cannot resurrect the accounts.
+
+### Defect found and fixed along the way
+
+**Form-encoded employee creation produced a deactivated account.** DRF's
+`BooleanField` sets `default_empty_html = False`, which is right for a real form
+(an unchecked checkbox is absent and means False) and wrong for an optional API
+field: any client posting multipart or form-encoded — `curl -F`, an HTML form, and
+DRF's own test client by default — omits `is_active` entirely and DRF supplied
+`False`. `EmployeeSerializer.create` then built the user with `is_active=False`,
+and `users/tests.py::test_a_hr_created_employee_is_inactive_so_holds_no_approver_
+roles` had come to *assert* that accident. Fixed with `OptionalBooleanField`
+(absent means "leave it alone") and an `initial_data` check in `update()` so a
+PATCH that never mentioned activation cannot flip an account back on. The old test
+was rewritten: a new account now holds no approver roles because it has no role
+assignment, not because it was switched off.
+
+### Verification
+
+Backend **1198 tests OK** (was 1151: 47 in `users/tests_password_set.py`, plus the
+`is_active` regression pair). `makemigrations --check` clean; `migrate` applies
+`users/0007`, `notifications/0007`, `audit/0014`. Frontend **574 tests OK** (was
+560), `tsc --noEmit` and `eslint` clean.
+
+### Still open
+
+- **No self-service password change for a signed-in user.** This unit's confirm
+  endpoint requires a live token, so a person who is already signed in cannot
+  change their own password anywhere in the app. Not a gap in the flow above —
+  there is no session holding a stale password, because there is no forced
+  change — but a gap in the product, and worth its own unit. HR's **Send password
+  link** works on an account that already has a password and covers it meanwhile.
+  See `context/specs/26-unit-hr-user-onboarding.md` §16.
+- **The seeded demo accounts are still active** — `retire_demo_users` is built
+  and tested but has not been run against the development database, deliberately
+  left for the user to trigger.
+
+### Still open (operational, not code)
+
+- **Live SMTP still unverified** — two separate checks, and one passing does not
+  imply the other. `uv run manage.py sendtestemail <inbox>` (Django built-in)
+  proves the transport — credentials, TLS, `From:` — but sends directly and
+  bypasses the outbox. The pipeline still needs a real employee record (or
+  `EMAIL_DEV_RECIPIENT_OVERRIDE`) and an outbox row observed going
+  `pending → sent`. Credentials and `FRONTEND_URL` go in `backend/.env`.
+- **A worker is still required** for queued mail and cron: `uv run manage.py
+  qcluster`, or `NOTIFICATIONS_SYNC_SEND=True` for a single-process dev server.
+
+## Completed — Change password for a signed-in user (2026-10-01)
+
+The gap the set-password unit left open: an already signed-in person had no way to
+change their own password. The confirm endpoint needs a live token, and
+`/set-password` only accepts one, so the only routes were HR's **Send password
+link** (which works, and is what covered it in the meantime) or a superuser again.
+
+### The part that was not just a form
+
+A password change is only worth anything if it ends the sessions it is meant to
+end. This app issues a 24-hour `refresh` token, never rotates it, never
+blacklists it, and signing out only clears cookies — the server revokes nothing
+anywhere. So the tempting implementation, an authenticated endpoint that calls
+`set_password`, would have changed the password and left every other device
+signed in for up to a day. For the one case a person reaches for this in anger
+("I think this is stolen") that is close to useless.
+
+SimpleJWT already had the mechanism, unused: `CHECK_REVOKE_TOKEN` writes a
+fingerprint of the password hash into every token and rejects tokens that no
+longer match. Enabling it covers the access path, exactly, with no new column
+and no clock comparison.
+
+**The refresh path needed closing, and that was the actual work.**
+`TokenRefreshView` hands the raw token to `TokenRefreshSerializer`, which mints
+a new access token without consulting the user record at all. A refresh token
+captured before the change would keep working *and* mint access tokens that pass
+the check above — so the check the feature was built on would have had a hole
+straight through it. `users/authentication.py` holds one
+`assert_token_matches_password`, called from both places, deliberately: two copies
+of a revocation rule is two chances to leave one of them out.
+
+Worth recording: the first attempt used a `password_changed_at` watermark and an
+`iat` comparison, which a test caught immediately. `iat` is second-granular, so
+anyone who changed their password and signed in again within the same second
+would have been refused their own new password. The hash fingerprint has no such
+window, and needs no column. The invented field was dropped.
+
+### The endpoint
+
+`POST /api/v1/auth/password-change/` — the one password endpoint that is not
+token-based. No token means no proof, so the **current password is re-checked**:
+without it, a borrowed access token could rotate the account's password and lock
+the real owner out of their own leave history permanently. That check also
+forces two rules the form could not:
+
+* the new password must differ from the current one, which
+  `AUTH_PASSWORD_VALIDATORS` does not cover (Django's
+  `UserAttributeSimilarityValidator` compares username, name and email, never the
+  password being replaced);
+* throttled **per user**, not per IP, at 10/hour. The thing being guessed is one
+  person's password, and a shared office address would otherwise let one
+  person's attempts lock every colleague out of changing theirs.
+
+Also: `validate_password` runs *before* `set_password`, so the validators see the
+old hash; outstanding `PasswordSetToken`s are invalidated, so a set-password link
+that leaked cannot outlive a deliberate change; and the caller's own token dies
+too, which is why the frontend clears its cookies and returns to sign-in.
+
+### The account surface
+
+`/dashboard/account` — a **My Account** nav item below the role-specific items
+rather than inside the HR group, since it is the one destination that does not
+depend on what the person can do. This is the app's first account page, so it is
+a page and not a header dialog: somewhere to put the rest of it later without
+renavigating. `tests/dashboard-shell.test.tsx` previously asserted that no
+"Account" or "Settings" item existed; that assertion's intent inverted, so it was
+replaced with positive ones rather than dodged by picking a different label.
+
+The form reports a wrong current password on the current field and a validator
+message on the new one, and says up front that this signs every session out
+rather than after the fact. On success it navigates to `/login?changed=1`, which
+explains the sign-out — otherwise the change reads as a random logout.
+
+### Two defects found
+
+**An expired delegation window broke an end-to-end test.** `DelegationJourneyTests`
+hard-coded a delegation for 2026-09-21 → 2026-09-30, and delegations only cover
+an approver while in effect, so the test began failing the day the window passed
+— as `not_current_stage`, which points at the approval chain and not at an
+expired delegation. The window is now relative to today. Pre-existing and
+unrelated to this unit; it surfaced in the full run.
+
+**`readMessage` in the new client helper could have lost the error text.** The
+first draft read the field to blame and the message through two separate lookups,
+and a mismatch arrives under `confirm_password` but belongs beside the *new*
+password — so the message lookup found nothing and the user would have seen a
+generic failure. Both are now read as a pair.
+
+### Verification
+
+Backend **1233 tests OK** (was 1198: 35 in `users/tests_password_change.py`).
+The suite's heaviest test is `SessionEvictionTests`, which mints a token, changes
+the password, and requires rejection through **both** the access and the refresh
+path — that pair is the property worth having tests for. `makemigrations
+--check` clean; one migration, `audit/0015`.
+
+Frontend **603 tests OK** (was 574), across three new files: the form
+(11), the client helper (10), the proxy (6). `tsc` and lint clean.
+
+### Still open
+
+- **Logout still revokes nothing server-side.** A refresh token survives "sign
+  out" for up to 24 h. A password change is now the way to actually end
+  sessions, which is a strange thing for a *logout* button to be better at.
+  Fixing it properly means `token_blacklist` plus rotation, which changes
+  behaviour for every client — deliberately not done here.
+- **The demo accounts are still active**; `retire_demo_users` is built and tested
+  but has not been run against the development database.
+
+---
+
+## Live SMTP and real-employee run (2026-10-01)
+
+The transport and the two-recipient fan-out are now verified against a real
+relay, and the run turned up three defects worth recording.
+
+### `croniter` was missing, which silently stopped all delivery
+
+`qcluster` died on boot with `ImportError: Please install croniter to enable cron
+expressions`. The effect was worse than a crash: the `django_q.Schedule` row that
+runs plan housekeeping is a cron expression, so without `croniter` the worker
+never started, and every queued notification sat `pending` with nothing to retry
+it. A `password_changed` row added during the smoke test was the evidence — it
+never moved off `pending` until the dependency was added. Now declared in
+`backend/pyproject.toml`; `uv sync` restores it.
+
+### The set-password page reported live links as dead
+
+Both real links were verifiably fine — the database said `LIVE`, and
+`GET /api/v1/auth/password-set/validate/` returned `{"valid": true}` for the exact
+token — yet the page showed "This link is no longer valid".
+
+The cause was in `frontend/app/(auth)/set-password/page.tsx`. The page scrubs
+`?token=` from the address bar so the secret cannot leak into browser history or
+a `Referer` header, and it re-derived the token from `useSearchParams()` on every
+effect run. `history.replaceState` does not merely change the address bar: the
+Next.js router then reports **no token** on the next read, so the second read was
+`""` and the page declared a good link dead. The one-line fix reads
+`rawToken || tokenRef.current`, so the token captured at mount wins over the
+post-scrub empty read and the ref stays the single source of truth for both
+validate and confirm.
+
+It survived a full green suite because the tests mocked `useSearchParams` to a
+**constant**, so the token never disappeared. The regression test added in
+`tests/password-set-pages.test.tsx` now returns the token once and empty
+thereafter, mirroring the browser, and asserts both that the form stays usable and
+that confirm still sends the original token. Reverting the one-line fix makes it
+fail, so it is a real guard. Frontend is now **604 tests** (was 603).
+
+### A missing fingerprint claim was a way around password revocation
+
+`CHECK_REVOKE_TOKEN` covers the *access* path, and SimpleJWT's built-in check
+treats an absent fingerprint claim as a mismatch. `users/authentication.py` — the
+shared check the custom refresh view calls — explicitly **allowed** a claim-less
+token, on the reasoning that rejecting one would sign everyone out on deploy. That
+made the two paths disagree in the one direction that matters: refresh accepted a
+claim-less token and minted a *fresh* access token stamped with the current
+fingerprint, which then passed the access check. A token captured before a
+password change survived the change by that route, which is the single thing the
+setting exists to prevent. The permissive branch is gone, so both paths reach the
+same verdict; `MissingFingerprintTests` pins all three shapes (refresh rejects,
+access rejects, and a claim-less token cannot outlive a change). Verified by
+temporarily restoring the branch: refresh returned **200**. Backend is now
+**1236 tests** (was 1233).
+
+The old justification did not hold anyway — the app is stateless JWT, so there
+are no server-side sessions to migrate, and this is pre-production.
+
+### What the run proved, and one trap it could not
+
+Asante Kolowiko applied for 2026-10-08 → 2026-10-15 (6 working days, FY
+2026-27), and all four stages approved in order, the last by the DVC. Audit
+records `password_set` twice, then `submitted`, four `approved`, and
+`document_generated`. The `application_finalised` outbox row went `sent` with an
+empty error.
+
+The finalised row lists **only the owner**, and that is by design rather than a
+bug: `notifications/services.py` keys one row on
+`(application, kind, cycle, role_label)` recording the owner, and passes the full
+recipient list into the queued task, which sends one message addressed to both.
+Re-deriving the list for that exact event returns
+`['asantekolowiko@gmail.com', 'echotask.dev@gmail.com']`.
+
+But the SMTP account *is* the second address, so the final approver's copy was a
+message from himself to himself: the relay accepted it, the row said `sent`, and
+the mail landed in **Sent** rather than the Inbox. It is now in
+`DEVELOPER-GUIDE.md` as a standing rule — the sender must differ from the
+recipients, and a correct `sent` row is not evidence that a second recipient got
+anything, because only the owner is recorded on the row.
+

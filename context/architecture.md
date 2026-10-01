@@ -24,7 +24,7 @@ The system should be designed so that organization-specific infrastructure can b
 | File Storage | supabase | Stores supporting documents and generated approved leave documents; organization infrastructure must be investigated before final selection |
 | Cache | Django local-memory cache (dev) | Temporary caching and performance-related data if required; production cache technology remains TBD (no Redis dependency introduced for this) |
 | Background Processing | Django-Q2 (ORM broker) | Handles operations that should not block normal web requests, such as document generation or email processing; uses Postgres as the broker, no Redis dependency |
-| Email | smtp | Sends application, approval, rejection, correction, delegation, cancellation, and final-approval notifications |
+| Email | SMTP (Google Workspace relay), env-configured | Sends decision, delegation, reassignment, leave-day-plan, cancellation, set-password, and password-change notifications; the console backend is the fallback when no relay is configured |
 
 \* Final technologies that depend on LUANAR's existing infrastructure must be confirmed before production deployment.
 
@@ -407,6 +407,15 @@ The background-processing technology is **Django-Q2**, using Postgres as its ORM
 Background jobs must not become the authoritative source of business state. Important state transitions must be persisted in the database.
 
 For example, an approval must be recorded as an approval in the database before notification delivery is treated as a secondary operation.
+
+Notification delivery implements that rule literally: a composer writes an
+append-only `NotificationOutbox` row, `transaction.on_commit` hands the row to
+Django-Q2, and the delivery task is the only place that calls `send_mail`. The row
+is the delivery record (`pending → sent | failed`, with the error text on failure),
+so a dead relay can never undo a decision, and a replayed event can never send the
+same mail twice (one row per subject, kind and role). Scheduled work — plan
+housekeeping and block-confirmation reminders — is a `django_q.Schedule` row, so it
+also requires a running `qcluster` worker.
 
 ---
 

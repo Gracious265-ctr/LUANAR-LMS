@@ -12,18 +12,15 @@ A stage is resolved by whoever acts first, so ``KIND_PLAN_ASSIGNED`` goes to
 row per stage, matching how the leave approval bus broadcasts a decision — rather
 than guessing which of them should be told.
 
-Send failures are recorded on the row and swallowed — one dead email backend can
-never take down a plan decision or a confirmation.
+Delivery failures are recorded on the row by
+:func:`notifications.tasks.deliver_notification` and swallowed — one dead mail
+relay can never take down a plan decision or a confirmation.
 """
 
 from __future__ import annotations
 
-from django.conf import settings
-from django.core.mail import send_mail
-
 from leave.providers import get_today
 from notifications.models import NotificationOutbox
-from notifications.services import LEAVE_DOMAIN
 
 KIND_PLAN_ASSIGNED = "plan_assigned"
 KIND_PLAN_FINALISED = "plan_finalised"
@@ -33,7 +30,9 @@ KIND_BLOCK_REMINDER = "plan_block_confirm_reminder"
 
 
 def _deliver(*, row_defaults: dict, unique_fields: dict, recipients):
-    """Idempotently create and deliver one outbox row to ``recipients``."""
+    """Idempotently record one outbox row and queue it for ``recipients``."""
+    from notifications.tasks import enqueue_delivery
+
     unique_fields.setdefault("submission_cycle", 1)
     row, created = NotificationOutbox.objects.get_or_create(
         **unique_fields,
@@ -43,18 +42,7 @@ def _deliver(*, row_defaults: dict, unique_fields: dict, recipients):
         return
     if not recipients:
         return
-    try:
-        send_mail(
-            subject=row.subject,
-            message=row.body,
-            from_email=settings.DEFAULT_FROM_EMAIL or f"no-reply@{LEAVE_DOMAIN}",
-            recipient_list=recipients,
-            fail_silently=False,
-        )
-    except Exception as exc:  # noqa: BLE001 — consumer-level isolation
-        row.mark_failed(str(exc))
-        return
-    row.mark_sent()
+    enqueue_delivery(row, recipients=recipients)
 
 
 def _plan_row(plan, *, kind, role_label, subject, body, recipient):

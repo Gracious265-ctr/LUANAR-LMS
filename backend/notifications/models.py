@@ -2,14 +2,17 @@
 
 Each row is one email — the delivery record for a single subject/party pair:
 a leave decision (``application``), a delegation lifecycle event
-(``delegation``), or a reassignment (``reassignment``).
+(``delegation``), a reassignment (``reassignment``), a leave day plan
+(``plan``/``plan_block``), a cancellation (``cancellation``), or an account
+login itself (``user``).
 
 * **Append-only** — queryset-wide ``update``/``delete`` are rejected, mirroring
   the balance-ledger discipline. Row state moves ``pending → sent|failed`` only
   through the model's own transition methods, never through the queryset.
 * **Idempotent** — a partial unique constraint per subject family means a
   re-emitted event (after a reconnect or replay) matches the existing row and
-  never sends a second email.
+  never sends a second email. The one deliberate exception is the account
+  family, where each issuance of a link is its own row.
 * **Same vocabulary** — state values ``pending`` / ``sent`` / ``failed`` reuse
   the delivery vocabulary already pinned in Unit 18's
   ``CancellationRequest.NotificationState``; nothing new is invented.
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -96,6 +100,22 @@ class NotificationOutbox(models.Model):
         null=True,
         blank=True,
     )
+    cancellation = models.ForeignKey(
+        "leave.CancellationRequest",
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="notification_outbox_rows",
+        null=True,
+        blank=True,
+        help_text="The account this email concerns. Only the account family uses it: "
+        "a password-set link is about the login itself and has no business subject.",
+    )
     kind = models.CharField(max_length=32, db_index=True)
     submission_cycle = models.PositiveSmallIntegerField(default=1)
     role_label = models.CharField(
@@ -103,8 +123,10 @@ class NotificationOutbox(models.Model):
         default="",
         help_text="Who the row concerns: the stage role for a decision email, "
         "'approver' / 'delegate' for a delegation email, "
-        "'from_approver' / 'to_approver' for a reassignment email, or "
-        "'owner' for a leave day plan lifecycle email.",
+        "'from_approver' / 'to_approver' for a reassignment email, "
+        "'employee' or the workflow role for a cancellation email, "
+        "'owner' for a leave day plan lifecycle email, or "
+        "'account' for a password-set email.",
     )
     recipient_email = models.EmailField()
     subject = models.CharField(max_length=200, default="")
@@ -135,6 +157,8 @@ class NotificationOutbox(models.Model):
                         reassignment__isnull=True,
                         plan__isnull=True,
                         plan_block__isnull=True,
+                        cancellation__isnull=True,
+                        user__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
@@ -142,6 +166,8 @@ class NotificationOutbox(models.Model):
                         reassignment__isnull=True,
                         plan__isnull=True,
                         plan_block__isnull=True,
+                        cancellation__isnull=True,
+                        user__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
@@ -149,6 +175,8 @@ class NotificationOutbox(models.Model):
                         reassignment__isnull=False,
                         plan__isnull=True,
                         plan_block__isnull=True,
+                        cancellation__isnull=True,
+                        user__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
@@ -156,6 +184,8 @@ class NotificationOutbox(models.Model):
                         reassignment__isnull=True,
                         plan__isnull=False,
                         plan_block__isnull=True,
+                        cancellation__isnull=True,
+                        user__isnull=True,
                     )
                     | models.Q(
                         application__isnull=True,
@@ -163,6 +193,26 @@ class NotificationOutbox(models.Model):
                         reassignment__isnull=True,
                         plan__isnull=True,
                         plan_block__isnull=False,
+                        cancellation__isnull=True,
+                        user__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=True,
+                        reassignment__isnull=True,
+                        plan__isnull=True,
+                        plan_block__isnull=True,
+                        cancellation__isnull=False,
+                        user__isnull=True,
+                    )
+                    | models.Q(
+                        application__isnull=True,
+                        delegation__isnull=True,
+                        reassignment__isnull=True,
+                        plan__isnull=True,
+                        plan_block__isnull=True,
+                        cancellation__isnull=True,
+                        user__isnull=False,
                     )
                 ),
                 name="one_notification_subject",
@@ -196,6 +246,16 @@ class NotificationOutbox(models.Model):
                 condition=models.Q(plan_block__isnull=False),
                 name="one_outbox_row_per_plan_block_kind_role",
             ),
+            models.UniqueConstraint(
+                fields=["cancellation", "kind", "role_label"],
+                condition=models.Q(cancellation__isnull=False),
+                name="one_outbox_row_per_cancellation_kind_role",
+            ),
+            # No unique constraint for the account family, and that is the point:
+            # the other families are idempotent because re-emitting an event must
+            # not send a second email, but reissuing a password-set link *must*
+            # send another one. The single-use token is what guarantees a link
+            # cannot be used twice, so the outbox keeps one row per issuance.
         ]
 
     def __str__(self) -> str:
