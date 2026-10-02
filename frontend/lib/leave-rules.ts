@@ -1,5 +1,4 @@
 import { apiClient } from "./api-client";
-import { currentDateIso } from "./utils";
 
 export interface LeaveType {
   id: number;
@@ -84,9 +83,6 @@ export async function getLeaveRule(id: number | string): Promise<LeaveRule> {
   return apiClient<LeaveRule>(`/api/v1/leave-rules/${id}/`);
 }
 
-export function leaveRuleStatus(
-  rule: LeaveRule,
-  today: string = currentDateIso()
-): "current" | "upcoming" {
-  return rule.effective_from <= today ? "current" : "upcoming";
-}
+// Re-exported for the server-side callers that already import from here; the
+// implementation lives in the browser-safe client module.
+export { leaveRuleStatus } from "./leave-rules-client";

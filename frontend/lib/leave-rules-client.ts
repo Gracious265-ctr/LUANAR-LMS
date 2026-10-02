@@ -1,4 +1,4 @@
-import { apiErrorMessage } from "./utils";
+import { apiErrorMessage, currentDateIso } from "./utils";
 import type {
   LeaveRule,
   LeaveRuleInput,
@@ -52,4 +52,18 @@ async function proxyPatch<T>(endpoint: string, body: unknown): Promise<T> {
     throw new Error(apiErrorMessage(data));
   }
   return response.json();
+}
+/**
+ * Whether a rule has taken effect yet.
+ *
+ * Lives here rather than in `leave-rules.ts` because it is pure: the rule table
+ * is a client component, and importing the server module would drag
+ * `api-client`'s `next/headers` into the browser bundle. Same split as
+ * `historyScopeLabel` in `approver-roles-client`.
+ */
+export function leaveRuleStatus(
+  rule: LeaveRule,
+  today: string = currentDateIso()
+): "current" | "upcoming" {
+  return rule.effective_from <= today ? "current" : "upcoming";
 }
