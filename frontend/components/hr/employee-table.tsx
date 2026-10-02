@@ -50,7 +50,7 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
               </td>
               <td className="py-3 pr-4 text-text-secondary">{employee.email}</td>
               <td className="py-3 pr-4 text-text-secondary">
-                {employee.department || "—"}
+                {employee.department_name || "—"}
               </td>
               <td className="py-3 pr-4 text-text-secondary">
                 {employee.designation || "—"}

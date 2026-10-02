@@ -3,9 +3,14 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
-import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
+import {
+  createLeaveRule,
+  createLeaveType,
+  updateLeaveRule,
+} from "@/lib/leave-rules-client";
 
 export function LeaveRuleForm({
   leaveRule,
@@ -17,6 +22,42 @@ export function LeaveRuleForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The server-loaded options are the starting point, not the final word: HR can
+  // create a leave type from this form, and the one they just made must appear in
+  // the picker without leaving the page.
+  const [leaveTypeOptions, setLeaveTypeOptions] =
+    useState<LeaveType[]>(leaveTypes);
+  const [selectedLeaveType, setSelectedLeaveType] = useState(
+    leaveRule?.leave_type === undefined || leaveRule?.leave_type === null
+      ? ""
+      : String(leaveRule.leave_type)
+  );
+  const [showNewLeaveType, setShowNewLeaveType] = useState(false);
+  const [newLeaveTypeName, setNewLeaveTypeName] = useState("");
+  const [creatingLeaveType, setCreatingLeaveType] = useState(false);
+  const [leaveTypeCreateError, setLeaveTypeCreateError] = useState("");
+
+  async function handleCreateLeaveType() {
+    const name = newLeaveTypeName.trim();
+    if (name === "") return;
+    setLeaveTypeCreateError("");
+    setCreatingLeaveType(true);
+    try {
+      const created = await createLeaveType({ name });
+      setLeaveTypeOptions((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setSelectedLeaveType(String(created.id));
+      setNewLeaveTypeName("");
+      setShowNewLeaveType(false);
+    } catch (err) {
+      setLeaveTypeCreateError(
+        err instanceof Error ? err.message : "Could not create the leave type."
+      );
+    } finally {
+      setCreatingLeaveType(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,20 +105,61 @@ export function LeaveRuleForm({
           id="leave_type"
           name="leave_type"
           required
-          defaultValue={leaveRule?.leave_type ?? ""}
+          value={selectedLeaveType}
+          onChange={(event) => setSelectedLeaveType(event.target.value)}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
-          {leaveTypes.length === 0 && <option value="">No leave types available</option>}
-          {leaveTypes.map((leaveType) => (
+          <option value="">Choose a leave type…</option>
+          {leaveTypeOptions.map((leaveType) => (
             <option key={leaveType.id} value={leaveType.id}>
               {leaveType.name}
             </option>
           ))}
         </select>
-        {leaveTypes.length === 0 && (
-          <p className="mt-1 text-xs text-text-muted">
-            Create a leave type before adding a rule.
-          </p>
+        {!showNewLeaveType ? (
+          <button
+            type="button"
+            onClick={() => setShowNewLeaveType(true)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            <Plus className="h-4 w-4" />
+            Create leave type
+          </button>
+        ) : (
+          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label="New leave type name"
+                value={newLeaveTypeName}
+                onChange={(event) => setNewLeaveTypeName(event.target.value)}
+                placeholder="e.g. Study leave"
+                className="min-w-40 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              />
+              <button
+                type="button"
+                onClick={() => void handleCreateLeaveType()}
+                disabled={creatingLeaveType || newLeaveTypeName.trim() === ""}
+                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingLeaveType ? "Saving..." : "Save leave type"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewLeaveType(false);
+                  setLeaveTypeCreateError("");
+                }}
+                className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+              >
+                Cancel
+              </button>
+            </div>
+            {leaveTypeCreateError ? (
+              <p className="mt-1 text-xs text-status-rejected">
+                {leaveTypeCreateError}
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
 

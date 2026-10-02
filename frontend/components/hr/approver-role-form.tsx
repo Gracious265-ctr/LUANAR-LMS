@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import type { ApproverRole, ApproverRoleInput } from "@/lib/approver-roles";
+import type { ApproverRole } from "@/lib/approver-roles";
 import type { HistoryScope } from "@/lib/approver-role-scopes";
 import {
   createApproverRole,
@@ -13,11 +13,17 @@ import {
   updateApproverRole,
 } from "@/lib/approver-roles-client";
 
-export function ApproverRoleForm({
-  role,
-}: {
-  role?: ApproverRole;
-}) {
+/**
+ * Creating a role asks for one thing: its name.
+ *
+ * The code every rule reads is derived from the name, and the behavioural
+ * fields are decisions about who the role is for — history scope, cancellation
+ * handling, institution-wide holding — which are better answered once the role
+ * exists and its place is understood. Editing then exposes them, and nothing but
+ * the name is fixed: a role is quoted by the stages and decisions that used it,
+ * so renaming it would make those quote something that no longer exists.
+ */
+export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,25 +34,24 @@ export function ApproverRoleForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const input: ApproverRoleInput = {
-      code: String(formData.get("code") || ""),
-      label: String(formData.get("label") || ""),
-      description: String(formData.get("description") || ""),
-      history_scope: String(
-        formData.get("history_scope") || "none"
-      ) as HistoryScope,
-      handles_cancellation: formData.get("handles_cancellation") === "on",
-      is_institution_wide: formData.get("is_institution_wide") === "on",
-    };
 
     try {
       if (role) {
-        // The code is the role's identity in saved workflow sections and team
-        // memberships, so it is never rewritten: an existing role is patched
-        // without it.
-        await updateApproverRole(role.id, { ...input, code: undefined });
+        // The name is not editable, so it is not sent at all: the backend
+        // refuses a changed label, and sending the unchanged one would only be
+        // a way to get that refusal by accident.
+        await updateApproverRole(role.id, {
+          description: String(formData.get("description") || ""),
+          history_scope: String(
+            formData.get("history_scope") || "none"
+          ) as HistoryScope,
+          handles_cancellation: formData.get("handles_cancellation") === "on",
+          is_institution_wide: formData.get("is_institution_wide") === "on",
+        });
       } else {
-        await createApproverRole(input);
+        await createApproverRole({
+          label: String(formData.get("label") || ""),
+        });
       }
       router.push("/dashboard/hr-admin/roles");
       router.refresh();
@@ -66,127 +71,126 @@ export function ApproverRoleForm({
       onSubmit={handleSubmit}
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
+      <div className={role ? "md:col-span-2" : ""}>
         <label
           htmlFor="label"
           className="mb-1 block text-sm font-medium text-text-primary"
         >
-          Label
+          Name
         </label>
         <input
           id="label"
           name="label"
           required
           maxLength={80}
-          defaultValue={role?.label}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-          placeholder="e.g. Head of Department"
-        />
-      </div>
-
-      <div>
-        <label
-          htmlFor="code"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Code
-        </label>
-        <input
-          id="code"
-          name="code"
-          required
-          maxLength={50}
           readOnly={role !== undefined}
-          defaultValue={role?.code}
+          defaultValue={role?.label}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus read-only:bg-surface-muted read-only:text-text-secondary"
-          placeholder="e.g. hod"
+          placeholder="e.g. Head of Department"
         />
         <p className="mt-1 text-xs text-text-muted">
           {role
-            ? "The code cannot change once saved: workflow sections and team memberships store it."
-            : "Lowercase letters, numbers, and hyphens. This is what workflow sections store."}
+            ? "A role's name cannot change once it exists: the stages and decisions that used it quote it. Create a new role instead and retire this one."
+            : "The code workflow steps store is derived from this name, so there is nothing else to give it."}
         </p>
       </div>
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="description"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Description
-        </label>
-        <input
-          id="description"
-          name="description"
-          maxLength={255}
-          defaultValue={role?.description}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-          placeholder="What this approver is responsible for"
-        />
-      </div>
+      {role ? (
+        <>
+          <div className="md:col-span-2">
+            <span className="mb-1 block text-sm font-medium text-text-primary">
+              Code
+            </span>
+            <code className="inline-block rounded-md border border-border-default bg-surface-muted px-2 py-1 text-sm text-text-secondary">
+              {role.code}
+            </code>
+            <p className="mt-1 text-xs text-text-muted">
+              What workflow steps store and the routing rules read. It cannot
+              change.
+            </p>
+          </div>
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="history_scope"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Leave history visible to this approver
-        </label>
-        <select
-          id="history_scope"
-          name="history_scope"
-          defaultValue={role?.history_scope ?? "none"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {HISTORY_SCOPES.map((scope) => (
-            <option key={scope} value={scope}>
-              {historyScopeLabel(scope)}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          How much of an applicant&apos;s leave history this role sees when
-          deciding. It is narrowed further when the applicant is outside the
-          approver&apos;s own team.
-        </p>
-      </div>
+          <div className="md:col-span-2">
+            <label
+              htmlFor="description"
+              className="mb-1 block text-sm font-medium text-text-primary"
+            >
+              Description
+            </label>
+            <input
+              id="description"
+              name="description"
+              maxLength={255}
+              defaultValue={role.description}
+              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              placeholder="What this approver is responsible for"
+            />
+          </div>
 
-      <label className="flex items-start gap-2 md:col-span-2">
-        <input
-          type="checkbox"
-          name="is_institution_wide"
-          defaultChecked={role?.is_institution_wide ?? false}
-          className="mt-0.5 size-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
-        />
-        <span>
-          <span className="block text-sm font-medium text-text-primary">
-            Institution-wide role
-          </span>
-          <span className="block text-xs text-text-muted">
-            One holder covers every application, so this role is not staffed
-            team by team. Use it for a single Registrar, not a Head of
-            Department.
-          </span>
-        </span>
-      </label>
+          <div className="md:col-span-2">
+            <label
+              htmlFor="history_scope"
+              className="mb-1 block text-sm font-medium text-text-primary"
+            >
+              Leave history visible to this approver
+            </label>
+            <select
+              id="history_scope"
+              name="history_scope"
+              defaultValue={role.history_scope ?? "none"}
+              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+            >
+              {HISTORY_SCOPES.map((scope) => (
+                <option key={scope} value={scope}>
+                  {historyScopeLabel(scope)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-text-muted">
+              How much of an applicant&apos;s leave history this role sees when
+              deciding. It is narrowed further when the applicant is outside the
+              approver&apos;s own team.
+            </p>
+          </div>
 
-      <label className="flex items-start gap-2 md:col-span-2">
-        <input
-          type="checkbox"
-          name="handles_cancellation"
-          defaultChecked={role?.handles_cancellation ?? false}
-          className="mt-0.5 size-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
-        />
-        <span>
-          <span className="block text-sm font-medium text-text-primary">
-            Decides cancellations
-          </span>
-          <span className="block text-xs text-text-muted">
-            This role can approve or reject a cancellation request. Every
-            institution should have at least one such role.
-          </span>
-        </span>
-      </label>
+          <label className="flex items-start gap-2 md:col-span-2">
+            <input
+              type="checkbox"
+              name="is_institution_wide"
+              defaultChecked={role.is_institution_wide}
+              className="mt-0.5 size-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
+            />
+            <span>
+              <span className="block text-sm font-medium text-text-primary">
+                Institution-wide role
+              </span>
+              <span className="block text-xs text-text-muted">
+                One holder covers every application, so this role is not staffed
+                team by team. Use it for a single Registrar, not a Head of
+                Department.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 md:col-span-2">
+            <input
+              type="checkbox"
+              name="handles_cancellation"
+              defaultChecked={role.handles_cancellation}
+              className="mt-0.5 size-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
+            />
+            <span>
+              <span className="block text-sm font-medium text-text-primary">
+                Decides cancellations
+              </span>
+              <span className="block text-xs text-text-muted">
+                This role can approve or reject a cancellation request. Every
+                institution should have at least one such role.
+              </span>
+            </span>
+          </label>
+        </>
+      ) : null}
 
       {error && (
         <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
@@ -200,11 +204,7 @@ export function ApproverRoleForm({
           disabled={loading}
           className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading
-            ? "Saving..."
-            : role
-              ? "Save changes"
-              : "Create role"}
+          {loading ? "Saving..." : role ? "Save changes" : "Create role"}
         </button>
         <Link
           href="/dashboard/hr-admin/roles"

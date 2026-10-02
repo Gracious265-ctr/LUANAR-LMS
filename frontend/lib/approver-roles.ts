@@ -23,8 +23,8 @@ export interface ApproverRole {
 }
 
 export interface ApproverRoleInput {
-  code: string;
-  label: string;
+  /** Required on create only. The code is derived from it by the backend. */
+  label?: string;
   description?: string;
   history_scope?: HistoryScope;
   handles_cancellation?: boolean;

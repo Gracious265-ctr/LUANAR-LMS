@@ -41,8 +41,64 @@ beforeEach(() => {
 });
 
 describe("ApproverRoleForm", () => {
-  it("offers every history scope the backend defines, with a plain meaning", () => {
+  it("creates a role from its name alone, leaving the code to the backend", async () => {
     render(<ApproverRoleForm />);
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Head of Department" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create role" }));
+
+    await waitFor(() => expect(createApproverRole).toHaveBeenCalled());
+    expect(vi.mocked(createApproverRole).mock.calls[0][0]).toEqual({
+      label: "Head of Department",
+    });
+  });
+
+  it("does not ask for a code or behaviour when the role does not exist yet", () => {
+    render(<ApproverRoleForm />);
+
+    expect(screen.queryByLabelText("Code")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Leave history visible to this approver")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Institution-wide role", { exact: false })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the code on edit without letting it be typed", () => {
+    render(<ApproverRoleForm role={role} />);
+
+    expect(screen.getByText("hod")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Code")).not.toBeInTheDocument();
+  });
+
+  it("shows the name on edit but does not send it, because it cannot change", async () => {
+    render(<ApproverRoleForm role={role} />);
+
+    expect(screen.getByLabelText("Name")).toHaveValue("Head of Department");
+    expect(screen.getByLabelText("Name")).toHaveAttribute("readonly");
+
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Approves department leave" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateApproverRole).toHaveBeenCalled());
+    const [, input] = vi.mocked(updateApproverRole).mock.calls[0];
+    expect(input).toMatchObject({
+      description: "Approves department leave",
+      history_scope: "same_department",
+      handles_cancellation: false,
+      is_institution_wide: false,
+    });
+    expect(input).not.toHaveProperty("label");
+    expect(input).not.toHaveProperty("code");
+  });
+
+  it("offers every history scope the backend defines on an existing role", () => {
+    render(<ApproverRoleForm role={role} />);
 
     const select = screen.getByLabelText("Leave history visible to this approver");
     expect(
@@ -56,101 +112,38 @@ describe("ApproverRoleForm", () => {
       "Current financial year only",
       "No history",
     ]);
+    expect(select).toHaveValue("same_department");
   });
 
-  it("creates a role with the code HR chose", async () => {
-    render(<ApproverRoleForm />);
+  it("marks a role institution-wide when editing it", async () => {
+    render(<ApproverRoleForm role={role} />);
 
-    fireEvent.change(screen.getByLabelText("Label"), {
-      target: { value: "Head of Department" },
-    });
-    fireEvent.change(screen.getByLabelText("Code"), {
-      target: { value: "hod" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create role" }));
-
-    await waitFor(() => expect(createApproverRole).toHaveBeenCalled());
-    expect(vi.mocked(createApproverRole).mock.calls[0][0]).toMatchObject({
-      code: "hod",
-      label: "Head of Department",
-      history_scope: "none",
-      is_institution_wide: false,
-    });
-  });
-
-  it("marks a role institution-wide from the form", async () => {
-    render(<ApproverRoleForm />);
-
-    fireEvent.change(screen.getByLabelText("Label"), {
-      target: { value: "Registrar" },
-    });
-    fireEvent.change(screen.getByLabelText("Code"), {
-      target: { value: "registrar" },
-    });
     fireEvent.click(
       screen.getByLabelText("Institution-wide role", { exact: false })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Create role" }));
-
-    await waitFor(() => expect(createApproverRole).toHaveBeenCalled());
-    expect(vi.mocked(createApproverRole).mock.calls[0][0].is_institution_wide).toBe(
-      true
-    );
-  });
-
-  it("sends no code when updating, so a saved role keeps its identity", async () => {
-    render(<ApproverRoleForm role={role} />);
-
-    fireEvent.change(screen.getByLabelText("Label"), {
-      target: { value: "Head of Department (Academic)" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updateApproverRole).toHaveBeenCalled());
-    const [, input] = vi.mocked(updateApproverRole).mock.calls[0];
-    expect(input?.code).toBeUndefined();
-    expect(input?.label).toBe("Head of Department (Academic)");
-  });
-
-  it("locks the code on edit and says why", () => {
-    render(<ApproverRoleForm role={role} />);
-
-    expect(screen.getByLabelText("Code")).toHaveAttribute("readonly");
     expect(
-      screen.getByText(
-        "The code cannot change once saved: workflow sections and team memberships store it."
-      )
-    ).toBeInTheDocument();
-  });
-
-  it("prefills an existing role", () => {
-    render(<ApproverRoleForm role={role} />);
-
-    expect(screen.getByLabelText("Label")).toHaveValue("Head of Department");
-    expect(screen.getByLabelText("Code")).toHaveValue("hod");
-    expect(
-      screen.getByLabelText("Leave history visible to this approver")
-    ).toHaveValue("same_department");
+      vi.mocked(updateApproverRole).mock.calls[0][1].is_institution_wide
+    ).toBe(true);
   });
 
   it("shows the backend's rejection without losing what was typed", async () => {
     vi.mocked(createApproverRole).mockRejectedValue(
-      new Error('code: The role code "hod" is already in use.')
+      new Error("label: Enter a role name.")
     );
     render(<ApproverRoleForm />);
 
-    fireEvent.change(screen.getByLabelText("Label"), {
+    fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Head of Department" },
-    });
-    fireEvent.change(screen.getByLabelText("Code"), {
-      target: { value: "hod" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create role" }));
 
     expect(
-      await screen.findByText('code: The role code "hod" is already in use.')
+      await screen.findByText("label: Enter a role name.")
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Code")).toHaveValue("hod");
+    expect(screen.getByLabelText("Name")).toHaveValue("Head of Department");
     expect(push).not.toHaveBeenCalled();
   });
 

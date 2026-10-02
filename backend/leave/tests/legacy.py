@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import User
+from users.models import Department, EmployeeProfile, User
 
 from ..admin import (
     FinancialYearAdmin,
@@ -353,44 +353,31 @@ class GradeEntitlementEndpointTests(TestCase):
 
 
 class SeedDevelopmentCommandTests(TestCase):
-    """Seed command creates default entitlement rules idempotently."""
+    """The dev seeder makes accounts only, never business configuration.
 
-    def test_seed_creates_default_entitlements_idempotently(self):
+    The product must run from an empty database: a superadmin creates HR, and HR
+    creates departments, roles, teams, workflows, entitlements, and leave types
+    through the frontend. This command exists so a developer can sign in; it must
+    not quietly supply rows the UI is supposed to create.
+    """
+
+    def test_seed_creates_only_users_idempotently(self):
         call_command("seed_dev_users")
         call_command("seed_dev_users")
 
-        self.assertEqual(User.objects.count(), 7)
-        self.assertEqual(GradeEntitlement.objects.count(), 3)
+        # Nine, not seven: Central Administration has its own supervisor and HOD,
+        # because a team's approvers are its own department's employees and the
+        # academic pair sit in Bunda College.
+        self.assertEqual(User.objects.count(), 9)
+        self.assertEqual(EmployeeProfile.objects.count(), 9)
 
-        days_by_band = {
-            (rule.grade_start, rule.grade_end): rule.days
-            for rule in GradeEntitlement.objects.all()
-        }
-        self.assertEqual(days_by_band[("A", "C")], 21)
-        self.assertEqual(days_by_band[("D", "G")], 24)
-        self.assertEqual(days_by_band[("H", "U")], 30)
-
-    def test_seed_creates_default_leave_types_and_rules_idempotently(self):
-        call_command("seed_dev_users")
+    def test_seed_creates_no_business_data(self):
         call_command("seed_dev_users")
 
-        self.assertEqual(LeaveType.objects.count(), 4)
-        self.assertEqual(LeaveRule.objects.count(), 4)
-
-        rules_by_code = {
-            rule.leave_type.code: rule
-            for rule in LeaveRule.objects.select_related("leave_type")
-        }
-        self.assertEqual(rules_by_code["annual"].max_duration_days, 30)
-        self.assertTrue(rules_by_code["annual"].consumes_annual_entitlement)
-        self.assertEqual(rules_by_code["maternity"].max_duration_days, 90)
-        self.assertFalse(rules_by_code["maternity"].consumes_annual_entitlement)
-        self.assertEqual(rules_by_code["paternity"].max_duration_days, 10)
-        self.assertEqual(rules_by_code["compassionate"].max_duration_days, 5)
-        self.assertEqual(
-            {rule.leave_type.code for rule in LeaveRule.objects.all()},
-            {"annual", "maternity", "paternity", "compassionate"},
-        )
+        self.assertFalse(Department.objects.exists())
+        self.assertFalse(GradeEntitlement.objects.exists())
+        self.assertFalse(LeaveType.objects.exists())
+        self.assertFalse(LeaveRule.objects.exists())
 
 
 class GradeEntitlementAdminTests(TestCase):

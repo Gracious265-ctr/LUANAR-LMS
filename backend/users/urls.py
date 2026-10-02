@@ -1,12 +1,21 @@
 from django.urls import include, path
 from rest_framework.routers import SimpleRouter
 
-from .views import EmployeeViewSet, LoginView, MeView, RefreshView
+from .views import (
+    AdminUserViewSet,
+    DepartmentViewSet,
+    EmployeeViewSet,
+    LoginView,
+    MeView,
+    RefreshView,
+)
 
 app_name = "users"
 
 router = SimpleRouter()
 router.register("employees", EmployeeViewSet, basename="employee")
+router.register("departments", DepartmentViewSet, basename="department")
+router.register("admin-users", AdminUserViewSet, basename="admin-user")
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),

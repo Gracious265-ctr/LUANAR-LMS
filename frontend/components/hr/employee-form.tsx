@@ -3,8 +3,11 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
-import type { Employee, TeamOption, UserRole } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
+import type { Department } from "@/lib/departments";
+import { createDepartment } from "@/lib/departments-client";
 import { apiErrorMessage } from "@/lib/utils";
 
 const CATEGORIES: { value: string; label: string }[] = [
@@ -13,35 +16,73 @@ const CATEGORIES: { value: string; label: string }[] = [
 ];
 
 /**
- * What an account can reach. An approver position is not chosen here — it is
- * held on a team, or granted institution-wide from the Roles page — so this list
- * covers system access only.
+ * What an account can reach, said in words.
+ *
+ * This is displayed, not chosen: the directory creates normal employees,
+ * approver access follows from a workflow appointment, and an HR account is
+ * created by an administrator. Showing the current value keeps an edit from
+ * looking as though it could change it.
  */
-const ROLES: { value: UserRole; label: string }[] = [
-  { value: "employee", label: "Employee" },
-  { value: "approver", label: "Approver" },
-  { value: "hr", label: "Human Resources" },
-];
+const ROLE_LABELS: Record<UserRole, string> = {
+  employee: "Employee",
+  approver: "Approver",
+  hr: "Human Resources",
+};
 
 export function EmployeeForm({
   employee,
   endpoint,
   method,
   gradeOptions = [],
-  teams = [],
-  teamsError = "",
+  departments = [],
+  departmentsError = "",
 }: {
   employee?: Employee;
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
-  teams?: TeamOption[];
-  /** Set when the teams fetch failed; the picker is then shown unusable. */
-  teamsError?: string;
+  departments?: Department[];
+  /** Set when the departments fetch failed; the picker is then shown unusable. */
+  departmentsError?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The server-loaded options are the starting point, not the final word: HR
+  // can create a department from this form, and the option they just made must
+  // appear in the picker without leaving the page.
+  const [departmentOptions, setDepartmentOptions] = useState<Department[]>(departments);
+  const [newDepartment, setNewDepartment] = useState("");
+  const [showNewDepartment, setShowNewDepartment] = useState(false);
+  const [creatingDepartment, setCreatingDepartment] = useState(false);
+  const [departmentCreateError, setDepartmentCreateError] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState(
+    employee?.department === null || employee?.department === undefined
+      ? ""
+      : String(employee.department)
+  );
+
+  async function handleCreateDepartment() {
+    const name = newDepartment.trim();
+    if (name === "") return;
+    setDepartmentCreateError("");
+    setCreatingDepartment(true);
+    try {
+      const created = await createDepartment({ name });
+      setDepartmentOptions((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setSelectedDepartment(String(created.id));
+      setNewDepartment("");
+      setShowNewDepartment(false);
+    } catch (err) {
+      setDepartmentCreateError(
+        err instanceof Error ? err.message : "Could not create the department."
+      );
+    } finally {
+      setCreatingDepartment(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,26 +91,25 @@ export function EmployeeForm({
 
     const formData = new FormData(event.currentTarget);
 
-      const teamValue = String(formData.get("team") || "");
+    const departmentValue = String(formData.get("department") || "");
 
-      try {
-        const response = await fetch(endpoint, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            first_name: formData.get("first_name"),
-            last_name: formData.get("last_name"),
-            email: formData.get("email"),
-            role: formData.get("role"),
-            designation: formData.get("designation"),
-            department: formData.get("department"),
-            category: formData.get("category"),
-            grade: formData.get("grade"),
-            appointment_date: formData.get("appointment_date") || null,
-            team: teamValue ? Number(teamValue) : null,
-            is_active: formData.get("is_active") === "on",
-          }),
-        });
+    try {
+      const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: formData.get("first_name"),
+          last_name: formData.get("last_name"),
+          email: formData.get("email"),
+          password: formData.get("password"),
+          designation: formData.get("designation"),
+          department: departmentValue ? Number(departmentValue) : null,
+          category: formData.get("category"),
+          grade: formData.get("grade"),
+          appointment_date: formData.get("appointment_date") || null,
+          is_active: formData.get("is_active") === "on",
+        }),
+      });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -148,47 +188,47 @@ export function EmployeeForm({
         >
           Role
         </label>
-        <select
+        <input
           id="role"
           name="role"
-          defaultValue={employee?.role ?? "employee"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {ROLES.map((role) => (
-            <option key={role.value} value={role.value}>
-              {role.label}
-            </option>
-          ))}
-        </select>
+          readOnly
+          value={ROLE_LABELS[employee?.role ?? "employee"]}
+          className="w-full cursor-not-allowed rounded-md border border-input-border bg-input-background px-3 py-2 text-text-muted focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-text-muted">
+          The directory creates normal employees. Approver access follows from
+          the workflow stage you appoint somebody to, and an HR account is
+          created by an administrator.
+        </p>
       </div>
 
       <div>
         <label
-          htmlFor="team"
+          htmlFor="password"
           className="mb-1 block text-sm font-medium text-text-primary"
         >
-          Team
+          Password
         </label>
-        <select
-          id="team"
-          name="team"
-          defaultValue={employee?.team ?? ""}
-          disabled={teamsError !== ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="">No team</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-              {teamNote(team) ? ` (${teamNote(team)})` : ""}
-            </option>
-          ))}
-        </select>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="new-password"
+          required={!employee}
+          minLength={8}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          placeholder={
+            employee ? "Leave blank to keep the current password" : "At least 8 characters"
+          }
+        />
         <p className="mt-1 text-xs text-text-muted">
-          {teamsError ||
-            "Leave applications from this employee follow the team's chain. Only a team in force routes anything, so a team still being set up will not."}
+          {employee
+            ? "Filling this in resets the password. They sign in with the new one next time."
+            : "The password this person signs in with, alongside their email. You can reset it later."}
         </p>
       </div>
+
+
 
       <div>
         <label
@@ -211,15 +251,72 @@ export function EmployeeForm({
           htmlFor="department"
           className="mb-1 block text-sm font-medium text-text-primary"
         >
-          Department / Faculty
+          Department
         </label>
-        <input
+        <select
           id="department"
           name="department"
-          defaultValue={employee?.department}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-          placeholder="e.g. Bunda College"
-        />
+          value={selectedDepartment}
+          onChange={(event) => setSelectedDepartment(event.target.value)}
+          disabled={departmentsError !== ""}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">No department</option>
+          {departmentOptions.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          {departmentsError ||
+            "A pick from the departments HR maintains. It is what makes somebody eligible to approve for a team in the same department."}
+        </p>
+        {!showNewDepartment ? (
+          <button
+            type="button"
+            onClick={() => setShowNewDepartment(true)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            <Plus className="h-4 w-4" />
+            Create department
+          </button>
+        ) : (
+          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label="New department name"
+                value={newDepartment}
+                onChange={(event) => setNewDepartment(event.target.value)}
+                placeholder="e.g. ICT"
+                className="min-w-40 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              />
+              <button
+                type="button"
+                onClick={() => void handleCreateDepartment()}
+                disabled={creatingDepartment || newDepartment.trim() === ""}
+                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingDepartment ? "Saving..." : "Save department"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewDepartment(false);
+                  setDepartmentCreateError("");
+                }}
+                className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+              >
+                Cancel
+              </button>
+            </div>
+            {departmentCreateError ? (
+              <p className="mt-1 text-xs text-status-rejected">
+                {departmentCreateError}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div>
@@ -321,24 +418,4 @@ export function EmployeeForm({
       </div>
     </form>
   );
-}
-/**
- * Why a team would not route, said next to its name.
- *
- * The picker cannot simply hide a team that is not in force: an employee may
- * already belong to one, and hiding it would make them look unassigned. So
- * the team stays and the reason is spelled out, which is also the difference
- * between HR noticing now and an applicant finding out at submission.
- */
-function teamNote(team: TeamOption): string {
-  if (team.status === "draft") {
-    return "still being set up";
-  }
-  if (team.status === "inactive") {
-    return "retired";
-  }
-  if (!team.is_effective) {
-    return "not in force today";
-  }
-  return "";
 }

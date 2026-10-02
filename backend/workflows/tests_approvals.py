@@ -27,7 +27,13 @@ from .events import (
     _reset_consumers_for_tests,
     register_consumer,
 )
-from .testing import grant_approver_role, make_approver, make_section, make_team
+from .testing import (
+    department_for,
+    grant_approver_role,
+    make_approver,
+    make_section,
+    make_team,
+)
 from .models import (
     ApplicationStage,
     ApprovalDecision,
@@ -89,13 +95,13 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department="Administration",
+            department=department_for("Administration"),
             grade="B",
         )
         EmployeeProfile.objects.create(
             user=self.supervisor,
             designation="Direct Supervisor",
-            department="Administration",
+            department=department_for("Administration"),
             grade="E",
         )
         for role, user in (
@@ -206,10 +212,10 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         profile = self._place_on_team(self.supervisor, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
-        # The applicant is the supervisor themself, so the supervisor section
-        # needs a second member: a section resolves to the people who may act
-        # minus the applicant, and one member who *is* the applicant leaves
-        # nobody. This is the any-of shape — two people, first to act decides.
+        # The applicant is the supervisor themself, so the supervisor step is
+        # appointed to somebody else. A step holds one approver, so the way to
+        # let a supervisor submit their own leave is to name a different person
+        # on that step \u2014 there is no second member to fall back to.
         supervisor_section = self.admin_workflow.sections.get(
             approver_role__code="supervisor"
         )
@@ -217,28 +223,28 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             "deputy-supervisor@luanar", role="supervisor", first_name="Dep"
         )
         EmployeeProfile.objects.create(
-            user=deputy, designation="Deputy", department="Administration", grade="E"
+            user=deputy,
+            designation="Deputy",
+            department=department_for("Administration"),
+            grade="E",
         )
-        SectionMember.objects.create(section=supervisor_section, user=deputy)
+        supervisor_section.approver = deputy
+        supervisor_section.save(update_fields=["approver"])
         app = LeaveApplication(employee=self.supervisor)
         definitions = DatabaseWorkflowProvider().get_stage_definitions(app)
         self.assertEqual(
             [d.role for d in definitions],
             ["supervisor", "hod", "registrar", "dvc"],
         )
-        # The applicant is excluded from their own step, and the deputy is who
-        # remains.
-        self.assertEqual(
-            definitions[0].approver_user_ids, (deputy.pk,)
-        )
+        self.assertEqual(definitions[0].approver_user_ids, (deputy.pk,))
 
-    def test_a_section_whose_only_member_is_the_applicant_is_refused(self):
+    def test_a_step_whose_only_approver_is_the_applicant_is_refused(self):
         """Self-approval is a configuration error, not a silently skipped step.
 
         The old model let a stage resolve to the applicant and skipped it
-        further down the chain. A section has no such fallback: there is nowhere
-        for it to go, so the submission is refused and the message says to add
-        another member.
+        further down the chain. A step has no such fallback \u2014 its one approver
+        *is* the applicant \u2014 so the submission is refused and the message says
+        to appoint somebody else.
         """
         profile = self._place_on_team(self.supervisor, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
@@ -246,21 +252,18 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         supervisor_section = self.admin_workflow.sections.get(
             approver_role__code="supervisor"
         )
-        SectionMember.objects.filter(
-            section=supervisor_section
-        ).exclude(user=self.supervisor).delete()
         with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.supervisor)
             )
         message = str(ctx.exception)
-        self.assertIn("only member", message)
+        self.assertIn("applicant themself", message)
         self.assertIn("cannot approve their own leave", message)
 
     def test_chain_for_academic_without_department_starts_with_hod(self):
         profile = self._place_on_team(self.employee, self.academic_team)
         profile.category = EmployeeProfile.Category.ACADEMIC
-        profile.department = "Mathematics"
+        profile.department = department_for("Mathematics")
         profile.save()
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
             LeaveApplication(employee=self.employee)
@@ -405,7 +408,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         )
         profile = self.employee.employee_profile
         profile.category = EmployeeProfile.Category.ACADEMIC
-        profile.department = "Mathematics"
+        profile.department = department_for("Mathematics")
         profile.save()
         resolved = resolve_applicable_workflow(
             LeaveApplication(employee=self.employee)

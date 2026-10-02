@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import serializers as drf_serializers
 from rest_framework import viewsets
 
-from users.models import User
+from users.models import Department, EmployeeProfile, User
 from users.permissions import IsHRRole
 
 from audit.validation import positive_int, uuid_value
@@ -20,8 +20,9 @@ from .models import (
     Delegation,
     Reassignment,
     RoleAssignment,
-    Team,
+    Section,
     SectionMember,
+    Team,
     Workflow,
 )
 from .permissions import IsApproverRoleOrHR
@@ -310,7 +311,14 @@ class ApproverRoleViewSet(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        role = serializer.save()
+        try:
+            role = serializer.save()
+        except RoleActionError as exc:
+            # A name that cannot form a code is the caller's mistake, not a
+            # server fault, so it comes back as a field error rather than a 500.
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
         return Response(
             ApproverRoleSerializer(role, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
@@ -425,10 +433,11 @@ class TeamViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        base = Team.objects.select_related("workflow", "campus").prefetch_related(
+        base = Team.objects.select_related(
+            "workflow", "campus", "department"
+        ).prefetch_related(
             "workflow__sections__approver_role",
-            "workflow__sections__members__user",
-            "workflow__sections__members",
+            "workflow__sections__approver",
         )
         # Filters are for the *list*. A detail or action route must be able to
         # reach a team whatever its status: a retired team is exactly the one HR
@@ -460,7 +469,122 @@ class TeamViewSet(
         campus = params.get("campus")
         if campus:
             base = base.filter(campus_id=positive_int(campus, "campus"))
+        department = params.get("department")
+        if department:
+            base = base.filter(
+                department_id=positive_int(department, "department")
+            )
         return base.order_by("name")
+
+    @action(detail=False, methods=["get"], url_path="eligible-approvers")
+    def eligible_approvers(self, request):
+        """The employees who may be appointed to a team's approval steps.
+
+        Scoped by the department named on the query, because eligibility *is* the
+        department: an approver is one of the team's own employees. Scoping it here
+        means the team form's approver picker can only offer people who will pass
+        the same rule on write, instead of offering the whole staff and then
+        refusing half of them.
+
+        ``?role=<id>`` narrows further to the people already holding that role in
+        the department, which is what "one employee holds one role per department"
+        makes selectable.
+        """
+        params = request.query_params
+        department_id = params.get("department")
+        if not department_id:
+            raise drf_serializers.ValidationError(
+                {
+                    "department": (
+                        "Name the department whose employees are eligible. Without "
+                        "it there is nothing to scope approvers to."
+                    )
+                }
+            )
+        department = Department.objects.filter(
+            pk=positive_int(department_id, "department"), is_active=True
+        ).first()
+        if department is None:
+            raise drf_serializers.ValidationError(
+                {"department": "That department is missing or is not active."}
+            )
+
+        queryset = EmployeeProfile.objects.filter(
+            department=department, user__is_active=True
+        ).select_related("user", "team")
+
+        role = None
+        role_id = params.get("role")
+        if role_id:
+            role = ApproverRole.objects.filter(
+                pk=positive_int(role_id, "role")
+            ).first()
+            if role is None:
+                raise drf_serializers.ValidationError(
+                    {"role": "That approver role is missing."}
+                )
+            # One employee, one role per department: offer only the people who
+            # already hold this role here, plus whoever holds no role yet. Anyone
+            # already appointed in a different role in this department is
+            # deliberately absent — the write would refuse them.
+            conflicting_ids = set(
+                Section.objects.filter(
+                    is_active=True,
+                    workflow__team__department_id=department.pk,
+                )
+                .exclude(approver_role_id=role.pk)
+                .exclude(approver=None)
+                .values_list("approver_id", flat=True)
+            )
+            holding_ids = set(
+                Section.objects.filter(
+                    is_active=True,
+                    approver_role=role,
+                    workflow__team__department_id=department.pk,
+                )
+                .exclude(approver=None)
+                .values_list("approver_id", flat=True)
+            )
+            queryset = queryset.exclude(
+                user_id__in=conflicting_ids - holding_ids
+            )
+
+        candidates = list(
+            queryset.order_by("user__first_name", "user__last_name")
+        )
+        if role is not None and role.is_institution_wide:
+            # An institution-wide role is held outside any one department, so the
+            # holder is absent from the department-scoped queryset above. Offer
+            # them anyway: selecting this role *is* how the holder is put on the
+            # step, and a picker that could not show them would leave HR with a
+            # step no department employee is allowed to fill.
+            already_offered = {profile.user_id for profile in candidates}
+            holder_ids = RoleAssignment.objects.filter(
+                role=role, user__is_active=True
+            ).values_list("user_id", flat=True)
+            candidates.extend(
+                EmployeeProfile.objects.filter(
+                    user_id__in=holder_ids, user__is_active=True
+                )
+                .exclude(user_id__in=already_offered)
+                .select_related("user", "team")
+            )
+
+        return response.Response(
+            {
+                "department": {"id": department.pk, "name": department.name},
+                "candidates": [
+                    {
+                        "id": profile.user_id,
+                        "full_name": profile.user.get_full_name()
+                        or profile.user.username,
+                        "email": profile.user.email,
+                        "designation": profile.designation,
+                    }
+                    for profile in candidates
+                ],
+            }
+        )
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -570,12 +694,18 @@ class SectionMemberViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Who can act for a section.
+    """Who has acted for a section, and the appointment of its approver.
 
-    Membership is edited here rather than as part of a whole-workflow write, so
-    adding or removing one person is its own atomic, audited action. A section
-    accepts any number of members and the same person may be a member of several
-    sections; the only rule is "not twice in the same section at the same time".
+    Appointing somebody is its own atomic, audited action rather than part of a
+    whole-workflow write, so changing one step's approver cannot silently rewrite
+    the rest of the chain. ``POST`` appoints the one person a step routes to —
+    setting :attr:`Section.approver` and opening the effective-dated period that
+    records it — and ``DELETE`` closes that period and leaves the step
+    unstaffed.
+
+    A step has exactly one approver, so appointing somebody new closes the
+    outgoing person's period in the same transaction. Two open periods on one
+    step would make "who holds this step" answerable two ways.
 
     The default view is the people who can act *now*. ``?history=1`` widens it to
     every period, closed ones included, because a membership row is a record of

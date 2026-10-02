@@ -8,11 +8,10 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import { listTeams } from "@/lib/teams";
-import type { TeamOption } from "@/lib/employees";
+import { listDepartments, type Department } from "@/lib/departments";
 
-const TEAMS_ERROR =
-  "Teams could not be loaded, so this employee cannot be placed in a team. Reload the page, or create a team first.";
+const DEPARTMENTS_ERROR =
+  "Departments could not be loaded, so this employee cannot be placed in one. Reload the page, or create a department first.";
 
 export default async function NewEmployeePage() {
   const user = await getCurrentUser();
@@ -32,12 +31,12 @@ export default async function NewEmployeePage() {
     // Manual grade entry remains available if entitlements cannot be loaded.
   }
 
-  let teams: TeamOption[] = [];
-  let teamsError = "";
+  let departments: Department[] = [];
+  let departmentsError = "";
   try {
-    teams = await listTeams({ includeInactive: true });
+    departments = await listDepartments();
   } catch {
-    teamsError = TEAMS_ERROR;
+    departmentsError = DEPARTMENTS_ERROR;
   }
 
   return (
@@ -61,8 +60,8 @@ export default async function NewEmployeePage() {
           endpoint="/api/hr/employees"
           method="POST"
           gradeOptions={gradeOptions}
-          teams={teams}
-          teamsError={teamsError}
+          departments={departments}
+          departmentsError={departmentsError}
         />
       </div>
     </div>

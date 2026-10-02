@@ -33,7 +33,9 @@ export interface Employee {
   /** Approver positions this person holds, by code. Empty for an employee. */
   approver_roles: string[];
   designation: string;
-  department: string;
+  /** A pick from the departments HR maintains, and what makes somebody eligible to approve. */
+  department: number | null;
+  department_name: string;
   category: EmployeeCategory;
   grade: string;
   appointment_date: string | null;
@@ -47,9 +49,15 @@ export interface EmployeeInput {
   email: string;
   first_name: string;
   last_name: string;
+  /**
+   * The password this person signs in with. Required on create; on edit a blank
+   * or absent value keeps the current one. Never read back from the API.
+   */
+  password?: string;
   role?: UserRole;
   designation?: string;
-  department?: string;
+  /** A department id, never a typed name: eligibility compares department ids. */
+  department?: number | null;
   category?: EmployeeCategory;
   grade?: string;
   appointment_date?: string | null;
@@ -90,4 +98,44 @@ export async function listAllEmployees(): Promise<Employee[]> {
 
 export async function getEmployee(id: number | string): Promise<Employee> {
   return apiClient<Employee>(`/api/v1/employees/${id}/`);
+}
+
+/**
+ * The normal employees whose leave routes through a team.
+ *
+ * This is the roster that stands beside the approval chain: the approvers decide
+ * a submission, and these are the people whose submissions that chain decides.
+ * Read through the appointment filter, never by loading everyone and matching in
+ * the browser, so the list stays correct as the directory grows.
+ */
+export function listEmployeesByTeam(
+  teamId: number | string
+): Promise<Employee[]> {
+  return listAllPages(`?team=${teamId}`);
+}
+
+/**
+ * The employees who are not on any team yet.
+ *
+ * The candidates for a team's roster, kept as a server-side filter rather than by
+ * subtracting one client-side list from another: a person on another team is not
+ * simply "free", and quietly reassigning them from this screen would hide that
+ * decision from the team they are leaving.
+ */
+export function listUnassignedEmployees(): Promise<Employee[]> {
+  return listAllPages("?team=none");
+}
+
+async function listAllPages(query: string): Promise<Employee[]> {
+  const first = await apiClient<EmployeeListResponse>(
+    `/api/v1/employees/${query}`
+  );
+  const rows = [...first.results];
+  let next = first.next;
+  while (next) {
+    const page = await apiClientUrl<EmployeeListResponse>(next);
+    rows.push(...page.results);
+    next = page.next;
+  }
+  return rows;
 }

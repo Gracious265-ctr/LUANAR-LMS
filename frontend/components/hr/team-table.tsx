@@ -61,7 +61,7 @@ export function TeamTable({ teams }: { teams: Team[] }) {
                 </Link>
                 <p className="text-xs text-text-muted">
                   {[
-                    team.department && `Department: ${team.department}`,
+                    team.department_name && `Department: ${team.department_name}`,
                     team.campus_name && `Campus: ${team.campus_name}`,
                     `${team.member_count} ${
                       team.member_count === 1 ? "person" : "people"
@@ -79,7 +79,7 @@ export function TeamTable({ teams }: { teams: Team[] }) {
               <td className="px-4 py-3 text-text-secondary">
                 {team.sections.length === 0
                   ? "—"
-                  : `${team.sections.filter((s) => s.member_count > 0).length} of ${
+                  : `${team.sections.filter((s) => s.approver !== null).length} of ${
                       team.sections.length
                     } staffed`}
               </td>

@@ -30,6 +30,7 @@ from leave.tests.stubs import (
 )
 from users.models import EmployeeProfile
 
+from .testing import department_for
 from .models import ApprovalDecision, ApplicationStage, Delegation, Reassignment
 from .policies import get_decision_authority
 from .services import (
@@ -84,7 +85,7 @@ class RoutingBase(StubProviderMixin, APITestCase):
         EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department="Administration",
+            department=department_for("Administration"),
             grade="B",
         )
         for role, user in (
@@ -376,7 +377,7 @@ class WorkflowGateTests(StubProviderMixin, TestCase):
         EmployeeProfile.objects.create(
             user=self.user,
             designation="Junior Officer",
-            department="Administration",
+            department=department_for("Administration"),
             category="administration",
             grade="B",
         )

@@ -4,6 +4,7 @@ import React, { memo, useCallback, useState } from "react";
 import {
   ArrowLeftRight,
   Bell,
+  Building2,
   Calendar,
   CalendarDays,
   CalendarRange,
@@ -14,6 +15,7 @@ import {
   History,
   Home,
   LogOut,
+  ShieldCheck,
   Tags,
   UserCheck,
   UserCog,
@@ -31,6 +33,8 @@ interface User {
   email: string;
   role: string;
   full_name: string;
+  /** The bootstrap administrator; unlocks user management. */
+  is_superuser?: boolean;
 }
 
 interface DashboardShellProps {
@@ -66,6 +70,9 @@ export function DashboardShell({
   // reads `employee`. The layout resolves it while rendering, so the sidebar is
   // correct in the first paint instead of appearing after hydration.
   const showHR = user.role === HR_ROLE;
+  // The superuser is a separate axis from the HR role: it is the bootstrap
+  // administrator, and this is the only account that can mint HR accounts.
+  const showAdmin = user.is_superuser === true;
   const showCover = isApprover;
 
   const handleLogout = useCallback(async () => {
@@ -86,6 +93,7 @@ export function DashboardShell({
           pendingApprovals={pendingApprovals}
           showCover={showCover}
           showHR={showHR}
+          showAdmin={showAdmin}
         />
 
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -106,6 +114,7 @@ const Sidebar = memo(function Sidebar({
   pendingApprovals,
   showCover,
   showHR,
+  showAdmin,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -115,6 +124,7 @@ const Sidebar = memo(function Sidebar({
   pendingApprovals: number;
   showCover: boolean;
   showHR: boolean;
+  showAdmin: boolean;
 }) {
   return (
     <nav
@@ -162,6 +172,15 @@ const Sidebar = memo(function Sidebar({
             open={open}
           />
         )}
+        {showAdmin && (
+          <Option
+            Icon={ShieldCheck}
+            title="HR Users"
+            href="/dashboard/admin/users"
+            currentPath={currentPath}
+            open={open}
+          />
+        )}
         {showHR && (
           <>
             <Option
@@ -175,6 +194,13 @@ const Sidebar = memo(function Sidebar({
               Icon={Users}
               title="Employees"
               href="/dashboard/hr-admin/employees"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={Building2}
+              title="Departments"
+              href="/dashboard/hr-admin/departments"
               currentPath={currentPath}
               open={open}
             />

@@ -8,7 +8,13 @@ from audit.services import changed_fields, current_actor, record_audit
 from workflows.models import Team
 from workflows.services import approver_role_codes_for
 
-from .models import EmployeeProfile
+from .models import Department, EmployeeProfile
+from .services import (
+    create_department,
+    department_member_count,
+    retire_department,
+    update_department,
+)
 
 User = get_user_model()
 
@@ -20,10 +26,114 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "role", "full_name"]
+        fields = ["id", "email", "role", "full_name", "is_superuser"]
 
     def get_full_name(self, obj: User) -> str:
         return obj.get_full_name()
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    """The superuser's view of an HR account, and the payload that creates one.
+
+    Only two facts make an account an HR account: it is active, and its system
+    role is ``hr``. The superuser chooses the person and sets their first
+    password; the role itself is not a field the browser can ask for, so this
+    endpoint cannot be used to mint another superuser or to promote a normal
+    employee. That is the whole point of keeping the bootstrap administrator
+    outside ``User.Role``: the product can grant HR access and nothing higher.
+    """
+
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=False,
+        help_text=(
+            "The account's initial password. Required when creating an HR user; "
+            "on update, a blank value keeps the current password and a non-blank "
+            "value resets it. Never returned."
+        ),
+    )
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "role",
+            "is_active",
+            "is_superuser",
+            "password",
+        ]
+        read_only_fields = ["role", "is_superuser"]
+
+    def get_full_name(self, obj: User) -> str:
+        return obj.get_full_name()
+
+    def validate_email(self, value: str) -> str:
+        value = value.lower()
+        clash = (
+            User.objects.filter(Q(email__iexact=value) | Q(username__iexact=value))
+            .exclude(pk=getattr(self.instance, "pk", None))
+            .first()
+        )
+        if clash is not None:
+            raise serializers.ValidationError(
+                "An account with this email already exists."
+            )
+        return value
+
+    def validate(self, attrs: dict) -> dict:
+        attrs = super().validate(attrs)
+        password = attrs.get("password")
+        if self.instance is None and not password:
+            raise serializers.ValidationError(
+                {
+                    "password": (
+                        "Set an initial password for this HR user. They sign in "
+                        "with their email and this password."
+                    )
+                }
+            )
+        if password and len(password) < 8:
+            raise serializers.ValidationError(
+                {"password": "Use at least 8 characters."}
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> User:
+        password = validated_data.pop("password", "")
+        email = validated_data["email"]
+        with transaction.atomic():
+            user = User(
+                username=email,
+                email=email,
+                first_name=validated_data.get("first_name", ""),
+                last_name=validated_data.get("last_name", ""),
+                is_active=validated_data.get("is_active", True),
+                role=User.Role.HR,
+            )
+            user.set_password(password)
+            user.save()
+        return user
+
+    def update(self, instance: User, validated_data: dict) -> User:
+        password = validated_data.pop("password", "")
+        with transaction.atomic():
+            if "email" in validated_data:
+                instance.email = validated_data["email"]
+                instance.username = validated_data["email"]
+            for field in ("first_name", "last_name", "is_active"):
+                if field in validated_data:
+                    setattr(instance, field, validated_data[field])
+            if password:
+                instance.set_password(password)
+            instance.save()
+        return instance
 
 
 class LoginSerializer(serializers.Serializer):
@@ -50,8 +160,35 @@ class EmployeeSerializer(serializers.ModelSerializer):
         source="user.role",
         required=False,
         allow_blank=True,
+        help_text=(
+            "What the account can reach in the product. A new employee starts as "
+            "a normal employee and cannot be created as an approver; approver "
+            "access follows from the workflow stage HR appoints them to."
+        ),
     )
     is_active = serializers.BooleanField(source="user.is_active", required=False)
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        trim_whitespace=False,
+        help_text=(
+            "The account's initial password, set by HR. Required when creating "
+            "an employee; on update, a blank value keeps the current password "
+            "and a non-blank value resets it. Never returned."
+        ),
+    )
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+        help_text=(
+            "The department this employee belongs to. It is what makes them "
+            "eligible to be a team's approver, so it is a pick from the "
+            "existing departments rather than free text."
+        ),
+    )
+    department_name = serializers.CharField(source="department.name", read_only=True)
     team = serializers.PrimaryKeyRelatedField(
         queryset=Team.objects.all(),
         required=False,
@@ -71,9 +208,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "role",
+            "password",
             "approver_roles",
             "designation",
             "department",
+            "department_name",
             "faculty",
             "category",
             "gender",
@@ -114,10 +253,62 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
         return value
 
+    def validate(self, attrs: dict) -> dict:
+        """Enforce who may hold which account, and that a password is set.
+
+        Two rules live here rather than in the view:
+
+        * **A password is required on create** and must be at least eight
+          characters. HR is the source of credentials, so a directory entry that
+          cannot log in is not a successful create.
+        * **The role cannot be escalated through the directory.** A new employee
+          is a *normal employee*, and neither ``approver`` (which follows from a
+          workflow appointment) nor ``hr`` (which only a superuser grants from
+          the Django admin) may be chosen here.
+        """
+        super().validate(attrs)
+
+        password = attrs.get("password")
+        if self.instance is None:
+            if not password:
+                raise serializers.ValidationError(
+                    {
+                        "password": (
+                            "Set an initial password for this person. They sign "
+                            "in with their email and this password."
+                        )
+                    }
+                )
+        if password and len(password) < 8:
+            raise serializers.ValidationError(
+                {"password": "Use at least 8 characters."}
+            )
+
+        user_data = attrs.get("user") or {}
+        requested_role = user_data.get("role")
+        if self.instance is None:
+            if requested_role in (User.Role.APPROVER, User.Role.HR):
+                raise serializers.ValidationError({"role": self._role_refusal()})
+        elif requested_role and requested_role != self.instance.user.role:
+            # Any *change* of system access is an administrator's decision, not
+            # HR's: HR neither grants nor revokes the approval desk or HR reach
+            # from the directory. An unchanged value is accepted so an existing
+            # HR or approver account can still have its profile saved.
+            raise serializers.ValidationError({"role": self._role_refusal()})
+        return attrs
+
+    @staticmethod
+    def _role_refusal() -> str:
+        return (
+            "The directory creates normal employees. Approver access follows "
+            "from the workflow stage HR appoints them to, and an HR account is "
+            "created by an administrator."
+        )
+
     def create(self, validated_data: dict) -> EmployeeProfile:
         user_data = validated_data.pop("user", {})
+        password = validated_data.pop("password", "")
         email = user_data["email"]
-        role = user_data.get("role") or User.Role.EMPLOYEE
 
         with transaction.atomic():
             user = User.objects.filter(
@@ -130,11 +321,14 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     email=email,
                     first_name=user_data.get("first_name", ""),
                     last_name=user_data.get("last_name", ""),
-                    role=role,
+                    role=User.Role.EMPLOYEE,
                     is_active=user_data.get("is_active", True),
                 )
-                user.set_unusable_password()
-                user.save()
+
+            # HR set this password explicitly, whether the account is new or an
+            # existing email that is being given an employee record.
+            user.set_password(password)
+            user.save()
 
             instance = EmployeeProfile.objects.create(user=user, **validated_data)
             self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
@@ -143,6 +337,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
         before = self._snapshot(instance)
         user_data = validated_data.pop("user", {})
+        # Popped before the profile loop below: a password is a property of the
+        # linked user, not a column on EmployeeProfile, and `password` is never
+        # written through `setattr` on the profile.
+        password = validated_data.pop("password", "")
         user = instance.user
 
         with transaction.atomic():
@@ -156,6 +354,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
             if "role" in user_data:
                 user.role = user_data["role"] or User.Role.EMPLOYEE
+
+            if password:
+                user.set_password(password)
 
             user.save()
 
@@ -181,7 +382,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "role": user.role,
             "is_active": user.is_active,
             "designation": instance.designation,
-            "department": instance.department,
+            "department_id": instance.department_id,
             "faculty": instance.faculty,
             "category": instance.category,
             "gender": instance.gender,
@@ -211,4 +412,68 @@ class EmployeeSerializer(serializers.ModelSerializer):
             target_id=instance.pk,
             target_summary=instance.user.get_full_name(),
             detail=detail,
+        )
+
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    """A department, with the teams inside it.
+
+    The team list is nested rather than left to a second request because the
+    question a department screen answers is "what is in ICT?", and a count beside
+    a name does not answer it. Teams are flattened to id/name/status so the
+    browser never has to know a team's shape to render a list.
+    """
+
+    team_count = serializers.SerializerMethodField()
+    employee_count = serializers.SerializerMethodField()
+    teams = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Department
+        fields = [
+            "id",
+            "name",
+            "is_active",
+            "team_count",
+            "employee_count",
+            "teams",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["is_active", "created_at", "updated_at"]
+
+    def get_team_count(self, instance: Department) -> int:
+        return instance.teams.count()
+
+    def get_employee_count(self, instance: Department) -> int:
+        return department_member_count(instance)
+
+    def get_teams(self, instance: Department) -> list[dict]:
+        return [
+            {"id": team.pk, "name": team.name, "status": team.status}
+            for team in instance.teams.order_by("name")
+        ]
+
+
+class DepartmentWriteSerializer(serializers.Serializer):
+    """Create/rename payload for a department: its name, and nothing else.
+
+    A department carries no team, employee, or role data — those are
+    relationships held by the rows that own them. Keeping the write surface to a
+    name is what stops "the ICT department" from becoming a second, denormalised
+    copy of answers the team and employee tables already give.
+    """
+
+    name = serializers.CharField(max_length=200)
+
+    def create(self, validated_data: dict) -> Department:
+        return create_department(
+            actor=self.context["actor"], name=validated_data["name"]
+        )
+
+    def update(self, instance: Department, validated_data: dict) -> Department:
+        return update_department(
+            department=instance,
+            actor=self.context["actor"],
+            name=validated_data["name"],
         )

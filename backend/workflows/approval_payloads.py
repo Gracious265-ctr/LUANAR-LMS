@@ -140,8 +140,15 @@ def latest_user_decision(application: LeaveApplication, user) -> ApprovalDecisio
 
 
 def _department(application: LeaveApplication) -> str:
+    """The employee's department *name*, or "".
+
+    ``EmployeeProfile.department`` is a reference row now, and this payload is
+    rendered to an approver as JSON \u2014 so the name is what belongs here.
+    """
     profile = _profile(application.employee)
-    return (profile.department if profile else "") or ""
+    if profile is None or profile.department_id is None:
+        return ""
+    return profile.department.name
 
 
 def _application_block(application: LeaveApplication) -> dict:
@@ -165,7 +172,12 @@ def _employee_info(application: LeaveApplication) -> dict:
     return {
         "name": user.get_full_name() or user.username,
         "designation": (profile.designation if profile else "") or "",
-        "department": (profile.department if profile else "") or "",
+        # The name, not the row: this payload is rendered to an approver, and a
+        # Department instance is not something JSON can carry.
+        "department": (
+            (profile.department.name if profile and profile.department_id else "")
+            or ""
+        ),
         "faculty": (profile.faculty if profile else "") or "",
         "staff_id": None,
         "grade": (profile.grade if profile else "") or "",

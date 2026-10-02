@@ -96,12 +96,17 @@ class Campus(models.Model):
 
 
 class Team(models.Model):
-    """A group of employees sharing one approval workflow.
+    """A group of employees sharing one approval workflow, inside a department.
 
-    A team owns exactly one :class:`Workflow` — one-to-one, never shared. At
+    A team owns at most one :class:`Workflow` — one-to-one, never shared. At
     submission time the applicant's team is what selects the workflow — there is
     no category/department matching — and that workflow's :class:`Section` rows
     are who may act at each step.
+
+    A :class:`users.models.Department` holds **one or more** teams. The department
+    is what scopes approvers: only an employee in the same department may be made
+    a team's approver, and one employee keeps one role across every team of that
+    department. It is not a routing key — routing follows the team.
 
     The chain exists *because* the team does, and is written in the same request
     as the team. There is deliberately no reusable chain a second team can be
@@ -109,10 +114,12 @@ class Team(models.Model):
     "silently re-route someone else's applications" the same action, which is
     not an edit HR can be asked to perform safely.
 
-    The workflow is **required**. A team with no workflow cannot route an
-    application, so making it optional only ever produced a team HR thought was
-    configured but which silently could not approve anything; refusing to create
-    it puts the problem where it can be fixed.
+    :attr:`workflow` is **nullable**, and null only while the team is being
+    configured. HR creates a team's identity first and its approval chain
+    second, so a draft team is a real, inspectable object before it can route;
+    :func:`workflows.services.activate_team` refuses to put a team with no chain
+    into force, so the window in which a team exists without one can never
+    overlap the window in which it routes.
 
     The lifecycle is one authoritative field, :attr:`status`, and it is
     deliberately a three-value choice rather than a boolean:
@@ -145,15 +152,17 @@ class Team(models.Model):
     name = models.CharField(max_length=200, unique=True)
     code = models.SlugField(max_length=50, unique=True)
     description = models.TextField(blank=True, default="")
-    department = models.CharField(
-        max_length=200,
+    department = models.ForeignKey(
+        "users.Department",
+        on_delete=models.PROTECT,
+        null=True,
         blank=True,
-        default="",
+        related_name="teams",
         help_text=(
-            "The department this team belongs to. Informational — routing "
-            "follows the team, not the department — but it is what stops two "
-            "active teams being configured to cover the same department "
-            "without HR having said so."
+            "The department this team belongs to. A department holds one or "
+            "more teams. It is what scopes approvers — only an employee in "
+            "this department may be made this team's approver — but it is not "
+            "a routing key: routing follows the team."
         ),
     )
     campus = models.ForeignKey(
@@ -170,13 +179,16 @@ class Team(models.Model):
     workflow = models.OneToOneField(
         "workflows.Workflow",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="team",
         help_text=(
             "The approval workflow this team is routed through. One-to-one, not "
             "a foreign key: a chain belongs to the team it was built for, and a "
             "shared chain would mean editing one team's steps silently "
             "re-routing every other team pointing at it. It owns the sections, "
-            "so its steps define who may act for this team."
+            "so its steps define who may act for this team. Blank only while "
+            "the team is still a draft being configured."
         ),
     )
     status = models.CharField(
@@ -261,13 +273,12 @@ class SectionMemberQuerySet(models.QuerySet):
 
 
 class SectionMember(models.Model):
-    """One period during which a person may act for a :class:`Section`.
+    """One period during which a person was the approver of a :class:`Section`.
 
-    A section may name any number of members: it is resolved by whoever acts
-    first, so several people may hold the same section. The same person may be a
-    member of several sections at once, which is how an approver takes part in
-    more than one step of a chain without the chain needing a second role for
-    them.
+    :attr:`Section.approver` is the single person a step routes to. This row is
+    the **record** of that: the period during which the person held the step.
+    Changing a step's approver closes one period and opens another, so "who
+    approved this in March" stays answerable long after the answer changed.
 
     A member holds no role of its own — the role belongs to the section. A member
     *acts as* the section's role, so the snapshot an in-flight application is
@@ -427,12 +438,18 @@ class Workflow(models.Model):
 
 
 class Section(models.Model):
-    """One mandatory approval step in a workflow, with its own approvers.
+    """One mandatory approval step in a workflow: one role and one approver.
 
     A workflow is a sequence of sections. Each section names the role its
-    approvers act as and holds the people who may act for it; the application
-    moves on when one of them decides. A role may appear in more than one
-    section, so one person can sit at several points in the same chain.
+    approver acts as (:attr:`approver_role`) and the one person who does it
+    (:attr:`approver`). Exactly one of each, never a list and never a parallel
+    pair: stages run in order, and a stage nobody can be jointly responsible for
+    has no single person to decide whether it is done.
+
+    :attr:`approver` is the configured answer. :class:`SectionMember` rows stay
+    as the effective-dated **record** of who was entitled to act and when — see
+    :meth:`SectionMember` — so changing the approver closes one period and opens
+    another rather than rewriting the past.
     """
 
     workflow = models.ForeignKey(
@@ -448,9 +465,22 @@ class Section(models.Model):
         on_delete=models.PROTECT,
         related_name="sections",
         help_text=(
-            "The role this section's members act as. Held on the section rather "
-            "than on each member so the snapshot an in-flight application is "
+            "The role this section's approver acts as. Held on the section rather "
+            "than on the approver so the snapshot an in-flight application is "
             "judged by is fixed when the chain is materialised."
+        ),
+    )
+    approver = models.ForeignKey(
+        "users.User",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approver_sections",
+        help_text=(
+            "The single person who approves this step. Must be in the owning "
+            "team's department, and must already hold the role above for that "
+            "department. Blank means the step is not staffed yet, which the "
+            "team's readiness check reports and activation refuses."
         ),
     )
     description = models.TextField(blank=True, default="")

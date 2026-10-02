@@ -54,8 +54,11 @@ describe("TeamTable", () => {
                 is_active: true,
                 approver_role: "supervisor",
                 approver_role_label: "Supervisor",
-                member_count: 1,
-                members: [],
+                approver: {
+                  id: 3,
+                  user_name: "Jane Dean",
+                  user_email: "jane.dean@test.luanar",
+                },
               },
               {
                 id: 2,
@@ -64,8 +67,7 @@ describe("TeamTable", () => {
                 is_active: true,
                 approver_role: "hod",
                 approver_role_label: "Head of Department",
-                member_count: 0,
-                members: [],
+                approver: null,
               },
             ],
           }),

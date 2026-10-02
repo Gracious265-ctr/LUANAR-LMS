@@ -2498,3 +2498,127 @@ validate/activate contract.
 workflow list screen it fed are gone: a team owns its chain one-to-one and the
 chain is written inside the team write, so there is no list to page. A team's
 lifecycle is `Team.status` alone.
+
+## Completed — Departments and one approver per section (2026-10-01)
+
+Follow-on to Team Management above. A team's `department` was free text and a
+section could name several members; both made eligibility and accountability
+unknowable. The authority is `context/specs/20-hr-to-employee-data-integration.md`;
+not yet committed.
+
+**The idea.** An approver is one named person, and eligibility is a fact about
+where they work. A free-text department cannot answer "is this person allowed to
+approve for this team", and a section with a roster cannot answer "who decided".
+So Department becomes a first-class record and each section holds exactly one
+approver.
+
+**Backend — Department as a real entity.**
+- New `users.Department` (active/retired, audited) with lifecycle API; employees
+  and teams reference it by PK. `Department.retire` refuses while anything still
+  points at it, so a department is not deleted out from under a team.
+- `users/0007_department.py`, `0008_employee_department_reference.py`;
+  `audit/0013_department_target_type.py`.
+- Employee and team writes validate against active departments and expose
+  `department_name` on read, so the UI never has to resolve an id itself.
+
+**Backend — one approver per section.**
+- `Section.approver` is the single authoritative holder;
+  `SectionMember`/`all_objects` keep the effective-dated history.
+  `add_section_member` sets `Section.approver`, closes the outgoing period, and
+  refuses a future `effective_from`.
+- `TeamSectionInputSerializer.approver` is one primary key (`required=False`,
+  `allow_null=True`), not a `members` roster. `new_workflow.sections` therefore
+  names one approver per step; inline chain creation stays exclusive with an
+  existing `workflow`.
+- `GET /api/v1/teams/eligible-approvers/` answers *who may hold this step*:
+  `?department=<id>&role=<id>` → `{department, candidates}`; institution-wide
+  roles bypass the department match, and anyone already holding a **different**
+  role in that department is excluded (conflict minus holding).
+- `ApproverRoleWriteSerializer` takes only `label`; `code` is derived and
+  immutable, and behavioural fields stay editable.
+- `workflows/0020`–`0023`: department reference, single approver, optional
+  draft workflow, institution-wide final approval.
+
+**Frontend — the two questions, kept apart.**
+- New `lib/departments.ts` and department proxies; `team-form` is two pages —
+  page one is what the team *is* (name, department, window), page two is who
+  decides (one named person per step). A team can still be saved as a draft with
+  no chain; activation requires a department, workflow, roles, and staffed
+  sections.
+- Each step's picker fetches its own eligible people, because eligibility is
+  per role; changing a step's role clears the choice rather than sending an id
+  that would be refused.
+- `team-member-list` is a single-approver picker per step (appoint = handover,
+  remove, history on demand). The current holder is offered even if the
+  eligibility list has moved on, so a held step never reads as unstaffed.
+- `employee-form` and `approver-role-form` updated for department selects and
+  name-only role creation.
+
+**Verification.** Backend `workflows` **497 OK**, full suite **1125 OK**.
+Scratch-DB seed check (`luanar_seedcheck`, since dropped): migrations applied
+through `0023`; `seed_dev_users` 9 users; `seed_approvals_dev` refuses without an
+active financial year (`CommandError`, documented D5), succeeds after creating
+one, and is idempotent on re-run. Frontend `tsc --noEmit` and
+`typecheck:test` clean, `eslint` clean, **63 files / 425 tests OK**, `next build`
+compiles.
+
+## Completed — HR-managed credentials (2026-10-01)
+
+Follow-on to the employee directory. The Unit 2 assumption was that a
+directory-created employee gets an **unusable password** and waits for an
+external identity provider; the product now issues its own passwords, and they
+had to be created by the right hand. The authority is
+`context/specs/27-hr-managed-credentials.md`; not yet committed.
+
+**The idea.** A superuser creates `hr` accounts in the Django admin; HR creates
+every other account from the employee directory and sets that person's initial
+password, and can reset it later. Nobody changes their own password, and the
+directory cannot hand out `approver` or `hr` — approver standing still comes
+from a workflow appointment.
+
+**Backend (`users`).**
+- `EmployeeSerializer` gains a write-only `password`: required and min-8 on
+  create, optional on `PATCH` (non-blank resets, blank/absent keeps). Create now
+  calls `user.set_password` instead of `set_unusable_password`.
+- The role rule is enforced in `validate`: create always yields `employee`
+  (`approver`/`hr` refused); update refuses any change of role, while an
+  unchanged value is accepted so an existing HR/approver profile can still be
+  saved. The password never enters the audit snapshot.
+- `users/admin.py` `save_model` syncs `username` to `email`, so an
+  admin-created HR account logs in through the email-based login.
+
+**Frontend.**
+- `lib/employees.ts`: `EmployeeInput.password?: string`.
+- `employee-form` gains a Password field (`required` + `minLength={8}` on
+  create; "Leave blank to keep the current password" on edit); the Role control
+  is now read-only and `role` is no longer sent in the payload.
+
+**Verification.** Backend full suite **1134 tests OK** (was 1125). Frontend
+`eslint` and `typecheck:test` clean, **63 files / 426 tests OK** (was 425),
+`next build` compiles.
+
+## Operational (2026-10-01, dev database seed data removed — bare DB)
+
+Developer asked for **all seed data removed**, obsolete accounts included. Ran
+`manage.py flush --no-input` against the dev database `luanar_leave` (local
+`DEBUG=True`). `flush` truncates tables via SQL, so the append-only guards and
+`PROTECT` foreign keys that make an ORM delete impossible (see the 2026-09-28
+note above) do not apply.
+
+**Removed.** The obsolete `testdvc` account (role `employee`, no profile) and
+its `RoleAssignment` to `dvc`; the orphaned `Legacy Chain` workflow and its
+single `DVC` section; and the full `seed_dev_users` set — the 9 accounts
+(`employee`, `supervisor`, `hod`, `dean`, `registrar`, `dvc`, `hr`,
+`admin-supervisor`, `admin-hod`), 4 departments, 3 grade-entitlement bands, 4
+leave types and 4 rules — plus the 6 backfilled approver roles. The DB was left
+with **0 users, no superuser**.
+
+**Preserved.** Schema and migration history (102 applied, none unapplied);
+`flush` re-emits `post_migrate`, so content types (42) and permissions (168)
+were rebuilt. `manage.py check` clean.
+
+**To rebuild dev data.** `uv run manage.py seed_dev_users` (accounts, grades,
+leave types) then `uv run manage.py seed_approvals_dev` (roles, campuses,
+workflows, teams, applications; needs `DEBUG=true` and an active financial
+year). A superuser for the Django admin must be created separately
+(`createsuperuser`) — the seeders do not create one.

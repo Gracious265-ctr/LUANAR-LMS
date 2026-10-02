@@ -7,6 +7,13 @@ export interface DjangoUser {
   email: string;
   role: string;
   full_name: string;
+  /**
+   * The bootstrap administrator. Read-only and server-assigned: it is the
+   * account created with `createsuperuser`, and it is what unlocks the
+   * admin user-management area. Absent on responses from older clients/tests
+   * that predate the field, so callers treat it as optional.
+   */
+  is_superuser?: boolean;
 }
 
 export interface DjangoTokens {

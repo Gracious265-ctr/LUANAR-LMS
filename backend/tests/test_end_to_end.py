@@ -19,6 +19,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from documents.models import ApprovedLeaveDocument
 from documents.tasks import render_approved_document
+from workflows.testing import department_for
 from leave.cancellations.models import LeaveBalanceTransaction
 from leave.cancellations.services import decide_cancellation, submit_cancellation
 from leave.models import ApplicationRevision, LeaveApplication
@@ -114,10 +115,18 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.dean = make_user("dean@luanar", role="dean", first_name="Dena")
 
         self.stub.register_employee(self.employee)
+        # The department the team belongs to, which is also what scopes who may
+        # be appointed to its steps. The approvers need employee records in it.
+        self.department = department_for("Administration")
+        for approver in (self.supervisor, self.hod, self.registrar, self.dvc):
+            EmployeeProfile.objects.update_or_create(
+                user=approver,
+                defaults={"department": self.department},
+            )
         self.employee_profile = EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department="Administration",
+            department=self.department,
             grade="B",
             category=EmployeeProfile.Category.ADMINISTRATION,
         )
@@ -144,11 +153,10 @@ class EndToEndBase(StubProviderMixin, TestCase):
 
         This is the whole configuration sequence as the product now asks for it:
         one request describes the team *and* the approval steps it follows,
-        because a chain is not a thing HR creates apart from a team. The people
-        who may act at each step are then staffed one person at a time, which is
-        its own audited action, and finally the team is activated — a validated
-        step, so a configuration still being built cannot affect anyone's
-        application.
+        because a chain is not a thing HR creates apart from a team. Each step
+        names one approver, and the team names the department they are eligible
+        from. The team is then activated \u2014 a validated step, so a configuration
+        still being built cannot affect anyone's application.
 
         Going through the real endpoints keeps the journey honest: an
         activation the API refuses fails this test rather than being papered
@@ -160,13 +168,14 @@ class EndToEndBase(StubProviderMixin, TestCase):
             {
                 "name": "Administration team",
                 "description": "Administration approval chain",
+                "department": self.department.id,
                 "new_workflow": {
                     "name": "Administration chain",
                     "sections": [
                         {
                             "name": role.title(),
                             "approver_role": role,
-                            "members": [approvers[role].id],
+                            "approver": approvers[role].id,
                         }
                         for role in roles
                     ],
@@ -481,11 +490,16 @@ class CancellationJourneyTests(EndToEndBase):
 class DelegationJourneyTests(EndToEndBase):
     def test_an_approved_delegate_can_decide_the_approvers_stage(self):
         app = self.submit()
+        # The window is relative to today rather than fixed: whether a delegation
+        # covers the approver is decided by comparing its dates against the real
+        # current date, so a hard-coded window silently stops covering as soon as
+        # the calendar moves past it.
+        today = timezone.localdate()
         delegation = Delegation.objects.create(
             approver=self.supervisor,
             delegate=self.dean,
-            starts_on=date(2026, 9, 21),
-            ends_on=date(2026, 9, 30),
+            starts_on=today - timedelta(days=1),
+            ends_on=today + timedelta(days=9),
             requested_by=self.supervisor,
             status=Delegation.Status.APPROVED,
         )

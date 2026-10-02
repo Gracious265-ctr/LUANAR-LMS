@@ -1,11 +1,41 @@
 import type {
   Campus,
   CampusInput,
+  EligibleApprover,
   Team,
   TeamInput,
   TeamReadiness,
 } from "./teams";
 import { apiErrorMessage } from "./utils";
+
+/**
+ * The people who may be appointed to a team's approval steps, scoped to the
+ * team's department and optionally to the step's role.
+ *
+ * Fetched from the backend rather than filtered in the browser because
+ * eligibility *is* the department: a picker built from the whole staff would
+ * offer people the write then refuses. The role narrowing is the same idea —
+ * one person holds one role per department, so the list is only the people who
+ * can pass that.
+ */
+export async function listEligibleApprovers(
+  department: number,
+  role?: number
+): Promise<EligibleApprover[]> {
+  const params = new URLSearchParams({ department: String(department) });
+  if (role !== undefined) {
+    params.set("role", String(role));
+  }
+  const response = await fetch(
+    `/api/hr/teams/eligible-approvers/?${params.toString()}`
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data));
+  }
+  const data = (await response.json()) as { candidates?: EligibleApprover[] };
+  return data.candidates ?? [];
+}
 
 export async function createTeam(input: TeamInput): Promise<Team> {
   return send<Team>("/api/hr/teams", "POST", input);

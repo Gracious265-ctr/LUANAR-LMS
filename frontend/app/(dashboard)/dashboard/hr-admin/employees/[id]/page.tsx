@@ -9,11 +9,10 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import { listTeams } from "@/lib/teams";
-import type { TeamOption } from "@/lib/employees";
+import { listDepartments, type Department } from "@/lib/departments";
 
-const TEAMS_ERROR =
-  "Teams could not be loaded, so this employee's team cannot be changed. Reload the page to try again.";
+const DEPARTMENTS_ERROR =
+  "Departments could not be loaded, so this employee's department cannot be changed. Reload the page to try again.";
 
 export default async function EmployeeDetailPage({
   params,
@@ -45,12 +44,12 @@ export default async function EmployeeDetailPage({
     // Manual grade entry remains available if entitlements cannot be loaded.
   }
 
-  let teams: TeamOption[] = [];
-  let teamsError = "";
+  let departments: Department[] = [];
+  let departmentsError = "";
   try {
-    teams = await listTeams({ includeInactive: true });
+    departments = await listDepartments();
   } catch {
-    teamsError = TEAMS_ERROR;
+    departmentsError = DEPARTMENTS_ERROR;
   }
 
   return (
@@ -89,8 +88,8 @@ export default async function EmployeeDetailPage({
           endpoint={`/api/hr/employees/${employee.id}`}
           method="PATCH"
           gradeOptions={gradeOptions}
-          teams={teams}
-          teamsError={teamsError}
+          departments={departments}
+          departmentsError={departmentsError}
         />
       </div>
     </div>
