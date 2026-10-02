@@ -213,16 +213,15 @@ def replace_workflow_sections(workflow: Workflow, sections) -> list[Section]:
     """Rewrite a workflow's section sequence, preserving membership.
 
     A section is identified across writes by its ``(role, name)`` pair. A
-    section whose pair still appears in the payload keeps its row, and so
-    keeps its members: re-ordering the chain must not silently strip the
-    people who can act for it, which is the whole reason a section holds
-    several approvers.
+    section whose pair still appears in the payload keeps its row, and so keeps
+    its appointed approver: re-ordering the chain must not silently unstaff the
+    people who can act for it.
 
     A section whose role **or** name changed is a different step and is
     rebuilt empty. Deliberately not carried over: a step that moved to a
     different approver role has a different authority, and quietly handing
-    the old roster to the new role would grant it without HR asking. The
-    step shows up with no members, which is visible and fixable, and
+    the old appointment to the new role would grant it without HR asking. The
+    step shows up with nobody appointed, which is visible and fixable, and
     submission is refused until it is staffed.
 
     ``(workflow, order)`` is unique, so the write is sequenced to avoid

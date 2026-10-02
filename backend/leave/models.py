@@ -230,10 +230,6 @@ class LeaveApplication(models.Model):
     financial_year_label = models.CharField(max_length=16, null=True, blank=True)
     rules_snapshot = models.JSONField(null=True, blank=True)
 
-    # Optimistic-lock version. Every employee edit bumps this by one so a stale
-    # edit context from a parallel tab/window is rejected with a conflict.
-    row_version = models.PositiveIntegerField(default=1)
-
     class Meta:
         ordering = ["-updated_at"]
 

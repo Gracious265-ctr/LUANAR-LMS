@@ -185,11 +185,11 @@ class StubRulesProvider:
 def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | None:
     """The lowest-id active user *holding* ``role``, optionally not ``exclude``.
 
-    Resolution goes through the role tables — a section membership or an
+    Resolution goes through the role tables — a section appointment or an
     institution-wide assignment — not ``User.role``, which no longer records an
-    approval position. A section may hold several members, so this is
-    deliberately the lowest id of all of them; a stub that needs a specific
-    person to act registers them explicitly instead.
+    approval position. With one approver per section the lowest id of the
+    holders is simply the one appointed; a stub that needs a specific person to
+    act registers them explicitly instead.
 
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.

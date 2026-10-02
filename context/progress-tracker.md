@@ -2617,8 +2617,95 @@ with **0 users, no superuser**.
 `flush` re-emits `post_migrate`, so content types (42) and permissions (168)
 were rebuilt. `manage.py check` clean.
 
-**To rebuild dev data.** `uv run manage.py seed_dev_users` (accounts, grades,
-leave types) then `uv run manage.py seed_approvals_dev` (roles, campuses,
-workflows, teams, applications; needs `DEBUG=true` and an active financial
-year). A superuser for the Django admin must be created separately
-(`createsuperuser`) — the seeders do not create one.
+**To rebuild dev data.** `uv run manage.py seed_dev_users` creates the nine
+accounts (and their empty profiles). It creates **no** business
+configuration — no departments, approver roles, teams, chains, entitlements or
+leave types; those are HR data and are created from the app. A superuser must
+be created separately (`createsuperuser`), using the email address as the
+username because login resolves email through that column.
+
+## Verification repair (2026-10-02)
+
+The tracker had been claiming a green suite for four commits. It was not.
+`8d472b3` shipped **4 failing tests** and nobody noticed, because every
+verification claim in this file predates it. Full suite on a fresh test
+database: **1155 tests, 4 failures.** Root cause and repair below.
+
+**Why they failed.** `8d472b3` removed the hard-coded fixture-registry
+fallback from `leave/cancellations/providers.py::_deducts_annual_balance`,
+leaving "no snapshot + no HR-configured rule → does not deduct". That was the
+correct change — whether a leave type deducts annual leave is business data HR
+owns, not a placeholder registry. Four tests in
+`leave/tests/test_cancellations.py` still built an approved
+`LeaveApplication` directly with `leave_type_id=1` and **no
+`rules_snapshot`**, relying on the removed fallback to mean "annual leave,
+deducts". They resolved to a restoration of `0` days instead of `5`, which is
+the invariant-12.4 breach they were written to guard.
+
+**The fix is the snapshot, not the fallback.** `CancellationBase` gained
+`snapshot_for(start, leave_type_id)`, which builds `rules_snapshot` with the
+**production** `build_rules_snapshot()` off the stub's own leave-type rules, so
+the fixture cannot drift from what `submit_application` writes. `make_approved`
+takes a `leave_type_id` and the snapshot is built for the type the row claims.
+
+**A fifth test had been passing for the wrong reason.** With the snapshot in
+place, `test_non_deducting_leave_type_returns_zero_restoration` started failing
+— it flipped `leave_type_id` to compassionate *after* creation, relying on the
+same removed fallback, and was only green because the fixture registry said id 4
+does not deduct. It now asks for `make_approved(leave_type_id=4)`, so the
+snapshot agrees with its own row. Worth recording: fixing a stale test can
+unmask another that was never testing what it claimed.
+
+**Doc drift that let it through.** `architecture.md` §12.3 and §12.11 still
+said a section "accepts several members and the first to act claims it" — true
+before `8d472b3`, false after it, since `Section.approver` is one FK. Corrected:
+a step resolves to one named person, so a step whose approver is the applicant
+has nobody left to act and is refused, not skipped. Two backend docstrings
+(`workflows/services.py::replace_workflow_sections`,
+`leave/tests/stubs.py::_active_user_id_for_role`) stated the same superseded
+rule and were corrected with it.
+
+**`--keepdb` is not safe here.** A reused test database reported **79 failures**
+against a suite that is green on a fresh one: leftover rows are visible to the
+next run, and suites that create configuration by id (approver roles, sections,
+leave types) then fail on state they did not create. The README no longer
+recommends it and now explains the delete-once step.
+
+**Also corrected in the README.** It documented `seed_approvals_dev`, which
+does not exist — it names `seed_dev_users` only, which creates no business
+configuration — and it omitted the two facts that make a bootstrap superuser
+usable: the email-as-username rule, and that `createsuperuser` leaves `role` at
+`employee`, which redirects every `/dashboard/hr-admin/*` page.
+
+**Verification.** Fresh test database: **1158 tests OK** (1155 + 3 new).
+`check` clean, `makemigrations --check` clean. `leave/0017` applies and reverses
+on the dev database. Frontend unchanged by this pass (66 files / 448 tests OK,
+`tsc` and `eslint` clean).
+
+## Unit 28 — Hardening and Integrity Review (spec written 2026-10-02)
+
+Spec `context/specs/28-hardening-and-integrity-review-spec.md`. **Not started.**
+Chosen over the other two candidates because the verification gate was broken for
+four consecutive commits and every verification claim in this file predated the
+commit that broke it — evidence the per-commit discipline has a systematic hole,
+not a one-off. Two features on top of an untrusted gate is how you get eight.
+
+The pass targets one defect class, because it is the class that survives review:
+**code that claims behaviour it does not have.** All three instances found on
+2026-10-02 were that class, and all three were deletions rather than missing
+behaviour — `row_version`, `leave/services/snapshots.py`, and the
+fixture-registry fallback four tests were still leaning on.
+
+Two contract questions answered during scoping, recorded so they are not
+re-opened: the **edit/resubmit path is sound** (`LeaveApplicationSerializer`
+marks every server-calculated field read-only), and **`WorkflowViewSet` is
+correctly read-only** — it is the `README` that is wrong, documenting a `POST` and
+a `PATCH` that return 405. The README's API table is also missing roughly eight
+routed endpoints Unit 26 added (`teams`, `approvals`, `approver-roles`,
+`campuses`, `role-assignments`, `section-members`, `departments`, and the
+`leave-document-template` actions), so the whole table needs verifying endpoint by
+endpoint against `config/urls.py`.
+
+D3 in the spec is the one that addresses how this got here: findings are recorded
+whether or not they are fixed, so a deferred item stays visible. The four defects
+Unit 24 deferred as "out of scope (D10)" were named in prose and never revisited.
