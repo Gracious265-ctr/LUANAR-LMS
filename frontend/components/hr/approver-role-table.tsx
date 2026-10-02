@@ -9,7 +9,7 @@ import {
   historyScopeLabel,
   removeRoleAssignment,
 } from "@/lib/approver-roles-client";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 
 /**
  * Retires a role, or says why it cannot be retired yet.
@@ -106,10 +106,16 @@ function RemoveHolderButton({ assignment }: { assignment: RoleAssignment }) {
 export function ApproverRoleTable({
   roles,
   assignments,
+  onEdit,
 }: {
   roles: ApproverRole[];
   /** Institution-wide holdings, keyed by role id. */
   assignments: Record<number, RoleAssignment[]>;
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (roles.length === 0) {
     return (
@@ -206,7 +212,7 @@ export function ApproverRoleTable({
                       Active
                     </span>
                   ) : (
-                    <span className="inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                    <span className="inline-block rounded-sm bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
                       Retired
                     </span>
                   )}
@@ -218,9 +224,16 @@ export function ApproverRoleTable({
                 </td>
                 <td className="py-3 text-right">
                   <span className="inline-flex items-center justify-end gap-2">
-                    <EditActionLink
-                      href={`/dashboard/hr-admin/roles/${role.id}/edit`}
-                    />
+                    {onEdit ? (
+                      <EditIconButton
+                        onClick={() => onEdit(role.id)}
+                        label={`Edit ${role.label}`}
+                      />
+                    ) : (
+                      <EditActionLink
+                        href={`/dashboard/hr-admin/roles/${role.id}/edit`}
+                      />
+                    )}
                     <RetireRoleButton role={role} />
                   </span>
                 </td>

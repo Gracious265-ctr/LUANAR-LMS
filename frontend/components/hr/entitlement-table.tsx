@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { Entitlement } from "@/lib/entitlements";
 import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 import {
   Table,
   TableBody,
@@ -21,9 +21,15 @@ function isCurrentlyEffective(rule: Entitlement, today: string): boolean {
 export function EntitlementTable({
   entitlements,
   today = currentDateIso(),
+  onEdit,
 }: {
   entitlements: Entitlement[];
   today?: string;
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (entitlements.length === 0) {
     return (
@@ -74,9 +80,16 @@ export function EntitlementTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <EditActionLink
-                  href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
-                />
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(rule.id)}
+                    label={`Edit ${rule.grade_start}–${rule.grade_end}`}
+                  />
+                ) : (
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                  />
+                )}
               </TableCell>
             </TableRow>
           );

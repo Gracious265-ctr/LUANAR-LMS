@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { ApproverRoleTable } from "@/components/hr/approver-role-table";
+
+import { RolesSection } from "@/components/hr/RolesSection";
 import { RoleAssignmentForm } from "@/components/hr/role-assignment-form";
 import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
 import { listApproverRoles, listRoleAssignments } from "@/lib/approver-roles";
@@ -61,77 +60,65 @@ export default async function RolesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-text-primary">Approver roles</h2>
-          <p className="text-text-secondary">
-            The approver positions a workflow stage can name. Team roles are
-            staffed on the Teams page; institution-wide roles get a holder here.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/hr-admin/roles/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New role
-        </Link>
+      <div>
+        <h2 className="text-2xl font-bold text-text-primary">Approver roles</h2>
+        <p className="text-text-secondary">
+          The approver positions a workflow stage can name. Team roles are
+          staffed on the Teams page; institution-wide roles get a holder here.
+        </p>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          All roles
-        </h3>
-        {rolesError ? (
-          <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-            {rolesError}
-          </div>
-        ) : (
-          <>
-            {holdersError && (
-              <p className="mb-3 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-                {holdersError}
-              </p>
-            )}
-            <ApproverRoleTable roles={roles} assignments={holdersByRole} />
-            {roles.length > 0 && !holdersError && !employeesError && (
-              <div className="mt-6 space-y-4 border-t border-border-default pt-4">
-                <h4 className="text-sm font-semibold text-text-primary">
-                  Institution-wide holders
-                </h4>
-                {roles
-                  .filter((role) => role.is_institution_wide && role.is_active)
-                  .map((role) => (
-                    <div key={role.id}>
-                      <p className="text-sm text-text-secondary">
-                        {role.label}
-                      </p>
-                      <RoleAssignmentForm
-                        role={role}
-                        employees={employees}
-                        assignments={holdersByRole[role.id] ?? []}
-                      />
-                    </div>
-                  ))}
-                {roles.every(
-                  (role) => !role.is_institution_wide || !role.is_active
-                ) && (
-                  <p className="text-sm text-text-muted">
-                    No active institution-wide roles. Mark a role
-                    institution-wide to give one person that position across
-                    the whole university.
-                  </p>
-                )}
-              </div>
-            )}
-            {employeesError && (
-              <p className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-                {employeesError}
-              </p>
-            )}
-          </>
-        )}
-      </div>
+      {rolesError ? (
+        <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          {rolesError}
+        </div>
+      ) : (
+        <>
+          {holdersError && (
+            <p className="mb-3 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+              {holdersError}
+            </p>
+          )}
+          <RolesSection roles={roles} assignments={holdersByRole} />
+
+          {roles.length > 0 && !holdersError && !employeesError && (
+            <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+              <h3 className="mb-4 text-lg font-semibold text-text-primary">
+                Institution-wide holders
+              </h3>
+              {roles.some((role) => role.is_institution_wide && role.is_active) ? (
+                <div className="space-y-4">
+                  {roles
+                    .filter((role) => role.is_institution_wide && role.is_active)
+                    .map((role) => (
+                      <div key={role.id}>
+                        <p className="text-sm text-text-secondary">
+                          {role.label}
+                        </p>
+                        <RoleAssignmentForm
+                          role={role}
+                          employees={employees}
+                          assignments={holdersByRole[role.id] ?? []}
+                        />
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted">
+                  No active institution-wide roles. Mark a role
+                  institution-wide to give one person that position across
+                  the whole university.
+                </p>
+              )}
+              {employeesError && (
+                <p className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
+                  {employeesError}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

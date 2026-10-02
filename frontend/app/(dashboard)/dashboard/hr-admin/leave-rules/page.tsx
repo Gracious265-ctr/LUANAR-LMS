@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { LeaveRuleTable } from "@/components/hr/leave-rule-table";
+import { LeaveRulesSection } from "@/components/hr/LeaveRulesSection";
 import { getCurrentUser } from "@/lib/auth";
 import {
   listLeaveRules,
@@ -18,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card } from "@/components/ui/card";
 
 const TABS: { value: EffectiveFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -84,7 +82,7 @@ export default async function LeaveRulesPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div>
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave rules</h2>
           <p className="text-text-secondary">
@@ -93,13 +91,6 @@ export default async function LeaveRulesPage({
             applications.
           </p>
         </div>
-        <Link
-          href="/dashboard/hr-admin/leave-rules/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New rule
-        </Link>
       </div>
 
       <div className="flex items-center justify-between gap-4">
@@ -148,22 +139,25 @@ export default async function LeaveRulesPage({
         </div>
       )}
 
-      <Card>
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          {effective === "all"
-            ? "All rules"
-            : effective === "current"
-              ? "Current rules"
-              : "Upcoming rules"}
-        </h3>
-        {rulesError ? (
-          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-            {rulesError}
-          </div>
-        ) : rules ? (
-          <LeaveRuleTable rules={rules.results} today={currentDateIso()} />
-        ) : null}
-      </Card>
+      {rulesError ? (
+        <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          {rulesError}
+        </div>
+      ) : rules ? (
+        <LeaveRulesSection
+          rules={rules.results}
+          leaveTypes={leaveTypes?.results ?? []}
+          today={currentDateIso()}
+          clearFiltersHref="/dashboard/hr-admin/leave-rules"
+          heading={
+            effective === "all"
+              ? "All rules"
+              : effective === "current"
+                ? "Current rules"
+                : "Upcoming rules"
+          }
+        />
+      ) : null}
     </div>
   );
 }

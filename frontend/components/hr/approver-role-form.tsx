@@ -15,8 +15,18 @@ import {
 
 export function ApproverRoleForm({
   role,
+  onSuccess,
+  onCancel,
 }: {
   role?: ApproverRole;
+  /**
+   * When provided the form reports the saved record instead of navigating, so a
+   * dialog can close and refresh its list without the page moving underneath it.
+   * Defaults to the push-and-refresh the standalone pages rely on.
+   */
+  onSuccess?: (role: ApproverRole) => void;
+  /** Replaces the Cancel link when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -40,16 +50,18 @@ export function ApproverRoleForm({
     };
 
     try {
-      if (role) {
-        // The code is the role's identity in saved workflow sections and team
-        // memberships, so it is never rewritten: an existing role is patched
-        // without it.
-        await updateApproverRole(role.id, { ...input, code: undefined });
+      const saved = role
+        ? // The code is the role's identity in saved workflow sections and team
+          // memberships, so it is never rewritten: an existing role is patched
+          // without it.
+          await updateApproverRole(role.id, { ...input, code: undefined })
+        : await createApproverRole(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createApproverRole(input);
+        router.push("/dashboard/hr-admin/roles");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/roles");
-      router.refresh();
     } catch (err) {
       setError(
         err instanceof Error
@@ -206,12 +218,22 @@ export function ApproverRoleForm({
               ? "Save changes"
               : "Create role"}
         </button>
-        <Link
-          href="/dashboard/hr-admin/roles"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/roles"
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

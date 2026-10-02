@@ -15,10 +15,20 @@ export function EntitlementForm({
   entitlement,
   endpoint,
   method,
+  onSuccess,
+  onCancel,
 }: {
   entitlement?: Entitlement;
   endpoint: string;
   method: "POST" | "PATCH";
+  /**
+   * When provided the form reports the saved record instead of navigating, so a
+   * dialog can close and refresh its list without the page moving underneath it.
+   * Defaults to the push-and-refresh the standalone pages rely on.
+   */
+  onSuccess?: (entitlement: Entitlement) => void;
+  /** Replaces the Cancel link when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [effectiveFrom, setEffectiveFrom] = useState(entitlement?.effective_from ?? "");
@@ -58,8 +68,15 @@ export function EntitlementForm({
         return;
       }
 
-      router.push("/dashboard/hr-admin/entitlements");
-      router.refresh();
+      // The viewset answers with the saved record, so the dialog host gets the
+      // entity without a second read.
+      const saved = (await response.json()) as Entitlement;
+      if (onSuccess) {
+        onSuccess(saved);
+      } else {
+        router.push("/dashboard/hr-admin/entitlements");
+        router.refresh();
+      }
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
@@ -118,12 +135,18 @@ export function EntitlementForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : entitlement ? "Save changes" : "Create entitlement"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/entitlements"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/entitlements"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

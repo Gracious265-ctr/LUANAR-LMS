@@ -4,6 +4,26 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Vercel design mechanics on LUANAR identity (2026-10-01)** — the app was
+  built on shadcn defaults that did not match the target aesthetic: a 6/8/12/16px
+  radius ladder where the design calls for a flat 6px, a slate-tinted shadow
+  scale, a 2px accent ring with a `ring-offset`, and 13px captions. Applied the
+  mechanics while keeping LUANAR blue `#0097F0`, institutional green `#009119`,
+  and Geist Sans headings. Radius collapsed to `6px` (`4px` for status labels,
+  `9999px` only for genuine circles), so ~256 existing `rounded-md/lg/xl` call
+  sites resolve to 6px with no edits. Shadow scale replaced with the border-first
+  spec, and the shadcn `sm`/`md` names aliased *down* to the card depth. Focus
+  became one shared `focus-ring` utility (opaque white inner ring, then LUANAR
+  blue) replacing six ad-hoc `ring-2 ring-offset-2` variants. `sm`/`md`
+  breakpoints moved to 600px/960px so the two-column and table/card switches wait
+  for a genuinely wide viewport; `lg` stayed at 1024px. Added a Radix-dialog
+  mobile drawer behind a hamburger, sharing one `NavLinks` list with the desktop
+  rail, plus a 44px touch-target floor below `md`. Also fixed a live bug: the
+  `draft` badge tone referenced `bg-surface-secondary`, which has never existed,
+  so draft badges rendered with no background. Frontend 610 tests OK, typecheck,
+  lint and production build clean. See "Completed — Vercel design mechanics
+  (2026-10-01)" at the end of this file.
+
 - **Real users, real inboxes (2026-10-01)** — mail could reach nobody: HR creates
   accounts with `set_unusable_password()` and there was no way for a real person
   to obtain a password, so a new employee could not sign in and could never
@@ -2917,3 +2937,446 @@ the mail landed in **Sent** rather than the Inbox. It is now in
 recipients, and a correct `sent` row is not evidence that a second recipient got
 anything, because only the owner is recorded on the row.
 
+---
+
+## Completed — Vercel design mechanics (2026-10-01)
+
+Applied the design mechanics extracted in
+`context/vercel-design-system-analysis.md`, keeping the LUANAR identity.
+
+### What changed
+
+**Geometry (WS1).** The radius ladder `6/8/12/16/20/24` was replaced by a flat
+scale: `4px` (`xs`/`sm`, plus the calendar cells), `6px` (everything from `md`
+up, and `control-radius`), and `9999px` for genuine circles. `lg` through `4xl`
+are kept as aliases so the ~256 call sites that name them keep resolving.
+Verified in the compiled CSS that `rounded-md`, `rounded-lg` and `rounded-xl`
+all emit 6px. `--radius-calendar` drops to 4px so a calendar cell is a square,
+not a pill.
+
+**Depth and stacking (WS2).** The slate-tinted shadows were replaced by the
+border-first spec: `card`/`subtle` carry only a soft drop, `hover` adds a ring
+plus lift, `dropdown` and `modal` carry the measured overlay values. The shadcn
+`2xs`–`2xl` names alias onto these, with `sm`/`md` mapped down. Added named
+z-index tokens so an overlay can never land under a dialog: `z-header` 75,
+`z-popover` 100, `z-modal` 1000, `z-toast` 1100. The eight ad-hoc `z-50` call
+sites in the overlay primitives now use those names.
+
+**Focus (WS3).** One `focus-ring` utility, keyboard-only, applied through
+`@utility` so it composes with variants: an opaque white inner ring then LUANAR
+blue at 4px. A `ring-offset` was deliberately dropped because the offset colour
+breaks on transparent parents. Invalid fields get the same two layers in red.
+Six separate `ring-2 ring-offset-2` variants were removed.
+
+**Motion, spacing, type (WS4).** `--duration-base` is 200ms, matching the
+spec's stated feedback timing, and the interactive primitives were moved off
+`duration-fast`. Added `--space-band` 40px, `--space-field` 48px and
+`--space-bleed` 64px for large screens. `text-xs` is 12px, not shadcn's 13px,
+which brings the 166 existing call sites to the documented caption size.
+`leading-tight` is 1.2 per the spec's display rows.
+
+**Primitives and touch (WS5).** Cards are 6px with `p-6`, and an interactive card
+lifts 2px on hover (with a `motion-reduce` opt-out). Badges and the five
+hand-rolled status pills are 4px. Fixed the `draft` badge tone, which
+referenced `bg-surface-secondary` -- a token that has never existed, so draft
+badges had no background at all. Added a 44px touch-target floor below `md`,
+scoped so it does not apply inside `.overflow-x-auto`: those tables are
+desktop-density layouts read sideways on a phone, and growing their actions
+would triple the row height.
+
+**Breakpoints (WS6).** `sm` 640 → 600px, `md` 768 → 960px. `lg` is unchanged at
+1024px because 27 call sites depend on it and the third-column layouts are
+genuinely desktop-only. The 960px choice matches the wide data tables: a tablet
+in landscape is still a phone-sized reading experience.
+
+**Mobile drawer (WS7).** `useIsMobile` (a `matchMedia` subscription that returns
+`false` until mounted, so the server renders the desktop shell and there is no
+hydration flash), plus a hamburger in the header opening a Radix `Dialog`
+drawer. The rail and the drawer render the same `NavLinks` list, so a route
+cannot exist in one and not the other. `sidebarOpen` and `drawerOpen` are
+separate states. The drawer closes on Escape, the backdrop, its own close button,
+and a route change -- the last handled by adjusting state during render rather
+than in an effect, which is both lint-clean and avoids a second render pass.
+
+### Verification
+
+Frontend 610 tests OK (78 files), typecheck clean, lint clean, production build
+clean. Six new drawer tests cover open, shared destinations, labelling, Escape,
+the close button, and route-change dismissal. The `matchMedia` mock in
+`tests/setup.ts` gained a `setNarrow` control so a test can cross the
+breakpoint; it still reports `false` for every non-`max-width` query, which keeps
+the desktop baseline the rest of the suite is written against.
+
+Three findings worth keeping. The dev server accepted an invalid
+`has-focus-visible` pseudo-class without complaint, and only the production build
+surfaced it as a CSS parse warning; the utility is now plain `:focus-visible`.
+A stale `.next` cache held both the old and new radius values at once, so
+verifying token changes means clearing `.next` first, or reading which chunk a
+page actually served. And the four heaviest form suites (`plan-form`,
+`employee-form`, `delegation-form`, `cover-request-form`) exceed the 5s per-test
+default whenever the machine is loaded: they pass in isolation and fail as
+timeouts under contention, and they failed *worse* on the pre-change baseline
+during the same contention (9 failures vs 8). The suite's own output flags the
+cause — "create it once per worker with `pool: 'vmThreads'`... or
+`isolate: false`" — and the fix is the config change it suggests, not a code
+change here. Do not read a timeout in those four files as a regression without
+re-running them on a quiet machine.
+
+### Deliberate deviations
+
+- LUANAR blue `#0097F0` replaces `#0070f3` in the focus ring. LUANAR identity wins.
+- Card shadow drops the spec's `0 0 0 1px` ring, because the card already draws a
+  real 1px border and both would render a 2px edge.
+- No hero gradient. `ui-context.md` prohibits gradients on ordinary UI surfaces,
+  and this app has no marketing page to justify one.
+- Geist Sans is kept for headings, though the spec pairs headings with Geist Mono.
+- `9999px` is limited to genuine circles. The spec reserves it for pill
+  CTAs; here a pill reads as a control, and status is a label.
+
+---
+
+## Leave application moves into an overlay on the applications list
+
+Applying for leave no longer navigates. `/dashboard/leave/drafts` stays where it
+is and the whole three-step journey — details, review, confirmation — runs inside
+a centred modal above it, so the user's list is never torn down mid-application.
+This is the pilot for the same pattern on Leave Day Plans and Cover Requests,
+which still render as full pages.
+
+Four decisions set the shape:
+
+- **Leave only.** Plans and cover are left alone until the pattern is proven.
+- **A wider centred modal**, not a drawer. It reuses `DialogContent` at
+  `max-w-2xl` with a scrollable body, matching the app's existing dialogs.
+- **All three steps in one overlay.** The review and confirmation steps are
+  stages, not pages, so the flow never leaves the list.
+- **The open application lives in the URL**, as `?compose=1`,
+  `?edit=<id>`, or `?edit=<id>&stage=review|done`.
+
+### URL state, and why the old routes redirect
+
+Lifting the open application into the query string is what makes a refresh
+resume the same draft instead of starting a new one, lets the browser Back
+button step out of the overlay, and keeps the application deep-linkable. The
+existing entry points are preserved as thin redirects so nothing that links
+there breaks:
+
+| Old route | Redirects to |
+|---|---|
+| `/dashboard/leave/new` | `/dashboard/leave/drafts?compose=1` |
+| `/dashboard/leave/[id]/edit` | `/dashboard/leave/drafts?edit=<id>` |
+| `/dashboard/leave/[id]/submitted` | `/dashboard/leave/drafts?edit=<id>&stage=done` |
+
+`/dashboard/leave/[id]/review` keeps its page, since `ReviewSummaryClient` is
+still the shared review component and a direct link should render standalone.
+Notification emails contain no dashboard URLs, so nothing external depended on
+these paths.
+
+The sidebar's "New Application" item, both `New Application` buttons in the
+list, and each card's Edit and Review actions all push the query string rather
+than a path. `ApplicationCard` takes an optional `onEdit`; when it is absent the
+original `<Link>`s render, so the standalone page and the list share one
+component.
+
+### Shared extraction
+
+The overlay and the standalone pages render the same components rather than
+forking them, so the two cannot drift:
+
+- `LeaveReviewPanel` — the review step, used by both. `onEdit` and
+  `showBackLink` let the overlay swap the back links for buttons that change its
+  own stage instead of navigating.
+- `LeaveSubmissionResult` — the confirmation. `onDone` replaces the link row
+  with a single action, and `onNotSubmitted` keeps the standalone page's
+  redirect-to-review behaviour while the overlay only shows a message, since a
+  redirect would tear the dialog down.
+- `useSubmitLeaveApplication` — the submit transition, extracted because the
+  422-issues and 409-already-submitted branches are easy to get subtly wrong and
+  were previously duplicated in intent.
+
+`LeaveApplicationForm` gained `onContinueToReview`, `onDraftCreated`, a
+`forwardRef` handle exposing `flush()`, and `hideActions`. Its own Review button
+still calls `router.push` when no `onContinueToReview` is given, so the
+standalone pages are unchanged.
+
+### Two bugs found on the way
+
+**Autosave lost the last keystrokes.** `useAutosaveDraft`'s effect cleanup only
+cleared the pending timer, so any change inside the 800ms debounce window was
+discarded on unmount. A full-page form mostly hid this; the overlay unmounts the
+form on close, which makes it routine. The hook now tracks pending state and
+exposes `flush()`, which the overlay calls before closing and on Escape. A test
+pins the old behaviour as unmount-without-flush so the reason it exists stays
+visible.
+
+**Select menus rendered behind the dialog.** Radix portals to `<body>`, so
+`SelectContent` is a sibling of the dialog content, not a child. With one
+`z-modal` value for both backdrop and content, the leave-type dropdown painted
+*under* the modal. `globals.css` now splits `z-modal-overlay` / `z-modal` and
+adds `z-portal-above` for any primitive that opens from inside a dialog. A
+regression test asserts the select content carries that class.
+
+The document-removal confirm was also `window.confirm`, which browsers suppress
+in some contexts and which cannot be styled; it is now the app's `AlertDialog`,
+its first consumer.
+
+### Verification
+
+Frontend 628 tests OK (79 files), typecheck clean, lint clean, production build
+clean. New coverage: 9 overlay tests (stage transitions, deep links into review
+and done, URL rewrite on draft creation, close reporting, the z-index guard), 5
+list tests for the new overlay entry points, 4 autosave tests for `flush`, and
+the uploader's confirm rewritten against `AlertDialog`.
+
+One note for the next round: `useSearchParams` in `ApplicationsList` requires the
+`<Suspense>` boundary the drafts page now provides, or the production build
+fails during prerender. The same applies to any host whose route is
+prerendered — but only to those. The cover overlay, added later, reads search
+params on routes the build marks dynamic, so it needs no boundary. Check the
+build output for `ƒ` before adding one.
+
+## Cover request moved into an overlay
+
+**Why.** `CoverPanel` rendered `CoverRequestForm` inline, permanently expanded
+above the delegation table, so the list the user came for was pushed below the
+fold on both of the panel's hosts. It was the only form in the app already
+rendered next to its own list, which made it the cheapest real test of whether
+the leave overlay pattern generalises.
+
+**What changed.** Two new client components. `CoverRequestSection` owns the
+`?cover=new` open state and renders the trigger; `CoverRequestOverlay` is the
+dialog and holds the in-place confirmation. `CoverRequestForm` gained optional
+`onSubmitted` / `onCancel` props and otherwise did not change: with no
+`onSubmitted` it still calls `router.refresh()`, so the inline rendering path
+and its five existing tests were untouched.
+
+`CoverPanel` stays a server component and simply renders the new section in
+place of the form card, so `/dashboard/cover` and the Approvals Cover tab needed
+no changes. The section derives its query from `useSearchParams` rather than
+hardcoding a path, so opening the request from the approvals tab keeps
+`?view=cover` instead of clobbering it.
+
+**Verification.** Frontend 639 tests OK (80 files), typecheck clean, lint clean,
+production build clean. Ten new overlay tests, plus the shared `next/navigation`
+test mock gained a `useSearchParams` default (closed), which is what the three
+`approvals-workspace` cover tests were missing.
+
+**Notes for the next round.** Unlike the leave flow, this needs no
+`useSubmitLeaveApplication`-style hook and no imperative flush handle: a cover
+request is a single POST with no draft and no review step, so the pattern
+degrades cleanly to one stage. Two things worth carrying forward. First, the
+confirmation state lives in the component that only mounts while open, so
+closing discards it — putting it in the always-mounted parent resurrected the
+previous request's confirmation on reopen. Second, `DateRangePicker` needed no
+clipping fix after all: `PopoverContent` wraps a `PopoverPortal`, so the
+calendar renders in `<body>` and `overflow-y-auto` on the dialog cannot clip it.
+The `z-portal-above` work already covered the stacking.
+
+No `Suspense` boundary was needed here, unlike `/dashboard/leave/drafts`: every
+cover host resolves the user through `cookies()`, so the build marks
+`/dashboard/cover` and `/dashboard/approvals` dynamic and there is no static
+shell to defer the client component out of. If either route ever becomes
+prerendered, the section needs wrapping.
+
+Still open from the same review: the leave overlay's stage changes are local
+state, so the URL is not rewritten on form→review or review→done, and
+`LeaveSubmissionResult` still defaults to a redirect when it is handed no
+`onNotSubmitted` callback.
+
+## Small HR admin forms moved into overlays
+
+**Scope.** Leave types, public holidays, and financial years — the three admin
+forms that are two or three fields each. Employee, team, and the leave-document
+template editor were deliberately left as pages: at 288, 497, and 422 lines they
+would be a scrolling form inside a scrolling dialog, which is worse than the
+page they replace. Entitlements (4 controls) and leave rules (7) sit on the
+border and want their own look.
+
+**The shared pieces.** `useOverlayParam` turned out to be the part actually
+worth generalising, not the dialog. Every overlay host needs the same five
+things: read the key, treat `new` as create and anything else as a row id, push
+on open, and on close step back through history with a replace fallback for a
+direct visit to the deep link. `AdminFormOverlay` is then only dialog chrome
+plus the not-found escape hatch. Three thin sections — `LeaveTypesSection`,
+`HolidaysSection`, `FinancialYearsSection` — render their own form.
+
+**No per-record fetch.** The three tables already carry everything each form
+needs (`name`/`code`, `name`/`date`, `start_date`/`end_date`/`is_active`), so
+edit mode resolves the row from the list already on screen. That removes the
+`getLeaveType(id)` call, the `notFound()` path, the loading state, and any
+need for a `Suspense` boundary — the build marks both list routes `ƒ` dynamic
+anyway because they resolve the user through `cookies()`.
+
+**Row affordances.** The row name stays a real `Link` to the old `[id]/edit`
+route, which is now a redirect shim, so middle-click and copy-link keep working
+and it lands on the same overlay. Only the pencil becomes a button, and only
+when the table receives `onEdit`; `EditActionLink` gained a sibling
+`EditIconButton` rather than a changed signature, because five other tables
+depend on it. The icon button's label names the record — eight rows of an
+unnamed "Edit" button are indistinguishable to a screen reader.
+
+**Shims keep the role guard.** All six routes (`new` and `[id]/edit` for each
+area) still resolve the user and check `role !== "hr"` before redirecting, so a
+non-HR user following a stale link lands on `/dashboard` rather than bouncing
+through a list page that would refuse them anyway.
+
+**The `?year` filter.** The calendar page is the one host with a filtered list,
+and it produced two states that were reachable but unresolvable. A deep link to
+a holiday the filter excludes found no row, and a holiday created while filtered
+could be invisible afterwards, reading as a failed save. Neither is papered over
+by clearing the filter — an admin who narrowed the view would lose it without
+being asked. Instead the overlay explains the case and offers "Show all years".
+The filter form is passed into `HolidaysSection` as a slot so it stays between
+the header and the table it narrows.
+
+**Financial year activation.** Activating a period deactivates the current one,
+which is easy to toggle by accident in a two-field dialog. The dialog
+description now states the consequence, and only when the edited record is
+currently active, so the warning is not noise on an inactive period.
+
+**Verification.** Frontend 671 tests OK (82 files), typecheck clean, lint clean,
+production build clean. Twelve hook tests and twenty section tests are new. The
+six form tests and three table tests that already covered these components pass
+untouched, which is the evidence that the new `onSuccess` / `onEdit` props
+genuinely default to the old behaviour rather than quietly replacing it.
+
+**Two things worth carrying forward.** JSDOM's `window.history.length` only
+grows within a test file and `replaceState` cannot truncate it, so any test
+touching the `back`-versus-`replace` branch has to override the property
+directly. And the `getByLabelText` on an element that should be absent throws
+rather than returning null — `queryBy` is required to assert absence.
+
+## Leave overlay follow-ups: stage in the URL, and no stray redirect
+
+Two loose ends from the leave overlay work, both found on re-reading the code
+rather than by a failing test.
+
+**Stage moves never reached the URL.** The overlay's form → review → done
+transitions were local state, so `?edit=<id>&stage=review` described the stage
+only on entry. Stepping back to the form, or submitting to the confirmation,
+left the address bar describing a stage the dialog was no longer showing. The
+overlay now reports transitions through `onStageChange(stage, applicationId)` and
+the host rewrites the URL. The overlay's outer wrapper already keys on
+`initialStage`, so the rewrite remounts the inner component and the URL becomes
+the single source of truth rather than competing with local state.
+
+**The rewrite has to be a `replace`, and that is load-bearing.** Opening the
+overlay pushes one history entry and `close()` steps back exactly once. A push
+per stage would make the first close press look broken — the dialog would still
+be open, one stage back — so the host replaces. There is a test that opens,
+visits review and done, closes, and asserts one `back()` and no `push()` at all.
+
+**The reported id matters for the create flow.** `?compose=1` carries no
+application id, because the draft does not exist yet. The report therefore
+passes the id along, and the host prefers it over anything already in the URL;
+otherwise a create flow could never name its own draft.
+
+**A default redirect that fired inside a dialog.** `LeaveSubmissionResult`
+redirected to the review screen when the application was not submitted, and the
+dialog case inherited it: a submit that came back not-submitted would navigate
+the page out from under the confirmation the user was reading. The default is
+now a no-op, which leaves the in-dialog message in place, and only the
+standalone page opts into the redirect. Inverting the default rather than
+passing a no-op callback from the overlay means the safe behaviour is what you
+get by forgetting to think about it.
+
+**Memoising `target`.** The new callback depended on an object literal that was
+rebuilt each render, so `useCallback` never memoised and eslint flagged it.
+Wrapping the derivation in `useMemo` and depending on the id instead of the
+object fixed the warning properly rather than silencing it.
+
+**Verification.** Frontend 681 tests OK (83 files), typecheck clean, lint clean,
+production build clean. Ten new tests: three on the overlay's stage reporting,
+one on the no-op default, six on the host's URL contract.
+
+## HR registry overlays: entitlements, leave rules, approver roles
+
+Wave 1 of the admin forms that were still whole pages. Entitlements, leave rules
+and approver roles all moved to the same overlay host as the leave types,
+holidays and financial years, and the six routes they used to own now redirect.
+
+### The shared pieces the three waves needed
+
+**`AdminFormOverlay` gained a `size`.** The first wave inherited whatever width
+`DialogContent` defaults to, which was right for a two-field form and wrong for
+the entitlement form's date range. `sm` stays at the default so a converted form
+is a visual no-op, `md` and `lg` widen the dialog and cap its height with
+`overflow-y-auto`, because a form that scrolls inside a dialog has to say so
+visually or the submit button reads as missing. The height cap is applied
+unconditionally so switching targets cannot change the dialog's height.
+
+**`AdminFormOverlay` gained a `targetKey`.** The overlay keyed its inner wrapper
+on the dialog title, so two records with the same title — "Edit rule" twice on
+one page — reused the mounted form, and because the forms seed with
+`defaultValue` the second record opened showing the first one's values. Entitles
+are the sharp case: two bands can read alike in the table and differ by days.
+The caller passes the record id and the wrapper remounts on it. Two tests pin
+this, one of which uses an identical title on both renders, since that is
+precisely the case a title-based key cannot distinguish.
+
+**`RowActionsMenu`, built but not adopted.** `row-action-menu.tsx` would have been
+the popover-shaped version of this, but a row's actions are a menu, so it is a
+Radix `DropdownMenu` with an accessible label naming the record, an optional
+heading, and a separator before the first destructive action. It is not on any
+table yet: adopting it changes every table's interaction at once, which is a
+separate piece of work from having the component.
+
+**A new `@radix-ui/react-dropdown-menu` dependency** for the above. This is the
+only new package.
+
+### What each page keeps
+
+The filter controls stay on the server page and pass through as a slot, because
+they are GET forms the page owns while the header, table and overlay belong
+together in the client section. The clear-filters escape hatch is a `href` for
+the same reason a callback cannot cross the boundary: `LeaveRulesSection` takes
+`clearFiltersHref` and pushes it.
+
+Entitlements' `?grade` is a lookup panel, not a list filter — it feeds the
+durations the other columns show — so it is untouched. Leave rules filter on
+`?effective` and `?leave_type` and both survive opening an overlay. Roles are not
+filtered.
+
+The institution-wide holder block on the roles page stays on the page. It is a
+relationship rather than a field of a role, and it has to stay visible next to
+the table that assigns it.
+
+### Two bugs the new tests found
+
+**The financial-year warning was on the wrong rows.** The dialog warned when
+editing the period that was *already* active. That row's checkbox is already
+ticked, so there is nothing to deactivate and the warning was noise; the two
+cases that silently retire a live period — creating a period, or activating an
+inactive one — said nothing. The condition is now `isCreate || !is_active`, and
+the two cases get different sentences, because "activating this period" is wrong
+for a record that does not exist yet.
+
+**`leaveRuleStatus` dragged `next/headers` into the browser bundle.** The rule
+table is a client component and imported the helper from `lib/leave-rules.ts`,
+which imports `api-client`, which reads cookies. This is invisible to `tsc`,
+lint and Vitest — all three were clean — and only the production build caught
+it, so it is worth naming as a class: any client component importing a value
+(not a type) from a server data module is a build break. The helper moved to
+`leave-rules-client.ts`, which is browser-safe, with a re-export left behind for
+the server callers and tests. This is the same split `historyScopeLabel` already
+uses in `approver-roles-client`.
+
+### And one the tests did not catch
+
+**A holiday created under an active `?year` filter vanishes silently.** The save
+succeeds, the row is created, and it is absent from the table, because the filter
+is applied server-side and the new date falls outside it. That reads as a failed
+save. The section now keeps the created id and derives visibility from the list
+the server sends back — not from the date the admin typed, so it stays correct if
+the filter ever widens — and shows the explanation plus "Show all years" only
+when the row really is missing. A holiday created inside the filtered year says
+nothing.
+
+### Verification
+
+Frontend 713 tests OK (85 files), typecheck clean, lint clean, production build
+clean. Thirty-two new tests: twenty-one covering the three sections end to end
+through the URL, eight on the overlay's sizing and remount key plus the row
+menu, and three on the two behaviours above. Two existing tests asserted the
+financial-year warning was correct and were rewritten, because they were the
+reason it was wrong.

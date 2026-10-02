@@ -1,13 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { LeaveRuleForm } from "@/components/hr/leave-rule-form";
 import { getCurrentUser } from "@/lib/auth";
-import { listLeaveTypes } from "@/lib/leave-rules";
-import { Card } from "@/components/ui/card";
 
-export default async function NewLeaveRulePage() {
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the tables' row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a
+ * non-HR user following one of these still lands on `/dashboard` instead of
+ * bouncing through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -17,40 +21,5 @@ export default async function NewLeaveRulePage() {
     redirect("/dashboard");
   }
 
-  let leaveTypes;
-  let typesError = "";
-  try {
-    leaveTypes = await listLeaveTypes();
-  } catch {
-    typesError = "Unable to load leave types. Please try again.";
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/leave-rules"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to leave rules
-        </Link>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">New rule</h2>
-        <p className="text-text-secondary">
-          Define how a leave type can be taken, effective from a chosen date.
-          A future-effective rule joins the current one without changing it.
-        </p>
-      </div>
-
-      {typesError && (
-        <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-          {typesError}
-        </div>
-      )}
-
-      <Card>
-        <LeaveRuleForm leaveTypes={leaveTypes?.results ?? []} />
-      </Card>
-    </div>
-  );
+  redirect(`/dashboard/hr-admin/leave-rules?rule=new`);
 }

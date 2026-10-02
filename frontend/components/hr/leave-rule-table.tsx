@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 import type { LeaveRule } from "@/lib/leave-rules";
-import { leaveRuleStatus } from "@/lib/leave-rules";
+import { leaveRuleStatus } from "@/lib/leave-rules-client";
 import { currentDateIso } from "@/lib/utils";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 import { EmptyState } from "@/components/ui/states";
 import {
   Table,
@@ -18,9 +18,15 @@ import { Badge } from "@/components/ui/badge";
 export function LeaveRuleTable({
   rules,
   today = currentDateIso(),
+  onEdit,
 }: {
   rules: LeaveRule[];
   today?: string;
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (rules.length === 0) {
     return (
@@ -85,9 +91,16 @@ export function LeaveRuleTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <EditActionLink
-                  href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
-                />
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(rule.id)}
+                    label={`Edit ${rule.leave_type_name} rule`}
+                  />
+                ) : (
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
+                  />
+                )}
               </TableCell>
             </TableRow>
           );

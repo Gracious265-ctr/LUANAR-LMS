@@ -22,9 +22,19 @@ import { Textarea } from "@/components/ui/textarea";
 export function LeaveRuleForm({
   leaveRule,
   leaveTypes,
+  onSuccess,
+  onCancel,
 }: {
   leaveRule?: LeaveRule;
   leaveTypes: LeaveType[];
+  /**
+   * When provided the form reports the saved record instead of navigating, so a
+   * dialog can close and refresh its list without the page moving underneath it.
+   * Defaults to the push-and-refresh the standalone pages rely on.
+   */
+  onSuccess?: (leaveRule: LeaveRule) => void;
+  /** Replaces the Cancel link when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [effectiveFrom, setEffectiveFrom] = useState(leaveRule?.effective_from ?? "");
@@ -58,13 +68,15 @@ export function LeaveRuleForm({
           formData.get("consumes_annual_entitlement") === "on",
         effective_from: String(formData.get("effective_from") || ""),
       };
-      if (leaveRule) {
-        await updateLeaveRule(leaveRule.id, input);
+      const saved = leaveRule
+        ? await updateLeaveRule(leaveRule.id, input)
+        : await createLeaveRule(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createLeaveRule(input);
+        router.push("/dashboard/hr-admin/leave-rules");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/leave-rules");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -180,12 +192,18 @@ export function LeaveRuleForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : leaveRule ? "Save changes" : "Create rule"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/leave-rules"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/leave-rules"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

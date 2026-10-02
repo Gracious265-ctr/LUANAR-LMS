@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { EntitlementTable } from "@/components/hr/entitlement-table";
+import { EntitlementsSection } from "@/components/hr/EntitlementsSection";
 import { getCurrentUser } from "@/lib/auth";
 import {
   listEntitlements,
@@ -11,7 +10,6 @@ import {
 import { currentDateIso } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 export default async function EntitlementsPage({
   searchParams,
@@ -50,7 +48,7 @@ export default async function EntitlementsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div>
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">Entitlements</h2>
           <p className="text-text-secondary">
@@ -58,13 +56,6 @@ export default async function EntitlementsPage({
             must not overlap; change an existing band by editing its rule.
           </p>
         </div>
-        <Link
-          href="/dashboard/hr-admin/entitlements/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New entitlement
-        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -114,21 +105,18 @@ export default async function EntitlementsPage({
           )}
         </form>
 
-        <Card className="lg:col-span-2">
-          <h3 className="mb-4 text-lg font-semibold text-text-primary">
-            Configuration
-          </h3>
+        <div className="lg:col-span-2">
           {listError ? (
             <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
               {listError}
             </div>
           ) : entitlements ? (
-            <EntitlementTable
+            <EntitlementsSection
               entitlements={entitlements.results}
               today={currentDateIso()}
             />
           ) : null}
-        </Card>
+        </div>
       </div>
     </div>
   );
