@@ -66,7 +66,7 @@ describe("ApprovalsWorkspace", () => {
     expect(screen.queryByText("applications queue")).not.toBeInTheDocument();
   });
 
-  it("opens the cover panel with the request form and the approver's rows", async () => {
+  it("opens the cover panel with the request trigger and the approver's rows", async () => {
     const user = userEvent.setup();
     render(
       <ApprovalsWorkspace
@@ -81,6 +81,8 @@ describe("ApprovalsWorkspace", () => {
     expect(
       screen.getByRole("button", { name: "Request cover" })
     ).toBeInTheDocument();
+    // The form itself is behind the trigger, not expanded above the table.
+    expect(screen.queryByTestId("cover-request-form")).toBeNull();
     expect(screen.getByText("Your delegations")).toBeInTheDocument();
     expect(screen.getByText("Jane Dean")).toBeInTheDocument();
     // A row links into the approver's own view, never the HR review page.

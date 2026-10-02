@@ -1,6 +1,6 @@
 import { UserCheck } from "lucide-react";
 
-import { CoverRequestForm } from "@/components/approvals/cover-request-form";
+import { CoverRequestSection } from "@/components/approvals/CoverRequestSection";
 import { DelegationTable } from "@/components/hr/delegation-table";
 import type { DelegateCandidate, Delegation } from "@/lib/delegations";
 import { Card } from "@/components/ui/card";
@@ -29,14 +29,7 @@ export function CoverPanel({
   return (
     <div className="space-y-6">
       <Card>
-        <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Request cover
-        </h3>
-        <p className="mb-4 text-sm text-text-secondary">
-          Going away? Ask HR to route your pending approvals to someone else. You
-          can nominate a delegate, or leave the choice to HR.
-        </p>
-        <CoverRequestForm candidates={candidates} />
+        <CoverRequestSection candidates={candidates} />
       </Card>
 
       <Card>

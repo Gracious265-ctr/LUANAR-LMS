@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { DelegateCandidate } from "@/lib/delegations";
+import type { DelegateCandidate, Delegation } from "@/lib/delegations";
 import { createDelegation } from "@/lib/delegations-client";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,22 @@ import {
  * authenticated caller and ignores any value sent, so asking the user to pick
  * themselves would be theatre. The delegate nomination is optional — HR confirms
  * or replaces it on approval.
+ *
+ * Rendered either inline on the page or inside `CoverRequestOverlay`. The two
+ * callbacks are how the overlay takes over: `onSubmitted` replaces the
+ * default `router.refresh()` so the host can close and refetch, and `onCancel`
+ * adds the dismiss affordance an inline form has no use for. Both are optional,
+ * so the inline rendering keeps working exactly as before.
  */
-export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate[] }) {
+export function CoverRequestForm({
+  candidates,
+  onSubmitted,
+  onCancel,
+}: {
+  candidates: DelegateCandidate[];
+  onSubmitted?: (delegation: Delegation) => void;
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [startsOn, setStartsOn] = useState("");
   const [endsOn, setEndsOn] = useState("");
@@ -49,14 +63,18 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
     }
 
     try {
-      await createDelegation({
+      const delegation = await createDelegation({
         delegate: delegateValue ? Number(delegateValue) : null,
         starts_on: String(formData.get("starts_on")),
         ends_on: endsOn || null,
         request_reason: String(formData.get("request_reason") || ""),
       });
       setLoading(false);
-      router.refresh();
+      if (onSubmitted) {
+        onSubmitted(delegation);
+      } else {
+        router.refresh();
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -139,10 +157,15 @@ export function CoverRequestForm({ candidates }: { candidates: DelegateCandidate
         </Alert>
       )}
 
-      <div className="md:col-span-2">
+      <div className="flex items-center gap-3 md:col-span-2">
         <Button type="submit" disabled={loading} variant="primary">
           {loading ? "Submitting..." : "Request cover"}
         </Button>
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
       </div>
     </form>
   );
