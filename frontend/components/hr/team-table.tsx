@@ -88,7 +88,7 @@ export function TeamTable({ teams }: { teams: Team[] }) {
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
+                  className={`inline-block rounded-sm px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
                     team.status
                   )}`}
                 >

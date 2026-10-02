@@ -70,7 +70,7 @@ export default async function TeamPage({
                 {team.name}
               </h2>
               <span
-                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
+                className={`inline-block rounded-sm px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
                   team.status
                 )}`}
               >

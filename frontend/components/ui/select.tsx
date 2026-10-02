@@ -44,12 +44,12 @@ export function SelectTrigger({
       className={cn(
         "flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-control",
         "border border-input-border bg-input-background px-control-x-md text-sm text-text-primary",
-        "transition-[border-color,box-shadow] duration-fast ease-standard",
+        "transition-[border-color,box-shadow] duration-base ease-standard",
         "data-[size=md]:h-control-height-md data-[size=sm]:h-control-height-sm",
         "data-[placeholder]:text-text-placeholder",
-        "focus-visible:border-input-border-focus focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-ring-focus",
+        "focus-visible:border-input-border-focus focus-ring",
         "disabled:cursor-not-allowed disabled:bg-input-disabled disabled:text-text-disabled",
-        "aria-[invalid=true]:border-border-error aria-[invalid=true]:focus-visible:ring-status-rejected/20",
+        "aria-[invalid=true]:border-border-error aria-[invalid=true]:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#DC2626]",
         "data-[state=open]:border-input-border-focus",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0",
         className
@@ -76,7 +76,7 @@ export function SelectContent({
         data-slot="select-content"
         position={position}
         className={cn(
-          "relative z-50 max-h-(--radix-select-content-available-height) min-w-32",
+          "relative z-portal-above max-h-(--radix-select-content-available-height) min-w-32",
           "overflow-x-hidden overflow-y-auto rounded-lg border border-border-default",
           "bg-popover text-popover-foreground shadow-dropdown",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",

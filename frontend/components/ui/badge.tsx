@@ -15,14 +15,16 @@ import { cn } from "@/lib/utils";
  */
 const badgeVariants = cva(
   [
-    "inline-flex items-center rounded-full",
+    // Status is a label, not a control: a 4px radius reads as a tag and stops
+    // these from competing with the real pill-shaped controls in the same row.
+    "inline-flex items-center rounded-sm",
     "transition-colors duration-fast ease-standard",
   ],
   {
     variants: {
       tone: {
         neutral: "bg-surface-muted text-text-secondary",
-        draft: "bg-surface-secondary text-text-secondary",
+        draft: "bg-surface-subtle text-text-secondary",
         muted: "bg-surface-muted text-text-muted",
         brand: "bg-brand-primary-subtle text-brand-primary",
         info: "bg-brand-secondary-subtle text-brand-secondary",

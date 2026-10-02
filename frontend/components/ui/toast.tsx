@@ -45,7 +45,7 @@ export function Toast({
       role="status"
       aria-live="polite"
       className={cn(
-        "fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-3",
+        "fixed top-4 left-1/2 z-toast flex -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-3",
         "text-sm font-semibold text-text-on-brand shadow-lg",
         surface,
         animated && "motion-safe:animate-toast-in",

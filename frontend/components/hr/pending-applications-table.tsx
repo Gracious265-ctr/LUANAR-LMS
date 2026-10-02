@@ -89,7 +89,7 @@ export function PendingApplicationsTable({
                    who is away does not move the work to them, and this is the
                    one place HR can see that before acting. */
                 <span className="inline-flex flex-col gap-0.5">
-                  <span className="inline-block w-fit rounded-full bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
+                  <span className="inline-block w-fit rounded-sm bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
                     {app.acting_approver_name}
                   </span>
                   <span className="text-xs text-text-muted">

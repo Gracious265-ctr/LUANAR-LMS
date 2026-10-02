@@ -1,7 +1,27 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+
+/** The route the mocked `usePathname` reports; tests move it to assert that a
+ *  navigation closes the drawer. */
+let currentPath = "/dashboard";
+
+vi.mock("next/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/navigation")>();
+  return {
+    ...actual,
+    usePathname: () => currentPath,
+    useRouter: () => ({
+      push: vi.fn(),
+      refresh: vi.fn(),
+      replace: vi.fn(),
+      back: vi.fn(),
+      forward: vi.fn(),
+      prefetch: vi.fn(),
+    }),
+  };
+});
 
 const mockUser = {
   id: 1,
@@ -182,5 +202,125 @@ describe("DashboardShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
     expect(nav).toHaveClass("w-64");
     expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * The drawer is only reachable below the `md` breakpoint, which is measured with
+ * `matchMedia`. The global mock starts wide so the rest of this file keeps
+ * testing the desktop rail; these cases opt into a narrow viewport explicitly.
+ */
+function setNarrowViewport(narrow: boolean) {
+  (window.matchMedia as unknown as { setNarrow: (v: boolean) => void }).setNarrow(
+    narrow,
+  );
+}
+
+beforeEach(() => {
+  currentPath = "/dashboard";
+});
+
+afterEach(() => setNarrowViewport(false));
+
+describe("DashboardShell mobile drawer", () => {
+  it("keeps the rail hidden and the drawer closed on a phone", () => {
+    setNarrowViewport(true);
+    renderShell(mockUser);
+
+    const hamburger = screen.getByRole("button", { name: "Open navigation" });
+    expect(hamburger).toBeInTheDocument();
+    // No dialog is mounted while it is closed, so the nav links exist only once.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "My Account" })).toHaveLength(1);
+  });
+
+  it("opens on the hamburger and offers the same destinations as the rail", () => {
+    setNarrowViewport(true);
+    renderShell(mockHRUser, { isApprover: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+
+    const drawer = screen.getByRole("dialog");
+    expect(drawer).toBeInTheDocument();
+    // The point of sharing NavLinks: HR destinations must not be rail-only.
+    expect(
+      within(drawer).getByRole("link", { name: "Audit View" })
+    ).toHaveAttribute("href", "/dashboard/hr-admin/audit");
+    expect(within(drawer).getByRole("link", { name: "Teams" })).toBeInTheDocument();
+  });
+
+  it("labels the drawer for a screen reader and marks the trigger state", () => {
+    setNarrowViewport(true);
+    renderShell(mockUser);
+
+    const hamburger = screen.getByRole("button", { name: "Open navigation" });
+    // The trigger is wired to the region it controls, and the region exists in
+    // the accessibility tree even before the drawer opens.
+    expect(hamburger).toHaveAttribute("aria-controls", "dashboard-nav");
+    expect(hamburger).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(hamburger);
+
+    expect(screen.getByRole("dialog")).toHaveAttribute("id", "dashboard-nav");
+    expect(
+      screen.getByRole("heading", { name: /Navigation for Test Employee/ })
+    ).toBeInTheDocument();
+    // Radix marks the rest of the document `aria-hidden` while a modal is open,
+    // so the trigger is deliberately unreachable -- that is the modal contract,
+    // not a bug, and it is why `aria-expanded` needs no special-casing while open.
+    expect(
+      screen.queryByRole("button", { name: "Open navigation" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.getByRole("button", { name: "Open navigation" })
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes on Escape", () => {
+    setNarrowViewport(true);
+    renderShell(mockUser);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes from its own close button", () => {
+    setNarrowViewport(true);
+    renderShell(mockUser);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes on a route change so it cannot sit over the new page", () => {
+    setNarrowViewport(true);
+    const { rerender } = render(
+      <DashboardShell user={mockUser} isApprover={false} pendingApprovals={0}>
+        <div>Test content</div>
+      </DashboardShell>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Next's router is the only party that knows a navigation happened, and it
+    // reports it by changing the value `usePathname` returns.
+    act(() => {
+      currentPath = "/dashboard/leave/new";
+      rerender(
+        <DashboardShell user={mockUser} isApprover={false} pendingApprovals={0}>
+          <div>Test content</div>
+        </DashboardShell>
+      );
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

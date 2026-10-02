@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 
 const CONTROL_BASE = [
   "inline-flex items-center justify-center rounded-control font-medium whitespace-nowrap",
-  "transition-[background-color,border-color,color,box-shadow] duration-fast ease-standard",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2",
+  "transition-[background-color,border-color,color,box-shadow] duration-base ease-standard",
+  "focus-ring",
   "disabled:cursor-not-allowed disabled:opacity-60",
   "[&_svg]:shrink-0",
 ] as const;

@@ -2,8 +2,8 @@ import { cn } from "@/lib/utils";
 
 /** One source of truth for every content card surface. */
 export const cardStyles = [
-  "rounded-xl border border-border-default bg-surface-card p-5 shadow-subtle",
-  "transition-shadow duration-base ease-standard",
+  "rounded-xl border border-border-default bg-surface-card p-6 shadow-card",
+  "transition-[box-shadow,transform] duration-base ease-standard",
 ] as const;
 
 export function Card({
@@ -13,7 +13,12 @@ export function Card({
 }: React.HTMLAttributes<HTMLDivElement> & { interactive?: boolean }) {
   return (
     <div
-      className={cn(cardStyles, interactive && "hover:shadow-hover", className)}
+      className={cn(
+        cardStyles,
+        interactive &&
+          "hover:-translate-y-0.5 hover:shadow-hover motion-reduce:hover:translate-y-0",
+        className,
+      )}
       {...props}
     />
   );

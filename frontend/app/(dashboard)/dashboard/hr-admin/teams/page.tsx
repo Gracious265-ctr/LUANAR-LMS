@@ -85,7 +85,7 @@ async function TeamsPage({
             key={filter.label}
             href={filter.href}
             aria-current={filter.current ? "page" : undefined}
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
+            className={`rounded-sm px-3 py-1 text-xs font-medium ${
               filter.current
                 ? "bg-brand-primary text-button-primary-foreground"
                 : "border border-border-default bg-surface-card text-text-secondary hover:bg-button-secondary-hover"

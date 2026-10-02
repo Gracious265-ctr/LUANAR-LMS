@@ -119,35 +119,60 @@
   --sidebar-ring: var(--border-focus);
 
   /* Border Radius
-     `md` is the control scale and is deliberately pill-shaped: every button,
-     input, select, textarea, chip and date-picker trigger resolves to
-     `rounded-control`, which points here. `sm`/`lg`/`xl`/`2xl`/`3xl` are the
-     container scale. `calendar` stays compact so multi-day range bars and day
-     cells keep square-ish corners instead of collapsing into circles. */
-  --radius: 0.75rem;
-  --radius-xs: 0.125rem;
-  --radius-sm: 0.25rem;
-  --radius-md: var(--radius-full);
-  --radius-lg: var(--radius);
-  --radius-xl: 1rem;
-  --radius-2xl: 1.25rem;
-  --radius-3xl: 1.5rem;
-  --radius-4xl: 2rem;
-  --radius-full: 9999px;
-  --radius-calendar: 0.5rem;
+     The scale is deliberately only three values. `6px` is the default for every
+     card, input, button, select and dialog; `4px` is for small inline elements
+     such as badges; `9999px` is reserved for genuine circles — avatars,
+     timeline dots, stepper rings, scrollbars and count bubbles.
 
-  /* Shadows */
+     `md` is the control scale, so every button, input, select, textarea, chip
+     and date-picker trigger resolves to `rounded-control`, which points here.
+     The former `lg`/`xl`/`2xl`/`3xl`/`4xl` container steps all collapse onto
+     `6px` as well: with a 1px border carrying the edge, a larger radius stops
+     reading as "container" and starts competing with the pill shapes, so the
+     extra steps were decoration rather than hierarchy. `calendar` stays at
+     `4px` so multi-day range bars and day cells keep square-ish corners
+     instead of collapsing into circles. */
+  --radius: 6px;
+  --radius-xs: 4px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+  --radius-3xl: 6px;
+  --radius-4xl: 6px;
+  --radius-full: 9999px;
+  --radius-calendar: 4px;
+
+  /* Depth
+     Border-first: a static element's edge is a real 1px `border`, not a shadow.
+     `card`/`subtle` therefore carry only the soft drop that lifts a bordered
+     surface off the page — the spec's own `elevation.card` also embeds a
+     `0 0 0 1px` ring, which would render a 2px edge next to the border we
+     already draw, so the ring is dropped and the border kept.
+
+     Shadows earn their keep in three places only: hover (the element is being
+     acted on), overlays (popovers/dropdowns/tooltips), and modals. */
   --shadow-none: none;
-  --shadow-xs: 0 1px 2px 0 #0000000d;
   --shadow-subtle: 0 1px 2px 0 #0000000d;
-  --shadow-card: 0 1px 3px 0 #0000001a, 0 1px 2px -1px #0000001a;
-  --shadow-dropdown: 0 10px 15px -3px #0000001a, 0 4px 6px -4px #0000001a;
-  --shadow-modal: 0 25px 50px -12px #00000040;
-  --shadow-hover: 0 4px 6px -1px #0000001a, 0 2px 4px -2px #0000001a;
+  --shadow-card: 0 1px 2px 0 #0000000d;
+  --shadow-xs: var(--shadow-subtle);
+  --shadow-hover: 0 0 0 1px #0000001a, 0 4px 12px #00000014;
+  --shadow-dropdown: 0 4px 4px 0 #0000000d;
+  --shadow-modal: 0 8px 16px -4px #0000000d, 0 24px 32px -8px #0000001a;
   --shadow-pressed: inset 0 1px 1px #0000000d;
 
-  /* shadcn elevation scale, aliased onto the shadows above so vendored
-     components read correctly without introducing a second visual language. */
+  /* Focus is the one depth that is a ring rather than a drop: an opaque
+     surface-coloured inner ring to separate the indicator from the control,
+     then the brand ring outside it. This keeps the indicator legible on both
+     light and dark surfaces without relying on a `ring-offset` colour, which
+     breaks on transparent and gradient parents. */
+  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #0097f0;
+
+  /* shadcn elevation scale, aliased onto the depths above so vendored
+     components read correctly without introducing a second visual language.
+     The shadcn names imply heavier treatment than the same surface gets here,
+     so `sm`/`md` are mapped down to the card depth rather than up. */
   --shadow-2xs: 0 1px 2px 0 #0000000d;
   --shadow-sm: var(--shadow-card);
   --shadow-md: var(--shadow-card);
@@ -155,7 +180,22 @@
   --shadow-xl: var(--shadow-dropdown);
   --shadow-2xl: var(--shadow-modal);
 
-  /* Spacing Rhythm */
+  /* Stacking
+     Overlays are grouped so a popover can never sit under a dialog, and a modal
+     is never opened from inside a menu. The spec's measured values are kept. */
+  --z-index-base: 0;
+  --z-index-raised: 1;
+  --z-index-header: 75;
+  --z-index-popover: 100;
+  --z-index-modal-overlay: 1000;
+  --z-index-modal: 1010;
+  --z-index-portal-above: 1100;
+  --z-index-toast: 1200;
+
+  /* Spacing Rhythm
+     The first five steps are a 4px base. Past page gutters the spec opens up
+     to a 24px rhythm (40/48/64), which is what keeps large screens from looking
+     sparse without letting a dashboard column grow unbounded. */
   --space-hairline: 4px;
   --space-tight: 8px;
   --space-block: 12px;
@@ -163,11 +203,18 @@
   --space-section: 24px;
   --space-gutter: 24px;
   --space-canvas: 32px;
+  --space-band: 40px;
+  --space-field: 48px;
+  --space-bleed: 64px;
 
-  /* Motion */
+  /* Motion
+     The spec settles on ~200ms for every state change, so `base` becomes the
+     default for interactive feedback. `instant` and `fast` stay available for
+     colour-only nudges where a full 200ms would read as lag, and `slow` is
+     reserved for entrances. */
   --duration-instant: 75ms;
   --duration-fast: 120ms;
-  --duration-base: 160ms;
+  --duration-base: 200ms;
   --duration-slow: 240ms;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
@@ -189,7 +236,7 @@
   --measure-body: 68ch;
 
   /* Controls */
-  --control-radius: var(--radius-full);
+  --control-radius: 6px;
   --control-height-sm: 32px;
   --control-height-md: 36px;
   --control-height-lg: 40px;
@@ -358,12 +405,23 @@
   --shadow-modal: var(--shadow-modal);
   --shadow-hover: var(--shadow-hover);
   --shadow-pressed: var(--shadow-pressed);
+  --shadow-focus: var(--shadow-focus);
   --shadow-2xs: var(--shadow-2xs);
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* Stacking */
+  --z-index-base: var(--z-index-base);
+  --z-index-raised: var(--z-index-raised);
+  --z-index-header: var(--z-index-header);
+  --z-index-popover: var(--z-index-popover);
+  --z-index-modal-overlay: var(--z-index-modal-overlay);
+  --z-index-modal: var(--z-index-modal);
+  --z-index-portal-above: var(--z-index-portal-above);
+  --z-index-toast: var(--z-index-toast);
 
   /* Spacing Rhythm (named additions; the numeric scale is untouched) */
   --spacing-hairline: var(--space-hairline);
@@ -373,6 +431,9 @@
   --spacing-section: var(--space-section);
   --spacing-gutter: var(--space-gutter);
   --spacing-canvas: var(--space-canvas);
+  --spacing-band: var(--space-band);
+  --spacing-field: var(--space-field);
+  --spacing-bleed: var(--space-bleed);
 
   /* Motion */
   --ease-standard: var(--ease-standard);
@@ -390,8 +451,10 @@
   --font-sans: var(--font-geist-sans), -apple-system, "Segoe UI", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", "Roboto Mono", Menlo, Monaco, monospace;
 
-  /* Font Sizes (Geist product scale) */
-  --text-xs: 13px;
+  /* Font Sizes
+     Body is 14px per the spec; captions step down to 12px rather than the
+     shadcn 13px so metadata matches the documented caption role. */
+  --text-xs: 12px;
   --text-xs--line-height: 18px;
   --text-sm: 14px;
   --text-sm--line-height: 20px;
@@ -409,8 +472,21 @@
   --text-4xl--line-height: 52px;
 
   --leading-body: 1.5;
-  --leading-tight: 1.1;
+  /* Headings sit at 1.2 per the spec's display/H1 rows. */
+  --leading-tight: 1.2;
   --tracking-display: -0.02em; /* 32px and up (Geist display) */
+
+  /* Breakpoints
+     The data tables in this app are wide enough that a tablet in landscape is
+     still a phone-sized reading experience, so the two-column and table/card
+     switches are pushed out to 960px. `lg` is left at its default 1024px
+     because 27 call sites depend on the current value and the layout that
+     needs a true third column is genuinely desktop-only.
+
+     `MOBILE_BREAKPOINT_PX` in lib/hooks/useIsMobile.ts hard-codes the same
+     960px for the JS side; change both together. */
+  --breakpoint-sm: 600px;
+  --breakpoint-md: 960px;
 
   /* Letter Spacing */
   --tracking-tight: -0.01em; /* 24px titles (Geist) */
@@ -469,6 +545,15 @@
   }
   to {
     height: 0;
+  }
+}
+
+/* Every interactive control focuses the same way: one ring token, applied on
+   keyboard focus only. Mouse users never see it. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
   }
 }
 
@@ -562,5 +647,30 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Touch targets
+   A 36px control is correct for a pointer and too small for a thumb, so
+   controls grow to the 44px minimum below the `md` breakpoint. Height is set
+   rather than padding so that adjacent controls in a flex row keep their
+   baseline alignment.
+
+   Scope is deliberately narrow: buttons, form controls, and the two nav
+   surfaces. Anything in a horizontally scrolling table is excluded by
+   `:not()` because those rows are a desktop-density table being read sideways
+   on a phone, and growing their actions would triple the row height. */
+@media (max-width: 959px) {
+  button:not([data-dense]),
+  a[role="button"]:not([data-dense]),
+  input:not([type="checkbox"]):not([type="radio"]):not([data-dense]),
+  select:not([data-dense]),
+  textarea:not([data-dense]) {
+    min-height: 44px;
+  }
+
+  .overflow-x-auto button,
+  .overflow-x-auto a[role="button"] {
+    min-height: unset;
   }
 }

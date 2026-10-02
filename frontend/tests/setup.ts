@@ -3,6 +3,9 @@ import { vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/dashboard",
+  // No query by default, so an overlay driven by search params renders closed.
+  // Tests that need one open override this with their own `useSearchParams`.
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({
     push: vi.fn(),
     replace: vi.fn(),
@@ -13,18 +16,45 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+let narrow = false;
+const listeners = new Set<(event: { matches: boolean }) => void>();
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
+  value: Object.assign(
+    (query: string) => ({
+      get matches() {
+        // Only the dashboard's own query reports a narrow viewport; everything
+        // else (prefers-reduced-motion, hover) stays false so the default
+        // desktop baseline other tests are written against is preserved.
+        return query.includes("max-width") ? narrow : false;
+      },
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (
+        _: string,
+        listener: (event: { matches: boolean }) => void,
+      ) => {
+        listeners.add(listener);
+      },
+      removeEventListener: (
+        _: string,
+        listener: (event: { matches: boolean }) => void,
+      ) => {
+        listeners.delete(listener);
+      },
+      dispatchEvent: () => false,
+    }),
+    {
+      /** Lets a test simulate resizing across the mobile breakpoint. */
+      setNarrow: (value: boolean) => {
+        narrow = value;
+        listeners.forEach((listener) => listener({ matches: value }));
+      },
+    },
+  ),
 });
 
 /* Radix primitives drive their open/close and positioning logic from pointer

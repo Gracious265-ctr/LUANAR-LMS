@@ -174,6 +174,8 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 | `font-medium` | `500` | Labels, navigation, supporting headings |
 | `font-semibold` | `600` | Card headings and important values |
 | `font-bold` | `700` | Main page headings and major metrics |
+| `leading-body` | `1.5` | Paragraph text |
+| `leading-tight` | `1.2` | Headings and display sizes |
 
 ## Typography Rules
 
@@ -188,49 +190,120 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 - Do not use excessive font weights.
 - Avoid compressed line heights that reduce readability.
 - Allow long text to wrap naturally.
+- Body copy is 14px and runs at 1.5; headings run at 1.2. Do not compress below
+  those, and do not use 13px for captions -- 12px is the caption size.
 
 ---
 
 # 8. Border Radius
 
+The scale is deliberately flat: a single 6px geometry for anything a person
+touches, a 4px step for dense labels, and a true circle for circles. A second
+larger radius existed before and was removed -- it made the app read as softer
+and rounder than the product is, and every call site now resolves to 6px
+without changing.
+
 | Token | Value | Usage |
 |---|---:|---|
-| `radius-sm` | `6px` | Small controls and badges |
-| `radius-md` | `8px` | Inputs and buttons |
-| `radius-lg` | `12px` | Larger controls and dropdowns |
-| `radius-xl` | `16px` | Cards and dashboard panels |
-| `radius-2xl` | `20px` | Large cards and prominent sections |
-| `radius-3xl` | `24px` | Modals and large feature containers |
-| `radius-full` | `9999px` | Avatars, pills, circular controls |
+| `radius-xs` | `4px` | Status labels and small text chips |
+| `radius-sm` | `4px` | Badges, status pills, calendar day cells |
+| `radius-md` | `6px` | Buttons, inputs, selects, checkboxes |
+| `radius-lg` | `6px` | Cards, dropdowns, dialogs (aliases `radius-md`) |
+| `radius-xl` | `6px` | Dashboard panels (aliases `radius-md`) |
+| `radius-2xl` | `6px` | Modals (aliases `radius-md`) |
+| `radius-3xl` | `6px` | Feature containers (aliases `radius-md`) |
+| `radius-4xl` | `6px` | Large sections (aliases `radius-md`) |
+| `radius-full` | `9999px` | Avatars, circular icon tiles, scrollbars, toggle tracks |
+| `control-radius` | `6px` | The one radius for any control surface |
+
+`radius-lg` through `radius-4xl` are kept as aliases so existing call sites keep
+resolving, but they all mean 6px. Adding a new larger radius requires a
+deliberate decision, not a default.
 
 ## Component Radius Rules
 
 | Component | Radius |
 |---|---|
-| Buttons | `radius-md` |
-| Inputs | `radius-md` |
-| Selects | `radius-md` |
-| Badges | `radius-sm` or `radius-full` |
-| Status pills | `radius-full` |
-| Cards | `radius-xl` |
-| Dashboard panels | `radius-xl` |
-| Modals | `radius-2xl` |
+| Buttons | `control-radius` (6px) |
+| Inputs | `control-radius` (6px) |
+| Selects | `control-radius` (6px) |
+| Checkboxes | `control-radius` (6px) |
+| Badges | `radius-sm` (4px) |
+| Status pills | `radius-sm` (4px) |
+| Cards | `radius-lg` (6px) |
+| Dashboard panels | `radius-xl` (6px) |
+| Modals | `radius-2xl` (6px) |
+| Drawer | `radius-none` on the anchored edge, `radius-lg` on the free edge |
 | Avatars | `radius-full` |
-| Icon containers | `radius-lg` |
+| Icon containers | `radius-full` when circular, otherwise 6px |
+| Scrollbars, progress tracks, switch tracks | `radius-full` |
+
+Status is a label, not a control, so it uses 4px. That is what stops a row of
+badges from competing with the real buttons beside it.
 
 ---
 
 # 9. Shadows
 
-The interface must remain predominantly flat and clean. Shadows must provide hierarchy rather than decoration.
+The philosophy is **border-first**. A static element's edge is a real 1px
+`border`, not a shadow. True `box-shadow` is reserved for three situations: a
+state change (hover), an element that must appear above the page plane (a
+popover), and a modal. Everything else stays flat.
 
 | Token | Value | Usage |
 |---|---|---|
 | `shadow-none` | `none` | Flat elements |
-| `shadow-subtle` | `0 1px 2px rgba(15, 23, 42, 0.04)` | Cards and containers |
-| `shadow-card` | `0 2px 8px rgba(15, 23, 42, 0.06)` | Elevated cards |
-| `shadow-dropdown` | `0 8px 24px rgba(15, 23, 42, 0.10)` | Dropdowns and popovers |
-| `shadow-modal` | `0 16px 40px rgba(15, 23, 42, 0.14)` | Dialogs and modals |
+| `shadow-subtle` | `0 1px 2px #0000000d` | Soft lift on bordered surfaces |
+| `shadow-card` | `0 1px 2px #0000000d` | Cards and static containers |
+| `shadow-hover` | `0 0 0 1px #0000001a, 0 4px 12px #00000014` | Interactive hover only |
+| `shadow-dropdown` | `0 4px 4px #0000000d` | Dropdowns, popovers, tooltips, selects |
+| `shadow-modal` | `0 8px 16px -4px #0000000d, 0 24px 32px -8px #0000001a` | Dialogs, drawers, alerts |
+| `shadow-focus` | `0 0 0 2px #ffffff, 0 0 0 4px #0097f0` | Every focused control |
+| `shadow-pressed` | `inset 0 1px 1px #0000000d` | Active/pressed controls |
+
+The shadcn `shadow-2xs` through `shadow-2xl` names are aliased onto these.
+`sm` and `md` map *down* to the card depth, because the shadcn names imply a
+heavier treatment than the same surface receives here.
+
+## Focus
+
+Focus is a single shared treatment, applied via the `focus-ring` utility in
+`app/globals.css`, and it is keyboard-only (`:focus-visible`). Every control --
+button, input, select, checkbox -- uses it, so a focused field is recognisable
+as the same ring everywhere.
+
+The ring is a two-layer box shadow: an opaque white ring to separate the
+indicator from the control, then the LUANAR blue ring outside it. A
+`ring-offset` approach is deliberately not used: offset colour breaks on
+transparent and gradient parents, and the white inner ring does not. Invalid
+fields get the same two layers in `--status-rejected` red.
+
+## Stacking
+
+Overlays are grouped by role so a popover can never render under a dialog, and
+a modal is never opened from inside a menu.
+
+| Token | Value | Used by |
+|---|---:|---|
+| `z-index-base` | `0` | Default |
+| `z-index-raised` | `1` | Card content above its own surface |
+| `z-index-header` | `75` | Sticky header |
+| `z-index-popover` | `100` | Popovers, tooltips, and select menus on a plain page |
+| `z-index-modal-overlay` | `1000` | Dialog and alert-dialog backdrop |
+| `z-index-modal` | `1010` | Dialog, alert-dialog and drawer content |
+| `z-index-portal-above` | `1100` | Select menus, popovers, tooltips and alert dialogs opened *from inside* a dialog |
+| `z-index-toast` | `1200` | Toasts, which must be readable over a dialog |
+
+Use these names (`z-modal`, `z-modal-overlay`, `z-portal-above`, `z-toast`)
+rather than bare `z-50`.
+
+`z-portal-above` exists because Radix portals to `<body>`, so a select menu
+inside a dialog is a *sibling* of the dialog rather than a descendant. A single
+`z-modal` value for both the backdrop and the content cannot express "above this
+dialog", and a control rendered under the dialog is unusable, not merely
+misaligned. Any primitive that can open from within a dialog — select, popover,
+tooltip, alert dialog — uses `z-portal-above`; a `z-popover` menu is only ever
+correct when there is no modal on the page.
 
 ---
 
@@ -246,12 +319,13 @@ The interface must remain predominantly flat and clean. Shadows must provide hie
 | Secondary text | `text-secondary` |
 | Borders | `border-default` |
 | Dashboard style | Clean, spacious, card-based |
-| Navigation | Persistent sidebar with clear active state |
+| Navigation | Collapsible sidebar rail on desktop; hamburger + drawer below `md` |
 | Active navigation | LUANAR blue |
 | Cards | White surfaces with subtle borders/shadows |
 | Visual density | Moderate whitespace |
-| Animation | Minimal and purposeful |
-| Normal transition | `150–250ms` |
+| Animation | Minimal and purposeful, `200ms` ease-out |
+| Touch targets | 44px minimum below `md`, except actions inside a scrolling table |
+| Normal transition | `200ms` (`duration-base`) |
 | Large animations | Prohibited unless required for meaningful interaction |
 | Gradients | Prohibited for ordinary UI surfaces |
 | Glassmorphism | Prohibited |
@@ -261,6 +335,45 @@ The interface must remain predominantly flat and clean. Shadows must provide hie
 | Destructive states | Red |
 | Pending states | Orange |
 | Correction states | Purple |
+
+---
+
+# 10a. Breakpoints and the Mobile Drawer
+
+| Token | Value | Meaning |
+|---|---:|---|
+| `sm` | `600px` | Two-up forms and stacked-to-row controls |
+| `md` | `960px` | Two-column forms, table-vs-card switch, drawer boundary |
+| `lg` | `1024px` | Genuine third column and desktop-only panes |
+
+`sm` and `md` were moved out from Tailwind's 640px and 768px defaults. The data
+tables in this app are dense enough that a tablet in landscape is still a
+phone-sized reading experience, so the two-column and table/card switches wait
+until 960px. `lg` is deliberately left at 1024px: 27 call sites depend on the
+current value, and the layouts that need a real third column are desktop-only.
+
+**Navigation below `md`.** The rail is removed from the DOM flow and replaced by
+a hamburger in the header that opens a Radix `Dialog` drawer. Both surfaces
+render the same `NavLinks` list, so a route can never exist in one and not the
+other. The drawer is dialog-based on purpose: focus trap, Escape to dismiss,
+`aria-modal`, and body scroll lock are the behaviours a slide-out menu owes its
+user, and a modal primitive already solves all of them.
+
+The two pieces of state are independent. `sidebarOpen` is the desktop rail's
+collapsed state; `drawerOpen` is whether the phone overlay is showing. Collapsing
+the rail must not close a drawer, and opening a drawer must not un-collapse a rail
+the user left collapsed.
+
+`useIsMobile` returns `false` until mounted, because the server has no viewport
+to measure. The desktop layout therefore renders for the first paint; rendering
+mobile on the server and swapping on hydration would flash the wrong shell and
+re-run every layout effect.
+
+**Touch targets.** Below `md`, buttons, links acting as buttons, and text
+inputs, selects and textareas grow to a 44px minimum height. The exception is
+controls inside `.overflow-x-auto`: those tables are desktop-density layouts
+read sideways on a phone, and growing their actions would triple the row height.
+Mark a genuinely dense control `data-dense` to opt out explicitly.
 
 ---
 

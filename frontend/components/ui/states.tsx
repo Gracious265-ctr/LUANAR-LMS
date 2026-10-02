@@ -168,7 +168,7 @@ export function Alert({
         <button
           type="button"
           onClick={onDismiss}
-          className="shrink-0 text-xs font-medium text-text-muted transition-colors duration-fast ease-standard hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
+          className="shrink-0 text-xs font-medium text-text-muted transition-colors duration-fast ease-standard hover:text-text-primary focus-ring"
         >
           {dismissLabel}
         </button>

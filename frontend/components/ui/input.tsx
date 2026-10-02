@@ -6,10 +6,10 @@ import { Label } from "./label";
 export const fieldStyles = [
   "w-full rounded-control border border-input-border bg-input-background px-control-x-md py-control-y",
   "text-sm text-text-primary placeholder:text-text-placeholder",
-  "transition-[border-color,box-shadow] duration-fast ease-standard",
-  "focus-visible:border-input-border-focus focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-ring-focus",
+  "transition-[border-color,box-shadow] duration-base ease-standard",
+  "focus-visible:border-input-border-focus focus-ring",
   "disabled:cursor-not-allowed disabled:bg-input-disabled disabled:text-text-disabled",
-  "aria-[invalid=true]:border-border-error aria-[invalid=true]:focus-visible:ring-status-rejected/20",
+  "aria-[invalid=true]:border-border-error aria-[invalid=true]:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#DC2626]",
 ] as const;
 
 export function Input({

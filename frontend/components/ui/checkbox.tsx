@@ -20,8 +20,8 @@ export function Checkbox({
       data-slot="checkbox"
       className={cn(
         "peer size-5 shrink-0 rounded-control border border-input-border bg-input-background",
-        "transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
-        "focus-visible:border-input-border-focus focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-ring-focus",
+        "transition-[background-color,border-color,box-shadow] duration-base ease-standard",
+        "focus-visible:border-input-border-focus focus-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "aria-[invalid=true]:border-border-error",
         "data-[state=checked]:border-transparent data-[state=checked]:bg-button-primary data-[state=checked]:text-button-primary-foreground",

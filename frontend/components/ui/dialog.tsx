@@ -35,7 +35,7 @@ export function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/40",
+        "fixed inset-0 z-modal-overlay bg-black/40",
         "data-[state=open]:animate-in data-[state=open]:fade-in-0",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         className
@@ -59,7 +59,7 @@ export function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4",
+          "fixed left-1/2 top-1/2 z-modal grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4",
           "rounded-xl border border-border-default bg-surface-card p-6 shadow-lg",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
@@ -71,6 +71,31 @@ export function DialogContent({
         {showCloseButton ? <DialogCloseButton /> : null}
       </DialogPrimitive.Content>
     </DialogPortal>
+  );
+}
+
+/**
+ * `Dialog.Content` with none of the centred-modal chrome.
+ *
+ * `DialogContent` is built for a modal that sits in the middle of the screen:
+ * fixed, centred, `max-w-lg`, animated as a zoom. A drawer is a full-height
+ * edge-anchored panel, so it needs to own its own positioning. This keeps Radix's
+ * focus trap, scroll lock and `aria-modal` wiring while letting the caller supply
+ * every visual decision.
+ */
+export function DialogSurface({
+  className,
+  children,
+  ...props
+}: React.ComponentPropsWithRef<typeof DialogPrimitive.Content>) {
+  return (
+    <DialogPrimitive.Content
+      data-slot="dialog-surface"
+      className={cn("z-modal outline-none", className)}
+      {...props}
+    >
+      {children}
+    </DialogPrimitive.Content>
   );
 }
 
