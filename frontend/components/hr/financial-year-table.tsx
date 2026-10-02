@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { FinancialYear } from "@/lib/financial-years";
 import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 import {
   Table,
   TableBody,
@@ -16,9 +16,15 @@ import { Badge } from "@/components/ui/badge";
 
 export function FinancialYearTable({
   years,
+  onEdit,
   today = currentDateIso(),
 }: {
   years: FinancialYear[];
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
   today?: string;
 }) {
   if (years.length === 0) {
@@ -83,9 +89,14 @@ export function FinancialYearTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <EditActionLink
-                  href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
-                />
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(year.id)}
+                    label={`Edit ${year.start_date} financial year`}
+                  />
+                ) : (
+                  <EditActionLink href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`} />
+                )}
               </TableCell>
             </TableRow>
           );

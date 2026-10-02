@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { PublicHoliday } from "@/lib/financial-years";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 import { EmptyState } from "@/components/ui/states";
 import {
   Table,
@@ -14,8 +14,14 @@ import {
 
 export function PublicHolidayTable({
   holidays,
+  onEdit,
 }: {
   holidays: PublicHoliday[];
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (holidays.length === 0) {
     return (
@@ -50,9 +56,14 @@ export function PublicHolidayTable({
             </TableCell>
             <TableCell className="text-text-secondary">{holiday.date}</TableCell>
             <TableCell className="text-right">
-              <EditActionLink
-                href={`/dashboard/hr-admin/calendar/holidays/${holiday.id}/edit`}
-              />
+              {onEdit ? (
+                <EditIconButton
+                  onClick={() => onEdit(holiday.id)}
+                  label={`Edit ${holiday.name}`}
+                />
+              ) : (
+                <EditActionLink href={`/dashboard/hr-admin/calendar/holidays/${holiday.id}/edit`} />
+              )}
             </TableCell>
           </TableRow>
         ))}

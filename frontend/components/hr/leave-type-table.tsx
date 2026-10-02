@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
-import { EditActionLink } from "./edit-action-link";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 import { EmptyState } from "@/components/ui/states";
 import {
   Table,
@@ -12,7 +12,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
+export function LeaveTypeTable({
+  leaveTypes,
+  onEdit,
+}: {
+  leaveTypes: LeaveType[];
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
+}) {
   if (leaveTypes.length === 0) {
     return (
       <EmptyState
@@ -46,9 +56,14 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
             </TableCell>
             <TableCell className="text-text-secondary">{leaveType.code}</TableCell>
             <TableCell className="text-right">
-              <EditActionLink
-                href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`}
-              />
+              {onEdit ? (
+                <EditIconButton
+                  onClick={() => onEdit(leaveType.id)}
+                  label={`Edit ${leaveType.name}`}
+                />
+              ) : (
+                <EditActionLink href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`} />
+              )}
             </TableCell>
           </TableRow>
         ))}

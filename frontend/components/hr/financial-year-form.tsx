@@ -16,8 +16,14 @@ import { FormError } from "@/components/ui/form-error";
 
 export function FinancialYearForm({
   financialYear,
+  onSuccess,
+  onCancel,
 }: {
   financialYear?: FinancialYear;
+  /** Replaces the default `router.push(listRoute)` + `router.refresh()`. */
+  onSuccess?: (financialYear: FinancialYear) => void;
+  /** Adds a dismiss action; an inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [startDate, setStartDate] = useState(financialYear?.start_date ?? "");
@@ -46,13 +52,15 @@ export function FinancialYearForm({
         end_date: String(formData.get("end_date") || ""),
         is_active: Boolean(formData.get("is_active")),
       };
-      if (financialYear) {
-        await updateFinancialYear(financialYear.id, input);
+      const saved = financialYear
+        ? await updateFinancialYear(financialYear.id, input)
+        : await createFinancialYear(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createFinancialYear(input);
+        router.push("/dashboard/hr-admin/calendar");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/calendar");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -111,12 +119,18 @@ export function FinancialYearForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : financialYear ? "Save changes" : "Create financial year"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/calendar"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/calendar"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

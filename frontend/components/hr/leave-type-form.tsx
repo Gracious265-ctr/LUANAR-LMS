@@ -10,7 +10,21 @@ import { Input, Field } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
-export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
+export function LeaveTypeForm({
+  leaveType,
+  onSuccess,
+  onCancel,
+}: {
+  leaveType?: LeaveType;
+  /**
+   * Replaces the default `router.push(listRoute)` + `router.refresh()`. The
+   * overlay passes this so it can close itself and refetch; with it omitted the
+   * form navigates on its own, which is what a standalone page needs.
+   */
+  onSuccess?: (leaveType: LeaveType) => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -27,13 +41,15 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
         name: String(formData.get("name") || "").trim(),
         code: String(formData.get("code") || "").trim() || undefined,
       };
-      if (leaveType) {
-        await updateLeaveType(leaveType.id, input);
+      const saved = leaveType
+        ? await updateLeaveType(leaveType.id, input)
+        : await createLeaveType(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createLeaveType(input);
+        router.push("/dashboard/hr-admin/leave-types");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/leave-types");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -74,12 +90,18 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : leaveType ? "Save changes" : "Create leave type"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/leave-types"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/leave-types"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

@@ -16,8 +16,14 @@ import { FormError } from "@/components/ui/form-error";
 
 export function PublicHolidayForm({
   publicHoliday,
+  onSuccess,
+  onCancel,
 }: {
   publicHoliday?: PublicHoliday;
+  /** Replaces the default `router.push(listRoute)` + `router.refresh()`. */
+  onSuccess?: (publicHoliday: PublicHoliday) => void;
+  /** Adds a dismiss action; an inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [date, setDate] = useState(publicHoliday?.date ?? "");
@@ -44,13 +50,15 @@ export function PublicHolidayForm({
         name: String(formData.get("name") || "").trim(),
         date: String(formData.get("date") || ""),
       };
-      if (publicHoliday) {
-        await updatePublicHoliday(publicHoliday.id, input);
+      const saved = publicHoliday
+        ? await updatePublicHoliday(publicHoliday.id, input)
+        : await createPublicHoliday(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createPublicHoliday(input);
+        router.push("/dashboard/hr-admin/calendar");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/calendar");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -88,12 +96,18 @@ export function PublicHolidayForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : publicHoliday ? "Save changes" : "Create holiday"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/calendar"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/calendar"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

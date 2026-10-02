@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { LeaveTypeTable } from "@/components/hr/leave-type-table";
+import { LeaveTypesSection } from "@/components/hr/LeaveTypesSection";
 import { getCurrentUser } from "@/lib/auth";
 import { listLeaveTypes } from "@/lib/leave-rules";
-import { Card } from "@/components/ui/card";
 
 export default async function LeaveTypesPage() {
   const user = await getCurrentUser();
@@ -27,35 +24,16 @@ export default async function LeaveTypesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave types</h2>
-          <p className="text-text-secondary">
-            Manage the registry of leave types the university offers. Leave
-            rules for each type are configured from the Leave Rules page.
-          </p>
+      <h2 className="text-xl font-semibold tracking-tight text-text-primary">
+        Leave types
+      </h2>
+      {listError ? (
+        <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+          {listError}
         </div>
-        <Link
-          href="/dashboard/hr-admin/leave-types/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New leave type
-        </Link>
-      </div>
-
-      <Card>
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          Leave types
-        </h3>
-        {listError ? (
-          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-            {listError}
-          </div>
-        ) : leaveTypes ? (
-          <LeaveTypeTable leaveTypes={leaveTypes.results} />
-        ) : null}
-      </Card>
+      ) : leaveTypes ? (
+        <LeaveTypesSection leaveTypes={leaveTypes.results} />
+      ) : null}
     </div>
   );
 }
