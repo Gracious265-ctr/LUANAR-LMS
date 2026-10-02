@@ -184,4 +184,55 @@ describe("DelegationForm", () => {
       "/dashboard/hr-admin/delegations"
     );
   });
+
+  it("hands cancel to the host when it is inside an overlay", () => {
+    // The link would navigate the whole page out from under an open dialog, so
+    // the overlay passes a callback and the link becomes a button.
+    const onCancel = vi.fn();
+    render(<DelegationForm employees={employees} onCancel={onCancel} />);
+
+    expect(screen.queryByRole("link", { name: "Cancel" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a create to the host instead of navigating", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    vi.mocked(createDelegation).mockResolvedValue({
+      id: 44,
+      approver: 3,
+      approver_name: "Jane Dean",
+      approver_role: "dean",
+      delegate: null,
+      delegate_name: "",
+      starts_on: "2026-10-15",
+      ends_on: null,
+      request_reason: "",
+      requested_by: 1,
+      requested_by_name: "HR",
+      decision_reason: "",
+      decided_by: null,
+      decided_at: null,
+      status: "requested",
+      state: "requested",
+    } as never);
+    render(
+      <DelegationForm employees={employees} onSuccess={onSuccess} />
+    );
+
+    await selectOption(
+      screen.getByRole("combobox", { name: "Approver" }),
+      "Jane Dean"
+    );
+    pickPeriod(user, "2026-10-15");
+    fireEvent.click(
+      screen.getByRole("button", { name: /create delegation request/i })
+    );
+
+    await vi.waitFor(() => expect(createDelegation).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(onSuccess.mock.calls[0][0]).toMatchObject({ id: 44 });
+  });
 });

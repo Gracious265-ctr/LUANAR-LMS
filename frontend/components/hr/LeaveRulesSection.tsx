@@ -81,7 +81,7 @@ export function LeaveRulesSection({
         </Button>
       </div>
 
-            <LeaveRuleTable rules={rules} today={today} onEdit={overlay.openEdit} />
+      <LeaveRuleTable rules={rules} today={today} onEdit={overlay.openEdit} />
 
       <AdminFormOverlay
         open={overlay.isOpen}

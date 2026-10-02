@@ -1,13 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { DelegationForm } from "@/components/hr/delegation-form";
 import { getCurrentUser } from "@/lib/auth";
-import { listEmployees } from "@/lib/employees";
-import { Card } from "@/components/ui/card";
 
-export default async function NewDelegationPage() {
+/**
+ * Create now happens in an overlay on the list page, so this route only exists
+ * to keep the old `new` link working: bookmarks, and anything already pointing
+ * here.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a non-HR
+ * user following one of these still lands on `/dashboard` instead of bouncing
+ * through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -17,44 +21,5 @@ export default async function NewDelegationPage() {
     redirect("/dashboard");
   }
 
-  let employees;
-  let employeesError = "";
-  try {
-    employees = await listEmployees();
-  } catch {
-    employeesError = "Unable to load people for the approver and delegate lists.";
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/delegations"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to delegations
-        </Link>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
-          New delegation request
-        </h2>
-        <p className="text-text-secondary">
-          Record an approver&apos;s unavailability so a delegate can act for them.
-          An optional nomination here is confirmed by HR on approval.
-        </p>
-      </div>
-
-      {employeesError ? (
-        <Card>
-          <div className="rounded-lg bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-            {employeesError}
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <DelegationForm employees={employees?.results ?? []} />
-        </Card>
-      )}
-    </div>
-  );
+  redirect("/dashboard/hr-admin/delegations?delegation=new");
 }

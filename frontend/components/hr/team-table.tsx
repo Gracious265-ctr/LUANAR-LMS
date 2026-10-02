@@ -1,7 +1,10 @@
 import Link from "next/link";
 
 import type { Team } from "@/lib/teams";
-import { teamStatusBadgeClass, teamStatusLabel } from "@/lib/teams";
+import {
+  teamStatusBadgeClass,
+  teamStatusLabel,
+} from "@/lib/teams-client";
 
 /**
  * Teams as a list rather than a wall of cards.

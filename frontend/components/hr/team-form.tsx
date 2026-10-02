@@ -41,6 +41,8 @@ export function TeamForm({
   employees = [],
   rolesError = "",
   peopleError = "",
+  onSuccess,
+  onCancel,
 }: {
   team?: Team;
   campuses: Campus[];
@@ -50,6 +52,14 @@ export function TeamForm({
   /** Set when the roles fetch failed; the chain builder needs its options. */
   rolesError?: string;
   peopleError?: string;
+  /**
+   * Called with the saved team instead of navigating, so a host overlay can
+   * close and refresh in place. Omit it and the form navigates itself, which is
+   * what the standalone edit page still relies on.
+   */
+  onSuccess?: (team: Team) => void;
+  /** Replaces the cancel link when the host already knows where to go back to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -157,13 +167,17 @@ export function TeamForm({
     input.new_workflow = newWorkflow;
 
     try {
-      if (team) {
-        await updateTeam(team.id, input);
+      const saved = team
+        ? await updateTeam(team.id, input)
+        : await createTeam(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createTeam(input);
+        router.push(
+          team ? `/dashboard/hr-admin/teams/${team.id}` : "/dashboard/hr-admin/teams"
+        );
+        router.refresh();
       }
-      router.push(team ? `/dashboard/hr-admin/teams/${team.id}` : "/dashboard/hr-admin/teams");
-      router.refresh();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "An error occurred. Please try again."
@@ -485,12 +499,22 @@ export function TeamForm({
         >
           {loading ? "Saving..." : team ? "Save changes" : "Create team"}
         </button>
-        <Link
-          href={team ? `/dashboard/hr-admin/teams/${team.id}` : "/dashboard/hr-admin/teams"}
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </button>
+        ) : (
+          <Link
+            href={team ? `/dashboard/hr-admin/teams/${team.id}` : "/dashboard/hr-admin/teams"}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

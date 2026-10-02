@@ -4,8 +4,30 @@ import type {
   Team,
   TeamInput,
   TeamReadiness,
+  TeamStatus,
 } from "./teams";
 import { apiErrorMessage } from "./utils";
+
+export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
+  draft: "Draft",
+  active: "Active",
+  inactive: "Retired",
+};
+
+export function teamStatusLabel(status: string): string {
+  return TEAM_STATUS_LABELS[status as TeamStatus] ?? status;
+}
+
+export function teamStatusBadgeClass(status: string): string {
+  switch (status) {
+    case "active":
+      return "bg-brand-secondary-subtle text-brand-secondary";
+    case "inactive":
+      return "bg-surface-muted text-text-muted";
+    default:
+      return "bg-status-pending-subtle text-status-pending";
+  }
+}
 
 export async function createTeam(input: TeamInput): Promise<Team> {
   return send<Team>("/api/hr/teams", "POST", input);

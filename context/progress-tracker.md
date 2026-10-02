@@ -3380,3 +3380,100 @@ through the URL, eight on the overlay's sizing and remount key plus the row
 menu, and three on the two behaviours above. Two existing tests asserted the
 financial-year warning was correct and were rewritten, because they were the
 reason it was wrong.
+
+## Delegations, teams and employees move into overlays
+
+Three more lists lose their create page: a new delegation request, a new team and
+a new employee are now dialogs on the list, matching the registry work. Each
+list keeps its own filter, and each `new` route survives as a guarded redirect so
+old links still land somewhere.
+
+| List | Param | Size | Filter preserved |
+| --- | --- | --- | --- |
+| Delegations | `?delegation=new` | `md` | `?state` tabs |
+| Teams | `?team=new` | `lg` (scrolls) | active / retired |
+| Employees | `?employee=new` | `md` | `?search` |
+
+Each form grew an optional `onSuccess`/`onCancel` pair. Given them it reports
+the save instead of navigating; left out, it navigates exactly as before, which
+is what the standalone pages still need — so `teams/[id]/edit` and the employee
+profile page are untouched.
+
+### What stayed a page, and why
+
+Delegations have no edit form at all: approving, rejecting and cancelling are
+done on the record's own page. Teams and employees keep their own pages for the
+same reason — what those pages show is exactly what a dialog would have to leave
+out. A team's roster is managed on the team's page, and an employee profile is a
+record of one person with their grade history and document trail, not a short
+form. A dialog that dropped those fields would be a worse version of the thing
+it replaced.
+
+### Three different "saved, but it is not in this table" answers
+
+A create that succeeds can still leave no new row on screen, because each list
+can hide a row for a different reason. All three sections keep the created id
+and check it against the list the server sends back after the refresh — never
+against the submitted values, so the message cannot disagree with the table.
+
+- **Delegations** are created `requested`, so on the `?state=active` tab the row
+  is absent. Offers "Show all states".
+- **Teams** get no warning at all, and that is deliberate rather than an
+  omission: a new team is a draft, and the list read excludes only *inactive*
+  teams, so a draft is in the table under both filters. The warning would be
+  code that can never fire.
+- **Employees** have two causes and the copy names both, because they call for
+  different actions. With a `?search` active it says so and offers "Clear
+  search"; with no search it says the list shows the first *n* of *total* and
+  offers nothing, since clearing an innocent search would be a red herring. The
+  header always states which slice is on screen, so the table is never ambiguous
+  about how much of the staff is hidden.
+
+### Employee pickers were silently truncated
+
+Four forms picked an approver, a delegate or a reviewer from
+`listEmployees()`, which reads one page — twenty people. Past the twentieth
+employee the picker was empty with no explanation, and the reviewer could not be
+found at all. Delegation create, delegation review and reassignment create now
+use `listAllEmployees()`, which pages through to the end. The cost is paid up
+front: the delegations list fetches the whole staff on every load. That is the
+deliberate trade for a picker that is never quietly short.
+
+### The `next/headers` trap again, and this time it was load-bearing
+
+Wrapping `TeamTable` in a client section pulled it into the browser bundle, and
+it imported `teamStatusLabel`/`teamStatusBadgeClass` from `lib/teams.ts`, which
+imports `api-client`, which reads cookies. `tsc`, lint and Vitest were all
+clean; only the production build failed. The helpers moved to
+`teams-client.ts`, re-exported from `teams.ts` so the server callers did not
+change.
+
+I checked this one rather than assuming: reverting the import and rebuilding
+reproduced the `next/headers` failure, and restoring it built clean. It is the
+same split as `historyScopeLabel` in `approver-roles-client` and
+`leaveRuleStatus` in `leave-rules-client`.
+
+### One wrong assumption, caught by the tests
+
+The teams test fixture used `key: "hod"` on an `ApproverRole`. The real field is
+`code`, and the chain seeds a new step with `roles[0].code` — so the fixture
+left the role select on no value, the submit never got past "every step needs a
+role", and six tests failed for a reason that had nothing to do with the
+overlay. Worth recording because it is the kind of gap that reads as a product
+bug: the create form looked broken when only the test data was wrong.
+
+### Verification
+
+Frontend 740 tests OK (88 files), typecheck clean, lint clean, production build
+clean. Twenty-seven new tests across three suites — eight each for delegations
+and teams, nine for employees — plus two on `DelegationForm`'s callback mode,
+covering: filters surviving the overlay, cancel stepping back rather than
+leaving, refresh-without-navigation on success, each of the three
+visibility-missing cases, list errors replacing the table while leaving the
+create trigger reachable, and a failed option read still opening the dialog.
+
+One harness note, since it cost real time: the mocked `next/navigation` router
+has to drop the overlay param on `back()`. Without that the dialog never
+unmounts, and Radix leaves the page behind it `aria-hidden` — so the post-save
+alert renders but cannot be found by role. That is a harness artefact, not a
+product failure, and the fix belongs in the mock.

@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { ReassignmentForm } from "@/components/hr/reassignment-form";
 import { getCurrentUser } from "@/lib/auth";
-import { listEmployees } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import { listPendingApplications } from "@/lib/reassignments";
 import { Card } from "@/components/ui/card";
 
@@ -46,7 +46,9 @@ export default async function NewReassignmentPage({
   let employees;
   let employeesError = "";
   try {
-    employees = await listEmployees();
+    // Whole list, not page one: a truncated picker would read to HR as
+    // "nobody else can be chosen".
+    employees = await listAllEmployees();
   } catch {
     employeesError = "Unable to load people for the approver list.";
   }
@@ -80,7 +82,7 @@ export default async function NewReassignmentPage({
         <Card>
           <ReassignmentForm
             application={application}
-            employees={employees?.results ?? []}
+            employees={employees ?? []}
           />
         </Card>
       )}

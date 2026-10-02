@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { DelegationTable } from "@/components/hr/delegation-table";
+import { DelegationsSection } from "@/components/hr/DelegationsSection";
 import { getCurrentUser } from "@/lib/auth";
 import {
   DELEGATION_STATE_CODES,
@@ -10,6 +9,7 @@ import {
   listDelegations,
   type DelegationState,
 } from "@/lib/delegations";
+import { listAllEmployees } from "@/lib/employees";
 import { Card } from "@/components/ui/card";
 
 type StateFilter = DelegationState | "";
@@ -21,6 +21,9 @@ const TABS: { value: StateFilter; label: string }[] = [
     label: delegationStateLabel(value),
   })),
 ];
+
+/** Where the tabs' "All" tab points, and the escape hatch out of a filter. */
+const ALL_STATES_HREF = "/dashboard/hr-admin/delegations";
 
 export default async function DelegationsPage({
   searchParams,
@@ -52,52 +55,49 @@ export default async function DelegationsPage({
     delegationsError = "Unable to load delegations. Please try again.";
   }
 
+  // The whole staff, not one page: both pickers in the create form are built
+  // from this, and a page-1 read would quietly offer only the first twenty
+  // people. Read on every visit rather than on open, matching the roles page,
+  // which loads all employees for its holder picker the same way.
+  const employees = await listAllEmployees().catch(() => []);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Delegations</h2>
-          <p className="text-text-secondary">
-            Review approver unavailability requests, approve a delegate, reject
-            with a reason, or cancel active cover.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/hr-admin/delegations/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New delegation request
-        </Link>
-      </div>
-
-      <div className="flex flex-wrap gap-1 rounded-lg border border-border-default bg-surface-card p-1 shadow-subtle">
-        {TABS.map((tab) => (
-          <Link
-            key={tab.value}
-            href={`/dashboard/hr-admin/delegations${tab.value ? `?state=${tab.value}` : ""}`}
-            className={
-              state === tab.value
-                ? "rounded-md bg-brand-primary px-4 py-1.5 text-sm font-medium text-brand-primary-foreground"
-                : "rounded-md px-4 py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
-            }
-          >
-            {tab.label}
-          </Link>
-        ))}
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Delegations</h2>
+        <p className="text-text-secondary">
+          Review approver unavailability requests, approve a delegate, reject
+          with a reason, or cancel active cover.
+        </p>
       </div>
 
       <Card>
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          {state ? `${delegationStateLabel(state)} delegations` : "All delegations"}
-        </h3>
-        {delegationsError ? (
-          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-            {delegationsError}
-          </div>
-        ) : delegations ? (
-          <DelegationTable delegations={delegations.results} />
-        ) : null}
+        <DelegationsSection
+          delegations={delegations?.results ?? []}
+          employees={employees}
+          stateFilter={state}
+          heading={state ? `${delegationStateLabel(state)} delegations` : "All delegations"}
+          clearFiltersHref={ALL_STATES_HREF}
+          error={delegationsError}
+          filter={
+            <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-border-default bg-surface-card p-1 shadow-subtle">
+              {TABS.map((tab) => (
+                <Link
+                  key={tab.value}
+                  href={`${ALL_STATES_HREF}${tab.value ? `?state=${tab.value}` : ""}`}
+                  aria-current={state === tab.value ? "page" : undefined}
+                  className={
+                    state === tab.value
+                      ? "rounded-md bg-brand-primary px-4 py-1.5 text-sm font-medium text-brand-primary-foreground"
+                      : "rounded-md px-4 py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
+                  }
+                >
+                  {tab.label}
+                </Link>
+              ))}
+            </div>
+          }
+        />
       </Card>
     </div>
   );

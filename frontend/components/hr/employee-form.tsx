@@ -41,6 +41,8 @@ export function EmployeeForm({
   gradeOptions = [],
   teams = [],
   teamsError = "",
+  onSuccess,
+  onCancel,
 }: {
   employee?: Employee;
   endpoint: string;
@@ -49,6 +51,14 @@ export function EmployeeForm({
   teams?: TeamOption[];
   /** Set when the teams fetch failed; the picker is then shown unusable. */
   teamsError?: string;
+  /**
+   * Called with the saved employee instead of navigating, so a host overlay can
+   * close and refresh in place. Omit it and the form navigates to the list
+   * itself, which is what the standalone `[id]` page still relies on.
+   */
+  onSuccess?: (employee: Employee) => void;
+  /** Replaces the cancel link when the host already knows where to go back to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
@@ -82,14 +92,22 @@ export function EmployeeForm({
         }),
       });
 
+      // Read the body once: on failure it carries the field errors, and on
+      // success it is the saved record, whose id the overlay needs to tell
+      // whether the new row landed in the table it just refetched.
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
         setError(apiErrorMessage(data));
         return;
       }
 
-      router.push("/dashboard/hr-admin/employees");
-      router.refresh();
+      if (onSuccess) {
+        onSuccess(data as Employee);
+      } else {
+        router.push("/dashboard/hr-admin/employees");
+        router.refresh();
+      }
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
@@ -256,12 +274,18 @@ export function EmployeeForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : employee ? "Save changes" : "Create employee"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/employees"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/employees"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

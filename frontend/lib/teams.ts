@@ -11,28 +11,8 @@ import { apiClientUrl } from "./api-client";
  */
 export type TeamStatus = "draft" | "active" | "inactive";
 
-export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
-  draft: "Draft",
-  active: "Active",
-  inactive: "Retired",
-};
-
 export const TEAM_STATUS_CODES: TeamStatus[] = ["draft", "active", "inactive"];
 
-export function teamStatusLabel(status: string): string {
-  return TEAM_STATUS_LABELS[status as TeamStatus] ?? status;
-}
-
-export function teamStatusBadgeClass(status: string): string {
-  switch (status) {
-    case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
-    case "inactive":
-      return "bg-surface-muted text-text-muted";
-    default:
-      return "bg-status-pending-subtle text-status-pending";
-  }
-}
 
 /**
  * One problem standing between a team and being put into force. A code rather
@@ -226,3 +206,14 @@ export async function listCampuses(includeInactive = false): Promise<Campus[]> {
   const query = includeInactive ? "?include_inactive=1" : "";
   return readAllPages<Campus>(`/api/v1/campuses/${query}`);
 }
+
+// The status label map and the two helpers over it live in `teams-client.ts`:
+// they are pure, and the team table is rendered inside a client section, which
+// would otherwise drag `api-client`'s `next/headers` into the browser bundle.
+// Re-exported here so the server pages and components keep importing from the
+// module they already use.
+export {
+  TEAM_STATUS_LABELS,
+  teamStatusLabel,
+  teamStatusBadgeClass,
+} from "./teams-client";

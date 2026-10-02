@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { Employee } from "@/lib/employees";
+import type { Delegation } from "@/lib/delegations";
 import {
   approverRolePeople,
   createDelegation,
@@ -22,7 +23,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
-export function DelegationForm({ employees }: { employees: Employee[] }) {
+export function DelegationForm({
+  employees,
+  onSuccess,
+  onCancel,
+}: {
+  employees: Employee[];
+  /**
+   * Called with the saved delegation instead of navigating, so the list page
+   * can close its overlay and refresh in place. Omit it on a standalone page
+   * and the form navigates to the list itself, which is the older behaviour and
+   * still what the reassignment and cover flows expect.
+   */
+  onSuccess?: (delegation: Delegation) => void;
+  /** Replaces the cancel link when the host already has somewhere to go back to. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [startsOn, setStartsOn] = useState("");
   const [endsOn, setEndsOn] = useState("");
@@ -30,7 +46,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
   const [loading, setLoading] = useState(false);
   const [approverId, setApproverId] = useState("");
   const approvers = approverRolePeople(employees);
-  const delegates = approverRolePeople(employees).filter(
+  const delegates = approvers.filter(
     (employee) => String(employee.id) !== approverId
   );
 
@@ -51,15 +67,19 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
     }
 
     try {
-      await createDelegation({
+      const saved = await createDelegation({
         approver: Number(formData.get("approver")),
         delegate: delegateValue ? Number(delegateValue) : null,
         starts_on: String(formData.get("starts_on")),
         ends_on: endsOn || null,
         request_reason: String(formData.get("request_reason") || ""),
       });
-      router.push("/dashboard/hr-admin/delegations");
-      router.refresh();
+      if (onSuccess) {
+        onSuccess(saved);
+      } else {
+        router.push("/dashboard/hr-admin/delegations");
+        router.refresh();
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -166,12 +186,18 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Submitting..." : "Create delegation request"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/delegations"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/delegations"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DelegationReview } from "@/components/hr/delegation-review";
 import { getCurrentUser } from "@/lib/auth";
 import { getDelegation } from "@/lib/delegations";
-import { listEmployees } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import { Card } from "@/components/ui/card";
 
 export default async function DelegationDetailPage({
@@ -33,7 +33,9 @@ export default async function DelegationDetailPage({
   let employees;
   let employeesError = "";
   try {
-    employees = await listEmployees();
+    // Whole list, not page one: a truncated picker would read to HR as
+    // "nobody else can hold cover".
+    employees = await listAllEmployees();
   } catch {
     employeesError = "Unable to load people for the delegate list.";
   }
@@ -57,7 +59,7 @@ export default async function DelegationDetailPage({
       {!employeesError && (
         <DelegationReview
           delegation={delegation}
-          employees={employees?.results ?? []}
+          employees={employees ?? []}
         />
       )}
     </div>

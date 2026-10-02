@@ -1,13 +1,21 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { EmployeeTable } from "@/components/hr/employee-table";
+import { EmployeesSection } from "@/components/hr/EmployeesSection";
 import { getCurrentUser } from "@/lib/auth";
+import type { EmployeeListResponse, TeamOption } from "@/lib/employees";
 import { listEmployees } from "@/lib/employees";
+import type { Team } from "@/lib/teams";
+import { listTeams } from "@/lib/teams";
+import {
+  gradeOptionsFromEntitlements,
+  listEntitlements,
+} from "@/lib/entitlements";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+
+const TEAMS_ERROR = "Unable to load teams. Please try again.";
 
 export default async function EmployeesPage({
   searchParams,
@@ -26,7 +34,7 @@ export default async function EmployeesPage({
   const { search } = await searchParams;
   const query = typeof search === "string" ? search : "";
   let error = "";
-  let employees;
+  let employees: EmployeeListResponse | undefined;
 
   try {
     employees = await listEmployees(query);
@@ -34,50 +42,55 @@ export default async function EmployeesPage({
     error = "Unable to load employees. Please try again.";
   }
 
+  // The create overlay needs its option set on the page. Retired teams are
+  // included so the picker can say why a team would not route, and the grade
+  // list comes from the entitlements rather than being typed, because a grade
+  // that no entitlement uses is silently ignored downstream.
+  const [teamsResult, gradeOptions] = await Promise.all([
+    listTeams({ includeInactive: true }).then(
+      (value) => ({ value, error: "" }),
+      () => ({ value: [] as Team[], error: TEAMS_ERROR })
+    ),
+    listEntitlements()
+      .then((entitlements) => gradeOptionsFromEntitlements(entitlements.results))
+      .catch(() => [] as string[]),
+  ]);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Employees</h2>
-          <p className="text-text-secondary">
-            Search and manage employee records.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/hr-admin/employees/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New employee
-        </Link>
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Employees</h2>
+        <p className="text-text-secondary">
+          Search and manage employee records.
+        </p>
       </div>
 
-      <form
-        method="get"
-        className="flex max-w-md items-center gap-2"
-      >
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <Input
-            name="search"
-            defaultValue={query}
-            placeholder="Search name, email, department..."
-            className="pl-9 pr-3"
-          />
-        </div>
-        <Button type="submit" variant="secondary">
-          Search
-        </Button>
-      </form>
-
       <Card>
-        {error ? (
-          <div className="py-12 text-center text-sm text-status-rejected bg-status-rejected-subtle rounded-lg">
-            {error}
-          </div>
-        ) : employees ? (
-          <EmployeeTable employees={employees.results} />
-        ) : null}
+        <EmployeesSection
+          employees={employees?.results ?? []}
+          totalCount={employees?.count ?? 0}
+          gradeOptions={gradeOptions}
+          teams={teamsResult.value as TeamOption[]}
+          teamsError={teamsResult.error}
+          search={query}
+          error={error}
+          filter={
+            <form method="get" className="mb-4 flex max-w-md items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+                <Input
+                  name="search"
+                  defaultValue={query}
+                  placeholder="Search name, email, department..."
+                  className="pl-9 pr-3"
+                />
+              </div>
+              <Button type="submit" variant="secondary">
+                Search
+              </Button>
+            </form>
+          }
+        />
       </Card>
     </div>
   );

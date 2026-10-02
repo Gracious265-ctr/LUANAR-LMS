@@ -1,21 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { EmployeeForm } from "@/components/hr/employee-form";
 import { getCurrentUser } from "@/lib/auth";
-import {
-  gradeOptionsFromEntitlements,
-  listEntitlements,
-} from "@/lib/entitlements";
-import { listTeams } from "@/lib/teams";
-import type { TeamOption } from "@/lib/employees";
-import { Card } from "@/components/ui/card";
 
-const TEAMS_ERROR =
-  "Teams could not be loaded, so this employee cannot be placed in a team. Reload the page, or create a team first.";
-
-export default async function NewEmployeePage() {
+/**
+ * Create now happens in an overlay on the list page, so this route only exists
+ * to keep the old `new` link working: bookmarks, and anything already pointing
+ * here.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a non-HR
+ * user following one of these still lands on `/dashboard` instead of bouncing
+ * through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -25,47 +21,5 @@ export default async function NewEmployeePage() {
     redirect("/dashboard");
   }
 
-  let gradeOptions: string[] = [];
-  try {
-    const entitlements = await listEntitlements();
-    gradeOptions = gradeOptionsFromEntitlements(entitlements.results);
-  } catch {
-    // Manual grade entry remains available if entitlements cannot be loaded.
-  }
-
-  let teams: TeamOption[] = [];
-  let teamsError = "";
-  try {
-    teams = await listTeams({ includeInactive: true });
-  } catch {
-    teamsError = TEAMS_ERROR;
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/employees"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to employees
-        </Link>
-        <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">New employee</h2>
-        <p className="text-text-secondary">
-          Create an employee record. A login account is created automatically.
-        </p>
-      </div>
-
-      <Card>
-        <EmployeeForm
-          endpoint="/api/hr/employees"
-          method="POST"
-          gradeOptions={gradeOptions}
-          teams={teams}
-          teamsError={teamsError}
-        />
-      </Card>
-    </div>
-  );
+  redirect("/dashboard/hr-admin/employees?employee=new");
 }
