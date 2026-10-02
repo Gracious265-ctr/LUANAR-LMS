@@ -114,8 +114,7 @@ describe("SupportingDocumentsUploader", () => {
     await vi.waitFor(() => expect(onDocumentsChange).toHaveBeenCalledWith([doc]));
   });
 
-  it("confirms before removing a document in a draft", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("asks for confirmation in an in-app dialog before removing a document", async () => {
     vi.mocked(deleteDocument).mockResolvedValue(undefined);
     vi.mocked(listDocuments).mockResolvedValue([]);
     const onDocumentsChange = vi.fn();
@@ -128,16 +127,19 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    screen.getByRole("button", { name: "Remove document letter.pdf" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Remove document letter.pdf" }));
 
-    expect(confirm).toHaveBeenCalled();
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Remove letter.pdf?");
+    expect(deleteDocument).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
     await vi.waitFor(() => expect(deleteDocument).toHaveBeenCalledWith("draft-1", "doc-1"));
     await vi.waitFor(() => expect(onDocumentsChange).toHaveBeenCalledWith([]));
   });
 
-  it("does not delete when the confirm is declined", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-
+  it("does not delete when the confirmation is cancelled", async () => {
     render(
       <SupportingDocumentsUploader
         applicationId="draft-1"
@@ -146,13 +148,34 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    screen.getByRole("button", { name: "Remove document letter.pdf" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Remove document letter.pdf" }));
 
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+    );
     expect(deleteDocument).not.toHaveBeenCalled();
   });
 
+  it("warns that a correction document is archived rather than deleted", async () => {
+    render(
+      <SupportingDocumentsUploader
+        applicationId="draft-1"
+        documents={[doc]}
+        canReplace
+        onDocumentsChange={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove document letter.pdf" }));
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent(
+      /stays archived under the previous submission/i
+    );
+  });
+
   it("surfaces an error when document removal fails", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(deleteDocument).mockRejectedValueOnce(
       new Error("Could not remove this document. Please try again.")
     );
@@ -165,7 +188,8 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    screen.getByRole("button", { name: "Remove document letter.pdf" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Remove document letter.pdf" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
 
     expect(
       await screen.findByText(/could not remove this document/i)

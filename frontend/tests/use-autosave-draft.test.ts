@@ -106,4 +106,70 @@ describe("useAutosaveDraft", () => {
 
     expect(result.current.saveStatus).toBe("error");
   });
+
+  it("flush persists a pending change before the debounce elapses", async () => {
+    const { rerender, result } = renderHook(
+      ({ applicationId, data }) => useAutosaveDraft(applicationId, data),
+      { initialProps: { applicationId: null as string | null, data: { reason: "" } } }
+    );
+
+    rerender({ applicationId: "draft-1", data: { reason: "Family visit" } });
+    // Well inside the 800ms debounce window.
+    await flushTimers(100);
+    expect(mockedUpdate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      result.current.flush();
+    });
+
+    expect(mockedUpdate).toHaveBeenCalledTimes(1);
+    expect(mockedUpdate).toHaveBeenCalledWith("draft-1", {
+      reason: "Family visit",
+    });
+  });
+
+  it("does not fire again when the flushed timer would have elapsed later", async () => {
+    const { rerender, result } = renderHook(
+      ({ applicationId, data }) => useAutosaveDraft(applicationId, data),
+      { initialProps: { applicationId: null as string | null, data: { reason: "" } } }
+    );
+
+    rerender({ applicationId: "draft-1", data: { reason: "Family visit" } });
+    await flushTimers(100);
+    await act(async () => {
+      result.current.flush();
+    });
+    await flushTimers(800);
+
+    expect(mockedUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush is a no-op when nothing is pending", async () => {
+    const { result } = renderHook(() =>
+      useAutosaveDraft("draft-1", { reason: "unchanged" })
+    );
+
+    await act(async () => {
+      result.current.flush();
+    });
+    await flushTimers(800);
+
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
+
+  it("drops the pending save on unmount without a flush", async () => {
+    const { rerender, unmount } = renderHook(
+      ({ applicationId, data }) => useAutosaveDraft(applicationId, data),
+      { initialProps: { applicationId: null as string | null, data: { reason: "" } } }
+    );
+
+    rerender({ applicationId: "draft-1", data: { reason: "Family visit" } });
+    await flushTimers(100);
+    unmount();
+    await flushTimers(800);
+
+    // Documents the reason `flush` exists: the compose overlay unmounts the
+    // form on close, so without an explicit flush these changes are lost.
+    expect(mockedUpdate).not.toHaveBeenCalled();
+  });
 });

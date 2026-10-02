@@ -16,6 +16,11 @@ interface SubmissionConfirmationProps {
   application: SubmittedApplication;
   leaveTypeName?: string;
   validation?: ValidationResult | null;
+  /**
+   * Replaces the link row with a single action. The compose overlay passes this
+   * so dismissing the confirmation does not navigate away from the list.
+   */
+  onDone?: () => void;
 }
 
 function formatDateRange(start: string | null, end: string | null): string {
@@ -36,6 +41,7 @@ function formatTimestamp(iso: string | null): string {
 export function SubmissionConfirmation({
   application,
   leaveTypeName,
+  onDone,
 }: SubmissionConfirmationProps) {
   const [copied, setCopied] = useState(false);
   const reference = application.reference_number ?? "";
@@ -114,26 +120,32 @@ export function SubmissionConfirmation({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/dashboard/leave/drafts"
-          className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
-        >
-          View my applications
-        </Link>
-        <Link
-          href={`/applications/${application.id}`}
-          className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
-        >
-          Track this application
-        </Link>
-        <Link
-          href="/dashboard"
-          className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
-        >
-          Back to dashboard
-        </Link>
-      </div>
+      {onDone ? (
+        <Button type="button" onClick={onDone} size="lg">
+          Done
+        </Button>
+      ) : (
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/dashboard/leave/drafts"
+            className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
+          >
+            View my applications
+          </Link>
+          <Link
+            href={`/applications/${application.id}`}
+            className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
+          >
+            Track this application
+          </Link>
+          <Link
+            href="/dashboard"
+            className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
+          >
+            Back to dashboard
+          </Link>
+        </div>
+      )}
     </Card>
   );
 }

@@ -1,28 +1,141 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
 import { FileText, Plus } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useState } from "react";
 
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
-import { ApplicationCard } from "./ApplicationCard";
 import { Card } from "@/components/ui/card";
 
+import { ApplicationCard } from "./ApplicationCard";
+import {
+  LeaveApplicationOverlay,
+  type LeaveOverlayStage,
+} from "./LeaveApplicationOverlay";
+
+interface OverlayTarget {
+  mode: "create" | "edit";
+  applicationId?: string;
+  stage: LeaveOverlayStage;
+}
+
+/**
+ * "My Applications" with the apply flow as an overlay.
+ *
+ * The open application lives in the URL (`?compose=1`, `?edit=<id>`,
+ * `&stage=review`) rather than in component state, so a refresh resumes the
+ * same application, the Back button steps out of it, and the old
+ * `/dashboard/leave/new` and `/dashboard/leave/{id}/edit` links keep working
+ * through the redirect shims in those routes.
+ */
 export function ApplicationsList() {
   const { applications, loading, error, refetch } = useLeaveApplications();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
+  const composeParam = searchParams.get("compose");
+  const editParam = searchParams.get("edit");
+  const stageParam = searchParams.get("stage");
+  const stage: LeaveOverlayStage =
+    stageParam === "review" || stageParam === "done" ? stageParam : "form";
+
+  // Memoised because the stage-sync callback below depends on it, and a fresh
+  // object literal each render would defeat the memo entirely.
+  const target: OverlayTarget | null = useMemo(
+    () =>
+      editParam
+        ? { mode: "edit", applicationId: editParam, stage }
+        : composeParam === "1"
+          ? { mode: "create", stage: "form" }
+          : null,
+    [editParam, composeParam, stage]
+  );
+
+  const targetId = target?.applicationId;
+
+  const openNew = useCallback(() => {
+    router.push("/dashboard/leave/drafts?compose=1");
+  }, [router]);
+
+  const openExisting = useCallback(
+    (applicationId: string, nextStage: LeaveOverlayStage) => {
+      router.push(
+        nextStage === "form"
+          ? `/dashboard/leave/drafts?edit=${applicationId}`
+          : `/dashboard/leave/drafts?edit=${applicationId}&stage=${nextStage}`
+      );
+    },
+    [router]
+  );
+
+  /**
+   * Mirrors a stage transition into the URL so a refresh, a copy-pasted link,
+   * and the Back button all land somewhere real.
+   *
+   * `replace` rather than `push`, deliberately. Opening the overlay already
+   * pushed one entry, and `close()` steps back exactly once, so pushing a second
+   * entry per stage would make the first close press a no-op from the user's
+   * point of view — the dialog would still be open, one stage back.
+   */
+  const handleStageChange = useCallback(
+    (nextStage: LeaveOverlayStage, nextApplicationId?: string) => {
+      const id = nextApplicationId ?? targetId;
+      if (!id) return;
+      router.replace(
+        nextStage === "form"
+          ? `/dashboard/leave/drafts?edit=${id}`
+          : `/dashboard/leave/drafts?edit=${id}&stage=${nextStage}`
+      );
+    },
+    [router, targetId]
+  );
+
+  /**
+   * Closing goes back through history when we pushed the state, so the browser
+   * Back button and the overlay's close affordance behave the same. The
+   * fallback handles a direct visit to a deep link, where there is nothing to
+   * pop back to.
+   */
+  const close = useCallback(() => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.replace("/dashboard/leave/drafts");
+  }, [router]);
+
   useEffect(() => {
+    let active = true;
     getLeaveTypes().then((types) => {
+      if (!active) return;
       const map: Record<number, string> = {};
       for (const t of types) {
         map[t.id] = t.name;
       }
       setLeaveTypeNames(map);
     });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const overlay = (
+    <LeaveApplicationOverlay
+      open={target !== null}
+      mode={target?.mode ?? "create"}
+      applicationId={target?.mode === "edit" ? target.applicationId : undefined}
+      initialStage={target?.stage ?? "form"}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      onSubmitted={refetch}
+      onStageChange={handleStageChange}
+    />
+  );
 
   if (loading) {
     return (
@@ -47,6 +160,7 @@ export function ApplicationsList() {
 
   return (
     <div className="space-y-6">
+      {overlay}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">My Applications</h2>
@@ -54,13 +168,10 @@ export function ApplicationsList() {
             {applications.length} application{applications.length === 1 ? "" : "s"}
           </p>
         </div>
-        <Link
-          href="/dashboard/leave/new"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
-        >
+        <Button onClick={openNew} className="px-4 py-2">
           <Plus className="h-4 w-4" />
           New Application
-        </Link>
+        </Button>
       </div>
 
       {applications.length === 0 ? (
@@ -72,13 +183,10 @@ export function ApplicationsList() {
           <p className="text-text-secondary text-sm mb-4">
             Start a new leave application to see it here.
           </p>
-          <Link
-            href="/dashboard/leave/new"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
-          >
+          <Button onClick={openNew} className="px-4 py-2">
             <Plus className="h-4 w-4" />
             New Application
-          </Link>
+          </Button>
         </Card>
       ) : (
         <div className="grid gap-4">
@@ -92,6 +200,7 @@ export function ApplicationsList() {
                   : "Not selected"
               }
               onDelete={refetch}
+              onEdit={openExisting}
             />
           ))}
         </div>

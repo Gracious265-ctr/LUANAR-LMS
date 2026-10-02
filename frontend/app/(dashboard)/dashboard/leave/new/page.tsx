@@ -1,17 +1,10 @@
-import { LeaveApplicationForm } from "@/components/leave/LeaveApplicationForm";
+import { redirect } from "next/navigation";
 
+/**
+ * The apply flow is now an overlay on the applications list, so this route
+ * only exists to keep the sidebar's "New Application" link and any bookmarked
+ * URL working.
+ */
 export default async function NewLeavePage() {
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold tracking-tight text-text-primary">
-          New Leave Application
-        </h2>
-        <p className="text-text-secondary text-sm">
-          Fill in the details below to start your leave application.
-        </p>
-      </div>
-      <LeaveApplicationForm mode="create" />
-    </div>
-  );
+  redirect("/dashboard/leave/drafts?compose=1");
 }

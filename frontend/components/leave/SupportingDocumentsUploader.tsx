@@ -13,6 +13,16 @@ import {
 } from "@/lib/leave-api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface SupportingDocumentsUploaderProps {
   applicationId: string | null;
@@ -35,6 +45,8 @@ export function SupportingDocumentsUploader({
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRemoval, setPendingRemoval] =
+    useState<SupportingDocument | null>(null);
   const replaceInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const refresh = useCallback(
@@ -83,12 +95,6 @@ export function SupportingDocumentsUploader({
   const handleRemove = useCallback(
     async (document: SupportingDocument) => {
       if (!applicationId || busyId) return;
-      const confirmed = window.confirm(
-        canReplace
-          ? `Remove ${document.file_name}? The file stays archived under the previous submission.`
-          : `Remove ${document.file_name}? This permanently deletes the file.`
-      );
-      if (!confirmed) return;
       setBusyId(document.id);
       setError(null);
       try {
@@ -104,7 +110,7 @@ export function SupportingDocumentsUploader({
         setBusyId(null);
       }
     },
-    [applicationId, busyId, canReplace, refresh]
+    [applicationId, busyId, refresh]
   );
 
   const handleReplace = useCallback(
@@ -222,7 +228,7 @@ export function SupportingDocumentsUploader({
                   <Button
                     type="button"
                     aria-label={`Remove document ${doc.file_name}`}
-                    onClick={() => void handleRemove(doc)}
+                    onClick={() => setPendingRemoval(doc)}
                     disabled={busyId !== null}
                     variant="ghost"
                     size="icon"
@@ -248,6 +254,40 @@ export function SupportingDocumentsUploader({
           {error}
         </p>
       )}
+
+      {/* An in-app dialog rather than `window.confirm`, which browsers suppress
+          and cannot be styled to match the rest of the app. */}
+      <AlertDialog
+        open={pendingRemoval !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Remove {pendingRemoval?.file_name}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {canReplace
+                ? "The file stays archived under the previous submission."
+                : "This permanently deletes the file."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = pendingRemoval;
+                setPendingRemoval(null);
+                if (target) void handleRemove(target);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

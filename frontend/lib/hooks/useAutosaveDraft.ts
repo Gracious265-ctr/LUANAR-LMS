@@ -16,12 +16,18 @@ export function useAutosaveDraft(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
   const isInitialRef = useRef(true);
+  const pendingRef = useRef(false);
+  const latestDataRef = useRef(data);
   const startedWithIdRef = useRef(Boolean(applicationId));
   const onSavedRef = useRef(onSaved);
 
   useEffect(() => {
     onSavedRef.current = onSaved;
   }, [onSaved]);
+
+  useEffect(() => {
+    latestDataRef.current = data;
+  }, [data]);
 
   const save = useCallback(
     async (patchData: Record<string, unknown>) => {
@@ -54,9 +60,13 @@ export function useAutosaveDraft(
       clearTimeout(timerRef.current);
     }
 
+    pendingRef.current = true;
+    latestDataRef.current = data;
+
     timerRef.current = setTimeout(() => {
-      save(data);
-      lastSavedRef.current = JSON.stringify(data);
+      pendingRef.current = false;
+      lastSavedRef.current = JSON.stringify(latestDataRef.current);
+      void save(latestDataRef.current);
     }, delay);
 
     return () => {
@@ -66,9 +76,28 @@ export function useAutosaveDraft(
     };
   }, [applicationId, data, delay, save]);
 
+  /**
+   * Persist any debounced change immediately.
+   *
+   * The effect cleanup above only clears the pending timer, so a save scheduled
+   * in the last `delay` ms is dropped when the component unmounts. A full-page
+   * form made that easy to miss; the compose overlay unmounts on close, so the
+   * last keystrokes are lost unless the caller flushes first.
+   */
+  const flush = useCallback(() => {
+    if (!pendingRef.current) return;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingRef.current = false;
+    lastSavedRef.current = JSON.stringify(latestDataRef.current);
+    void save(latestDataRef.current);
+  }, [save]);
+
   const resetSaveStatus = useCallback(() => {
     setSaveStatus("idle");
   }, []);
 
-  return { saveStatus, resetSaveStatus };
+  return { saveStatus, resetSaveStatus, flush };
 }

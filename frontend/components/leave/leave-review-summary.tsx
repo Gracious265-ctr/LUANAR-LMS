@@ -11,6 +11,11 @@ interface LeaveReviewSummaryProps {
   application: LeaveApplication;
   leaveTypeName: string;
   validation: ValidationResult | null;
+  /**
+   * Overrides the edit link so the compose overlay can step back to its own
+   * form stage instead of navigating away. Omitted on the standalone page.
+   */
+  onEdit?: () => void;
 }
 
 /**
@@ -24,6 +29,7 @@ export function LeaveReviewSummary({
   application,
   leaveTypeName,
   validation,
+  onEdit,
 }: LeaveReviewSummaryProps) {
   const workingDays = validation?.working_days ?? application.calculated_days ?? null;
   const calendarDays = validation?.calendar_days;
@@ -33,13 +39,24 @@ export function LeaveReviewSummary({
     <Card>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-text-primary">Summary</h2>
-        <Link
-          href={`/dashboard/leave/${application.id}/edit`}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          Edit
-        </Link>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        ) : (
+          <Link
+            href={`/dashboard/leave/${application.id}/edit`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Link>
+        )}
       </div>
 
       <div className="space-y-0 divide-y divide-border-subtle">

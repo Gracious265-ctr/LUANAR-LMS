@@ -26,6 +26,11 @@ interface ApplicationCardProps {
   application: LeaveApplication;
   leaveTypeName: string;
   onDelete: (id: string) => void;
+  /**
+   * Opens the compose overlay on this draft. Omitted on hosts that still link
+   * to the standalone edit page, in which case the links below are rendered.
+   */
+  onEdit?: (applicationId: string, stage: "form" | "review") => void;
 }
 
 const CARD_STATUS_META: Record<
@@ -59,6 +64,7 @@ export function ApplicationCard({
   application,
   leaveTypeName,
   onDelete,
+  onEdit,
 }: ApplicationCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -140,32 +146,62 @@ export function ApplicationCard({
 
       {isDraft ? (
         <div className="flex items-center gap-2">
-          <Link
-            href={`/dashboard/leave/${application.id}/edit`}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-button-secondary hover:bg-button-secondary-hover text-text-primary border border-border-default transition-colors"
-          >
-            <Edit3 className="h-3.5 w-3.5" />
-            Edit
-          </Link>
-          <Link
-            href={`/dashboard/leave/${application.id}/review`}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              canReview
-                ? "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
-                : "bg-surface-muted text-text-disabled cursor-not-allowed"
-            }`}
-            onClick={(e) => {
-              if (!canReview) e.preventDefault();
-            }}
-            title={
-              canReview
-                ? "Review and submit"
-                : "Complete all fields before reviewing"
-            }
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Review
-          </Link>
+          {onEdit ? (
+            <>
+              <Button
+                type="button"
+                onClick={() => onEdit(application.id, "form")}
+                variant="secondary"
+                className="h-auto gap-1.5 px-3 py-1.5 text-sm"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+              <Button
+                type="button"
+                onClick={() => onEdit(application.id, "review")}
+                disabled={!canReview}
+                title={
+                  canReview
+                    ? "Review and submit"
+                    : "Complete all fields before reviewing"
+                }
+                className="h-auto gap-1.5 px-3 py-1.5 text-sm bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Review
+              </Button>
+            </>
+          ) : (
+            <>
+              <Link
+                href={`/dashboard/leave/${application.id}/edit`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-button-secondary hover:bg-button-secondary-hover text-text-primary border border-border-default transition-colors"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                Edit
+              </Link>
+              <Link
+                href={`/dashboard/leave/${application.id}/review`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  canReview
+                    ? "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
+                    : "bg-surface-muted text-text-disabled cursor-not-allowed"
+                }`}
+                onClick={(e) => {
+                  if (!canReview) e.preventDefault();
+                }}
+                title={
+                  canReview
+                    ? "Review and submit"
+                    : "Complete all fields before reviewing"
+                }
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Review
+              </Link>
+            </>
+          )}
           {confirming ? (
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="text-xs text-status-rejected">Delete?</span>

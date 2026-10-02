@@ -13,7 +13,32 @@ vi.mock("@/lib/leave-api", () => ({
 
 vi.mock("@/lib/services/leaveTypes", () => ({ getLeaveTypes: vi.fn() }));
 
+const { pushMock, replaceMock, backMock, searchParamsMock } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  replaceMock: vi.fn(),
+  backMock: vi.fn(),
+  searchParamsMock: { current: new URLSearchParams() },
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard/leave/drafts",
+  useRouter: () => ({
+    push: pushMock,
+    replace: replaceMock,
+    back: backMock,
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  useSearchParams: () => searchParamsMock.current,
+}));
+
 import { deleteLeaveApplication } from "@/lib/leave-api";
+
+/** Sets the query string the overlay reads its open state from. */
+function setSearchParams(query: string) {
+  searchParamsMock.current = new URLSearchParams(query);
+}
 
 function makeApplication(
   over: Partial<LeaveApplication> = {}
@@ -41,6 +66,7 @@ function makeApplication(
 describe("ApplicationsList", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setSearchParams("");
     vi.mocked(getLeaveTypes).mockResolvedValue([
       { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
     ]);
@@ -123,5 +149,71 @@ describe("ApplicationsList", () => {
     await vi.waitFor(() =>
       expect(getLeaveApplications).toHaveBeenCalledTimes(2)
     );
+  });
+});
+
+describe("ApplicationsList overlay entry points", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setSearchParams("");
+    vi.mocked(getLeaveTypes).mockResolvedValue([
+      { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
+    ]);
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 1,
+      results: [makeApplication({ id: "draft-1", status: "draft" })],
+    });
+  });
+
+  it("opens a new application in the overlay instead of navigating away", async () => {
+    render(<ApplicationsList />);
+    await screen.findByText("My Applications");
+
+    fireEvent.click(screen.getByRole("button", { name: /new application/i }));
+
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?compose=1");
+  });
+
+  it("opens an existing draft in the overlay from the card's Edit action", async () => {
+    render(<ApplicationsList />);
+    await screen.findByText("My Applications");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-1");
+  });
+
+  it("opens the review stage directly from the card's Review action", async () => {
+    render(<ApplicationsList />);
+    await screen.findByText("My Applications");
+
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(pushMock).toHaveBeenCalledWith(
+      "/dashboard/leave/drafts?edit=draft-1&stage=review"
+    );
+  });
+
+  it("disables Review until the draft is complete", async () => {
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 1,
+      results: [
+        makeApplication({ id: "draft-1", status: "draft", reason: "" }),
+      ],
+    });
+
+    render(<ApplicationsList />);
+    await screen.findByText("My Applications");
+
+    expect(screen.getByRole("button", { name: "Review" })).toBeDisabled();
+  });
+
+  it("does not render an overlay without a compose or edit param", async () => {
+    render(<ApplicationsList />);
+    await screen.findByText("My Applications");
+
+    expect(
+      screen.queryByRole("dialog")
+    ).not.toBeInTheDocument();
   });
 });

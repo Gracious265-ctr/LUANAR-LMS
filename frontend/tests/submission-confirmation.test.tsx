@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SubmittedClient } from "@/app/(dashboard)/dashboard/leave/[id]/submitted/SubmittedClient";
+import {
+  LeaveSubmissionResult,
+  SubmittedClient,
+} from "@/components/leave/LeaveSubmissionResult";
 import { SubmissionConfirmation } from "@/components/leave/submission-confirmation";
 import { getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
@@ -143,5 +146,30 @@ describe("SubmittedClient", () => {
       await screen.findByText(/This application has not been submitted/)
     ).toBeInTheDocument();
     expect(replaceMock).toHaveBeenCalledWith("/dashboard/leave/app-1/review");
+  });
+});
+
+describe("LeaveSubmissionResult", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getLeaveTypes).mockResolvedValue([
+      { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
+    ]);
+    replaceMock.mockClear();
+  });
+
+  it("shows the message in place instead of redirecting when the caller gives no handler", async () => {
+    vi.mocked(getLeaveApplication).mockResolvedValue(
+      makeApplication({ status: "draft", reference_number: null })
+    );
+
+    // The dialog case: a redirect would tear down the overlay that is
+    // displaying a legitimate result.
+    render(<LeaveSubmissionResult applicationId="app-1" />);
+
+    expect(
+      await screen.findByText(/This application has not been submitted/)
+    ).toBeInTheDocument();
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 });

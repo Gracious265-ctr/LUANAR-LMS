@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -20,14 +27,34 @@ import { Card } from "@/components/ui/card";
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
   applicationId?: string;
+  /**
+   * Called instead of navigating when the user continues to review. The compose
+   * overlay advances its own stage; the standalone pages fall back to a
+   * `router.push` when this is absent.
+   */
+  onContinueToReview?: (draftId: string) => void;
+  /** Fired once a draft exists, so the host can make the overlay deep-linkable. */
+  onDraftCreated?: (draftId: string) => void;
+  /** Hide the built-in action row when the host supplies its own footer. */
+  hideActions?: boolean;
+}
+
+export interface LeaveApplicationFormHandle {
+  /** Persist any debounced autosave immediately. */
+  flush: () => void;
+  /** The draft id, once one has been created. */
+  getDraftId: () => string | null;
 }
 
 const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
 
-export function LeaveApplicationForm({
-  mode,
-  applicationId,
-}: LeaveApplicationFormProps) {
+export const LeaveApplicationForm = forwardRef<
+  LeaveApplicationFormHandle,
+  LeaveApplicationFormProps
+>(function LeaveApplicationForm(
+  { mode, applicationId, onContinueToReview, onDraftCreated, hideActions },
+  ref
+) {
   const router = useRouter();
   const [leaveTypeId, setLeaveTypeId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState("");
@@ -56,11 +83,20 @@ const [loadError, setLoadError] = useState<string | null>(null);
     [leaveTypeId, startDate, endDate, reason]
   );
 
-  const { saveStatus } = useAutosaveDraft(
+  const { saveStatus, flush } = useAutosaveDraft(
     currentId,
     formData,
     800,
     (saved) => setCalculatedDays(saved.calculated_days ?? null)
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flush,
+      getDraftId: () => currentId,
+    }),
+    [flush, currentId]
   );
 
   useEffect(() => {
@@ -119,21 +155,25 @@ const [loadError, setLoadError] = useState<string | null>(null);
     ["documents", "—"].includes(issue.field)
   );
 
-  const ensureDraftCreated = useCallback(async (patch: Record<string, unknown> = {}) => {
-    if (currentId) return currentId;
-    try {
-      const app = await createLeaveApplication(patch);
-      setCurrentId(app.id);
-      setCalculatedDays(app.calculated_days ?? null);
-      setCreateError(null);
-      return app.id;
-    } catch {
-      setCreateError(
-        "Could not start your application. Check your connection and try again."
-      );
-      return null;
-    }
-  }, [currentId]);
+  const ensureDraftCreated = useCallback(
+    async (patch: Record<string, unknown> = {}) => {
+      if (currentId) return currentId;
+      try {
+        const app = await createLeaveApplication(patch);
+        setCurrentId(app.id);
+        setCalculatedDays(app.calculated_days ?? null);
+        setCreateError(null);
+        onDraftCreated?.(app.id);
+        return app.id;
+      } catch {
+        setCreateError(
+          "Could not start your application. Check your connection and try again."
+        );
+        return null;
+      }
+    },
+    [currentId, onDraftCreated]
+  );
 
   const handleFieldChange = useCallback(
     async (field: string, value: unknown) => {
@@ -269,21 +309,27 @@ const [loadError, setLoadError] = useState<string | null>(null);
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button
-          onClick={() =>
-            currentId
-              ? router.push(`/dashboard/leave/${currentId}/review`)
-              : undefined
-          }
-          disabled={!currentId}
-        >
-          Review Application
-        </Button>
-      </div>
+      {!hideActions && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              if (!currentId) return;
+              if (onContinueToReview) {
+                flush();
+                onContinueToReview(currentId);
+              } else {
+                router.push(`/dashboard/leave/${currentId}/review`);
+              }
+            }}
+            disabled={!currentId}
+          >
+            Review Application
+          </Button>
+        </div>
+      )}
     </div>
   );
-}
+});
 
 function FieldError({ message, id }: { message: string; id: string }) {
   return (
