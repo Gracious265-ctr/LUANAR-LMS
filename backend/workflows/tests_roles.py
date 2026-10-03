@@ -43,6 +43,9 @@ User = get_user_model()
 
 LIST_URL = "/api/v1/approver-roles/"
 
+# What ``ensure_roles("dean")`` seeds the dean with, quoted by the edit tests.
+_DESCRIPTION = "Dean of the applicant's faculty."
+
 
 class RoleAPIBase(TestCase):
     def setUp(self):
@@ -64,28 +67,78 @@ class RoleAPIBase(TestCase):
         self.client.force_authenticate(self.hr)
 
     def payload(self, **overrides) -> dict:
-        data = {
-            "code": "examiner",
-            "label": "Examinations Officer",
-            "description": "Runs examination appeals",
-            "history_scope": ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            "handles_cancellation": True,
-            "is_institution_wide": False,
-        }
+        """A role create payload: a name, and only a name.
+
+        The code is derived from the label rather than sent, so it is deliberately
+        absent here. Passing one in ``overrides`` is how the tests below prove it
+        is ignored.
+        """
+        data = {"label": "Examinations Officer"}
         data.update(overrides)
         return data
 
 
 class RoleCreationTests(RoleAPIBase):
-    def test_hr_creates_a_role(self):
+    def test_hr_creates_a_role_from_its_name_alone(self):
         response = self.client.post(LIST_URL, self.payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role = ApproverRole.objects.get(code="examiner")
+        role = ApproverRole.objects.get(code="examinations-officer")
         self.assertEqual(role.label, "Examinations Officer")
-        self.assertEqual(response.data["code"], "examiner")
-        self.assertEqual(
-            response.data["history_scope"], ApproverRole.HistoryScope.SAME_DEPARTMENT
+        self.assertEqual(response.data["code"], "examinations-officer")
+        self.assertEqual(response.data["label"], "Examinations Officer")
+
+    def test_the_code_is_derived_from_the_name_and_ignores_a_supplied_one(self):
+        """HR gives the name; the identifier every rule reads is derived from it.
+
+        Asking for the same word twice is asking for the two to disagree, and
+        they would: the label is what every screen shows and the code is what
+        every rule reads. So a posted code is not honoured — it is derived.
+        """
+        response = self.client.post(
+            LIST_URL, self.payload(code="something-else"), format="json"
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            ApproverRole.objects.get(label="Examinations Officer").code,
+            "examinations-officer",
+        )
+
+    def test_names_that_slug_alike_get_distinct_codes(self):
+        before = ApproverRole.objects.count()
+        first = self.client.post(LIST_URL, {"label": "Estate Officer"}, format="json")
+        second = self.client.post(
+            LIST_URL, {"label": "Estate Officers"}, format="json"
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertNotEqual(
+            first.data["code"], second.data["code"]  # type: ignore[index]
+        )
+        self.assertEqual(ApproverRole.objects.count(), before + 2)
+
+    def test_a_name_that_slugifies_to_a_taken_code_gets_a_suffix(self):
+        """Two names can reduce to one slug; the second must not overwrite the first.
+
+        "Estate Officer" and "Estate Officers" are different roles, and the code
+        is derived from the name, so the collision has to be resolved rather than
+        refused — the names are still distinct and HR meant both of them.
+        """
+        first = self.client.post(LIST_URL, {"label": "Estate Officer"}, format="json")
+        # "Estate Officers" slugs to "estate-officers" on its own, so the clash
+        # is forced with a label whose slug is already taken.
+        second = self.client.post(LIST_URL, {"label": "Estate Officer!"}, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data["code"], "estate-officer")  # type: ignore[index]
+        self.assertNotEqual(
+            second.data["code"], "estate-officer"  # type: ignore[index]
+        )
+        self.assertTrue(str(second.data["code"]).startswith("estate-officer"))  # type: ignore[index]
+
+    def test_a_name_with_no_slug_characters_is_refused(self):
+        response = self.client.post(LIST_URL, {"label": "!!!"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("label", response.data)
 
     def test_creation_is_audited(self):
         self.client.post(LIST_URL, self.payload(), format="json")
@@ -93,19 +146,23 @@ class RoleCreationTests(RoleAPIBase):
             target_type=AuditEntry.TargetType.APPROVER_ROLE,
             action=AuditEntry.Action.CREATED,
         )
-        self.assertEqual(str(entry.target_id), str(ApproverRole.objects.get(code="examiner").pk))
+        self.assertEqual(
+            str(entry.target_id),
+            str(ApproverRole.objects.get(code="examinations-officer").pk),
+        )
         self.assertEqual(entry.actor, self.hr)
 
-    def test_duplicate_code_rejected(self):
-        ensure_roles("dean")
-        response = self.client.post(LIST_URL, self.payload(code="dean"), format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("code", response.data)
-        self.assertEqual(ApproverRole.objects.filter(code="dean").count(), 1)
+    def test_a_second_role_of_the_same_name_gets_its_own_code(self):
+        """Names are not unique, so the code must be able to disambiguate them.
 
-    def test_blank_code_rejected(self):
-        response = self.client.post(LIST_URL, self.payload(code="  "), format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        Refusing the duplicate instead would make the code derive-and-fail on a
+        name HR is allowed to reuse — and the retry that fixes it is what makes
+        the suffix approach worth having.
+        """
+        ensure_roles("dean")
+        response = self.client.post(LIST_URL, {"label": "Dean"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ApproverRole.objects.filter(code__startswith="dean").count(), 2)
 
     def test_blank_label_rejected(self):
         response = self.client.post(LIST_URL, self.payload(label=""), format="json")
@@ -245,17 +302,42 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
     def setUp(self):
         super().setUp()
         self.role = ensure_roles("dean")["dean"]
+        # The seeded dean ships with a description, so the before/after of an
+        # edit is read against what was actually there rather than "".
+        self.assertEqual(self.role.description, _DESCRIPTION)
 
     def test_code_cannot_be_changed(self):
+        """A posted code is ignored, because it was never the caller's to give.
+
+        The code is derived from the name at creation, so there is nothing to
+        change: sending one is not a request to rename the role, it is a field
+        that does not exist. It is silently ignored rather than refused, which
+        keeps a client that still sends the field working while the stored code
+        stays the derived one.
+        """
         response = self.client.patch(
             f"{LIST_URL}{self.role.pk}/", {"code": "provost"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("code", response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.role.refresh_from_db()
         self.assertEqual(self.role.code, "dean")
 
-    def test_code_change_is_refused_at_the_service_too(self):
+    def test_a_role_name_cannot_be_changed(self):
+        """The name is quoted by history, so it is fixed once the role exists.
+
+        Workflow stages and audit entries name the role. Renaming it would leave
+        every one of those quoting a string that no longer resolves to anything,
+        so the refusal points HR at creating a new role instead.
+        """
+        response = self.client.patch(
+            f"{LIST_URL}{self.role.pk}/", {"label": "Provost"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("label", response.data)
+        self.role.refresh_from_db()
+        self.assertEqual(self.role.label, "Dean")
+
+    def test_a_code_change_is_refused_at_the_service_too(self):
         with self.assertRaises(RoleActionError) as ctx:
             update_approver_role(
                 role=self.role, actor=self.hr, data={"code": "provost"}
@@ -264,28 +346,36 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
         self.role.refresh_from_db()
         self.assertEqual(self.role.code, "dean")
 
-    def test_label_and_description_stay_editable(self):
+    def test_description_and_behaviour_stay_editable(self):
         response = self.client.patch(
             f"{LIST_URL}{self.role.pk}/",
-            {"label": "Dean of Faculty", "description": "Faculty appeals"},
+            {
+                "description": "Faculty appeals",
+                "handles_cancellation": True,
+                "is_institution_wide": True,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.role.refresh_from_db()
-        self.assertEqual(self.role.label, "Dean of Faculty")
+        self.assertEqual(self.role.label, "Dean")
         self.assertEqual(self.role.description, "Faculty appeals")
+        self.assertTrue(self.role.handles_cancellation)
+        self.assertTrue(self.role.is_institution_wide)
 
     def test_an_edit_is_audited_with_before_and_after(self):
         self.client.patch(
-            f"{LIST_URL}{self.role.pk}/", {"label": "Dean of Faculty"}, format="json"
+            f"{LIST_URL}{self.role.pk}/",
+            {"description": "Faculty appeals"},
+            format="json",
         )
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.APPROVER_ROLE,
             target_id=str(self.role.pk),
             action=AuditEntry.Action.UPDATED,
         )
-        self.assertEqual(entry.detail["before"]["label"], "Dean")
-        self.assertEqual(entry.detail["after"]["label"], "Dean of Faculty")
+        self.assertEqual(entry.detail["before"]["description"], _DESCRIPTION)
+        self.assertEqual(entry.detail["after"]["description"], "Faculty appeals")
 
     def test_a_failing_audit_rolls_the_edit_back(self):
         with mock.patch(
@@ -293,10 +383,12 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
         ):
             with self.assertRaises(RuntimeError):
                 self.client.patch(
-                    f"{LIST_URL}{self.role.pk}/", {"label": "Nope"}, format="json"
+                    f"{LIST_URL}{self.role.pk}/",
+                    {"description": "Nope"},
+                    format="json",
                 )
         self.role.refresh_from_db()
-        self.assertEqual(self.role.label, "Dean")
+        self.assertEqual(self.role.description, _DESCRIPTION)
 
     def test_is_active_cannot_be_set_through_patch(self):
         """Retirement goes through DELETE so it always runs the usage guard."""

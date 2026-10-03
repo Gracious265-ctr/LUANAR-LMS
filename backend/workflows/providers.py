@@ -26,7 +26,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
-from users.models import User
+from users.models import Department, User
 
 from .models import ApproverRole, RoleAssignment, SectionMember, Team
 
@@ -90,11 +90,23 @@ def get_workflow_provider() -> WorkflowProvider:
 
 
 def _employee_key(application: Any) -> tuple[str, str]:
-    """The (category, department) pair the workflow scope matches against."""
+    """The (category, department) pair the workflow scope matches against.
+
+    ``EmployeeProfile.department`` is a :class:`~users.models.Department` row
+    now, but ``Workflow.department`` is still free text, so the comparison this
+    feeds needs the name. Taken via ``department_id`` rather than
+    ``department`` so a profile with no department cannot drag a query in just
+    to be compared as ``None``.
+    """
     profile = getattr(application.employee, "employee_profile", None)
     if profile is None:
         return ("", "")
-    return (profile.category, (profile.department or "").strip())
+    department = (
+        getattr(profile, "department", None) or Department.objects.only("name")
+        .filter(pk=profile.department_id)
+        .first()
+    )
+    return (profile.category, (department.name if department else "").strip())
 
 
 def _employee_team(application: Any):
@@ -115,76 +127,83 @@ def _institution_wide_holder_ids(role: ApproverRole) -> list[int]:
 
 
 def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple[int, ...]:
-    """The people entitled to act for ``section``, or raise.
+    """The one person entitled to act for ``section``, or raise.
 
     The single authoritative resolution algorithm:
 
-    1. The section's active members, minus the applicant. A section may name any
-       number of members, and the application is decided by whichever of them
-       acts first — so this is a set and its size is not a defect. The applicant
-       is removed here, at resolution time, so an approver can never be the
-       approver of their own leave no matter which surface asks later
-       (invariant 12.3).
-    2. Only when the section has no member **at all** and its role is
+    1. :attr:`Section.approver`, unless that is the applicant. A section has
+       exactly one approver by construction, so this returns a single id or
+       nothing. The applicant is excluded at resolution time rather than at
+       configuration time, so an approver can never be the approver of their own
+       leave no matter which surface asks later (invariant 12.3).
+    2. Only when the section has no approver at all and its role is
        institution-wide does the global holder decide — and then there must be
        exactly one, because a global fallback is not a race anyone can see.
     3. Otherwise the configuration is incomplete and the submission is refused.
 
-    The applicant exclusion in step 1 deliberately does not change *which* branch
-    is taken. A section whose only member is the applicant is a section that has
-    a member, so it does not fall through to the global holder: falling through
-    would hand the applicant's own leave to a global holder who may be the very
-    person who was excluded, or would let a global holder approve for a step HR
-    deliberately staffed. The "only member is the applicant" case therefore gets
-    its own error naming the real fix.
+    The fallback exists for a real case, not as a convenience. A department
+    cannot appoint a vice-chancellor, so an institution-wide step may reach its
+    office without a team staffing it — but only when the team has genuinely
+    left the step unstaffed. A section that *has* an approver never falls
+    through, so HR's explicit configuration always wins over the global holder.
 
-    Only memberships **in force today** are considered. A membership dated into
-    the future is a handover HR has scheduled, and a membership that has been
-    closed is history: routing to either would hand an approval to somebody who
-    was not, or is not yet, an approver for that step.
+    Only a **configured, active** approver routes. :attr:`Section.approver` is
+    the configuration; the effective-dated record is the roster. A step whose
+    approver has been deactivated falls through to the global fallback for an
+    institution-wide role and is refused otherwise, because routing to an inactive
+    account would hand an approval to somebody who cannot act.
 
     Every error names the role, names the section, and says what HR has to do
     about it.
     """
-    all_members = tuple(
-        SectionMember.objects.effective_on()
-        .filter(section=section, user__is_active=True)
-        .order_by("user_id")
-        .values_list("user_id", flat=True)
-    )
-    if not all_members:
-        role = section.approver_role
-        if role.is_institution_wide:
-            holders = _institution_wide_holder_ids(role)
-            if len(holders) == 1:
-                return (holders[0],)
-            if not holders:
+    role = section.approver_role
+    approver_id = section.approver_id
+    if approver_id is not None:
+        active = section.approver.is_active if section.approver_id else False
+        if active:
+            if applicant_id is not None and approver_id == applicant_id:
                 raise WorkflowConfigError(
-                    f'The "{section.name}" section has no members, and the '
-                    f"{role.label} role has no active holder. Add someone to the "
-                    "section, or ask HR to assign one."
+                    f"The approver of the \"{section.name}\" section is the "
+                    "applicant themself, and an approver cannot approve their own "
+                    "leave. Appoint somebody else to this step."
                 )
+            return (approver_id,)
+        # A deactivated account is not an approver. For an institution-wide role
+        # the office may still have a holder; for a team-scoped role the step is
+        # simply unstaffed and HR has to appoint somebody.
+        if not role.is_institution_wide:
             raise WorkflowConfigError(
-                f'The "{section.name}" section has no members, and the '
-                f"{role.label} role has multiple active holders. Add someone to "
-                "the section, or ask HR to designate exactly one."
+                f'The approver of the "{section.name}" section '
+                f"({section.approver.get_full_name() or section.approver.username}) "
+                "is no longer an active user. Appoint somebody else to this step."
+            )
+
+    if role.is_institution_wide:
+        holders = _institution_wide_holder_ids(role)
+        if len(holders) == 1:
+            holder = holders[0]
+            if applicant_id is not None and holder == applicant_id:
+                raise WorkflowConfigError(
+                    f'The "{section.name}" section routes to the '
+                    f"{role.label} role, whose only holder is the applicant "
+                    "themself, and an approver cannot approve their own leave."
+                )
+            return (holder,)
+        if not holders:
+            raise WorkflowConfigError(
+                f'The "{section.name}" section has no approver, and the '
+                f"{role.label} role has no active holder. Appoint somebody to "
+                "the step, or ask HR to assign one."
             )
         raise WorkflowConfigError(
-            f'The "{section.name}" section has no members. Add at least one '
-            "person who can act for it."
+            f'The "{section.name}" section has no approver, and the '
+            f"{role.label} role has multiple active holders. Appoint somebody to "
+            "the step, or ask HR to designate exactly one."
         )
 
-    members = all_members
-    if applicant_id is not None:
-        members = tuple(uid for uid in members if uid != applicant_id)
-    if members:
-        return members
-
     raise WorkflowConfigError(
-        f'The only member of the "{section.name}" section is the applicant '
-        "themself, and an approver cannot approve their own leave. Add "
-        "another member to the section, or ask Human Resources to appoint "
-        "them to a different approver role."
+        f'The "{section.name}" section has no approver. Appoint one of the '
+        f"{role.label} from the team's department."
     )
 
 

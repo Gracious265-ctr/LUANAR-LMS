@@ -1,11 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { Employee } from "@/lib/employees";
-import type { Team, TeamSection } from "@/lib/teams";
+import type { EligibleApprover, Team, TeamSection } from "@/lib/teams";
+import { listEligibleApprovers } from "@/lib/teams-client";
 import {
   addSectionMember,
   listSectionMemberHistory,
@@ -15,69 +14,110 @@ import {
 import type { SectionMember } from "@/lib/workflows";
 
 /**
- * Staffs one team's approval chain, one section at a time.
+ * Names the one person who decides at each step of a team's chain.
  *
- * A team no longer holds members itself — its chain's sections do, so there is
- * exactly one place a person is recorded as able to act. A team owns its chain
- * one-to-one, so nobody else can be looking at this roster or editing it.
- *
- * The roster is read from the section-members endpoint rather than flattened
- * team rows: it can show who is on a step and still say who is available at
- * every other step.
+ * A step has exactly one approver, so this is a picker per step rather than a
+ * roster: changing the approver is a handover, and the backend closes the
+ * outgoing person's period and opens the incoming one in the same action. The
+ * history is kept because a person who left a step in March still signed for it.
  */
-export function TeamMemberList({
-  team,
-  employees,
-}: {
-  team: Team;
-  employees: Employee[];
-}) {
+export function TeamMemberList({ team }: { team: Team }) {
   const router = useRouter();
-  const [roster, setRoster] = useState<Record<number, SectionMember[]>>({});
-  const [loadingRoster, setLoadingRoster] = useState(true);
+  const [candidates, setCandidates] = useState<Record<number, EligibleApprover[]>>(
+    {}
+  );
+  const [openMembership, setOpenMembership] = useState<
+    Record<number, SectionMember | null>
+  >({});
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState<"add" | number | null>(null);
-  const [addingTo, setAddingTo] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
   const [history, setHistory] = useState<Record<number, SectionMember[]>>({});
   const [showHistory, setShowHistory] = useState<Record<number, boolean>>({});
 
-  const activeEmployees = employees.filter((employee) => employee.is_active);
+  const roleIdByCode = useMemo(
+    () => new Map(team.stage_roles.map((role) => [role.code, role.id])),
+    [team.stage_roles]
+  );
 
   useEffect(() => {
+    if (team.department === null) {
+      return;
+    }
     let cancelled = false;
     Promise.all(
       team.sections.map(async (section) => {
-        const members = await listSectionMembers(section.id);
-        return [section.id, members] as const;
+        const roleId = roleIdByCode.get(section.approver_role);
+        const [people, periods] = await Promise.all([
+          roleId === undefined
+            ? Promise.resolve([] as EligibleApprover[])
+            : listEligibleApprovers(team.department as number, roleId),
+          listSectionMembers(section.id),
+        ]);
+        return [section.id, { people, open: periods[0] ?? null }] as const;
       })
     )
       .then((entries) => {
         if (cancelled) return;
-        setRoster(Object.fromEntries(entries));
+        const nextCandidates: Record<number, EligibleApprover[]> = {};
+        const nextOpen: Record<number, SectionMember | null> = {};
+        entries.forEach(([sectionId, value]) => {
+          nextCandidates[sectionId] = value.people;
+          nextOpen[sectionId] = value.open;
+        });
+        setCandidates(nextCandidates);
+        setOpenMembership(nextOpen);
       })
       .catch(() => {
         if (cancelled) return;
-        setError("Unable to load the section rosters. Please try again.");
+        setError("Unable to load who may approve for this team. Please try again.");
       })
       .finally(() => {
-        if (!cancelled) setLoadingRoster(false);
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-    // Refetch after a refresh re-drives the server props, so member counts and
-    // rosters stay in step.
-  }, [team.id, team.sections]);
+    // Re-run when the server props change after an appointment, so the current
+    // holder and the eligible list stay in step with the team.
+  }, [team.id, team.sections, team.department, roleIdByCode]);
 
-  async function reloadSection(sectionId: number) {
-    const members = await listSectionMembers(sectionId);
-    setRoster((current) => ({ ...current, [sectionId]: members }));
+  async function appoint(section: TeamSection, userId: number) {
+    setError("");
+    setBusy(section.id);
+    try {
+      await addSectionMember(section.id, userId);
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "An error occurred. Please try again."
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clear(section: TeamSection) {
+    const membership = openMembership[section.id];
+    if (!membership) return;
+    setError("");
+    setBusy(section.id);
+    try {
+      await removeSectionMember(membership.id);
+      setOpenMembership((current) => ({ ...current, [section.id]: null }));
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "An error occurred. Please try again."
+      );
+    } finally {
+      setBusy(null);
+    }
   }
 
   /**
    * History is fetched on demand and then cached, because a period is a fact
-   * about the past: it does not change while this screen is open, and asking
-   * again on every render would turn one click into a request per row.
+   * about the past: it does not change while this screen is open.
    */
   async function toggleHistory(sectionId: number) {
     const next = !showHistory[sectionId];
@@ -86,7 +126,6 @@ export function TeamMemberList({
       return;
     }
     try {
-      setHistory((current) => ({ ...current, [sectionId]: [] }));
       const periods = await listSectionMemberHistory(sectionId);
       setHistory((current) => ({ ...current, [sectionId]: periods }));
     } catch (err) {
@@ -96,81 +135,49 @@ export function TeamMemberList({
     }
   }
 
-  async function add(event: React.FormEvent<HTMLFormElement>, section: TeamSection) {
-    event.preventDefault();
-    setError("");
-    setBusy("add");
-
-    const formData = new FormData(event.currentTarget);
-    const user = String(formData.get("user") || "");
-    const effectiveFrom = String(formData.get("effective_from") || "");
-
-    if (!user) {
-      setError("Choose a person to staff this section.");
-      setBusy(null);
-      return;
-    }
-
-    try {
-      await addSectionMember(section.id, Number(user), effectiveFrom || undefined);
-      setAddingTo(null);
-      await reloadSection(section.id);
-      router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred. Please try again."
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function remove(section: TeamSection, membership: SectionMember) {
-    setError("");
-    setBusy(membership.id);
-    try {
-      await removeSectionMember(membership.id);
-      await reloadSection(section.id);
-      router.refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred. Please try again."
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
   if (team.sections.length === 0) {
     return (
       <p className="mt-3 text-sm text-text-muted">
-        This team has no approval steps, so there is nobody to staff. Add a
+        This team has no approval steps, so there is nobody to appoint. Add a
         step to its chain first.
+      </p>
+    );
+  }
+
+  if (team.department === null) {
+    return (
+      <p className="mt-3 text-sm text-text-muted">
+        This team is not in a department yet, and an approver is one of the
+        team&apos;s own employees. Choose a department in the team&apos;s details
+        first.
       </p>
     );
   }
 
   return (
     <div className="mt-3">
-      {loadingRoster ? (
-        <p className="text-sm text-text-muted">Loading section members…</p>
-      ) : intersectionCnt(team, roster) === 0 ? (
-        <p className="text-sm text-text-muted">
-          Nobody is on this team&apos;s sections yet. An application routed
-          here would have nobody to approve it.
-        </p>
+      {loading ? (
+        <p className="text-sm text-text-muted">Loading who can approve…</p>
       ) : null}
 
       <div className="space-y-3">
         {team.sections.map((section) => {
-          const members = roster[section.id] ?? [];
-          const candidates = activeEmployees.filter(
-            (employee) => !members.some((member) => member.user === employee.user_id)
-          );
+          const current = section.approver;
+          const people = candidates[section.id] ?? [];
+          // The current holder is offered even when the eligibility list has
+          // moved on, so the step never reads as unstaffed while it is held.
+          const options =
+            current && !people.some((person) => person.id === current.id)
+              ? [
+                  {
+                    id: current.id,
+                    full_name: current.user_name,
+                    email: current.user_email,
+                    designation: "",
+                  },
+                  ...people,
+                ]
+              : people;
           return (
             <div
               key={section.id}
@@ -186,125 +193,71 @@ export function TeamMemberList({
                   {section.approver_role_label}
                 </span>
                 <span className="text-xs text-text-muted">{section.name}</span>
-                <span className="text-xs text-text-muted">
-                  {section.member_count} member
-                  {section.member_count === 1 ? "" : "s"}
-                </span>
               </div>
 
-              {members.length > 0 ? (
-                <ul className="mt-2 space-y-1.5">
-                  {members.map((member) => (
-                    <li
-                      key={member.id}
-                      className="flex flex-wrap items-center gap-2 text-sm"
-                    >
-                      <span className="font-medium text-text-primary">
-                        {member.user_name}
-                      </span>
-                      <span className="text-text-muted">{member.user_email}</span>
-                      {member.effective_to ? (
-                        <span className="text-xs text-text-muted">
-                          until {formatDate(member.effective_to)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-text-muted">
-                          from {formatDate(member.effective_from)}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => remove(section, member)}
-                        disabled={busy === member.id}
-                        aria-label={`Remove ${member.user_name} from ${section.name}`}
-                        className="ml-auto rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busy === member.id ? "Removing..." : "Remove"}
-                      </button>
-                    </li>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label
+                  className="sr-only"
+                  htmlFor={`approver-${section.id}`}
+                >
+                  Approver for {section.name}
+                </label>
+                <select
+                  id={`approver-${section.id}`}
+                  value={current ? String(current.id) : ""}
+                  disabled={busy === section.id || options.length === 0}
+                  onChange={(event) => {
+                    if (event.target.value) {
+                      void appoint(section, Number(event.target.value));
+                    }
+                  }}
+                  className="min-w-52 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Nobody appointed</option>
+                  {options.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.full_name}
+                      {person.designation ? ` — ${person.designation}` : ""}
+                    </option>
                   ))}
-                </ul>
-              ) : (
-                <p className="mt-2 text-xs text-text-muted">
-                  Nobody can act for this section yet.
-                </p>
-              )}
-
-              {!addingTo || addingTo !== section.id ? (
+                </select>
+                {current ? (
+                  <button
+                    type="button"
+                    onClick={() => void clear(section)}
+                    disabled={busy === section.id}
+                    aria-label={`Remove ${current.user_name} from ${section.name}`}
+                    className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy === section.id ? "Saving..." : "Remove"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => toggleHistory(section.id)}
-                  aria-label={`Show past members of ${section.name}`}
+                  onClick={() => void toggleHistory(section.id)}
+                  aria-label={`Show past approvers of ${section.name}`}
                   aria-pressed={Boolean(showHistory[section.id])}
-                  className="mt-2 ml-auto block text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                  className="ml-auto text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {showHistory[section.id]
-                    ? "Hide past members"
+                    ? "Hide past approvers"
                     : "Who was here before?"}
                 </button>
+              </div>
+
+              {options.length === 0 ? (
+                <p className="mt-1 text-xs text-text-muted">
+                  Nobody in this department holds this role yet, so this step has
+                  nobody to appoint.
+                </p>
               ) : null}
 
               {showHistory[section.id] ? (
-                <PastMembers section={section} periods={history[section.id] ?? []} />
+                <PastApprovers
+                  section={section}
+                  periods={history[section.id] ?? []}
+                />
               ) : null}
-
-              {addingTo === section.id ? (
-                <form
-                  onSubmit={(event) => add(event, section)}
-                  className="mt-2 flex flex-wrap items-center gap-2"
-                >
-                  <label className="sr-only" htmlFor={`add-${section.id}`}>
-                    Add a member to {section.name}
-                  </label>
-                  <select
-                    id={`add-${section.id}`}
-                    name="user"
-                    className="min-w-44 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-                  >
-                    <option value="">Choose a person…</option>
-                    {candidates.map((employee) => (
-                      <option key={employee.user_id} value={employee.user_id}>
-                        {employee.full_name || employee.email}
-                      </option>
-                    ))}
-                  </select>
-                  <label
-                    className="flex items-center gap-1.5 text-xs text-text-secondary"
-                  >
-                    From
-                    <input
-                      type="date"
-                      name="effective_from"
-                      aria-label={`Start date for a member of ${section.name}`}
-                      className="rounded-md border border-input-border bg-input-background px-2 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={busy === "add"}
-                    className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busy === "add" ? "Adding..." : "Add"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddingTo(null)}
-                    className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setAddingTo(section.id)}
-                  disabled={candidates.length === 0}
-                  className="mt-2 inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add a member
-                </button>
-              )}
             </div>
           );
         })}
@@ -313,8 +266,9 @@ export function TeamMemberList({
       {error && <p className="mt-3 text-sm text-status-rejected">{error}</p>}
 
       <p className="mt-2 text-xs text-text-muted">
-        Each person is recorded in one place, on this team&apos;s own chain, so
-        what you see here is exactly who can act for it.
+        Each step has exactly one approver. Changing it is a handover: the
+        person leaving stops from that day and the record of who held the step
+        is kept.
       </p>
     </div>
   );
@@ -325,9 +279,8 @@ export function TeamMemberList({
  *
  * Worth showing: a person who left a step in March still signed for it, and
  * "who could act on the second" has to be answerable long after the handover.
- * An empty period is not shown — it says somebody held a step they never did.
  */
-function PastMembers({
+function PastApprovers({
   section,
   periods,
 }: {
@@ -368,13 +321,4 @@ function formatDate(iso: string): string {
     year: "numeric",
     timeZone: "UTC",
   }).format(date);
-}
-
-/** How many distinct people sit on at least one of this team's sections. */
-function intersectionCnt(team: Team, roster: Record<number, SectionMember[]>): number {
-  const people = new Set<number>();
-  for (const section of team.sections) {
-    (roster[section.id] ?? []).forEach((member) => people.add(member.user));
-  }
-  return people.size;
 }

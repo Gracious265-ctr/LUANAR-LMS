@@ -2,15 +2,17 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
-from leave.models import GradeEntitlement, LeaveRule, LeaveType
 from users.models import EmployeeProfile
 
 User = get_user_model()
 
 DEV_PASSWORD = "testpass123"
 
+# The ``department`` values below are documentation of where these people would
+# sit in a real deployment. They are deliberately not applied: seeding a
+# department would be business data, and HR is the one who creates departments
+# through the frontend.
 USERS = [
     {
         "username": "employee@test.luanar",
@@ -64,7 +66,10 @@ USERS = [
         "last_name": "Dean",
         "role": User.Role.APPROVER,
         "profile": {
-            "department": "Faculty of Agriculture",
+            # Bunda College, not a separate "Faculty of Agriculture": under Unit
+            # 10 an approver may only be appointed on a team in their own
+            # department, and the dean is appointed on the Bunda College Team.
+            "department": "Bunda College",
             "designation": "Dean",
             "category": EmployeeProfile.Category.ACADEMIC,
             "gender": EmployeeProfile.Gender.MALE,
@@ -117,15 +122,50 @@ USERS = [
             "appointment_date": date(2019, 2, 1),
         },
     },
+    # Central Administration's own supervisor and HOD. They exist because the
+    # Administration Team is staffed from its own department (Unit 10): the
+    # academic supervisor and HOD sit in Bunda College and so cannot be
+    # appointed on this chain, which is why it needs its own pair.
+    {
+        "username": "admin-supervisor@test.luanar",
+        "email": "admin-supervisor@test.luanar",
+        "first_name": "Test",
+        "last_name": "Admin",
+        "role": User.Role.APPROVER,
+        "profile": {
+            "department": "Administration",
+            "designation": "Administrative Supervisor",
+            "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.MALE,
+            "grade": "E",
+            "appointment_date": date(2017, 5, 1),
+        },
+    },
+    {
+        "username": "admin-hod@test.luanar",
+        "email": "admin-hod@test.luanar",
+        "first_name": "Test",
+        "last_name": "Admin",
+        "role": User.Role.APPROVER,
+        "profile": {
+            "department": "Administration",
+            "designation": "Head of Administration",
+            "category": EmployeeProfile.Category.ADMINISTRATION,
+            "gender": EmployeeProfile.Gender.FEMALE,
+            "grade": "H",
+            "appointment_date": date(2013, 9, 1),
+        },
+    },
 ]
 
 
 class Command(BaseCommand):
     help = (
-        "Seed development test users. The former per-level accounts "
-        "(supervisor/hod/dean/registrar/dvc) all have User.role=approver now: "
-        "which approval roles a person holds is seeded by seed_approvals_dev as "
-        "TeamMember/RoleAssignment rows, not by the user row."
+        "Create development login accounts (and their empty profiles). This is a "
+        "convenience for local sign-in only: it seeds no business data — no "
+        "departments, roles, teams, workflows, entitlements, or leave types. Those "
+        "are configured through the frontend, by a superadmin and then HR, so the "
+        "application has to work from an empty database without this command."
     )
 
     def handle(self, *args, **options):
@@ -162,111 +202,20 @@ class Command(BaseCommand):
             else:
                 updated_count += 1
 
+            # A profile carries per-person facts (designation, grade, gender),
+            # not configuration. The department is deliberately left unset: a
+            # seeded department would be exactly the kind of hidden business data
+            # this command must not create. HR assigns departments through the
+            # frontend.
+            profile_defaults = dict(profile_data)
+            profile_defaults.pop("department", None)
             EmployeeProfile.objects.update_or_create(
                 user=user,
-                defaults=profile_data,
+                defaults=profile_defaults,
             )
-
-        self._seed_default_entitlements()
-        self._seed_default_leave_types()
 
         self.stdout.write(
             self.style.SUCCESS(
                 f"\nDone! Users created: {created_count}, updated: {updated_count}"
             )
         )
-
-    def _seed_default_entitlements(self):
-        """Seed the default grade/entitlement bands (idempotent)."""
-        default_bands = [
-            ("A", "C", 21),
-            ("D", "G", 24),
-            ("H", "U", 30),
-        ]
-        effective_from = timezone.localdate()
-        created_count = 0
-
-        for grade_start, grade_end, days in default_bands:
-            _, created = GradeEntitlement.objects.get_or_create(
-                grade_start=grade_start,
-                grade_end=grade_end,
-                effective_from=effective_from,
-                defaults={"days": days},
-            )
-            if created:
-                created_count += 1
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Created entitlement: {grade_start}–{grade_end} → {days} days"
-                    )
-                )
-
-        if created_count:
-            self.stdout.write(self.style.SUCCESS(f"Entitlements created: {created_count}"))
-    def _seed_default_leave_types(self):
-        """Seed the built-in leave types and default rules (idempotent)."""
-        default_rules = [
-            {
-                "code": "annual",
-                "name": "Annual leave",
-                "max_duration_days": 30,
-                "min_notice_days": 5,
-                "consumes_annual_entitlement": True,
-            },
-            {
-                "code": "maternity",
-                "name": "Maternity leave",
-                "max_duration_days": 90,
-                "requires_supporting_document": True,
-                "eligibility_rules": [
-                    {"type": "gender", "params": {"allowed": ["F"]}},
-                ],
-            },
-            {
-                "code": "paternity",
-                "name": "Paternity leave",
-                "max_duration_days": 10,
-                "eligibility_rules": [
-                    {"type": "gender", "params": {"allowed": ["M"]}},
-                ],
-            },
-            {
-                "code": "compassionate",
-                "name": "Compassionate leave",
-                "max_duration_days": 5,
-            },
-        ]
-        effective_from = timezone.localdate()
-        created_count = 0
-
-        for item in default_rules:
-            leave_type, _ = LeaveType.objects.get_or_create(
-                code=item["code"],
-                defaults={"name": item["name"]},
-            )
-            _, created = LeaveRule.objects.update_or_create(
-                leave_type=leave_type,
-                effective_from=effective_from,
-                defaults={
-                    "max_duration_days": item["max_duration_days"],
-                    "min_notice_days": item.get("min_notice_days", 0),
-                    "requires_supporting_document": item.get(
-                        "requires_supporting_document", False
-                    ),
-                    "eligibility_rules": item.get("eligibility_rules", []),
-                    "consumes_annual_entitlement": item.get(
-                        "consumes_annual_entitlement", False
-                    ),
-                },
-            )
-            if created:
-                created_count += 1
-                self.stdout.write(
-                    self.style.SUCCESS(
-                        f"Created leave rule: {leave_type.name} → "
-                        f"{item['max_duration_days']} days"
-                    )
-                )
-
-        if created_count:
-            self.stdout.write(self.style.SUCCESS(f"Leave rules created: {created_count}"))

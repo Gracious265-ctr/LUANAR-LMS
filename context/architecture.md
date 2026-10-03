@@ -176,9 +176,10 @@ Examples:
 | Employee grades                         | Database |
 | Grade entitlement configuration         | Database |
 | Approver-role definitions (HR-managed)  | Database |
+| Departments (HR-managed)                | Database |
 | Campuses                                | Database |
-| Teams (workflow + campus scoped)        | Database |
-| Team memberships (role held by person)  | Database |
+| Teams (workflow + department scoped)    | Database |
+| Section approvers (one per step, effective-dated) | Database |
 | Institution-wide role assignments       | Database |
 | Leave applications                      | Database |
 | Leave types                             | Database |
@@ -266,6 +267,8 @@ Permissions
 
 This allows the application's internal authorization model to remain stable even if the institutional authentication mechanism changes.
 
+Until that integration is confirmed, the product issues its own password accounts. A superuser creates `hr` accounts in the Django admin; HR creates every other account from the employee directory and sets that person's initial password, and alerts nobody by email. `User.username` mirrors `User.email`, and `POST /api/v1/auth/login/` authenticates `email` + `password`. There is no self-service password change: only HR (or an administrator) sets a password. A directory-created employee is therefore a normal `employee`, and a password shorter than eight characters is refused. The full decision record is `context/specs/27-hr-managed-credentials.md`.
+
 ---
 
 ### 6.2 User Ownership
@@ -300,7 +303,7 @@ Access is controlled by two separate things, and conflating them was the defect 
 * `approver` — the approver queue, review, delegation, and cover surfaces
 * `hr` — organization-wide administrative/configuration access according to HR permissions
 
-`User.role` is a reachability label. It is **not** a place in an approval chain, and a person's authority to approve a given application is never derived from it.
+`User.role` is a reachability label. It is **not** a place in an approval chain, and a person's authority to approve a given application is never derived from it. An administrator grants `hr`; the employee directory cannot grant or revoke any role, and it always creates a normal `employee`. Approver standing comes from a workflow appointment (a team/section membership or an institution-wide `RoleAssignment`), never from editing the account.
 
 **2. Approver role** — a position in an approval chain, maintained by HR as configuration (`ApproverRole`: `code`, `label`, `description`, `history_scope`, `is_institution_wide`, `handles_cancellation`). Approver roles are open-ended: HR defines the codes. No role is privileged in code.
 
@@ -380,6 +383,8 @@ Supervisor → HOD → Registrar → DVC
 ```
 
 Different employee categories may use different configured workflows.
+
+A team belongs to exactly one `Department`, and eligibility to approve is a fact about where the person works: a non-institution-wide approver must be an employee of the team's own department. Each workflow section has exactly one approver (`Section.approver`); replacements are effective-dated handovers that keep the closed periods as history, so "who could act on a given day" stays answerable after a handover.
 
 A stage names an approver role by `code`, resolved at submission time against the `ApproverRole` registry — not against a list in code. Consequences that the implementation must honour:
 

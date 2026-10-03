@@ -247,10 +247,14 @@ def peer_conflicts(plan: LeaveDayPlan) -> list[dict]:
             if block.end_date < other.start_date or other.end_date < block.start_date:
                 continue
             peer_profile = getattr(other.plan.employee, "employee_profile", None)
+            # The name, not the row: this payload is returned to the browser.
+            peer_department = ""
+            if peer_profile is not None and peer_profile.department_id is not None:
+                peer_department = peer_profile.department.name
             conflicts.append(
                 {
                     "peer_name": other.plan.employee.get_full_name(),
-                    "peer_department": (peer_profile.department if peer_profile else "") or "",
+                    "peer_department": peer_department,
                     "leave_type_id": other.leave_type_id,
                     "start_date": other.start_date.isoformat(),
                     "end_date": other.end_date.isoformat(),

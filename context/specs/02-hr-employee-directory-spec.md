@@ -1,5 +1,12 @@
 # Unit 2 — HR Employee Directory
 
+> **Superseded in part by Unit 27** (`context/specs/27-hr-managed-credentials.md`,
+> 2026-10-01): the "unusable password" assumption below no longer holds. A
+> directory-created employee now gets a real, HR-set password, and `POST
+> /api/v1/employees/` requires one. Department is also now the `users.Department`
+> model, not free text (Unit 20). Everything else in this spec still describes
+> the directory.
+
 ## Goal
 
 Create the HR employee-management experience: an HR-only API and frontend pages for listing (with search and sorting), viewing, creating, editing, and activating/deactivating employee records. For development/testing, HR is the authoritative source of employee records (build-plan §4, Unit 2).

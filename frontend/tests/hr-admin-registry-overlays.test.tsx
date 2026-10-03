@@ -14,7 +14,6 @@ import {
 } from "@/lib/leave-rules-client";
 
 import { pickDate } from "./helpers/date";
-import { selectOption } from "./helpers/select";
 
 import { EntitlementsSection } from "@/components/hr/EntitlementsSection";
 import { LeaveRulesSection } from "@/components/hr/LeaveRulesSection";
@@ -57,6 +56,7 @@ const rules: LeaveRule[] = [
   {
     id: 7,
     leave_type: 1,
+    leave_type_code: "annual",
     leave_type_name: "Annual leave",
     max_duration_days: 30,
     min_notice_days: 14,
@@ -301,12 +301,12 @@ describe("HR admin registry overlays — wave 1", () => {
         <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
       );
 
-      // A create needs its required fields: the leave type is a Radix trigger so
-      // the browser cannot enforce `required`, and the date picker is the same.
-      await selectOption(
-        screen.getByRole("combobox", { name: "Leave type" }),
-        "Annual leave"
-      );
+      // A create needs its required fields. The leave type is a native `select`
+      // so that a type created from this same form appears in it; the browser
+      // can enforce `required` on it, and the date picker is still not.
+      fireEvent.change(screen.getByLabelText("Leave type"), {
+        target: { value: "1" },
+      });
       fireEvent.change(screen.getByLabelText("Maximum duration (days)"), {
         target: { value: "21" },
       });
@@ -348,7 +348,7 @@ describe("HR admin registry overlays — wave 1", () => {
       searchParamsRef.current = new URLSearchParams("role=11");
       render(<RolesSection roles={roles} assignments={noAssignments} />);
 
-      expect(screen.getByLabelText("Label")).toHaveValue("Head of department");
+      expect(screen.getByLabelText("Name")).toHaveValue("Head of department");
     });
 
     it("explains a deep link to a role that no longer exists", () => {
@@ -362,14 +362,12 @@ describe("HR admin registry overlays — wave 1", () => {
       searchParamsRef.current = new URLSearchParams("role=new");
       render(<RolesSection roles={roles} assignments={noAssignments} />);
 
-      // Both inputs are `required`, and jsdom does enforce constraint
-      // validation on a click-driven submit: leaving `code` blank silently
-      // blocks the handler rather than reaching the client.
-      fireEvent.change(screen.getByLabelText("Label"), {
+      // Only the name is asked for, and it is `required`: jsdom enforces
+      // constraint validation on a click-driven submit, so a blank name
+      // silently blocks the handler rather than reaching the client. The code
+      // is derived from it, so there is nothing to type.
+      fireEvent.change(screen.getByLabelText("Name"), {
         target: { value: "Registrar" },
-      });
-      fireEvent.change(screen.getByLabelText("Code"), {
-        target: { value: "registrar" },
       });
 
       fireEvent.click(screen.getByRole("button", { name: "Create role" }));

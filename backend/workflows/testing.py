@@ -12,19 +12,20 @@ Three builders cover almost everything:
 * :func:`make_approver` — one person holding one approver role, institution-wide.
   Enough for roles the routing tests resolve through ``RoleAssignment``.
 * :func:`build_routing` — a full team with a workflow, a section per chain step,
-  and a member per section, plus employees placed on the team. This is the shape
-  :class:`~workflows.providers.DatabaseWorkflowProvider` reads, so it is what the
-  database-provider tests should use.
-* :func:`add_approver_to_section` — a *second* member on an existing section.
-  A section is resolved by whoever acts first, so most routing tests want exactly
-  one member and the interesting cases are the ones that add another.
+  and an approver per section, plus employees placed on the team. This is the
+  shape :class:`~workflows.providers.DatabaseWorkflowProvider` reads, so it is
+  what the database-provider tests should use.
+* :func:`appoint_approver_to_section` — appoint or replace the one approver of an
+  existing step. A step has a single approver, so this closes the previous
+  holder's period rather than adding a second person beside them.
 
 All are idempotent on natural keys, so a ``setUp`` can call them freely.
 """
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
-from users.models import EmployeeProfile
+from users.models import Department, EmployeeProfile
 
 from .models import (
     ApproverRole,
@@ -36,6 +37,27 @@ from .models import (
 )
 
 DEV_PASSWORD = "testpass123"
+
+
+def department_for(name: str | None) -> Department | None:
+    """Resolve a department *name* to the row, creating it if needed.
+
+    Fixtures take ``department="Administration"`` because that is what the test
+    means to say. ``Department`` rows are now shared reference data, so each
+    builder resolves the name here rather than making every caller do it — which
+    also stops two tests quietly creating two "Administration" rows.
+
+    A blank or missing name resolves to ``None``, which the models allow: it is
+    how a fixture expresses "this record has no department yet".
+
+    Deliberately not named ``department``: :func:`make_employee` and
+    :func:`make_team` both have a ``department`` parameter, which would shadow
+    this and fail with a confusing "str is not callable" from inside the
+    builder that was supposed to be translating it.
+    """
+    if not name:
+        return None
+    return Department.objects.get_or_create(name=name)[0]
 
 # The six shipped roles, with the behaviour each one carries. Mirrors the seed and
 # migration 0011; kept here as data so a test can assert on exact values.
@@ -119,7 +141,7 @@ def make_employee(
     )
     EmployeeProfile.objects.create(
         user=user,
-        department=department,
+        department=department_for(department),
         faculty=faculty,
         category=category,
         grade="B",
@@ -138,30 +160,45 @@ def make_approver(
 ):
     """A person holding one approver role, by default institution-wide.
 
+    Idempotent on the username: a repeated call returns the same person rather
+    than colliding on ``users_user_username_key``. Several tests build more than
+    one team with the same roles, and each team needs its own approver in its own
+    department, so the *caller* passes a distinct ``username`` when it needs a
+    distinct person — which is exactly the distinction it is trying to express.
+
     ``User.role`` is set to ``APPROVER`` for realism, but that value is *not* what
-    makes them an approver — the :class:`RoleAssignment` row is. Tests that want
-    to prove the distinction can set ``user.role`` back to ``EMPLOYEE``
-    afterwards and assert they are still an approver.
+    makes them an approver — the :class:`RoleAssignment` row is, or a section
+    appointment. Tests that want to prove the distinction can set ``user.role``
+    back to ``EMPLOYEE`` afterwards and assert they are still an approver.
     """
     User = get_user_model()
     roles = roles or ensure_roles(role_code)
     role = roles[role_code]
     username = username or f"approver-{role_code}@test.luanar"
-    user = User.objects.create_user(
-        username=username,
-        email=username,
-        password=DEV_PASSWORD,
-        first_name="Test",
-        last_name=role.label,
-        role=User.Role.APPROVER,
-    )
-    EmployeeProfile.objects.create(
+    user = User.objects.filter(username=username).first()
+    if user is None:
+        user = User.objects.create_user(
+            username=username,
+            email=username,
+            password=DEV_PASSWORD,
+            first_name="Test",
+            last_name=role.label,
+            role=User.Role.APPROVER,
+        )
+    profile, _ = EmployeeProfile.objects.update_or_create(
         user=user,
-        department=employee_kwargs.pop("department", "Administration"),
-        faculty=employee_kwargs.pop("faculty", "Faculty of Science"),
-        category=employee_kwargs.pop("category", EmployeeProfile.Category.ADMINISTRATION),
-        grade=employee_kwargs.pop("grade", "G"),
+        defaults={
+            "department": department_for(
+                employee_kwargs.pop("department", "Administration")
+            ),
+            "faculty": employee_kwargs.pop("faculty", "Faculty of Science"),
+            "category": employee_kwargs.pop(
+                "category", EmployeeProfile.Category.ADMINISTRATION
+            ),
+            "grade": employee_kwargs.pop("grade", "G"),
+        },
     )
+    assert profile is not None
     if institution_wide:
         role.is_institution_wide = True
         role.save(update_fields=["is_institution_wide"])
@@ -219,16 +256,40 @@ def make_stage(workflow, order: int, role_code: str):
     return make_section(workflow, order, role_code)
 
 
-def add_approver_to_section(section, role_code: str, *, user=None):
-    """Put one more person on ``section`` so it has several possible approvers.
+def appoint_approver_to_section(section, role_code: str, *, user=None, department: str = ""):
+    """Appoint one person as ``section``'s approver and record the period.
 
-    This is the capability sections exist for: a step two people may act on. The
-    second member is a *set* addition, not a replacement, so the section still
-    routes to whoever the test built first.
+    The step has exactly one approver, so this is a *replacement* when the step
+    already had one: the outgoing person's period is closed rather than left open
+    alongside the new one. The same relationship the API's add-member action
+    writes — ``Section.approver`` plus the ``SectionMember`` record — is written
+    here, so fixtures exercise the real graph.
+
+    The default department matches the section's team so the appointment passes
+    the same department rule a real write would.
     """
     roles = ensure_roles(role_code)
-    user = user or make_approver(role_code, roles=roles, institution_wide=False)
-    SectionMember.objects.get_or_create(section=section, user=user)
+    if user is None:
+        team = getattr(section.workflow, "team", None)
+        resolved = department or (
+            team.department.name if team is not None and team.department_id else ""
+        )
+        user = make_approver(
+            role_code, roles=roles, institution_wide=False, department=resolved
+        )
+    previous = section.approver
+    if previous is not None and previous.pk != user.pk:
+        SectionMember.objects.filter(
+            section=section, user=previous, effective_to__isnull=True
+        ).update(effective_to=timezone.localdate())
+    section.approver = user
+    section.save(update_fields=["approver"])
+    SectionMember.objects.update_or_create(
+        section=section,
+        user=user,
+        effective_to__isnull=True,
+        defaults={"effective_from": timezone.localdate()},
+    )
     return user
 
 
@@ -253,9 +314,14 @@ def make_team(
 
     ``role_codes`` says which sections to staff, and it does **not** have to
     cover the whole workflow. A section whose role is not listed is left with no
-    member, which is how a test reaches the institution-wide fallback, or a
-    section with nobody to act for it. Use :func:`add_approver_to_section` to put
-    a second person on one of the sections built here.
+    approver, which is how a test reaches the institution-wide fallback, or a
+    step with nobody to act for it. Use :func:`appoint_approver_to_section` to
+    appoint somebody to one of the sections built here.
+
+    Approvers are built inside ``department`` (or "Administration" when it is
+    blank) because a team-scoped approver must be an employee of the team's own
+    department — the same rule a real write enforces, so a fixture cannot build a
+    team that the product would refuse.
 
     ``status`` defaults to active because a team that cannot route is a special
     case, not the default state of a routing fixture. The model itself defaults
@@ -270,12 +336,13 @@ def make_team(
             "code": code or name.lower().replace(" ", "-"),
             "workflow": workflow,
             "status": status,
-            "department": department,
+            "department": department_for(department),
             "effective_from": effective_from,
             "effective_to": effective_to,
         },
     )
     wanted = set(role_codes)
+    approver_department = department or "Administration"
     sections = [
         section
         for section in team.workflow.sections.order_by("order").select_related(
@@ -287,13 +354,23 @@ def make_team(
         role_code = section.approver_role.code
         user = (approvers or {}).get(role_code)
         if user is None:
-            user = make_approver(role_code, roles=roles)
-        SectionMember.objects.get_or_create(section=section, user=user)
+            # The username carries the team so two teams in one test get two
+            # different people: one approver may hold one role per department,
+            # and two teams of the same department would otherwise appoint the
+            # same fixture user twice and quietly share an approver.
+            user = make_approver(
+                role_code,
+                username=f"approver-{team.code}-{role_code}@test.luanar",
+                roles=roles,
+                institution_wide=False,
+                department=approver_department,
+            )
+        appoint_approver_to_section(section, role_code, user=user)
     for employee in employees:
         profile = EmployeeProfile.objects.filter(user=employee).first()
         if profile is None:
             EmployeeProfile.objects.create(
-                user=employee, department="Administration", grade="B", team=team
+                user=employee, department=department_for("Administration"), grade="B", team=team
             )
         else:
             profile.team = team
@@ -347,7 +424,7 @@ def build_routing(
     profile = EmployeeProfile.objects.filter(user=employee).first()
     if profile is None:
         EmployeeProfile.objects.create(
-            user=employee, department="Administration", grade="B", team=team
+            user=employee, department=department_for("Administration"), grade="B", team=team
         )
     else:
         profile.team = team

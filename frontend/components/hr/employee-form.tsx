@@ -3,11 +3,12 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
-import type { Employee, TeamOption, UserRole } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
+import type { Department } from "@/lib/departments";
+import { createDepartment } from "@/lib/departments-client";
 import { apiErrorMessage } from "@/lib/utils";
-import { Field, Input } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -15,6 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 
@@ -23,24 +26,28 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: "administration", label: "Administration" },
 ];
 
+
 /**
- * What an account can reach. An approver position is not chosen here — it is
- * held on a team, or granted institution-wide from the Roles page — so this list
- * covers system access only.
+ * What an account can reach, said in words.
+ *
+ * This is displayed, not chosen: the directory creates normal employees,
+ * approver access follows from a workflow appointment, and an HR account is
+ * created by an administrator. Showing the current value keeps an edit from
+ * looking as though it could change it.
  */
-const ROLES: { value: UserRole; label: string }[] = [
-  { value: "employee", label: "Employee" },
-  { value: "approver", label: "Approver" },
-  { value: "hr", label: "Human Resources" },
-];
+const ROLE_LABELS: Record<UserRole, string> = {
+  employee: "Employee",
+  approver: "Approver",
+  hr: "Human Resources",
+};
 
 export function EmployeeForm({
   employee,
   endpoint,
   method,
   gradeOptions = [],
-  teams = [],
-  teamsError = "",
+  departments = [],
+  departmentsError = "",
   onSuccess,
   onCancel,
 }: {
@@ -48,9 +55,9 @@ export function EmployeeForm({
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
-  teams?: TeamOption[];
-  /** Set when the teams fetch failed; the picker is then shown unusable. */
-  teamsError?: string;
+  departments?: Department[];
+  /** Set when the departments fetch failed; the picker is then shown unusable. */
+  departmentsError?: string;
   /**
    * Called with the saved employee instead of navigating, so a host overlay can
    * close and refresh in place. Omit it and the form navigates to the list
@@ -64,6 +71,41 @@ export function EmployeeForm({
   const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The server-loaded options are the starting point, not the final word: HR
+  // can create a department from this form, and the option they just made must
+  // appear in the picker without leaving the page.
+  const [departmentOptions, setDepartmentOptions] = useState<Department[]>(departments);
+  const [newDepartment, setNewDepartment] = useState("");
+  const [showNewDepartment, setShowNewDepartment] = useState(false);
+  const [creatingDepartment, setCreatingDepartment] = useState(false);
+  const [departmentCreateError, setDepartmentCreateError] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState(
+    employee?.department === null || employee?.department === undefined
+      ? ""
+      : String(employee.department)
+  );
+
+  async function handleCreateDepartment() {
+    const name = newDepartment.trim();
+    if (name === "") return;
+    setDepartmentCreateError("");
+    setCreatingDepartment(true);
+    try {
+      const created = await createDepartment({ name });
+      setDepartmentOptions((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setSelectedDepartment(String(created.id));
+      setNewDepartment("");
+      setShowNewDepartment(false);
+    } catch (err) {
+      setDepartmentCreateError(
+        err instanceof Error ? err.message : "Could not create the department."
+      );
+    } finally {
+      setCreatingDepartment(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,7 +113,7 @@ export function EmployeeForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const teamValue = String(formData.get("team") || "");
+    const departmentValue = String(formData.get("department") || "");
 
     try {
       const response = await fetch(endpoint, {
@@ -81,13 +123,11 @@ export function EmployeeForm({
           first_name: formData.get("first_name"),
           last_name: formData.get("last_name"),
           email: formData.get("email"),
-          role: formData.get("role"),
           designation: formData.get("designation"),
-          department: formData.get("department"),
+          department: departmentValue ? Number(departmentValue) : null,
           category: formData.get("category"),
           grade: formData.get("grade"),
           appointment_date: formData.get("appointment_date") || null,
-          team: teamValue && teamValue !== "none" ? Number(teamValue) : null,
           is_active: formData.get("is_active") === "on",
         }),
       });
@@ -149,64 +189,115 @@ export function EmployeeForm({
         />
       </Field>
 
-      <Field label="Role" htmlFor="role">
-        <Select name="role" defaultValue={employee?.role ?? "employee"}>
-          <SelectTrigger id="role">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROLES.map((role) => (
-              <SelectItem key={role.value} value={role.value}>
-                {role.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-
-<Field
-        label="Team"
-        htmlFor="team"
-        error={teamsError || null}
-        hint="Leave applications from this employee follow the team's chain. Only a team in force routes anything, so a team still being set up will not."
-      >
-        <Select
-          name="team"
-          defaultValue={String(employee?.team ?? "none")}
-          disabled={teamsError !== ""}
+      <div>
+        <label
+          htmlFor="role"
+          className="mb-1 block text-sm font-medium text-text-primary"
         >
-          <SelectTrigger id="team">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No team</SelectItem>
-            {teams.map((team) => (
-              <SelectItem key={team.id} value={String(team.id)}>
-                {team.name}
-                {teamNote(team) ? ` (${teamNote(team)})` : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
+          Role
+        </label>
+        <input
+          id="role"
+          name="role"
+          readOnly
+          value={ROLE_LABELS[employee?.role ?? "employee"]}
+          className="w-full cursor-not-allowed rounded-md border border-input-border bg-input-background px-3 py-2 text-text-muted focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-text-muted">
+          The directory creates normal employees. Approver access follows from
+          the workflow stage you appoint somebody to, and an HR account is
+          created by an administrator.
+        </p>
+      </div>
 
-      <Field label="Designation" htmlFor="designation">
-        <Input
+      <div>
+        <label
+          htmlFor="designation"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Designation
+        </label>
+        <input
           id="designation"
           name="designation"
           defaultValue={employee?.designation}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Lecturer"
         />
-      </Field>
+      </div>
 
-      <Field label="Department / Faculty" htmlFor="department">
-        <Input
+      <div>
+        <label
+          htmlFor="department"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Department
+        </label>
+        <select
           id="department"
           name="department"
-          defaultValue={employee?.department}
-          placeholder="e.g. Bunda College"
-        />
-      </Field>
+          value={selectedDepartment}
+          onChange={(event) => setSelectedDepartment(event.target.value)}
+          disabled={departmentsError !== ""}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">No department</option>
+          {departmentOptions.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          {departmentsError ||
+            "A pick from the departments HR maintains. It is what makes somebody eligible to approve for a team in the same department."}
+        </p>
+        {!showNewDepartment ? (
+          <button
+            type="button"
+            onClick={() => setShowNewDepartment(true)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            <Plus className="h-4 w-4" />
+            Create department
+          </button>
+        ) : (
+          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                aria-label="New department name"
+                value={newDepartment}
+                onChange={(event) => setNewDepartment(event.target.value)}
+                placeholder="e.g. ICT"
+                className="min-w-40 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+              />
+              <button
+                type="button"
+                onClick={() => void handleCreateDepartment()}
+                disabled={creatingDepartment || newDepartment.trim() === ""}
+                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingDepartment ? "Saving..." : "Save department"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewDepartment(false);
+                  setDepartmentCreateError("");
+                }}
+                className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+              >
+                Cancel
+              </button>
+            </div>
+            {departmentCreateError ? (
+              <p className="mt-1 text-xs text-status-rejected">
+                {departmentCreateError}
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       <Field label="Category" htmlFor="category">
         <Select name="category" defaultValue={employee?.category ?? "academic"}>
@@ -289,24 +380,4 @@ export function EmployeeForm({
       </div>
     </form>
   );
-}
-/**
- * Why a team would not route, said next to its name.
- *
- * The picker cannot simply hide a team that is not in force: an employee may
- * already belong to one, and hiding it would make them look unassigned. So
- * the team stays and the reason is spelled out, which is also the difference
- * between HR noticing now and an applicant finding out at submission.
- */
-function teamNote(team: TeamOption): string {
-  if (team.status === "draft") {
-    return "still being set up";
-  }
-  if (team.status === "inactive") {
-    return "retired";
-  }
-  if (!team.is_effective) {
-    return "not in force today";
-  }
-  return "";
 }

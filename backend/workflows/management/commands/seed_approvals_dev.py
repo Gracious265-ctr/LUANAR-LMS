@@ -47,10 +47,15 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from leave.models import LeaveApplication, LeaveType
+from leave.models import (
+    GradeEntitlement,
+    LeaveApplication,
+    LeaveRule,
+    LeaveType,
+)
 from leave.services.submission import submit_application
 from leave.services.working_days import holidays_in_range
-from users.models import EmployeeProfile, User
+from users.models import Department, EmployeeProfile, User
 
 FIYEAR_PREFIX = "800"
 DEV_PASSWORD = "testpass123"
@@ -174,6 +179,11 @@ class Command(BaseCommand):
 
         SeedUsersCommand().handle()
 
+        # `seed_dev_users` deliberately seeds no business data any more, so this
+        # seed owns the leave reference data the approvals chain depends on.
+        self._seed_default_entitlements()
+        self._seed_default_leave_types()
+
         # Annual leave is looked up by code rather than pinned to a primary key:
         # the sequence depends on what else has written to LeaveType in this
         # database, and a hardcoded id makes this seed fail on any database that
@@ -214,6 +224,91 @@ class Command(BaseCommand):
 
         self._seed_cancellations(fy_label)
         self._seed_documents(fy_label)
+
+    def _seed_default_entitlements(self) -> None:
+        """Seed the default grade/entitlement bands (idempotent)."""
+        default_bands = [
+            ("A", "C", 21),
+            ("D", "G", 24),
+            ("H", "U", 30),
+        ]
+        effective_from = timezone.localdate()
+
+        for grade_start, grade_end, days in default_bands:
+            _, created = GradeEntitlement.objects.get_or_create(
+                grade_start=grade_start,
+                grade_end=grade_end,
+                effective_from=effective_from,
+                defaults={"days": days},
+            )
+            if created:
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"Created entitlement: {grade_start}-{grade_end} -> {days} days"
+                    )
+                )
+
+    def _seed_default_leave_types(self) -> None:
+        """Seed the built-in leave types and default rules (idempotent)."""
+        default_rules = [
+            {
+                "code": "annual",
+                "name": "Annual leave",
+                "max_duration_days": 30,
+                "min_notice_days": 5,
+                "consumes_annual_entitlement": True,
+            },
+            {
+                "code": "maternity",
+                "name": "Maternity leave",
+                "max_duration_days": 90,
+                "requires_supporting_document": True,
+                "eligibility_rules": [{"type": "gender", "params": {"allowed": ["F"]}}],
+            },
+            {
+                "code": "paternity",
+                "name": "Paternity leave",
+                "max_duration_days": 10,
+                "eligibility_rules": [{"type": "gender", "params": {"allowed": ["M"]}}],
+            },
+            {
+                "code": "compassionate",
+                "name": "Compassionate leave",
+                "max_duration_days": 5,
+            },
+        ]
+        effective_from = timezone.localdate()
+
+        for item in default_rules:
+            leave_type, _ = LeaveType.objects.get_or_create(
+                code=item["code"], defaults={"name": item["name"]}
+            )
+            LeaveRule.objects.update_or_create(
+                leave_type=leave_type,
+                effective_from=effective_from,
+                defaults={
+                    "max_duration_days": item["max_duration_days"],
+                    "min_notice_days": item.get("min_notice_days", 0),
+                    "requires_supporting_document": item.get(
+                        "requires_supporting_document", False
+                    ),
+                    "eligibility_rules": item.get("eligibility_rules", []),
+                    "consumes_annual_entitlement": item.get(
+                        "consumes_annual_entitlement", False
+                    ),
+                },
+            )
+
+    @staticmethod
+    def _department(name: str) -> Department:
+        """Resolve a department by name, creating it when it does not exist.
+
+        Departments are reference data now, so a profile cannot carry a free-text
+        label. The dev seed creates the row it needs rather than assuming HR has
+        been in to configure them first.
+        """
+        department, _ = Department.objects.get_or_create(name=name)
+        return department
 
     def _seed_configuration(self):
         """Roles, campuses, workflows, teams, and people — in that order.
@@ -409,9 +504,24 @@ class Command(BaseCommand):
                         f"'{role_code}', but its workflow "
                         f"'{workflow.name}' has no section for that role."
                     )
+                # A step holds exactly one approver now, so appointing is a
+                # replacement: the outgoing person's period is closed rather than
+                # left open alongside the new one.
+                approver = User.objects.get(username=username)
+                previous = section.approver
+                if previous is not None and previous.pk != approver.pk:
+                    SectionMember.objects.filter(
+                        section=section,
+                        user=previous,
+                        effective_to__isnull=True,
+                    ).update(effective_to=timezone.localdate())
+                section.approver = approver
+                section.save(update_fields=["approver"])
                 SectionMember.objects.update_or_create(
                     section=section,
-                    user=User.objects.get(username=username),
+                    user=approver,
+                    effective_to__isnull=True,
+                    defaults={"effective_from": timezone.localdate()},
                 )
 
         # The registrar approves for every team, so their holding is
@@ -464,7 +574,7 @@ class Command(BaseCommand):
         EmployeeProfile.objects.update_or_create(
             user=user,
             defaults={
-                "department": "Mathematics",
+                "department": self._department("Mathematics"),
                 "designation": "Lecturer",
                 "category": EmployeeProfile.Category.ACADEMIC,
                 "faculty": "Faculty of Science",

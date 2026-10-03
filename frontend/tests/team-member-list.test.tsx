@@ -2,13 +2,14 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { TeamMemberList } from "@/components/hr/team-member-list";
-import { makeEmployee } from "@/lib/employees/__fixtures__";
-import type { Team } from "@/lib/teams";
+import type { EligibleApprover, Team } from "@/lib/teams";
 import {
   addSectionMember,
+  listSectionMemberHistory,
   listSectionMembers,
   removeSectionMember,
 } from "@/lib/section-members-client";
+import { listEligibleApprovers } from "@/lib/teams-client";
 import type { SectionMember } from "@/lib/workflows";
 
 const refresh = vi.fn();
@@ -26,6 +27,11 @@ vi.mock("@/lib/section-members-client", async (importOriginal) => {
     addSectionMember: vi.fn(),
     removeSectionMember: vi.fn(),
   };
+});
+
+vi.mock("@/lib/teams-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/teams-client")>();
+  return { ...actual, listEligibleApprovers: vi.fn() };
 });
 
 const SECTION_NAMES: Record<number, string> = {
@@ -63,7 +69,8 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     name: "Bunda College Faculty",
     code: "bunda-faculty",
     description: "",
-    department: "",
+    department: 1,
+    department_name: "Bunda College",
     campus: null,
     campus_name: "",
     workflow: 1,
@@ -76,7 +83,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
       { id: 1, code: "supervisor", label: "Supervisor" },
       { id: 2, code: "hod", label: "Head of Department" },
     ],
-    member_count: 1,
+    member_count: 2,
     members: [],
     sections: [
       {
@@ -86,8 +93,11 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
         is_active: true,
         approver_role: "supervisor",
         approver_role_label: "Supervisor",
-        member_count: 1,
-        members: [],
+        approver: {
+          id: 3,
+          user_name: "Jane Dean",
+          user_email: "jane.dean@luanar.ac.mw",
+        },
       },
       {
         id: 2,
@@ -96,8 +106,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
         is_active: true,
         approver_role: "hod",
         approver_role_label: "Head of Department",
-        member_count: 1,
-        members: [],
+        approver: null,
       },
     ],
     created_at: "2026-01-01T00:00:00Z",
@@ -106,11 +115,19 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
   };
 }
 
-const people = [
-  makeEmployee({ id: 3, user_id: 3, full_name: "Jane Dean" }),
-  makeEmployee({ id: 5, user_id: 5, full_name: "Bob HOD" }),
-  makeEmployee({ id: 8, user_id: 8, full_name: "Sam Staff" }),
-];
+const janeApprover: EligibleApprover = {
+  id: 3,
+  full_name: "Jane Dean",
+  email: "jane.dean@luanar.ac.mw",
+  designation: "Dean",
+};
+
+const sam: EligibleApprover = {
+  id: 8,
+  full_name: "Sam Staff",
+  email: "sam.staff@luanar.ac.mw",
+  designation: "Officer",
+};
 
 const jane = makeSectionMember(9, 1, 3, "Jane Dean");
 const bob = makeSectionMember(10, 2, 5, "Bob HOD");
@@ -120,72 +137,67 @@ beforeEach(() => {
   vi.mocked(listSectionMembers).mockImplementation(async (section) =>
     section === 1 ? [jane] : [bob]
   );
+  vi.mocked(listEligibleApprovers).mockResolvedValue([janeApprover, sam]);
 });
 
 describe("TeamMemberList", () => {
-  it("renders the sections the team's workflow asks for, with their members", async () => {
-    render(<TeamMemberList team={makeTeam()} employees={people} />);
+  it("shows each step's single approver and who may replace them", async () => {
+    render(<TeamMemberList team={makeTeam()} />);
 
     expect(await screen.findByText("Supervisor")).toBeInTheDocument();
     expect(screen.getByText("Head of Department")).toBeInTheDocument();
-    expect(await screen.findByText("Jane Dean")).toBeInTheDocument();
-    expect(screen.getByText("Bob HOD")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Approver for Direct supervisor" })
+    ).toHaveValue("3");
+    // The second step has nobody appointed yet, but the people who could hold
+    // it are offered.
+    expect(
+      screen.getByRole("combobox", { name: "Approver for Department head" })
+    ).toHaveValue("");
+    expect(
+      within(
+        screen.getByRole("group", { name: "Section 2: Department head" })
+      ).getByRole("option", { name: /Sam Staff/ })
+    ).toBeInTheDocument();
   });
 
-  it("adds a member to a section by id and refreshes", async () => {
+  it("appoints one person to a step by id and refreshes", async () => {
     vi.mocked(addSectionMember).mockResolvedValue(undefined as never);
-    render(<TeamMemberList team={makeTeam()} employees={people} />);
-    await screen.findByText("Jane Dean");
+    render(<TeamMemberList team={makeTeam()} />);
+    await screen.findByText("Supervisor");
 
-    const section1 = screen.getByRole("group", {
-      name: "Section 1: Direct supervisor",
-    });
-    fireEvent.click(
-      within(section1).getByRole("button", { name: "Add a member" })
-    );
     fireEvent.change(
-      screen.getByLabelText("Add a member to Direct supervisor"),
+      screen.getByRole("combobox", { name: "Approver for Direct supervisor" }),
       { target: { value: "8" } }
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    // No start date was given, so the membership begins today rather than on
-    // some invented date: an absent date is not "sometime".
-    await waitFor(() =>
-      expect(addSectionMember).toHaveBeenCalledWith(1, 8, undefined)
-    );
-    expect(listSectionMembers).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(addSectionMember).toHaveBeenCalledWith(1, 8));
     expect(refresh).toHaveBeenCalled();
   });
 
   it("explains a refusal instead of silently failing", async () => {
     vi.mocked(addSectionMember).mockRejectedValue(
-      new Error("user: Jane Dean is not an active user.")
+      new Error("user: Sam Staff already holds another role in this department.")
     );
-    render(<TeamMemberList team={makeTeam()} employees={people} />);
-    await screen.findByText("Jane Dean");
+    render(<TeamMemberList team={makeTeam()} />);
+    await screen.findByText("Supervisor");
 
-    const section1 = screen.getByRole("group", {
-      name: "Section 1: Direct supervisor",
-    });
-    fireEvent.click(
-      within(section1).getByRole("button", { name: "Add a member" })
-    );
     fireEvent.change(
-      screen.getByLabelText("Add a member to Direct supervisor"),
+      screen.getByRole("combobox", { name: "Approver for Department head" }),
       { target: { value: "8" } }
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
     expect(
-      await screen.findByText("user: Jane Dean is not an active user.")
+      await screen.findByText(
+        "user: Sam Staff already holds another role in this department."
+      )
     ).toBeInTheDocument();
   });
 
-  it("removes a member from a section and refreshes", async () => {
+  it("removes the current approver and refreshes", async () => {
     vi.mocked(removeSectionMember).mockResolvedValue(undefined as never);
-    render(<TeamMemberList team={makeTeam()} employees={people} />);
-    await screen.findByText("Jane Dean");
+    render(<TeamMemberList team={makeTeam()} />);
+    await screen.findByText("Supervisor");
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -194,21 +206,40 @@ describe("TeamMemberList", () => {
     );
 
     await waitFor(() => expect(removeSectionMember).toHaveBeenCalledWith(9));
-    expect(listSectionMembers).toHaveBeenCalledWith(1);
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("says there is nobody to staff when the team has no steps", () => {
+  it("fetches who held the step before only when asked", async () => {
+    render(<TeamMemberList team={makeTeam()} />);
+    await screen.findByText("Supervisor");
+
+    expect(listSectionMemberHistory).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show past approvers of Direct supervisor",
+      })
+    );
+
+    await waitFor(() =>
+      expect(listSectionMemberHistory).toHaveBeenCalledWith(1)
+    );
+  });
+
+  it("says there is nobody to appoint when the team has no steps", () => {
+    render(<TeamMemberList team={makeTeam({ sections: [] })} />);
+
+    expect(screen.getByText(/no approval steps/i)).toBeInTheDocument();
+  });
+
+  it("says a team with no department cannot have approvers yet", () => {
     render(
       <TeamMemberList
-        team={makeTeam({ sections: [] })}
-        employees={people}
+        team={makeTeam({ department: null, department_name: "" })}
       />
     );
 
-    expect(screen.getByText(/no approval steps/i)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Add a member" })
-    ).not.toBeInTheDocument();
+      screen.getByText(/an approver is one of the team's own employees/i)
+    ).toBeInTheDocument();
   });
 });

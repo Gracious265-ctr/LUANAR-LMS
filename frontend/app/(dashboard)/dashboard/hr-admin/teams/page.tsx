@@ -6,15 +6,16 @@ import { TeamsSection } from "@/components/hr/TeamsSection";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
 import type { Campus, Team } from "@/lib/teams";
+import type { Department } from "@/lib/departments";
+import { listDepartments } from "@/lib/departments";
 import { listCampuses, listTeams } from "@/lib/teams";
-import type { Employee } from "@/lib/employees";
-import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
 
 const TEAMS_ERROR = "Unable to load teams. Please try again.";
 const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
-const PEOPLE_ERROR = "Unable to load employees. Please try again.";
+const DEPARTMENTS_ERROR =
+  "Unable to load departments, so this team cannot be placed in one.";
 
 /**
  * The teams list, with create in an overlay.
@@ -40,11 +41,15 @@ async function TeamsPage({
   const { retired } = await searchParams;
   const showRetired = retired === "1";
 
-  // The create overlay needs the whole option set on the page, so it is read
-  // here rather than on open: `listAllEmployees` because a page-1 read would
-  // quietly offer only the first twenty people to staff each step with.
-  const [teamsResult, campusesResult, rolesResult, peopleResult] =
-    await Promise.all([
+  // The create overlay needs its option set on the page, so it is read here
+  // rather than on open. The people who may hold a step are fetched per step
+  // from the department, which is what makes eligibility answerable.
+  const [
+    teamsResult,
+    campusesResult,
+    rolesResult,
+    departmentsResult,
+  ] = await Promise.all([
       listTeams({ includeInactive: showRetired }).then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Team[], error: TEAMS_ERROR })
@@ -57,9 +62,12 @@ async function TeamsPage({
         (value) => ({ value, error: "" }),
         () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
       ),
-      listAllEmployees().then(
+      // A team's department decides which people may be appointed to its steps,
+      // so the create overlay needs the list up front rather than discovering
+      // the empty picker only when a step refuses the write.
+      listDepartments().then(
         (value) => ({ value, error: "" }),
-        () => ({ value: [] as Employee[], error: PEOPLE_ERROR })
+        () => ({ value: [] as Department[], error: DEPARTMENTS_ERROR })
       ),
     ]);
 
@@ -84,10 +92,10 @@ async function TeamsPage({
           teams={teamsResult.value}
           campuses={campusesResult.value}
           roles={rolesResult.value}
-          employees={peopleResult.value}
-          rolesError={rolesResult.error}
-          peopleError={peopleResult.error}
-          error={teamsResult.error}
+          departments={departmentsResult.value}
+          departmentsError={departmentsResult.error}
+                  rolesError={rolesResult.error}
+                  error={teamsResult.error}
           filter={
             <div
               className="mb-4 flex flex-wrap items-center gap-2"

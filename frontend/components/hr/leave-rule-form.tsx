@@ -3,18 +3,16 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
-import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
+import {
+  createLeaveRule,
+  createLeaveType,
+  updateLeaveRule,
+} from "@/lib/leave-rules-client";
 import { Field, Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,6 +38,42 @@ export function LeaveRuleForm({
   const [effectiveFrom, setEffectiveFrom] = useState(leaveRule?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The server-loaded options are the starting point, not the final word: HR can
+  // create a leave type from this form, and the one they just made must appear in
+  // the picker without leaving the page.
+  const [leaveTypeOptions, setLeaveTypeOptions] =
+    useState<LeaveType[]>(leaveTypes);
+  const [selectedLeaveType, setSelectedLeaveType] = useState(
+    leaveRule?.leave_type === undefined || leaveRule?.leave_type === null
+      ? ""
+      : String(leaveRule.leave_type)
+  );
+  const [showNewLeaveType, setShowNewLeaveType] = useState(false);
+  const [newLeaveTypeName, setNewLeaveTypeName] = useState("");
+  const [creatingLeaveType, setCreatingLeaveType] = useState(false);
+  const [leaveTypeCreateError, setLeaveTypeCreateError] = useState("");
+
+  async function handleCreateLeaveType() {
+    const name = newLeaveTypeName.trim();
+    if (name === "") return;
+    setLeaveTypeCreateError("");
+    setCreatingLeaveType(true);
+    try {
+      const created = await createLeaveType({ name });
+      setLeaveTypeOptions((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setSelectedLeaveType(String(created.id));
+      setNewLeaveTypeName("");
+      setShowNewLeaveType(false);
+    } catch (err) {
+      setLeaveTypeCreateError(
+        err instanceof Error ? err.message : "Could not create the leave type."
+      );
+    } finally {
+      setCreatingLeaveType(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,23 +120,81 @@ export function LeaveRuleForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <Field label="Leave type" htmlFor="leave_type">
-        <Select name="leave_type" required defaultValue={leaveRule?.leave_type ? String(leaveRule.leave_type) : ""}>
-          <SelectTrigger id="leave_type" aria-label="Leave type">
-            <SelectValue placeholder="No leave types available" />
-          </SelectTrigger>
-          <SelectContent>
-            {leaveTypes.map((leaveType) => (
-              <SelectItem key={leaveType.id} value={String(leaveType.id)}>
-                {leaveType.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {leaveTypes.length === 0 && (
-          <p className="text-xs text-text-muted">
-            Create a leave type before adding a rule.
-          </p>
+      <Field
+        label="Leave type"
+        htmlFor="leave_type"
+        hint={
+          leaveTypeOptions.length === 0
+            ? "Create a leave type before adding a rule."
+            : undefined
+        }
+      >
+        {/* Deliberately a native <select> rather than the shared Radix picker:
+            creating a leave type here adds an option that has never been
+            rendered, and Radix only learns an item by mounting it, so it resets
+            the controlled value to "" and the new type can never show as
+            selected while the list is closed. */}
+        <select
+          id="leave_type"
+          name="leave_type"
+          required
+          value={selectedLeaveType}
+          onChange={(event) => setSelectedLeaveType(event.target.value)}
+          className="w-full rounded-control border border-input-border bg-input-background px-control-x-md py-control-y text-sm text-text-primary focus-ring"
+        >
+          <option value="">Choose a leave type…</option>
+          {leaveTypeOptions.map((leaveType) => (
+            <option key={leaveType.id} value={leaveType.id}>
+              {leaveType.name}
+            </option>
+          ))}
+        </select>
+
+        {!showNewLeaveType ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-2"
+            onClick={() => setShowNewLeaveType(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Create leave type
+          </Button>
+        ) : (
+          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
+            <Field label="New leave type name" htmlFor="new_leave_type_name">
+              <Input
+                id="new_leave_type_name"
+                value={newLeaveTypeName}
+                onChange={(event) => setNewLeaveTypeName(event.target.value)}
+                placeholder="e.g. Study leave"
+              />
+            </Field>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                loading={creatingLeaveType}
+                disabled={newLeaveTypeName.trim() === ""}
+                onClick={() => void handleCreateLeaveType()}
+              >
+                {creatingLeaveType ? "Saving..." : "Save leave type"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowNewLeaveType(false);
+                  setLeaveTypeCreateError("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+            {leaveTypeCreateError ? (
+              <FormError className="mt-1">{leaveTypeCreateError}</FormError>
+            ) : null}
+          </div>
         )}
       </Field>
 

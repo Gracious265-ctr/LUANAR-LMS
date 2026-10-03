@@ -1,11 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Employee, TeamOption } from "@/lib/employees";
+import type { Employee } from "@/lib/employees";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
 
-import { selectOption } from "./helpers/select";
 
 import { EmployeesSection } from "@/components/hr/EmployeesSection";
 
@@ -21,10 +19,6 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParamsRef.current,
 }));
 
-const teams = [
-  { id: 4, name: "Bunda College Faculty" },
-] as TeamOption[];
-
 const saved: Employee = makeEmployee({ id: 21, full_name: "Ada Newly" });
 
 function renderSection(
@@ -35,18 +29,20 @@ function renderSection(
       employees={[makeEmployee({ id: 1, full_name: "Jane Dean" })]}
       totalCount={57}
       gradeOptions={["A", "B", "G"]}
-      teams={teams}
-      teamsError=""
+      departments={[]}
+      departmentsError=""
       search=""
       {...props}
     />
   );
 }
 
-let user: ReturnType<typeof userEvent.setup>;
-
-/** `EmployeeForm` posts with plain `fetch`, so this drives the whole save. */
-async function submitCreateForm() {
+/**
+ * `EmployeeForm` posts with plain `fetch`, so this drives the whole save. The
+ * role is read-only and the team comes from the roster, so the three identity
+ * fields are the whole of it.
+ */
+function submitCreateForm() {
   fireEvent.change(screen.getByLabelText("First name"), {
     target: { value: "Ada" },
   });
@@ -56,7 +52,6 @@ async function submitCreateForm() {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: "ada.newly@test.luanar" },
   });
-  await selectOption(screen.getByLabelText("Role"), "Employee", { user });
   fireEvent.click(screen.getByRole("button", { name: "Create employee" }));
 }
 
@@ -78,7 +73,6 @@ describe("EmployeesSection — wave 2", () => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
     vi.stubGlobal("history", { ...window.history, length: 2 });
-    user = userEvent.setup();
     // Stands in for the browser: stepping back drops the overlay param. Without
     // it the dialog never unmounts and Radix leaves the page `aria-hidden`, so
     // the post-save alert would render but be unfindable by role.
@@ -144,7 +138,7 @@ describe("EmployeesSection — wave 2", () => {
       totalCount: 58,
     });
 
-    await submitCreateForm();
+    submitCreateForm();
 
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
     expect(routerMock.push).not.toHaveBeenCalled();
@@ -159,7 +153,7 @@ describe("EmployeesSection — wave 2", () => {
       stubCreateResponse();
       renderSection({ employees: [makeEmployee({ id: 1 })], totalCount: 57 });
 
-      await submitCreateForm();
+      submitCreateForm();
 
       await waitFor(() =>
         expect(screen.getByText(/not on this page/i)).toBeInTheDocument()
@@ -177,7 +171,7 @@ describe("EmployeesSection — wave 2", () => {
         search: "dean",
       });
 
-      await submitCreateForm();
+      submitCreateForm();
 
       await waitFor(() =>
         expect(screen.getByText(/not on this page/i)).toBeInTheDocument()

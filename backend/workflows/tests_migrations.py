@@ -11,6 +11,8 @@ restores the "current" migration state at the end of each test cannot happen
 inside ``TestCase``'s wrapping transaction.
 """
 
+from importlib import import_module
+
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
@@ -135,6 +137,9 @@ class BackfillMigrationTests(MigrationTestCase):
         employee = User.objects.create(username="legacy@roles.test")
         EmployeeProfile.objects.create(
             user_id=employee.pk,
+            # The plain string, not a Department: at this point in history
+            # ``department`` is a text column, and passing the model would fail
+            # on the value rather than on the thing under test.
             department="Administration",
             faculty="Faculty of Science",
             category="administration",
@@ -622,3 +627,102 @@ class AuditTargetTypeMigrationTests(MigrationTestCase):
 
         for target in ("application", "employee", "workflow"):
             self.assertIn(target, set(AuditEntry.TargetType.values))
+
+
+class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
+    """0023 moves final approval off sections and onto a role holding."""
+
+    def setUp(self):
+        super().setUp()
+        self.migrate(("workflows", "0022_team_workflow_optional"))
+
+    def _legacy_state(self):
+        """A department-scoped DVC: flagged off, appointed, holding nothing."""
+        state = self.state(("workflows", "0022_team_workflow_optional"))
+        ApproverRole = state.get_model("workflows", "ApproverRole")
+        Workflow = state.get_model("workflows", "Workflow")
+        Section = state.get_model("workflows", "Section")
+        User = state.get_model("users", "User")
+
+        role = ApproverRole.objects.create(code="dvc", label="Deputy Vice-Chancellor")
+        user = User.objects.create(username="dvc@test.luanar", email="dvc@test.luanar")
+        workflow = Workflow.objects.create(
+            name="Legacy Chain", effective_from="2026-06-01", is_active=True
+        )
+        Section.objects.create(
+            workflow=workflow, order=1, name="DVC", approver_role=role, approver=user
+        )
+        return role.pk, user.pk
+
+    def _read(self):
+        from workflows.models import ApproverRole, RoleAssignment, Section  # noqa: PLC0415
+
+        role = ApproverRole.objects.get(code="dvc")
+        return {
+            "is_institution_wide": role.is_institution_wide,
+            "appointments": Section.objects.filter(
+                approver_role=role, approver__isnull=False
+            ).count(),
+            "holdings": RoleAssignment.objects.filter(role=role).count(),
+            "holders": list(
+                RoleAssignment.objects.filter(role=role).values_list(
+                    "user__username", flat=True
+                )
+            ),
+        }
+
+    def test_the_dvc_role_is_promoted_to_institution_wide(self):
+        role_pk, _ = self._legacy_state()
+        self.latest()
+        from workflows.models import ApproverRole  # noqa: PLC0415
+
+        self.assertTrue(ApproverRole.objects.get(pk=role_pk).is_institution_wide)
+
+    def test_the_existing_approver_keeps_the_power_to_approve(self):
+        _, user_pk = self._legacy_state()
+        self.latest()
+
+        result = self._read()
+        self.assertEqual(result["holdings"], 1)
+        self.assertEqual(result["holders"], ["dvc@test.luanar"])
+        self.assertEqual(result["appointments"], 0)
+        del user_pk
+
+    def test_a_promoted_role_is_not_also_pinned_to_a_section(self):
+        """Both would resolve, differently per team, for the same officer."""
+        self._legacy_state()
+        self.latest()
+
+        self.assertEqual(self._read()["appointments"], 0)
+
+    def test_running_twice_does_not_duplicate_the_holding(self):
+        self._legacy_state()
+        self.latest()
+
+        from django.apps import apps  # noqa: PLC0415
+
+        module = import_module(
+            "workflows.migrations.0023_institution_wide_final_approval"
+        )
+        module.flag_institution_wide_roles(apps, None)
+
+        self.assertEqual(self._read()["holdings"], 1)
+
+    def test_a_missing_role_is_skipped_rather_than_failing(self):
+        """A fresh install has no DVC yet; the seed creates it already flagged."""
+        from workflows.models import ApproverRole  # noqa: PLC0415
+
+        self.assertFalse(ApproverRole.objects.filter(code="dvc").exists())
+        self.latest()
+
+        self.assertFalse(ApproverRole.objects.filter(code="dvc").exists())
+
+    def test_reversing_restores_the_flag_but_keeps_the_holding(self):
+        """Deleting the row would revoke a real approval right on rollback."""
+        self._legacy_state()
+        self.latest()
+        self.migrate(("workflows", "0022_team_workflow_optional"))
+
+        result = self._read()
+        self.assertFalse(result["is_institution_wide"])
+        self.assertEqual(result["holdings"], 1)

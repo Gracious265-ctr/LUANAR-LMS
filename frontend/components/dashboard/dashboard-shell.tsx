@@ -3,6 +3,8 @@
 import React, { memo, useCallback, useState } from "react";
 import {
   ArrowLeftRight,
+  Bell,
+  Building2,
   Calendar,
   CalendarDays,
   CalendarRange,
@@ -46,6 +48,8 @@ interface User {
   email: string;
   role: string;
   full_name: string;
+  /** The bootstrap administrator; unlocks user management. */
+  is_superuser?: boolean;
 }
 
 interface DashboardShellProps {
@@ -94,6 +98,7 @@ export function DashboardShell({
   // correct in the first paint instead of appearing after hydration.
   const showHR = user.role === HR_ROLE;
   const showCover = isApprover;
+  const showAdmin = user.is_superuser === true;
 
   // A drawer left open across a navigation would sit on top of the page the user
   // just asked for. Radix already handles Escape and the backdrop, and it locks
@@ -123,6 +128,7 @@ export function DashboardShell({
         planPendingConfirmations={planPendingConfirmations}
         showCover={showCover}
         showHR={showHR}
+        showAdmin={showAdmin}
         open
       />
     </>
@@ -145,6 +151,7 @@ export function DashboardShell({
             planPendingConfirmations={planPendingConfirmations}
             showCover={showCover}
             showHR={showHR}
+            showAdmin={showAdmin}
           />
         </div>
 
@@ -223,6 +230,7 @@ const Sidebar = memo(function Sidebar({
   planPendingConfirmations,
   showCover,
   showHR,
+  showAdmin,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -233,6 +241,7 @@ const Sidebar = memo(function Sidebar({
   planPendingConfirmations?: number;
   showCover: boolean;
   showHR: boolean;
+  showAdmin: boolean;
 }) {
   return (
     <nav
@@ -251,6 +260,7 @@ const Sidebar = memo(function Sidebar({
         planPendingConfirmations={planPendingConfirmations}
         showCover={showCover}
         showHR={showHR}
+        showAdmin={showAdmin}
         open={open}
       />
     </nav>
@@ -272,6 +282,7 @@ const NavLinks = memo(function NavLinks({
   planPendingConfirmations,
   showCover,
   showHR,
+  showAdmin,
   open,
 }: {
   currentPath: string;
@@ -280,6 +291,7 @@ const NavLinks = memo(function NavLinks({
   planPendingConfirmations?: number;
   showCover: boolean;
   showHR: boolean;
+  showAdmin: boolean;
   open: boolean;
 }) {
   return (
@@ -330,6 +342,15 @@ const NavLinks = memo(function NavLinks({
         currentPath={currentPath}
         open={open}
       />
+      {showAdmin && (
+        <Option
+          Icon={ShieldCheck}
+          title="HR Users"
+          href="/dashboard/admin/users"
+          currentPath={currentPath}
+          open={open}
+        />
+      )}
       {showHR && (
         <>
           {open && (
@@ -348,6 +369,13 @@ const NavLinks = memo(function NavLinks({
             Icon={User}
             title="Employees"
             href="/dashboard/hr-admin/employees"
+            currentPath={currentPath}
+            open={open}
+          />
+          <Option
+            Icon={Building2}
+            title="Departments"
+            href="/dashboard/hr-admin/departments"
             currentPath={currentPath}
             open={open}
           />
@@ -614,6 +642,10 @@ const Header = memo(function Header({
               .slice(0, 2)}
           </div>
         </div>
+
+        <Button aria-label="Notifications" variant="secondary" size="icon" className="size-10">
+          <Bell className="h-5 w-5" />
+        </Button>
 
         <Button
           onClick={onLogout}

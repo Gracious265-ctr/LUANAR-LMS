@@ -8,9 +8,12 @@ The provider answers two questions the cancellation service needs:
 * ``record_restoration`` — idempotently add the restoration row to the ledger.
 
 The ledger-backed implementation ships here and is swapped for the real
-HR-track provider at Unit 20 (reconciliation note in ``docs/``). Until then the
-day count is derived from the approved application's snapshot when available,
-falling back to the configured leave rules / fixture registry.
+HR-track provider at Unit 20 (reconciliation note in ``docs/``). The day count
+is derived from the approved application's snapshot, falling back to the
+HR-configured leave rule when a snapshot is absent. Nothing here reads a
+hard-coded fixture registry: whether a leave type deducts annual leave is
+business data HR owns, so an application with neither a snapshot nor a rule
+resolves to "does not deduct" rather than to a placeholder answer.
 """
 
 from __future__ import annotations
@@ -60,9 +63,12 @@ def get_today():
 def _deducts_annual_balance(application) -> bool:
     """Whether the application's leave type deducts annual leave.
 
-    The submission snapshot owns the answer; fall back to the configured leave
-    rules and then the fixture registry so applications created directly (seed,
-    tracking scenarios) still resolve.
+    The submission snapshot owns the answer, because it is the configuration
+    the application was actually approved under. Only when no snapshot exists —
+    a row created directly, outside the normal submission path — does the
+    current HR-configured leave rule answer. With neither, the safe answer is
+    "does not deduct": a cancellation must never invent a restoration the
+    configuration never granted.
     """
     snapshot = application.rules_snapshot or {}
     leave_type = snapshot.get("leave_type") or {}
@@ -75,13 +81,6 @@ def _deducts_annual_balance(application) -> bool:
         if rule is not None:
             return rule
 
-    try:
-        from leave.providers import fixture_data as data
-    except Exception:  # pragma: no cover - fixture registry is internal
-        return False
-    for rules in data.LEAVE_TYPES:
-        if rules.id == leave_type_id:
-            return rules.deducts_annual_balance
     return False
 
 

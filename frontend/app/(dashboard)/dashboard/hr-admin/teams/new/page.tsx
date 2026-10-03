@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 
 /**
- * Create now happens in an overlay on the list page, so this route only exists
- * to keep the old `new` link working: bookmarks, and anything already pointing
+ * Create happens in an overlay on the list page, so this route only exists to
+ * keep the old `new` link working: bookmarks, and anything already pointing
  * here. Editing a team is still a page, at `[id]/edit`, because the roster it
  * deliberately leaves out is managed on the team's own page.
  *

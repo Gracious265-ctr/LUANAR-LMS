@@ -86,6 +86,7 @@ class AuditEntry(models.Model):
         WORKFLOW = "workflow", "Workflow"
         APPROVER_ROLE = "approver-role", "Approver role"
         CAMPUS = "campus", "Campus"
+        DEPARTMENT = "department", "Department"
         TEAM = "team", "Team"
         EMPLOYEE = "employee", "Employee"
         APPLICATION = "application", "Application"

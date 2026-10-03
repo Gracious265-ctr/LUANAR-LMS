@@ -338,8 +338,17 @@ def _team_name(plan: LeaveDayPlan) -> str:
 
 
 def _department(plan: LeaveDayPlan) -> str:
+    """The employee's department *name*, or "".
+
+    ``EmployeeProfile.department`` is a reference row now, and this payload is
+    rendered as JSON -- so the name is what belongs here. Returning the row
+    itself fails at serialisation time with "Object of type Department is not
+    JSON serializable", which is a confusing place to learn about the change.
+    """
     try:
         profile = plan.employee.employee_profile
     except Exception:
         return ""
-    return (profile.department or "") if profile else ""
+    if profile is None or profile.department_id is None:
+        return ""
+    return profile.department.name

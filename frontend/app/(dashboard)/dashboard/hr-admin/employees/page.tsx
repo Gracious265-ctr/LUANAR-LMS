@@ -3,19 +3,20 @@ import { Search } from "lucide-react";
 
 import { EmployeesSection } from "@/components/hr/EmployeesSection";
 import { getCurrentUser } from "@/lib/auth";
-import type { EmployeeListResponse, TeamOption } from "@/lib/employees";
+import type { EmployeeListResponse } from "@/lib/employees";
 import { listEmployees } from "@/lib/employees";
-import type { Team } from "@/lib/teams";
-import { listTeams } from "@/lib/teams";
 import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
+import type { Department } from "@/lib/departments";
+import { listDepartments } from "@/lib/departments";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-const TEAMS_ERROR = "Unable to load teams. Please try again.";
+const DEPARTMENTS_ERROR =
+  "Departments could not be loaded, so this employee cannot be placed in one. Reload the page, or create a department first.";
 
 export default async function EmployeesPage({
   searchParams,
@@ -42,14 +43,16 @@ export default async function EmployeesPage({
     error = "Unable to load employees. Please try again.";
   }
 
-  // The create overlay needs its option set on the page. Retired teams are
-  // included so the picker can say why a team would not route, and the grade
-  // list comes from the entitlements rather than being typed, because a grade
+  // The create overlay needs its option set on the page. Teams are filled from
+  // the team side, so the only options here are departments and the grade list,
+  // which comes from the entitlements rather than being typed, because a grade
   // that no entitlement uses is silently ignored downstream.
-  const [teamsResult, gradeOptions] = await Promise.all([
-    listTeams({ includeInactive: true }).then(
+  const [departmentsResult, gradeOptions] = await Promise.all([
+    // A department is reference data now, so the create overlay needs the list
+    // up front; a failed fetch is surfaced rather than silently offering none.
+    listDepartments().then(
       (value) => ({ value, error: "" }),
-      () => ({ value: [] as Team[], error: TEAMS_ERROR })
+      () => ({ value: [] as Department[], error: DEPARTMENTS_ERROR })
     ),
     listEntitlements()
       .then((entitlements) => gradeOptionsFromEntitlements(entitlements.results))
@@ -70,8 +73,8 @@ export default async function EmployeesPage({
           employees={employees?.results ?? []}
           totalCount={employees?.count ?? 0}
           gradeOptions={gradeOptions}
-          teams={teamsResult.value as TeamOption[]}
-          teamsError={teamsResult.error}
+          departments={departmentsResult.value}
+          departmentsError={departmentsResult.error}
           search={query}
           error={error}
           filter={

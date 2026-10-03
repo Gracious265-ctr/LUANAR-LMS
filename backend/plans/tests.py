@@ -32,8 +32,9 @@ from users.models import EmployeeProfile, User
 from workflows.models import Delegation, SectionMember
 from workflows.providers import DatabaseWorkflowProvider
 from workflows.testing import (
-    add_approver_to_section,
+    appoint_approver_to_section,
     build_routing,
+    department_for,
     ensure_roles,
     make_approver,
     make_team,
@@ -97,7 +98,10 @@ def _patch_plan_clock(test):
 def _profile(user, **kwargs):
     defaults = dict(
         designation="Officer",
-        department="Administration",
+        # Resolved through the shared helper because ``department`` is a
+        # reference to a Department row now, not free text: passing the name
+        # straight through raises "must be a Department instance".
+        department=department_for("Administration"),
         grade="B",
         appointment_date=date(2022, 3, 15),
         category="administration",
@@ -291,24 +295,33 @@ class SubmitPlanTests(PlanServiceBase):
             ).exists()
         )
 
-    def test_stage_snapshots_every_member_of_its_section(self):
+    def test_the_stage_snapshots_the_single_approver_of_its_section(self):
+        """A step holds one approver, snapshotted so a later change cannot move it."""
         section = self.workflow.sections.get(order=1)
-        second = add_approver_to_section(section, "supervisor")
+        appointee = appoint_approver_to_section(section, "supervisor")
         plan = submit_plan(user=self.employee, plan_id=self.make_plan().id)
         stage = plan.approval_stages.get(stage_order=1)
+
         self.assertEqual(
-            set(PlanApprovalStageApprover.objects.filter(stage=stage).values_list("user_id", flat=True)),
-            {self.supervisor.id, second.id},
+            set(
+                PlanApprovalStageApprover.objects.filter(stage=stage).values_list(
+                    "user_id", flat=True
+                )
+            ),
+            {appointee.id},
         )
-        # The snapshot is read, not recomputed: adding a member now changes nothing.
-        third = add_approver_to_section(
-            section, "supervisor", user=make_approver("supervisor", username="chain-supervisor-2@test.luanar")
+
+        # The snapshot is read, not recomputed. Replacing the appointee afterwards
+        # must not change who the submitted plan waits for.
+        successor = appoint_approver_to_section(
+            section,
+            "supervisor",
+            user=make_approver(
+                "supervisor", username="chain-supervisor-2@test.luanar"
+            ),
         )
-        self.assertEqual(
-            set(eligible_approver_ids(plan, stage)),
-            {self.supervisor.id, second.id},
-        )
-        self.assertNotIn(third.id, eligible_approver_ids(plan, stage))
+        self.assertEqual(set(eligible_approver_ids(plan, stage)), {appointee.id})
+        self.assertNotIn(successor.id, eligible_approver_ids(plan, stage))
 
     def test_applicant_is_never_in_the_snapshot(self):
         """A member who is also the applicant must not be able to self-approve."""
@@ -514,24 +527,40 @@ class DecidePlanTests(PlanServiceBase):
         self.assertIsNone(plan.current_stage.assigned_approver_id)
         self.assertEqual(plan.current_stage.stage_order, 2)
 
-    def test_first_eligible_actor_claims_and_locks_the_others_out(self):
+    def test_appointing_a_second_person_replaces_rather_than_adds(self):
+        """A step holds exactly one approver, so a new appointment supersedes.
+
+        This is the rule that removes the race the previous version of this test
+        covered: with one approver per step there is no longer a set of eligible
+        actors for the first of them to claim and lock the rest out of.
+        """
         section = self.workflow.sections.get(order=1)
-        second = add_approver_to_section(section, "supervisor")
+        superseded = section.approver
+        replacement = appoint_approver_to_section(section, "supervisor")
+
+        section.refresh_from_db()
+        self.assertEqual(section.approver_id, replacement.pk)
+        # The outgoing person's open appointment is closed rather than left open
+        # alongside the new one, so "who approves this step" has one answer.
+        self.assertFalse(
+            SectionMember.objects.filter(
+                section=section, user=superseded, effective_to__isnull=True
+            ).exists()
+        )
+
+    def test_the_superseded_approver_can_no_longer_act(self):
+        section = self.workflow.sections.get(order=1)
+        superseded = self.supervisor
+        appoint_approver_to_section(section, "supervisor")
+
         plan = submit_plan(user=self.employee, plan_id=self.make_plan().id)
         stage = plan.current_stage
-        plan = decide_plan(
-            plan_id=plan.id,
-            actor=self.supervisor,
-            action="approve",
-            comment="ok",
-            expected_version=stage.decision_version,
-        )
         from .services import PlanDecisionNotAllowedError
 
         with self.assertRaises(PlanDecisionNotAllowedError):
             decide_plan(
                 plan_id=plan.id,
-                actor=second,
+                actor=superseded,
                 action="approve",
                 comment="",
                 expected_version=stage.decision_version,
@@ -701,6 +730,11 @@ class StageRoutingTests(PlanServiceBase):
     def test_an_unstaffed_section_is_refused_at_submission(self):
         """A section nobody can act for is refused, not left pending forever."""
         section = self.workflow.sections.get(order=2)
+        # A step is staffed through ``Section.approver``; the membership rows are
+        # its history. Deleting only the rows leaves a still-staffed step, so the
+        # column has to be cleared for this section to be genuinely unstaffed.
+        section.approver = None
+        section.save(update_fields=["approver"])
         SectionMember.objects.filter(section=section).delete()
         with self.assertRaises(PlanValidationFailedError) as ctx:
             submit_plan(user=self.employee, plan_id=self.make_plan().id)
@@ -1049,36 +1083,28 @@ class PlanAPITests(PlanServiceBase):
         self.assertEqual(admin.status_code, status.HTTP_200_OK)
 
     def test_capabilities_counts(self):
-        # The colleague is added before submission: eligibility is a snapshot, so a
-        # member added afterwards would not be in this plan's chain.
-        colleague = add_approver_to_section(
-            self.workflow.sections.get(order=1),
-            "supervisor",
-            user=make_approver("supervisor", username="cap-colleague@test.luanar"),
-        )
         create = self.create_via_api()
         plan_id = create.data["meta"]["id"]
         self.client.post(f"/api/v1/plans/{plan_id}/submit/")
 
+        # A step holds exactly one approver, so the submitted plan is in that one
+        # person's queue and nobody else's. The shared-queue case this test used
+        # to assert cannot happen any more.
         self.force(self.supervisor)
         capabilities = self.client.get("/api/v1/plans/capabilities/")
         self.assertEqual(capabilities.status_code, status.HTTP_200_OK)
         self.assertTrue(capabilities.data["is_approver"])
         self.assertEqual(capabilities.data["approver_pending_count"], 1)
 
-        # The colleague is eligible for the same stage, so the plan is in their
-        # queue too — first to act wins, and the plan waits for one of them.
-        self.force(colleague)
-        self.assertEqual(
-            self.client.get("/api/v1/plans/capabilities/").data["approver_pending_count"],
-            1,
-        )
-
-        # Once one of them delegates, the plan leaves their queue and lands with
-        # the delegate; the colleague keeps theirs.
+        # Delegating takes it out of their queue, because the delegate is now the
+        # person who has to act.
+        # The count is gated on `is_approver`, which is about holding an active
+        # approver appointment -- not about system access -- so the delegate
+        # needs one or the assertion below would only ever be measuring that.
+        delegate = make_approver("supervisor", username="cap-delegate@test.luanar")
         Delegation.objects.create(
             approver=self.supervisor,
-            delegate=make_user("cap-delegate@test.luanar", role=User.Role.APPROVER),
+            delegate=delegate,
             starts_on=date(2026, 9, 1),
             ends_on=None,
             requested_by=self.supervisor,
@@ -1089,7 +1115,7 @@ class PlanAPITests(PlanServiceBase):
             self.client.get("/api/v1/plans/capabilities/").data["approver_pending_count"],
             0,
         )
-        self.force(colleague)
+        self.force(delegate)
         self.assertEqual(
             self.client.get("/api/v1/plans/capabilities/").data["approver_pending_count"],
             1,
@@ -1113,7 +1139,7 @@ class PlanAPITests(PlanServiceBase):
 
     def test_department_scope_follows_the_teams_department(self):
         """Department membership is a property of the team, not the profile."""
-        self.team.department = "Administration"
+        self.team.department = department_for("Administration")
         self.team.save(update_fields=["department"])
         colleague = make_user("dept-colleague@test.luanar", role=User.Role.EMPLOYEE)
         _profile(colleague, team=self.team)

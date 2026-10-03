@@ -1,13 +1,34 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmployeeForm } from "@/components/hr/employee-form";
-import type { Employee } from "@/lib/employees";
+import type { Department } from "@/lib/departments";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
-import { openSelect, selectOption, selectedValue } from "./helpers/select";
 
-const HOD_EMPLOYEE: Employee = makeEmployee({
+const DEPARTMENTS: Department[] = [
+  {
+    id: 1,
+    name: "Bunda College",
+    is_active: true,
+    team_count: 0,
+    employee_count: 2,
+    teams: [],
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+  {
+    id: 2,
+    name: "Administration",
+    is_active: true,
+    team_count: 0,
+    employee_count: 1,
+    teams: [],
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
+];
+
+const HOD_EMPLOYEE = makeEmployee({
   id: 1,
   user_id: 2,
   email: "hod@test.luanar",
@@ -17,12 +38,13 @@ const HOD_EMPLOYEE: Employee = makeEmployee({
   role: "approver",
   approver_roles: ["hod"],
   designation: "Head of Department",
+  department: 1,
+  department_name: "Bunda College",
   team: 4,
   team_name: "Bunda College Faculty",
 });
 
-/** `roleLabel` is the visible option text, e.g. "Approver". */
-async function submitPayload(roleLabel: string) {
+function submitPayload() {
   fireEvent.change(screen.getByLabelText("First name"), {
     target: { value: "Test" },
   });
@@ -32,17 +54,15 @@ async function submitPayload(roleLabel: string) {
   fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: "new.employee@test.luanar" },
   });
-  await selectOption(screen.getByLabelText("Role"), roleLabel, { user });
-  fireEvent.click(screen.getByRole("button", { name: "Create employee" }));
-}
 
-/** Shared so the module-level `submitPayload` can drive the Radix selects. */
-let user: ReturnType<typeof userEvent.setup>;
+  fireEvent.click(
+    screen.getByRole("button", { name: /create employee|save changes/i })
+  );
+}
 
 describe("EmployeeForm", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
-    user = userEvent.setup();
   });
 
   afterEach(() => {
@@ -83,154 +103,186 @@ describe("EmployeeForm", () => {
     expect(gradeInput).toHaveValue("M");
   });
 
-  it("offers the three system roles, and no approver positions", async () => {
+  it("shows the role as read-only, not something HR can choose", () => {
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
 
-    await openSelect(screen.getByLabelText("Role"));
-
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
+    const role = screen.getByLabelText("Role");
+    expect(role).toHaveAttribute("readonly");
+    expect(role).toHaveValue("Employee");
     // Approver positions are held on a team or granted institution-wide, so
     // they are not chosen here.
-    expect(options).toEqual(["Employee", "Approver", "Human Resources"]);
+    expect(screen.queryByRole("combobox", { name: "Role" })).toBeNull();
   });
 
-  it("offers the teams it was given and defaults to no team", async () => {
+  it("does not offer a team picker, since teams are filled from the team side", () => {
     render(
       <EmployeeForm
         endpoint="/api/hr/employees"
         method="POST"
-        teams={[
-          { id: 4, name: "Bunda College Faculty", status: "active", is_effective: true },
-          { id: 5, name: "Registry", status: "active", is_effective: true },
-        ]}
+        departments={DEPARTMENTS}
       />
     );
 
-    const teamSelect = screen.getByLabelText("Team");
-    await openSelect(teamSelect);
-
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toEqual(["No team", "Bunda College Faculty", "Registry"]);
+    expect(screen.queryByLabelText("Team")).toBeNull();
   });
 
-  it("says which teams would not route, rather than letting HR assign into a trap", async () => {
-    // An employee in a team that is not routing only finds out when they
-    // submit, which is a bad time to find out. The reason is on the option.
+  it("offers the departments it was given and defaults to none", () => {
     render(
       <EmployeeForm
         endpoint="/api/hr/employees"
         method="POST"
-        teams={[
-          { id: 4, name: "Registry", status: "active", is_effective: true },
-          {
-            id: 5,
-            name: "New Team",
-            status: "draft",
-            is_effective: false,
-          },
-          {
-            id: 6,
-            name: "Old Team",
-            status: "inactive",
-            is_effective: false,
-          },
-          {
-            id: 7,
-            name: "Handover",
-            status: "active",
-            is_effective: false,
-          },
-        ]}
+        departments={DEPARTMENTS}
       />
     );
 
-    const teamSelect = screen.getByLabelText("Team");
-    await openSelect(teamSelect);
-
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toEqual([
-      "No team",
-      "Registry",
-      "New Team (still being set up)",
-      "Old Team (retired)",
-      "Handover (not in force today)",
-    ]);
+    const departmentSelect = screen.getByLabelText(
+      "Department"
+    ) as HTMLSelectElement;
+    expect(departmentSelect).toHaveValue("");
+    expect(
+      Array.from(departmentSelect.options).map((option) => option.textContent)
+    ).toEqual(["No department", "Bunda College", "Administration"]);
   });
 
-  it("prefills the employee's own team on edit", () => {
-    render(
-      <EmployeeForm
-        employee={HOD_EMPLOYEE}
-        endpoint="/api/hr/employees/1"
-        method="PATCH"
-        teams={[
-          { id: 4, name: "Bunda College Faculty", status: "active", is_effective: true },
-          { id: 5, name: "Registry", status: "active", is_effective: true },
-        ]}
-      />
-    );
-
-    expect(selectedValue(screen.getByLabelText("Team"))).toBe(
-      "Bunda College Faculty"
-    );
-  });
-
-  it("submits the chosen team, and null when the employee has none", async () => {
+  it("submits the chosen department as an id, and null when the employee has none", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
     const { unmount } = render(
       <EmployeeForm
         endpoint="/api/hr/employees"
         method="POST"
-        teams={[{ id: 4, name: "Bunda College Faculty", status: "active", is_effective: true }]}
+        departments={DEPARTMENTS}
       />
     );
-    await selectOption(screen.getByLabelText("Team"), "Bunda College Faculty", { user });
-    await submitPayload("Employee");
+    fireEvent.change(screen.getByLabelText("Department"), {
+      target: { value: "2" },
+    });
+    submitPayload();
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(
-      JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).team
-    ).toBe(4);
+      JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).department
+    ).toBe(2);
     unmount();
 
     vi.mocked(fetch).mockClear();
-    render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    await submitPayload("Employee");
 
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(
-      JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).team
-    ).toBeNull();
-  });
-
-  it("disables the team picker and explains why when teams could not load", () => {
     render(
       <EmployeeForm
         endpoint="/api/hr/employees"
         method="POST"
-        teamsError="Teams could not be loaded, so this employee cannot be placed in a team."
+        departments={DEPARTMENTS}
+      />
+    );
+    submitPayload();
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(
+      JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).department
+    ).toBeNull();
+  });
+
+  it("prefills the employee's own department on edit", () => {
+    render(
+      <EmployeeForm
+        employee={HOD_EMPLOYEE}
+        endpoint="/api/hr/employees/1"
+        method="PATCH"
+        departments={DEPARTMENTS}
       />
     );
 
-    expect(screen.getByLabelText("Team")).toBeDisabled();
+    expect(screen.getByLabelText("Department")).toHaveValue("1");
+  });
+
+  it("disables the department picker and explains why when departments could not load", () => {
+    render(
+      <EmployeeForm
+        endpoint="/api/hr/employees"
+        method="POST"
+        departmentsError="Departments could not be loaded, so this employee cannot be placed in one."
+      />
+    );
+
+    expect(screen.getByLabelText("Department")).toBeDisabled();
     expect(
       screen.getByText(
-        "Teams could not be loaded, so this employee cannot be placed in a team."
+        "Departments could not be loaded, so this employee cannot be placed in one."
       )
     ).toBeInTheDocument();
   });
 
-  it("defaults to Employee on create and to the current role on edit", () => {
+  it("never submits a team, so an edit cannot silently unseat the employee", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+
+    render(
+      <EmployeeForm
+        employee={HOD_EMPLOYEE}
+        endpoint="/api/hr/employees/1"
+        method="PATCH"
+        departments={DEPARTMENTS}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(
+      JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body)).team
+    ).toBeUndefined();
+  });
+
+  it("creates a department inline and selects it", async () => {
+    const created: Department = {
+      id: 3,
+      name: "ICT",
+      is_active: true,
+      team_count: 0,
+      employee_count: 0,
+      teams: [],
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify(created), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    render(
+      <EmployeeForm
+        endpoint="/api/hr/employees"
+        method="POST"
+        departments={DEPARTMENTS}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create department" }));
+    fireEvent.change(screen.getByLabelText("New department name"), {
+      target: { value: "ICT" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save department" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        "/api/hr/departments",
+        expect.objectContaining({ method: "POST" })
+      )
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Department")).toHaveValue("3")
+    );
+    expect(
+      Array.from(
+        (screen.getByLabelText("Department") as HTMLSelectElement).options
+      ).map((option) => option.textContent)
+    ).toEqual(["No department", "Administration", "Bunda College", "ICT"]);
+  });
+
+  it("labels the current role on create and on edit", () => {
     const { unmount } = render(
       <EmployeeForm endpoint="/api/hr/employees" method="POST" />
     );
-    expect(selectedValue(screen.getByLabelText("Role"))).toBe("Employee");
+    expect(screen.getByLabelText("Role")).toHaveValue("Employee");
 
     unmount();
 
@@ -241,28 +293,48 @@ describe("EmployeeForm", () => {
         method="PATCH"
       />
     );
-    expect(selectedValue(screen.getByLabelText("Role"))).toBe("Approver");
+    expect(screen.getByLabelText("Role")).toHaveValue("Approver");
   });
 
-  it("submits the default Employee role in the payload", async () => {
+  it("offers no password field, because HR cannot set one", () => {
+    render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
+
+    // The account is unusable until the person follows the emailed
+    // set-password link, so there is nothing here for HR to fill in.
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("sends no password when editing either", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+
+    render(
+      <EmployeeForm
+        employee={HOD_EMPLOYEE}
+        endpoint="/api/hr/employees/1"
+        method="PATCH"
+      />
+    );
+
+    submitPayload();
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body.password).toBeUndefined();
+  });
+
+  it("submits the password but never the role", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
 
     render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    await submitPayload("Employee");
+    submitPayload();
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
-    const init = vi.mocked(fetch).mock.calls[0][1];
-    expect(JSON.parse(String(init?.body)).role).toBe("employee");
-  });
-
-  it("submits the selected role instead of the default", async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
-
-    render(<EmployeeForm endpoint="/api/hr/employees" method="POST" />);
-    await submitPayload("Approver");
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    const init = vi.mocked(fetch).mock.calls[0][1];
-    expect(JSON.parse(String(init?.body)).role).toBe("approver");
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    // HR sets no password: the account is unusable until the person follows
+    // the emailed set-password link.
+    expect(body.password).toBeUndefined();
+    // The role is fixed server-side: sending it would either be ignored or
+    // wrongly read as an attempt to choose access.
+    expect(body.role).toBeUndefined();
   });
 });

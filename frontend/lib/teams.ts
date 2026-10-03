@@ -36,18 +36,17 @@ export interface TeamReadiness {
 }
 
 /**
- * One person on one section, for one period. A membership is a period rather
- * than a row that is either there or not, so "who could act on this date" is a
- * question the data can answer.
+ * The one person a step routes to.
+ *
+ * A step has exactly one approver, so the read shape says so: one person, or
+ * `null` for a step nobody has been appointed to yet. A roster would read as
+ * "whichever of these acts first", which is the configuration the stage model
+ * forbids.
  */
-export interface TeamSectionMember {
+export interface TeamSectionApprover {
   id: number;
-  user: number;
   user_name: string;
   user_email: string;
-  effective_from: string;
-  effective_to: string | null;
-  is_effective: boolean;
 }
 
 /** A team row's read-only summary of one step of the workflow it routes through. */
@@ -58,8 +57,7 @@ export interface TeamSection {
   is_active: boolean;
   approver_role: string;
   approver_role_label: string;
-  member_count: number;
-  members: TeamSectionMember[];
+  approver: TeamSectionApprover | null;
 }
 
 /**
@@ -85,8 +83,9 @@ export interface Team {
   name: string;
   code: string;
   description: string;
-  /** Free text. Two active teams sharing one is a configuration problem, not an error. */
-  department: string;
+  /** A pick from the departments HR maintains; it decides who may be appointed. */
+  department: number | null;
+  department_name: string;
   campus: number | null;
   campus_name: string;
   /** The chain this team routes through, or null while the team is a draft. */
@@ -111,8 +110,33 @@ export interface Team {
 export interface TeamSectionInput {
   name: string;
   approver_role: string;
-  /** User ids staffed on the step. Only meaningful when creating the chain. */
-  members?: number[];
+  /**
+   * The one person appointed to the step, by user id. Omitted to leave an
+   * existing step's approver alone, which is how an edit that only renames a
+   * step does not unappoint the person on it.
+   */
+  approver?: number | null;
+}
+
+/** One person the backend says may be appointed to a step of a team's chain. */
+export interface EligibleApprover {
+  id: number;
+  full_name: string;
+  email: string;
+  designation: string;
+}
+
+/**
+ * The people eligible for one team's steps, and which department they were
+ * scoped to.
+ *
+ * Returned rather than filtered in the browser: eligibility is the department,
+ * so the list must come from the same rule the write enforces, or the picker
+ * would offer people the backend then refuses.
+ */
+export interface EligibleApprovers {
+  department: { id: number; name: string };
+  candidates: EligibleApprover[];
 }
 
 /**
@@ -132,7 +156,8 @@ export interface TeamWorkflowInput {
 export interface TeamInput {
   name: string;
   description?: string;
-  department?: string;
+  /** The department this team belongs to, as a pick from the departments list. */
+  department?: number | null;
   campus?: number | null;
   effective_from?: string | null;
   effective_to?: string | null;

@@ -22,7 +22,7 @@ from leave.models import (
 from users.models import User
 
 from workflows.models import Delegation, Reassignment, Workflow
-from workflows.testing import make_approver
+from workflows.testing import department_for, make_approver
 
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
@@ -435,6 +435,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.hr_user = make_hr()
         self.client.force_authenticate(user=self.hr_user)
         self.today = timezone.localdate()
+        self.department = department_for("Bunda College")
 
     def _entry_for(self, target_type, target_id):
         return AuditEntry.objects.filter(
@@ -448,8 +449,12 @@ class AuditWiringTests(StubProviderMixin, TestCase):
                 "email": "staff-new@audit.test",
                 "first_name": "New",
                 "last_name": "Staff",
+                "password": "initial-pass-123",
                 "designation": "Lecturer",
-                "department": "Bunda College",
+                # An existing department's id, not a typed name: eligibility is
+                # decided by comparing department references, so a free-text
+                # department could not be compared to anything.
+                "department": self.department.id,
                 "category": "academic",
                 "grade": "C",
                 "appointment_date": "2023-05-01",

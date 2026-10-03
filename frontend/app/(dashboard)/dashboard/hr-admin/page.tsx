@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, NotebookTabs, Tags, UserCheck, UserCog, Users } from "lucide-react";
+import { ArrowLeftRight, Building2, CalendarDays, CalendarRange, ClipboardList, FileText, History, NotebookTabs, Tags, UserCheck, UserCog, Users } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -35,6 +35,19 @@ export default async function HRAdminPage() {
           <h3 className="text-lg font-semibold text-text-primary">Employees</h3>
           <p className="mt-1 text-sm text-text-secondary">
             Search, create, and manage employee records.
+          </p>
+        </Link>
+        <Link
+          href="/dashboard/hr-admin/departments"
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
+        >
+          <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
+            <Building2 className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-semibold text-text-primary">Departments</h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Maintain the units teams and employees belong to, which is what scopes
+            who may approve for a team.
           </p>
         </Link>
         <Link

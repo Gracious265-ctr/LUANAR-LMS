@@ -2,11 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApproverRole } from "@/lib/approver-roles";
-import type { Employee } from "@/lib/employees";
-import { makeEmployee } from "@/lib/employees/__fixtures__";
+import type { Department } from "@/lib/departments";
 
 import { makeCampus, makeTeam } from "@/lib/teams/__fixtures__";
-import { createTeam } from "@/lib/teams-client";
+import { createTeam, listEligibleApprovers } from "@/lib/teams-client";
 
 import { TeamsSection } from "@/components/hr/TeamsSection";
 
@@ -29,7 +28,12 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/teams-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/teams-client")>();
-  return { ...actual, createTeam: vi.fn(), updateTeam: vi.fn() };
+  return {
+    ...actual,
+    createTeam: vi.fn(),
+    updateTeam: vi.fn(),
+    listEligibleApprovers: vi.fn(),
+  };
 });
 
 // `code` rather than `key`: the chain seeds a new step with `roles[0].code`,
@@ -52,8 +56,19 @@ const roles: ApproverRole[] = [
   },
 ];
 
-const employees: Employee[] = [
-  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["hod"] }),
+// Eligibility is per department and per role, so the picker reads the server
+// rather than filtering a staff list the browser already holds.
+const departments: Department[] = [
+  {
+    id: 1,
+    name: "Physics",
+    is_active: true,
+    team_count: 0,
+    employee_count: 1,
+    teams: [],
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  },
 ];
 
 const campusList = [makeCampus()];
@@ -66,32 +81,56 @@ function renderSection(
       teams={[makeTeam()]}
       campuses={campusList}
       roles={roles}
-      employees={employees}
+      departments={departments}
+      departmentsError=""
       rolesError=""
-      peopleError=""
       {...props}
     />,
   );
 }
 
 /**
- * A team is only valid with a chain, so the name alone is not enough to reach a
- * submit: one step needs a name, a role and somebody who holds that role.
+ * A create crosses both pages: page one says what the team is, page two who
+ * decides, and only the second one writes. The approver picker stays disabled
+ * until the department and the step's role are both known, because eligibility
+ * is the server's answer for that pair rather than a filter over a staff list.
  */
-function fillCreateForm() {
+async function fillCreateForm() {
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "Physics" },
   });
+  fireEvent.change(screen.getByLabelText("Department"), {
+    target: { value: "1" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue to approval steps" }),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Add step" }));
   fireEvent.change(screen.getByLabelText("Step 1 name"), {
     target: { value: "Review" },
   });
-  fireEvent.click(screen.getByLabelText("Jane Dean"));
+  fireEvent.change(screen.getByLabelText("Step 1 role"), {
+    target: { value: "hod" },
+  });
+
+  const approver = screen.getByLabelText("Step 1 approver");
+  await waitFor(() => expect(approver).not.toBeDisabled());
+  fireEvent.change(approver, { target: { value: "3" } });
 }
 
 describe("TeamsSection — wave 2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
+    vi.mocked(listEligibleApprovers).mockResolvedValue([
+      {
+        id: 3,
+        full_name: "Jane Dean",
+        email: "jane.dean@luanar.ac.mw",
+        designation: "Dean",
+      },
+    ]);
     vi.stubGlobal("history", { ...window.history, length: 2 });
     // Stands in for the browser: stepping back drops the overlay param. Without
     // it the dialog never unmounts and Radix leaves the page `aria-hidden`.
@@ -137,6 +176,9 @@ describe("TeamsSection — wave 2", () => {
     searchParamsRef.current = new URLSearchParams("team=new");
     renderSection();
 
+    // Page one is where the dialog opens, so this is the cancel that has to
+    // hand control back to the overlay rather than following the standalone
+    // page's link away from it.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(routerMock.back).toHaveBeenCalledTimes(1);
@@ -154,7 +196,7 @@ describe("TeamsSection — wave 2", () => {
       ],
     });
 
-    fillCreateForm();
+    await fillCreateForm();
     fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
 
     await waitFor(() => expect(createTeam).toHaveBeenCalled());
@@ -177,7 +219,7 @@ describe("TeamsSection — wave 2", () => {
       ],
     });
 
-    fillCreateForm();
+    await fillCreateForm();
     fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
 
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
@@ -198,17 +240,28 @@ describe("TeamsSection — wave 2", () => {
     expect(screen.queryByText("Bunda College Faculty")).toBeNull();
   });
 
-  it("still opens the dialog when the roles or people read failed", () => {
+  it("still opens the dialog when the roles read failed", () => {
     // Option data that failed to load is the form's problem to report, not a
-    // reason to hide the entry point.
+    // reason to hide the entry point. The roles belong to the chain, so the
+    // error surfaces on page two rather than blocking the way to it.
     searchParamsRef.current = new URLSearchParams("team=new");
     renderSection({
       teams: [],
       rolesError: "Unable to load approver roles. Please try again.",
-      peopleError: "Unable to load employees. Please try again.",
     });
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Unable to load approver roles. Please try again."),
+    ).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Physics" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to approval steps" }),
+    );
+
     expect(
       screen.getAllByText("Unable to load approver roles. Please try again.")
         .length,

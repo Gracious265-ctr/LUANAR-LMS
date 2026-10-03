@@ -18,7 +18,13 @@ from audit.models import AuditEntry
 from leave.models import LeaveApplication
 from leave.providers.fixture import FixtureRulesProvider
 from leave.services.submission import submit_application
-from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, TODAY, make_user
+from leave.tests.stubs import (
+    EARLIEST_ANNUAL_START,
+    TODAY,
+    StubProviderMixin,
+    ensure_annual_leave_rule,
+    make_user,
+)
 from workflows.models import ApplicationStage, ApplicationStageApprover
 from workflows.services import assign_workflow
 
@@ -86,6 +92,9 @@ class CancellationBase(StubProviderMixin, APITestCase):
             first_name="Rej",
             last_name="Registrar",
         )
+        # Directly-built applications have no snapshot, so restoration has to
+        # resolve through the current leave rule.
+        ensure_annual_leave_rule()
         self.stub.register_employee(self.employee)
         for role, user in (
             ("supervisor", self.supervisor),

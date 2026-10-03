@@ -3,9 +3,7 @@
 Replaces the placeholder :class:`~leave.providers.fixture.FixtureRulesProvider`
 as the default ``LEAVE_RULES_PROVIDER``. Every method resolves from the real
 HR-track tables (Units 2-5); absent configuration returns ``None``/``{}``/``0``
-rather than invented data. ``department_id`` stays ``None`` because
-``EmployeeProfile.department`` is free text, not a foreign key, and no
-validator consumes it.
+rather than invented data.
 """
 
 from __future__ import annotations

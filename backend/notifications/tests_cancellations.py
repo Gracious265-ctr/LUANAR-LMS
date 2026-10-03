@@ -30,8 +30,9 @@ from leave.models import LeaveApplication
 from leave.services.submission import submit_application
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
-    StubProviderMixin,
     TODAY,
+    StubProviderMixin,
+    ensure_annual_leave_rule,
     make_user,
 )
 from notifications.cancellations import (
@@ -62,6 +63,9 @@ class CancellationEmailBase(StubProviderMixin, TestCase):
     """
 
     def setUp(self):
+        # The application is built directly, so balance restoration resolves
+        # through the current leave rule rather than a submission snapshot.
+        ensure_annual_leave_rule()
         self.stub = self.use_stub()
         self.employee = make_user(
             "employee@notify.test", first_name="Ken", last_name="Employee"

@@ -26,6 +26,7 @@ from leave.models import (
     LeaveType,
     PublicHoliday,
 )
+from workflows.testing import department_for
 from leave.services.submission import submit_application
 from leave.services.working_days import calculate_working_days, holidays_in_range
 from users.models import EmployeeProfile
@@ -83,7 +84,7 @@ class PublicHolidayBase(TestCase):
         )
         EmployeeProfile.objects.create(
             user=self.user,
-            department="Administration",
+            department=department_for("Administration"),
             designation="Administrative Officer",
             category=EmployeeProfile.Category.ADMINISTRATION,
             grade="B",

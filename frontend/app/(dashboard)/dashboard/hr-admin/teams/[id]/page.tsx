@@ -4,13 +4,15 @@ import { ArrowLeft, Pencil } from "lucide-react";
 
 import { TeamLifecycleActions } from "@/components/hr/team-lifecycle-actions";
 import { TeamMemberList } from "@/components/hr/team-member-list";
+import { TeamRoster } from "@/components/hr/team-roster";
 import { teamStatusBadgeClass, teamStatusLabel } from "@/lib/teams";
 import { getTeam } from "@/lib/teams";
+import {
+  listEmployeesByTeam,
+  listUnassignedEmployees,
+  type Employee,
+} from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
-import { listAllEmployees, type Employee } from "@/lib/employees";
-
-const PEOPLE_ERROR =
-  "Unable to load employees, so the chain cannot be staffed from this screen.";
 
 /**
  * One team: what it is, whether it is routing, and who can act at each step.
@@ -36,21 +38,28 @@ export default async function TeamPage({
   }
 
   let team;
+  let members: Employee[] = [];
+  let candidates: Employee[] = [];
   try {
     team = await getTeam(id);
   } catch {
     notFound();
   }
 
-  // Separate from the team read so a failure to load the people list does not
-  // take the team itself off the screen — the reader can still see the status
-  // and act on it.
-  let employees: Employee[] = [];
-  let peopleError = "";
+  // The roster is a read of the directory scoped to this team, and the
+  // candidates are the people the directory has not placed anywhere yet. Both
+  // are fetched here rather than in the browser so the page has no loading
+  // flicker and the filters run where the data lives.
   try {
-    employees = await listAllEmployees();
+    [members, candidates] = await Promise.all([
+      listEmployeesByTeam(id),
+      listUnassignedEmployees(),
+    ]);
   } catch {
-    peopleError = PEOPLE_ERROR;
+    // A directory read that fails must not take the whole team page with it:
+    // the chain and the team's status are still worth showing.
+    members = [];
+    candidates = [];
   }
 
   return (
@@ -80,7 +89,7 @@ export default async function TeamPage({
             <p className="text-text-secondary">
               {[
                 team.description,
-                team.department && `Department: ${team.department}`,
+                team.department_name && `Department: ${team.department_name}`,
                 team.campus_name && `Campus: ${team.campus_name}`,
               ]
                 .filter(Boolean)
@@ -140,11 +149,14 @@ export default async function TeamPage({
         <h3 className="text-lg font-semibold text-text-primary">
           Who can approve
         </h3>
-        {peopleError ? (
-          <p className="mt-2 text-sm text-status-rejected">{peopleError}</p>
-        ) : (
-          <TeamMemberList team={team} employees={employees} />
-        )}
+        <TeamMemberList team={team} />
+      </div>
+
+      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <h3 className="text-lg font-semibold text-text-primary">
+          Whose leave this team routes
+        </h3>
+        <TeamRoster team={team} members={members} candidates={candidates} />
       </div>
     </div>
   );

@@ -383,6 +383,35 @@ class StubWorkflowProvider:
         )
 
 
+def ensure_annual_leave_rule(leave_type_id: int = 1) -> None:
+    """Give ``leave_type_id`` a real leave rule that deducts annual leave.
+
+    An application a test builds directly carries no submission snapshot, so
+    cancellation restoration resolves through the documented fallback: the
+    current HR-configured rule. With no rule the answer is deliberately "does
+    not deduct", because a cancellation must never invent a restoration the
+    configuration never granted. So a test that wants a restoration has to
+    configure the rule, exactly as HR would in the application.
+    """
+    from leave.models import LeaveRule, LeaveType
+
+    LeaveType.objects.update_or_create(
+        id=leave_type_id,
+        defaults={"code": "annual", "name": "Annual leave"},
+    )
+    LeaveRule.objects.update_or_create(
+        leave_type_id=leave_type_id,
+        effective_from=date(2026, 1, 1),
+        defaults={
+            "max_duration_days": 30,
+            "min_notice_days": 5,
+            "requires_supporting_document": False,
+            "eligibility_rules": [],
+            "consumes_annual_entitlement": True,
+        },
+    )
+
+
 class StubProviderMixin:
     """TestCase mixin that installs a stub provider + fixed ``today``.
 

@@ -32,6 +32,8 @@ vi.mock("@/lib/delegations-client", async (importOriginal) => {
 function delegation(over: Partial<Delegation> = {}): Delegation {
   return {
     id: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
     approver: 3,
     approver_name: "Jane Dean",
     approver_role: "dean",

@@ -58,7 +58,7 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
             </TableCell>
             <TableCell className="text-text-secondary">{employee.email}</TableCell>
             <TableCell className="text-text-secondary">
-              {employee.department || "—"}
+              {employee.department_name || "—"}
             </TableCell>
             <TableCell className="text-text-secondary">
               {employee.designation || "—"}

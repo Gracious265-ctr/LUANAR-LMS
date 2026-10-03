@@ -120,22 +120,20 @@ def team_member_ids(user: User) -> list[int]:
 def department_member_ids(user: User) -> list[int]:
     """Everyone in the *department* of ``user``'s team, other than ``user``.
 
-    Department is a property of the team now — it is the free-text label on
-    ``Team.department`` — so a department-wide review spans every team in that
-    department rather than every profile that happens to share a string.
+    Department is a property of the team now — it is a reference to a
+    ``Department`` row — so a department-wide review spans every team in that
+    department rather than every profile that happens to share a label.
     """
     from users.models import EmployeeProfile
 
     profile = getattr(user, "employee_profile", None)
-    if profile is None or profile.team_id is None:
+    if profile is None or profile.team_id is None or profile.team.department_id is None:
         return []
-    department = (profile.team.department or "").strip()
-    if not department:
-        return []
+    department = profile.team.department
     return list(
         EmployeeProfile.objects.filter(
             user__is_active=True,
-            team__department__iexact=department,
+            team__department=department,
         )
         .exclude(user_id=user.pk)
         .values_list("user_id", flat=True)
