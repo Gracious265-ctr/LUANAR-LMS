@@ -36,7 +36,8 @@
       },
       "assigned_at": "2026-10-12T08:32:11Z",
       "decided_at": "2026-10-14T07:15:03Z",
-      "comment": "Verified. Forwarded."
+      "comment": "Verified. Forwarded.",
+      "skip_reason": null
     },
     {
       "order": 2,
@@ -51,7 +52,8 @@
       },
       "assigned_at": "2026-10-15T10:04:42Z",
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 3,
@@ -61,7 +63,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 4,
@@ -71,7 +74,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     }
   ],
   "events": [

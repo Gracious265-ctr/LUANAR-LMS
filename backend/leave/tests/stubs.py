@@ -297,39 +297,73 @@ class StubWorkflowProvider:
         registered more than once is a section with several members.
 
         The applicant is removed from every set, as the real provider removes
-        them. A section whose members were *only* the applicant therefore
-        resolves to an empty set rather than silently becoming somebody else, and
-        the caller refuses the chain — which is the shape a real
-        single-member section the applicant sits in produces.
+        them. Where that leaves nobody the stage is *skipped* rather than routed
+        to a stand-in (Unit 30), mirroring
+        :meth:`workflows.providers.DatabaseWorkflowProvider.get_stage_definitions`:
+        the first stage staffed by the applicant alone is skipped, so is every
+        stage below it, and if that was the last stage the application is handed
+        to HR instead of being left with nothing to decide.
+
+        A *shared* stage is not a skip: the applicant leaves a colleague behind,
+        so that stage routes to them and the chain still opens at section one.
         """
         from workflows.providers import StageDefinition
         from workflows.testing import ensure_roles
 
+        applicant_id = application.employee_id
         roles = ensure_roles(*self.default_chain)
-        definitions = []
+
+        resolved = []
         for order, code in enumerate(self.default_chain, start=1):
             members = set(self.approvers.get(code, ()))
             if not members and not self.strict:
-                fallback = _active_user_id_for_role(
-                    code, exclude=application.employee_id
-                )
+                fallback = _active_user_id_for_role(code, exclude=applicant_id)
                 if fallback is None:
                     fallback = self._filler_approver_id(code)
                 members = {fallback}
-            role = roles[code]
+            resolved.append((order, code, roles[code], members))
+
+        # The first stage the applicant staffed alone. Comparing the *raw* member
+        # set is what keeps a genuinely unstaffed stage refusing the submission
+        # instead of masquerading as a skip.
+        sole_applicant_order = next(
+            (
+                order
+                for order, _code, _role, members in resolved
+                if applicant_id is not None and members == {applicant_id}
+            ),
+            None,
+        )
+
+        definitions = []
+        for order, code, role, members in resolved:
+            skipped = sole_applicant_order is not None and order <= sole_applicant_order
+            if skipped:
+                reason = (
+                    "Applicant cannot approve their own application."
+                    if order == sole_applicant_order
+                    else "Applicant is a higher-stage approver."
+                )
+            else:
+                reason = ""
             definitions.append(
                 StageDefinition(
                     order=order,
                     role=role.code,
                     role_label=role.label,
-                    approver_user_ids=tuple(
-                        sorted(members - {application.employee_id})
-                    ),
+                    approver_user_ids=() if skipped else tuple(sorted(members - {applicant_id})),
                     role_id=role.pk,
                     history_scope=role.history_scope,
                     handles_cancellation=role.handles_cancellation,
+                    skipped=skipped,
+                    skip_reason=reason,
                 )
             )
+
+        if sole_applicant_order == len(resolved) and sole_applicant_order is not None:
+            from workflows.providers import _hr_review_stage
+
+            definitions.append(_hr_review_stage(len(resolved) + 1, applicant_id))
         return definitions
 
     def get_cancellation_stages(self, application):

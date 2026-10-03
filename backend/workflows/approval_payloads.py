@@ -426,6 +426,11 @@ def _stage_block(
         "assigned_at": _iso(stage.created_at),
         "decided_at": _iso(decision.decided_at if decision else None),
         "comment": decision.comment if decision else None,
+        # Why this stage was skipped (Unit 30). Null rather than "" so a client
+        # can tell "not skipped" from "skipped for no stated reason", and so the
+        # reason shows in the approval history without the stage having to be
+        # hidden or dropped from it.
+        "skip_reason": stage.skip_reason or None,
     }
 
 

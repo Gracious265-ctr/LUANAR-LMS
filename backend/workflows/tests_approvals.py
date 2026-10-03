@@ -37,6 +37,8 @@ from .testing import (
 from .models import (
     ApplicationStage,
     ApprovalDecision,
+    ApproverRole,
+    Section,
     SectionMember,
     Team,
     Workflow,
@@ -44,7 +46,6 @@ from .models import (
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
-    resolve_applicable_workflow,
 )
 from .services import (
     ApprovalNotAllowedError,
@@ -203,7 +204,19 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         self._place_on_team(self.supervisor, self.admin_team)
 
     def _place_on_team(self, user, team):
-        profile = user.employee_profile
+        # The approvers created by ``make_user`` have a role but no profile: only
+        # the two named in ``ApprovalBase.setUp`` get one. A team assignment needs
+        # a profile, so create a plain one rather than making every test that
+        # places an approver do it.
+        try:
+            profile = user.employee_profile
+        except EmployeeProfile.DoesNotExist:
+            profile = EmployeeProfile.objects.create(
+                user=user,
+                designation="Officer",
+                department=department_for("Administration"),
+                grade="B",
+            )
         profile.team = team
         profile.save(update_fields=["team"])
         return profile
@@ -238,27 +251,128 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         )
         self.assertEqual(definitions[0].approver_user_ids, (deputy.pk,))
 
-    def test_a_step_whose_only_approver_is_the_applicant_is_refused(self):
-        """Self-approval is a configuration error, not a silently skipped step.
+    def test_a_step_the_applicant_holds_is_skipped_forwards(self):
+        """An approver applicant does not approve their own leave (Unit 30).
 
-        The old model let a stage resolve to the applicant and skipped it
-        further down the chain. A step has no such fallback \u2014 its one approver
-        *is* the applicant \u2014 so the submission is refused and the message says
-        to appoint somebody else.
+        Their own stage is still planned \u2014 dropping it silently would make the
+        history unreadable \u2014 but it is marked skipped, and the application opens
+        at the next stage up instead of being refused.
         """
         profile = self._place_on_team(self.supervisor, self.admin_team)
         profile.category = EmployeeProfile.Category.ADMINISTRATION
         profile.save()
-        supervisor_section = self.admin_workflow.sections.get(
-            approver_role__code="supervisor"
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=self.supervisor)
         )
-        with self.assertRaises(WorkflowConfigError) as ctx:
+        self.assertEqual(
+            [(d.role, d.skipped) for d in definitions],
+            [
+                ("supervisor", True),
+                ("hod", False),
+                ("registrar", False),
+                ("dvc", False),
+            ],
+        )
+        skipped = definitions[0]
+        self.assertEqual(
+            skipped.skip_reason, "Applicant cannot approve their own application."
+        )
+        # Nobody may act on a skipped stage, so it resolves to no one at all \u2014
+        # which is exactly why it must not be a routable definition.
+        self.assertEqual(skipped.approver_user_ids, ())
+
+    def _place_on_admin_team(self, user):
+        profile = self._place_on_team(user, self.admin_team)
+        profile.category = EmployeeProfile.Category.ADMINISTRATION
+        profile.save()
+        return profile
+
+    def test_the_applicants_final_stage_hands_the_application_to_hr(self):
+        """The applicant is the DVC, the last step: there is no higher stage to
+        open at, so an HR stage is appended rather than the application being
+        refused or finalised by nobody (Unit 30)."""
+        hr = make_user("hr-1@luanar", role=User.Role.HR, first_name="Ha")
+        self._place_on_admin_team(self.dvc)
+
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=self.dvc)
+        )
+
+        self.assertEqual(
+            [(d.role, d.skipped) for d in definitions],
+            [
+                ("supervisor", True),
+                ("hod", True),
+                ("registrar", True),
+                ("dvc", True),
+                ("hr", False),
+            ],
+        )
+        self.assertEqual(definitions[-1].approver_user_ids, (hr.pk,))
+        self.assertEqual(definitions[-1].section_id, None)
+        self.assertEqual(
+            definitions[-1].history_scope, ApproverRole.HistoryScope.ALL
+        )
+        # The appended stage keeps the orders contiguous, so nothing downstream
+        # that assumes 1..N has to know a stage was invented here.
+        self.assertEqual([d.order for d in definitions], [1, 2, 3, 4, 5])
+
+    def test_the_hr_destination_excludes_the_applicant(self):
+        """HR is decided by somebody other than the person applying, so an HR
+        account of their own does not put them in their own stage."""
+        me = make_user("hr-applicant@luanar", role=User.Role.HR, first_name="Io")
+        other = make_user("hr-other@luanar", role=User.Role.HR, first_name="Ot")
+        self._place_on_admin_team(me)
+        Section.objects.filter(
+            workflow=self.admin_workflow, approver_role__code="dvc"
+        ).update(approver=me)
+
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=me)
+        )
+
+        self.assertEqual(definitions[-1].role, "hr")
+        self.assertEqual(definitions[-1].approver_user_ids, (other.pk,))
+
+    def test_no_other_hr_account_is_a_refusal_not_a_deadlock(self):
+        """The sole HR account belongs to the applicant. Parking the
+        application on a stage nobody may act would be worse than refusing it."""
+        me = make_user("hr-only@luanar", role=User.Role.HR, first_name="Solo")
+        self._place_on_admin_team(me)
+        Section.objects.filter(
+            workflow=self.admin_workflow, approver_role__code="dvc"
+        ).update(approver=me)
+
+        with self.assertRaises(WorkflowConfigError) as caught:
             DatabaseWorkflowProvider().get_stage_definitions(
-                LeaveApplication(employee=self.supervisor)
+                LeaveApplication(employee=me)
             )
-        message = str(ctx.exception)
-        self.assertIn("applicant themself", message)
-        self.assertIn("cannot approve their own leave", message)
+        message = str(caught.exception)
+        self.assertIn("Human Resources", message)
+        self.assertIn("No other active", message)
+
+    def test_no_hr_account_at_all_is_a_refusal(self):
+        self._place_on_admin_team(self.dvc)
+        User.objects.filter(role=User.Role.HR).update(is_active=False)
+
+        with self.assertRaises(WorkflowConfigError) as caught:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.dvc)
+            )
+        self.assertIn("No other active", str(caught.exception))
+
+    def test_an_inactive_hr_account_is_not_offered_the_application(self):
+        active = make_user("hr-active@luanar", role=User.Role.HR, first_name="Ac")
+        inactive = make_user("hr-gone@luanar", role=User.Role.HR, first_name="Go")
+        inactive.is_active = False
+        inactive.save(update_fields=["is_active"])
+        self._place_on_admin_team(self.dvc)
+
+        definitions = DatabaseWorkflowProvider().get_stage_definitions(
+            LeaveApplication(employee=self.dvc)
+        )
+
+        self.assertEqual(definitions[-1].approver_user_ids, (active.pk,))
 
     def test_chain_for_academic_without_department_starts_with_hod(self):
         profile = self._place_on_team(self.employee, self.academic_team)
@@ -388,42 +502,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
                 LeaveApplication(employee=self.employee)
             )
         self.assertIn("does not start until", str(ctx.exception))
-
-    def test_exact_scope_wins_over_category_any(self):
-        from django.utils import timezone
-
-        exact = Workflow.objects.create(
-            name="Maths chain",
-            employee_category=EmployeeProfile.Category.ACADEMIC,
-            department="Mathematics",
-            effective_from=timezone.localdate(),
-            is_active=True,
-        )
-        make_section(exact, 1, "supervisor")
-        maths_team = make_team(
-            "Maths team",
-            ("supervisor",),
-            workflow=exact,
-            approvers={"supervisor": self.supervisor},
-        )
-        profile = self.employee.employee_profile
-        profile.category = EmployeeProfile.Category.ACADEMIC
-        profile.department = department_for("Mathematics")
-        profile.save()
-        resolved = resolve_applicable_workflow(
-            LeaveApplication(employee=self.employee)
-        )
-        self.assertEqual(resolved.pk, exact.pk)
-
-    def test_inactive_workflow_is_not_applicable(self):
-        Workflow.objects.all().update(is_active=False)
-        profile = self.employee.employee_profile
-        profile.category = EmployeeProfile.Category.ADMINISTRATION
-        profile.save()
-        self.assertIsNone(
-            resolve_applicable_workflow(LeaveApplication(employee=self.employee))
-        )
-
 
 class AssignmentTests(ApprovalBase):
     def test_assign_creates_chain_with_single_pending_stage(self):

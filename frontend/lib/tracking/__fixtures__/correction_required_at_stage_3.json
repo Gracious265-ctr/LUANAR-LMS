@@ -28,7 +28,8 @@
       },
       "assigned_at": "2026-10-12T08:32:11Z",
       "decided_at": "2026-10-14T07:15:03Z",
-      "comment": "Verified. Forwarded."
+      "comment": "Verified. Forwarded.",
+      "skip_reason": null
     },
     {
       "order": 2,
@@ -43,7 +44,8 @@
       },
       "assigned_at": "2026-10-14T09:00:00Z",
       "decided_at": "2026-10-15T14:22:19Z",
-      "comment": "Approved."
+      "comment": "Approved.",
+      "skip_reason": null
     },
     {
       "order": 3,
@@ -58,7 +60,8 @@
       },
       "assigned_at": "2026-10-15T16:00:00Z",
       "decided_at": "2026-10-17T10:00:00Z",
-      "comment": "Supporting documents must be uploaded before approval."
+      "comment": "Supporting documents must be uploaded before approval.",
+      "skip_reason": null
     },
     {
       "order": 4,
@@ -68,7 +71,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     }
   ],
   "events": [

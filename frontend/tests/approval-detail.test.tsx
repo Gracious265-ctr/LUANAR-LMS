@@ -6,6 +6,7 @@ import {
   makeApplicantExcludedReview,
   makeDecidedReview,
   makeReview,
+  makeSkippedReview,
 } from "@/lib/approvals/__fixtures__";
 import { fetchApproval } from "@/lib/approvals/service";
 
@@ -44,18 +45,35 @@ describe("ApprovalDetail", () => {
     expect(screen.getByText("Looks good.")).toBeInTheDocument();
   });
 
-  it("shows no skipped stage when the applicant sat on a section", async () => {
+  it("shows no skipped stage when the applicant shared a section", async () => {
     mockedFetchApproval.mockResolvedValue({
       ok: true,
       data: makeApplicantExcludedReview(),
     });
     render(<ApprovalDetail id="app-1" />);
 
-    // The applicant's own membership is removed at submission and a colleague
-    // on the same section decides it, so the chain runs straight through with
-    // nothing bypassed.
+    // The applicant is removed from the section's eligibility at submission and
+    // a colleague on the same section decides it, so the chain runs straight
+    // through with nothing bypassed.
     expect(await screen.findByText("Awaiting your decision")).toBeInTheDocument();
     expect(screen.queryByText(/Skipped/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Not yet reached")).toHaveLength(1);
+  });
+
+  it("shows a skipped stage with the reason it was passed over", async () => {
+    mockedFetchApproval.mockResolvedValue({
+      ok: true,
+      data: makeSkippedReview(),
+    });
+    render(<ApprovalDetail id="app-1" />);
+
+    // The applicant held the HOD stage, so it was skipped and the chain opened
+    // at the Registrar. The stage stays in the history with its reason: a reader
+    // must be able to tell a deliberate skip from a stage that was dropped.
+    expect(await screen.findByText("Skipped")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Applicant cannot approve their own application/)
+    ).toBeInTheDocument();
     expect(screen.getAllByText("Not yet reached")).toHaveLength(1);
   });
 

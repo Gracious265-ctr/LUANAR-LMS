@@ -621,15 +621,22 @@ class SectionApproverTests(ConfigurationAPIBase):
         # rule doing its job rather than an accident of ordering.
         self.assertIn("approver", response.data)
 
-    def test_one_person_may_hold_the_same_role_on_several_steps_of_one_chain(self):
-        """The same role at two points in a chain is one role, so it is allowed."""
+    def test_one_person_may_not_hold_two_stages_of_one_chain(self):
+        """Unit 30: an employee is on one stage per workflow.
+
+        Two steps with two *different* roles, so the per-department role rule
+        does not fire first and the refusal is unambiguously the per-workflow
+        one. Reusing the same role for both steps is a different refusal — the
+        role itself may only appear once per workflow — covered in
+        ``workflows.tests``.
+        """
         team = self.create_team(
-            "Two supervisor steps",
+            "Two step team",
             new_workflow={
-                "name": "Two supervisor steps chain",
+                "name": "Two step chain",
                 "sections": [
                     {"name": "First review", "approver_role": "supervisor"},
-                    {"name": "Second review", "approver_role": "supervisor"},
+                    {"name": "Second review", "approver_role": "hod"},
                 ],
             },
         )
@@ -642,17 +649,18 @@ class SectionApproverTests(ConfigurationAPIBase):
         steps = list(
             Workflow.objects.get(pk=team["workflow"]).sections.order_by("order")
         )
-        for step in steps:
-            self.add_approver(person, step)
-        # Re-read: the appointment is written through the API, so the instances
-        # fetched above still carry the pre-write ``approver_id``.
-        self.assertEqual(
-            [
-                Section.objects.get(pk=step.pk).approver_id
-                for step in steps
-            ],
-            [person.pk, person.pk],
+        self.add_approver(person, steps[0])
+        # The second appointment is refused through the API, naming the step
+        # already held. Posted directly rather than via add_approver, which
+        # asserts 201 and would fail on the refusal instead of on the rule.
+        refused = self.client.post(
+            MEMBERS_URL,
+            {"section": steps[1].pk, "user": person.pk},
+            format="json",
         )
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already assigned to step 1", str(refused.data))
+        self.assertIsNone(Section.objects.get(pk=steps[1].pk).approver_id)
 
     def test_an_approver_from_another_department_is_refused(self):
         """A team's approvers are its own department's employees.

@@ -723,20 +723,50 @@ describe("TeamForm", () => {
         .mock.calls.filter(([, role]) => role === 9)
     ).toHaveLength(1);
 
+    // ...and the repeat is refused on save. The backend enforces the same rule as
+    // a constraint on the workflow; catching it here names the role, where a
+    // database error naming a constraint would not.
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
-    await waitFor(() =>
-      expect(createTeam).toHaveBeenCalledWith(
-        expect.objectContaining({
-          new_workflow: expect.objectContaining({
-            sections: [
-              expect.objectContaining({ approver_role: "registrar", approver: 11 }),
-              expect.objectContaining({ approver_role: "registrar", approver: 11 }),
-            ],
-          }),
-        })
-      )
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Two steps both use the Registrar role/
     );
+    expect(createTeam).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save one person on two steps", async () => {
+    mockCandidates({ 1: [jane], 2: [jane] });
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+
+    render(<TeamForm campuses={campuses} departments={departments} roles={roles} />);
+
+    openSteps();
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    // Two different roles, one person: the roles are unique, so this is caught
+    // by the approver rule rather than the role one.
+    fireEvent.change(screen.getByLabelText("Step 2 role"), {
+      target: { value: "hod" },
+    });
+    await waitFor(() =>
+      expect(step(1).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
+    );
+    fireEvent.change(step(1).getByLabelText("Step 1 approver"), {
+      target: { value: "3" },
+    });
+    await waitFor(() =>
+      expect(step(2).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
+    );
+    fireEvent.change(step(2).getByLabelText("Step 2 approver"), {
+      target: { value: "3" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Jane Dean decides more than one step/
+    );
+    expect(createTeam).not.toHaveBeenCalled();
   });
 
   it("leaves an institution-wide step to HR when several hold the role", async () => {

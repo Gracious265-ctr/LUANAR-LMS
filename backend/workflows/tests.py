@@ -80,28 +80,41 @@ class SectionSequenceTests(TestCase):
             normalize_section_sequence([{"order": 1, "approver_role": "employee"}])
         self.assertEqual(ctx.exception.field, "approver_role")
 
-    def test_a_repeated_approver_role_is_allowed(self):
-        """One position may sit at several points in a chain.
+    def test_a_repeated_approver_role_is_refused(self):
+        """One position may sit at only one point in a chain (Unit 30).
 
-        This is the behaviour change sections were made for: the same person can
-        be asked twice, and the same office can sign off at two steps. Only
-        ``order`` has to be unique.
+        This used to be allowed: the same office could sign off at two steps, and
+        only ``order`` had to be unique. A role appearing twice in one workflow
+        means the same capacity deciding twice at two different points, which
+        ``section_workflow_role_unique`` now refuses at the database too. The
+        role may still be used by a *different* workflow.
+        """
+        ensure_roles("hod", "dean")
+        with self.assertRaises(StageSequenceError) as ctx:
+            normalize_section_sequence(
+                [
+                    {"order": 1, "name": "First HOD", "approver_role": "hod"},
+                    {"order": 2, "name": "Dean", "approver_role": "dean"},
+                    {"order": 3, "name": "Second HOD", "approver_role": "hod"},
+                ]
+            )
+        self.assertIn("already assigned to another stage", str(ctx.exception))
+
+    def test_a_role_may_still_repeat_across_different_workflows(self):
+        """The rule is per workflow, never global.
+
+        Reusing a role on another team's chain is normal — the same office
+        approves for more than one team — so the payload validator, which cannot
+        see other workflows, must not refuse it.
         """
         result = normalize_section_sequence(
             [
-                {"order": 1, "name": "First HOD", "approver_role": "hod"},
+                {"order": 1, "name": "HOD", "approver_role": "hod"},
                 {"order": 2, "name": "Dean", "approver_role": "dean"},
-                {"order": 3, "name": "Second HOD", "approver_role": "hod"},
             ]
         )
         self.assertEqual(
-            [section["approver_role"] for section in result],
-            ["hod", "dean", "hod"],
-        )
-        self.assertEqual([section["order"] for section in result], [1, 2, 3])
-        self.assertEqual(
-            [section["name"] for section in result],
-            ["First HOD", "Dean", "Second HOD"],
+            [section["approver_role"] for section in result], ["hod", "dean"]
         )
 
     def test_a_blank_name_falls_back_to_the_role_label(self):
@@ -318,12 +331,13 @@ class WorkflowAdminTests(TestCase):
         self.assertFalse(formset.is_valid())
         self.assertIn("order", formset.errors[0])
 
-    def test_a_role_may_be_repeated_across_sections(self):
-        """The same position can appear twice; sections are what make that legal.
+    def test_a_repeated_approver_role_is_refused_in_the_admin(self):
+        """The admin must agree with the API about what a workflow is (Unit 30).
 
-        One person sitting at two points in a chain is a normal thing for HR to
-        configure, and rejecting it here would make the API and the admin
-        disagree about what a workflow is.
+        No admin-side rule was added for this: ``section_workflow_role_unique`` is
+        a model constraint, so Django's cross-form ``validate_unique`` reports the
+        repeat on the ``approver_role`` field. This test pins that, so a future
+        change cannot leave the admin hitting a database error instead.
         """
         ensure_roles("hod")
         SectionInlineForm = inlineformset_factory(
@@ -349,8 +363,11 @@ class WorkflowAdminTests(TestCase):
             },
             instance=Workflow(),
         )
-        self.assertTrue(formset.is_valid(), formset.errors)
-        self.assertEqual(formset.non_form_errors(), [])
+        self.assertFalse(formset.is_valid())
+        self.assertIn(
+            "duplicate", str(formset.non_form_errors()).lower()
+        )
+        self.assertIn("approver_role", str(formset.non_form_errors()))
 
     def test_duplicate_section_order_is_rejected(self):
         """Repetition is fine for a role, but two steps cannot share a position."""

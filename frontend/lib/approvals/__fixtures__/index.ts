@@ -18,6 +18,7 @@ const STAGES = [
     assigned_at: "2026-09-21T09:12:00Z",
     decided_at: "2026-09-22T10:00:00Z",
     comment: "Looks good.",
+    skip_reason: null,
   },
   {
     order: 2,
@@ -29,6 +30,7 @@ const STAGES = [
     assigned_at: "2026-09-22T10:00:00Z",
     decided_at: null,
     comment: null,
+    skip_reason: null,
   },
   {
     order: 3,
@@ -40,6 +42,7 @@ const STAGES = [
     assigned_at: null,
     decided_at: null,
     comment: null,
+    skip_reason: null,
   },
   {
     order: 4,
@@ -51,6 +54,7 @@ const STAGES = [
     assigned_at: null,
     decided_at: null,
     comment: null,
+    skip_reason: null,
   },
 ] as const;
 
@@ -174,10 +178,11 @@ export function makeDecidedReview(): ApprovalReview {
 }
 
 /**
- * The applicant sat on the HOD section, so the chain did not stop there: the
- * applicant's own membership is removed at submission and a colleague on the
- * same section decided it. Nothing is skipped — a section whose only member is
- * the applicant is refused instead.
+ * The applicant sat on the HOD section alongside a colleague, so the chain did
+ * not stop there: the applicant is removed from the section's eligibility at
+ * submission and the colleague decided it. Nothing is skipped -- a section whose
+ * only approver is the applicant is skipped instead (Unit 30), which
+ * `makeSkippedReview` shows.
  */
 export function makeApplicantExcludedReview(): ApprovalReview {
   return makeReview({
@@ -193,6 +198,41 @@ export function makeApplicantExcludedReview(): ApprovalReview {
       stages: [
         STAGES[0],
         { ...STAGES[1], status: "approved", decided_at: "2026-09-22T11:00:00Z" },
+        { ...STAGES[2], status: "pending" },
+        STAGES[3],
+      ],
+    },
+  });
+}
+
+/**
+ * The applicant was the HOD, so that stage was skipped and the chain opened at
+ * the Registrar above it (Unit 30). The skipped stage stays in the history with
+ * the reason attached -- a reader has to be able to tell a deliberate skip from
+ * a stage that was quietly dropped.
+ */
+export function makeSkippedReview(): ApprovalReview {
+  return makeReview({
+    workflow: {
+      ...BASE_REVIEW.workflow,
+      current_stage: {
+        order: 3,
+        role: "registrar",
+        role_label: "Registrar",
+        is_final: false,
+        next_role_label: "DVC",
+      },
+      stages: [
+        STAGES[0],
+        {
+          ...STAGES[1],
+          status: "skipped",
+          assigned_approver: "",
+          assigned_at: null,
+          decided_at: null,
+          comment: null,
+          skip_reason: "Applicant cannot approve their own application.",
+        },
         { ...STAGES[2], status: "pending" },
         STAGES[3],
       ],

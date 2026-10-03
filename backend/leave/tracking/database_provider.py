@@ -10,7 +10,7 @@ never the current workflow configuration).
 Event type vocabulary is pinned to the frontend ``EVENT_ICONS`` set:
 ``submitted``, ``approved``, ``rejected``, ``correction_requested``,
 ``resubmitted``, ``reassigned``. Stage states stay ``approved | awaiting |
-rejected | returned | upcoming``.
+rejected | returned | skipped | upcoming``.
 """
 
 from datetime import datetime
@@ -178,6 +178,7 @@ class DatabaseTrackingProvider(TrackingProvider):
             assigned_at=assigned_at,
             decided_at=decided_at,
             comment=comment,
+            skip_reason=stage.skip_reason or None,
         )
 
     def _stage_state(self, stage) -> str:
@@ -189,6 +190,13 @@ class DatabaseTrackingProvider(TrackingProvider):
             return "rejected"
         if stage.status == ApplicationStage.Status.CORRECTION_REQUESTED:
             return "returned"
+        if stage.status == ApplicationStage.Status.SKIPPED:
+            # A skipped stage is settled, not upcoming (Unit 30). Rendering it as
+            # "upcoming" would say somebody still has to act on a stage that
+            # resolves nobody -- the exact misreading the skip is meant to
+            # prevent. ``WorkflowTracking`` has always allowed this state; it is
+            # the frontend that has to render it.
+            return "skipped"
         return "upcoming"
 
     def _acting_approver(self, acting_id, responsible_id, users) -> TrackedApprover | None:

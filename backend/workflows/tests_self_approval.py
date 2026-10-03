@@ -1,16 +1,23 @@
 """The self-approval business rule: an applicant is never an approver of record.
 
-Under sections, the rule is not "skip the applicant's stage" — it is "the
-applicant is not in the section's decision set". Two consequences follow, and
-these are the cases this module pins:
+Under sections, the rule has three shapes, and these are the cases this module
+pins:
 
 * **a shared section still routes** — the applicant sits on a section with a
   colleague, the applicant is removed from its eligibility snapshot, and the
   colleague decides it. Nothing is skipped and the chain still starts at
   section one;
-* **a section that is only the applicant cannot route** — there is nobody left,
-  so the submission is refused rather than routed into a chain that cannot
-  finish (invariant 12.7).
+* **a section staffed only by the applicant is skipped** (Unit 30) — there is
+  nobody left to act, so the stage is materialised as ``SKIPPED`` with the reason
+  recorded, every stage below it is skipped too, and the application opens at the
+  first stage above;
+* **when the applicant holds the last stage, the application goes to HR** — there
+  is no higher stage to open at, so a final HR stage is appended rather than the
+  application being refused or finalised by nobody.
+
+A section with *nobody* in it is a different problem and is still refused
+(invariant 12.7): there is no applicant to blame and nowhere to send it. That is
+:class:`UnstaffedStageIsStillRefusedTests`.
 
 The same check also has to hold on rows that predate sections, where the chain
 was built by skipping forward; those are covered by
@@ -50,6 +57,7 @@ from .models import (
 )
 from .policies import get_decision_authority, is_self_application
 from .services import (
+    ApprovalNotAllowedError,
     ReassignmentError,
     SelfApprovalBlockedError,
     decide,
@@ -299,63 +307,254 @@ class SharedSectionStillRoutesTests(SelfApprovalBase):
         )
 
 
-class SoleMemberSectionIsRefusedTests(SelfApprovalBase):
-    """A section staffed only by the applicant has nobody who can act.
+class SoleMemberStageIsSkippedTests(SelfApprovalBase):
+    """A stage staffed only by the applicant is skipped, not routed to a stand-in.
 
-    The reported cases: the applicant is the only HOD, or the only Registrar, and
-    that section has to be decided. There is no fallback and nowhere to skip to,
-    so the submission is refused and the message names the section.
+    The reported cases: the applicant is the only HOD, or the only Registrar. Their
+    own stage is materialised as skipped with a reason, every stage below it is
+    skipped for being below them, and the application opens at the first stage
+    above (Unit 30). This replaces the old behaviour, which refused the
+    submission outright.
     """
 
-    def test_the_only_hod_being_the_applicant_is_refused(self):
-        self.stub.workflow.set_chain("supervisor", "hod")
+    def assertSkipped(self, *orders, reasons=()):
+        app = self.submit()
+        for order in orders:
+            stage = self.stage_at(app, order)
+            self.assertEqual(
+                stage.status,
+                ApplicationStage.Status.SKIPPED,
+                f"stage {order} should be skipped",
+            )
+            self.assertEqual(
+                stage.eligible_approver_ids(), (), f"stage {order} resolves nobody"
+            )
+        for order, reason in reasons:
+            self.assertEqual(self.stage_at(app, order).skip_reason, reason)
+        app.refresh_from_db()
+        # The application still opened somewhere, so it is in flight rather than
+        # stuck: exactly one stage is pending, and it is above everything skipped.
+        pending = [
+            s for s in app.stages.all() if s.status == ApplicationStage.Status.PENDING
+        ]
+        self.assertEqual(len(pending), 1, "exactly one stage opens pending")
+        self.assertEqual(app.current_stage_id, pending[0].id)
+        # The stage that opened is *above* everything skipped, never one of them.
+        self.assertGreater(pending[0].stage_order, min(orders))
+        return app
+
+    def test_the_only_hod_being_the_applicant_opens_at_the_registrar(self):
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
         self.staff_role("supervisor", self.supervisor)
         self.staff_role("hod", self.employee)
+        self.staff_role("registrar", self.registrar)
+
+        app = self.assertSkipped(
+            1,
+            2,
+            reasons=(
+                (1, "Applicant is a higher-stage approver."),
+                (2, "Applicant cannot approve their own application."),
+            ),
+        )
+
+        self.assertEqual(app.current_stage.role, "registrar")
+
+    def test_the_only_registrar_being_the_applicant_is_handed_to_hr(self):
+        """The applicant is the last stage, so there is nothing above to open at
+        and HR decides it instead."""
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.other_hod)
+        self.staff_role("registrar", self.employee)
+
+        app = self.assertSkipped(1, 2, 3)
+
+        self.assertEqual(app.current_stage.role, "hr")
+        self.assertEqual(app.current_stage.role_label, "Human Resources")
+
+    def test_the_applicants_stage_is_skipped_not_dropped(self):
+        """The distinction that matters: skipped rather than routed to a
+        stand-in, and not silently dropped either -- it stays in the history with
+        the reason attached."""
+        self.stub.workflow.set_chain("hod")
+        self.staff_role("hod", self.employee)
+
+        app = self.submit()
+
+        skipped = self.stage_at(app, 1)
+        self.assertEqual(skipped.status, ApplicationStage.Status.SKIPPED)
+        self.assertEqual(
+            skipped.skip_reason, "Applicant cannot approve their own application."
+        )
+        self.assertEqual(app.current_stage.stage_order, 2)
+        self.assertEqual(app.current_stage.role, "hr")
+
+    def test_the_applicant_is_never_in_the_eligibility_of_any_stage(self):
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.employee)
+        self.staff_role("registrar", self.registrar)
+
+        app = self.submit()
+
+        for stage in app.stages.all():
+            self.assertNotIn(self.employee.id, stage.eligible_approver_ids())
+
+    def test_hr_decides_the_handed_over_application(self):
+        """The applicant's own position was the last step, so HR is what is left
+        to decide -- through the same stage machinery as any other step."""
+        self.stub.workflow.set_chain("hod")
+        self.staff_role("hod", self.employee)
+
+        app = self.submit()
+
+        self.approve(app, self.hr)
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.APPROVED)
+        self.assertEqual(self.stage_at(app, 2).status, ApplicationStage.Status.APPROVED)
+
+    def test_the_skip_is_audited(self):
+        """The audit trail has to explain why the chain starts where it does. The
+        applicant is the actor: their own position is what caused it."""
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.employee)
+        self.staff_role("registrar", self.registrar)
+
+        app = self.submit()
+
+        entries = AuditEntry.objects.filter(
+            action=AuditEntry.Action.STAGE_SKIPPED,
+            target_id=str(app.pk),
+        )
+        self.assertEqual(entries.count(), 1)
+        entry = entries.get()
+        self.assertEqual(entry.actor_id, self.employee.id)
+        self.assertEqual(
+            [stage["order"] for stage in entry.detail["stages"]], [1, 2]
+        )
+        self.assertEqual(
+            entry.detail["stages"][1]["reason"],
+            "Applicant cannot approve their own application.",
+        )
+        self.assertIn("2", entry.target_summary)
+
+    def test_nothing_is_audited_when_nothing_was_skipped(self):
+        """An ordinary chain must not manufacture a skip entry."""
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.other_hod)
+        self.staff_role("registrar", self.registrar)
+
+        app = self.submit()
+
+        self.assertFalse(
+            AuditEntry.objects.filter(
+                action=AuditEntry.Action.STAGE_SKIPPED
+            ).exists()
+        )
+
+    def test_the_api_shows_the_skipped_stages_with_their_reason(self):
+        """A reader has to be able to tell a deliberate skip from a stage that
+        was quietly dropped, so both the review payload and the employee-facing
+        tracking payload carry the reason."""
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.employee)
+        self.staff_role("registrar", self.registrar)
+        app = self.submit()
+
+        client = APIClient()
+        client.force_authenticate(user=self.registrar)
+        review = client.get(f"/api/v1/approvals/{app.pk}/")
+        self.assertEqual(review.status_code, status.HTTP_200_OK)
+        stages = {row["order"]: row for row in review.data["workflow"]["stages"]}
+        self.assertEqual(stages[1]["status"], "skipped")
+        self.assertEqual(
+            stages[1]["skip_reason"], "Applicant is a higher-stage approver."
+        )
+        self.assertEqual(
+            stages[2]["skip_reason"], "Applicant cannot approve their own application."
+        )
+        self.assertIsNone(stages[3]["skip_reason"])
+
+        client.force_authenticate(user=self.employee)
+        tracking = client.get(f"/api/v1/leave-applications/{app.pk}/tracking/")
+        self.assertEqual(tracking.status_code, status.HTTP_200_OK)
+        tracked = {row["order"]: row for row in tracking.data["stages"]}
+        self.assertEqual(tracked[1]["state"], "skipped")
+        self.assertEqual(
+            tracked[2]["state"], "skipped"
+        )
+        self.assertEqual(
+            tracked[2]["skip_reason"], "Applicant cannot approve their own application."
+        )
+        self.assertEqual(tracked[3]["state"], "awaiting")
+        self.assertIsNone(tracked[3]["skip_reason"])
+
+    def test_a_skipped_stage_never_reaches_an_approvers_queue(self):
+        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
+        self.staff_role("supervisor", self.supervisor)
+        self.staff_role("hod", self.employee)
+        self.staff_role("registrar", self.registrar)
+        app = self.submit()
+
+        client = APIClient()
+        client.force_authenticate(user=self.registrar)
+        client.get(f"/api/v1/approvals/?tab=pending")
+
+        pending = client.get("/api/v1/approvals/?tab=pending").data["results"]
+        rows = [row for row in pending if row["id"] == str(app.pk)]
+        self.assertEqual(len(rows), 1)
+
+    def test_the_applicant_cannot_decide_the_hr_stage_themselves(self):
+        self.stub.workflow.set_chain("hod")
+        self.staff_role("hod", self.employee)
+
+        app = self.submit()
+
+        with self.assertRaises(ApprovalNotAllowedError) as caught:
+            self.approve(app, self.employee)
+        self.assertEqual(caught.exception.reason, "self_application")
+        app.refresh_from_db()
+        self.assertEqual(app.current_stage.stage_order, 2)
+
+
+class UnstaffedStageIsStillRefusedTests(SelfApprovalBase):
+    """A stage nobody staffs at all is a configuration error, not a skip.
+
+    Distinct from the applicant holding a stage: here the section simply has
+    nobody, so there is no applicant to blame and nowhere to send it. The
+    submission is refused and the message names the stranded step.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stub.workflow.strict = True
+
+    def test_an_unstaffed_stage_refuses_the_submission(self):
+        self.stub.workflow.set_chain("supervisor", "hod")
+        self.staff_role("supervisor", self.supervisor)
+        # "hod" deliberately left empty.
 
         self.assertRefused("Head of Department")
 
-    def test_the_only_registrar_being_the_applicant_is_refused(self):
-        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
-        self.staff_role("supervisor", self.supervisor)
-        self.staff_role("hod", self.other_hod)
-        self.staff_role("registrar", self.employee)
-
-        self.assertRefused("Registrar")
-
-    def test_one_unsatisfiable_section_refuses_the_whole_submission(self):
-        """It is not routed from the start: a chain that cannot finish is worse
-        than a clear refusal, and the applicant learns immediately."""
-        self.stub.workflow.set_chain("supervisor", "hod", "registrar")
-        self.staff_role("supervisor", self.supervisor)
-        self.staff_role("hod", self.other_hod)
-        self.staff_role("registrar", self.employee)
-
-        app = self.draft()
-        with self.assertRaises(ValidationFailedError):
-            submit_application(user=self.employee, application_id=app.pk)
-
-        self.assertEqual(app.stages.count(), 0)
-
-    def test_consecutive_unsatisfiable_sections_are_both_named(self):
-        self.stub.workflow.set_chain("hod", "registrar")
-        self.staff_role("hod", self.employee)
-        self.staff_role("registrar", self.employee)
-
-        # Both stranded sections are named, so HR can fix them in one pass.
-        self.assertRefused("Head of Department", "Registrar")
+    def test_an_unstaffed_stage_at_the_top_refuses_the_submission(self):
+        self.stub.workflow.set_chain("supervisor")
+        self.assertRefused("Supervisor")
 
     def test_the_refusal_says_what_would_fix_it(self):
         """The remedy is staffing, not a different role: the section itself is
         fine, it just has nobody in it who may act."""
         self.stub.workflow.set_chain("supervisor", "hod")
         self.staff_role("supervisor", self.supervisor)
-        self.staff_role("hod", self.employee)
 
-        self.assertRefused()
+        message = self.assertRefused("Head of Department")
+        self.assertIn("No active approver", message)
 
     def test_the_refusal_reaches_the_api_as_422_workflow_unavailable(self):
         self.stub.workflow.set_chain("hod")
-        self.staff_role("hod", self.employee)
         app = self.draft()
         client = APIClient()
         client.force_authenticate(user=self.employee)
@@ -367,6 +566,15 @@ class SoleMemberSectionIsRefusedTests(SelfApprovalBase):
         self.assertIn(
             "workflow_unavailable", {e["code"] for e in response.data["errors"]}
         )
+
+    def test_no_stage_is_created_for_a_refused_submission(self):
+        self.stub.workflow.set_chain("hod")
+        app = self.draft()
+
+        with self.assertRaises(ValidationFailedError):
+            submit_application(user=self.employee, application_id=app.pk)
+
+        self.assertEqual(app.stages.count(), 0)
 
     def test_a_plain_employee_is_unaffected(self):
         """The gate is the applicant's own membership, not their job title."""
@@ -411,11 +619,21 @@ class DelegationDoesNotSatisfyTheRule(SelfApprovalBase):
             decision_reason="Cover",
         )
 
-    def test_the_submission_is_still_refused(self):
+    def test_the_stage_is_skipped_rather_than_routed_to_their_delegate(self):
         """Their cover does not put them back in their own section's decision
         set: the eligibility snapshot is the section's members minus the
-        applicant, and a delegate of the applicant is somebody else entirely."""
-        self.assertRefused("Head of Department")
+        applicant, and a delegate of the applicant is somebody else entirely. So
+        the stage resolves to nobody and is skipped (Unit 30), and the application
+        opens at the supervisor -- not at the person covering for the applicant."""
+        app = self.submit()
+
+        skipped = self.stage_at(app, 1)
+        self.assertEqual(skipped.status, ApplicationStage.Status.SKIPPED)
+        self.assertEqual(
+            skipped.skip_reason, "Applicant cannot approve their own application."
+        )
+        self.assertEqual(app.current_stage.stage_order, 2)
+        self.assertEqual(app.current_stage.role, "supervisor")
 
     def test_the_supervisor_never_sees_it(self):
         app = self.draft()

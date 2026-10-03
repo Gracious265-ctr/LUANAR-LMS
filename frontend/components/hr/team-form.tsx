@@ -214,6 +214,21 @@ export function TeamForm({
     [candidates, department, roleIdByCode, roleByCode, sections]
   );
 
+  /**
+   * Everyone the eligible-approver lookups have returned, by id.
+   *
+   * Only used to name a person in a validation message. A step can be appointed
+   * from a lookup that is no longer on screen, so the error names them from the
+   * loaded set rather than guessing from the id.
+   */
+  const candidateNames = useMemo(() => {
+    const byId = new Map<number, string>();
+    for (const list of Object.values(candidates)) {
+      for (const person of list) byId.set(person.id, person.full_name);
+    }
+    return byId;
+  }, [candidates]);
+
   function move(index: number, direction: -1 | 1) {
     setSections((current) => {
       const target = index + direction;
@@ -308,6 +323,25 @@ export function TeamForm({
    * construction — "Add step" starts from the first role and is disabled when
    * there are no roles to choose from — so nothing here has to be filtered out.
    */
+  /**
+   * The value that appears twice across ``sections``, or null.
+   *
+   * Uniqueness is a workflow-level rule (one role, one person, one stage each), so
+   * this compares the whole list rather than a pair at a time and names the repeat
+   * rather than the two steps holding it: the steps are rendered as a numbered
+   * list already, and the repeated role or person is the thing HR has to change.
+   */
+  function repeatOf<T>(sections: T[], key: (section: T) => string | null | undefined) {
+    const seen = new Set<string>();
+    for (const section of sections) {
+      const value = key(section);
+      if (value == null) continue;
+      if (seen.has(value)) return value;
+      seen.add(value);
+    }
+    return null;
+  }
+
   function describeSteps(): TeamSectionInput[] {
     return resolvedSections.map((section) => ({
       name: roleLabelByCode.get(section.approver_role) ?? section.approver_role,
@@ -338,6 +372,32 @@ interface TeamDetails {
     };
 
     const named = describeSteps();
+
+    // Uniqueness is checked before anything else because the backend enforces it
+    // as a constraint on the workflow: catching it here names the two steps, where
+    // a database error naming a constraint would not. Runs on a draft too --
+    // otherwise HR finds out about a repeated role only when they activate it.
+    const repeatedRole = repeatOf(named, (section) => section.approver_role);
+    if (repeatedRole) {
+      setError(
+        `Two steps both use the ${roleLabelByCode.get(repeatedRole) ?? repeatedRole} role. ` +
+          "Give each step its own role, so one office cannot sign off twice on the same application."
+      );
+      setLoading(false);
+      return;
+    }
+    const repeatedApprover = repeatOf(
+      named.filter((section) => section.approver != null),
+      (section) => String(section.approver)
+    );
+    if (repeatedApprover) {
+      setError(
+        `${candidateNames.get(Number(repeatedApprover)) ?? "The same person"} decides more than one step. ` +
+          "Each step needs its own approver, so it is clear who signs at each point."
+      );
+      setLoading(false);
+      return;
+    }
 
     if (!draft) {
       if (named.length === 0) {

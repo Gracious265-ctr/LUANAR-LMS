@@ -6,15 +6,14 @@ for a submitted leave application. It is the single point of swappability:
 
 The default is :class:`DatabaseWorkflowProvider`, which resolves the applicant's
 **team** to the one workflow that team uses, and maps its ``Section`` rows into
-``StageDefinition`` objects. Each section's approvers are found by
-:func:`resolve_section_approvers`: the section's active members with the applicant
-removed, or — only when the section has no members and its role is
-institution-wide — the role's single institution-wide holder. A section is a set
-of people rather than one, because the application is decided by whichever member
-acts first. The provider is pure data (no writes): it returns
-planned stages only. The assignment service
-(``workflows.services.assign_workflow``) validates them and materialises them as
-``ApplicationStage`` rows.
+``StageDefinition`` objects. Each section's approver is found by
+:func:`resolve_section_approvers`: the section's appointed approver unless that
+person is the applicant, or — when the section has no approver and its role is
+institution-wide — the role's single institution-wide holder. A section names one
+person, so a step always has exactly one person entitled to act on it. The
+provider is pure data (no writes): it returns planned stages only. The
+assignment service (``workflows.services.assign_workflow``) validates them and
+materialises them as ``ApplicationStage`` rows.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.utils.module_loading import import_string
 
-from users.models import Department, User
+from users.models import User
 
 from .models import ApproverRole, RoleAssignment, SectionMember, Team
 
@@ -39,10 +38,18 @@ class WorkflowConfigError(ValueError):
 class StageDefinition:
     """One planned stage returned by a workflow provider.
 
-    ``approver_user_ids`` is the set of people entitled to act on the stage — a
-    section is resolved by whoever acts first, so it is a set, not a person. It
-    is never empty: a section nobody can act for is a configuration error and is
-    refused at resolution time rather than routed to a fallback (invariant 12.7).
+    ``approver_user_ids`` is the set of people entitled to act on the stage. A
+    section names one approver, so in practice this holds a single id; it stays a
+    tuple because the stage is the snapshot of a resolved step, not the
+    resolution itself. It is never empty: a section nobody can act for is a
+    configuration error and is refused at resolution time rather than routed to a
+    fallback (invariant 12.7).
+
+    ``skipped`` marks a stage the applicant's own position made unnecessary
+    (Unit 30) -- the stages at and below the one they hold. A skipped stage is
+    still materialised, so the approval history can show that it was considered
+    and why it was passed over, but it is never pending and never notified.
+    ``skip_reason`` is the sentence shown to whoever reads that history.
     """
 
     order: int
@@ -53,6 +60,8 @@ class StageDefinition:
     history_scope: str | None = None
     handles_cancellation: bool = False
     section_id: int | None = None
+    skipped: bool = False
+    skip_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -89,26 +98,6 @@ def get_workflow_provider() -> WorkflowProvider:
     return import_string(settings.WORKFLOW_PROVIDER)()
 
 
-def _employee_key(application: Any) -> tuple[str, str]:
-    """The (category, department) pair the workflow scope matches against.
-
-    ``EmployeeProfile.department`` is a :class:`~users.models.Department` row
-    now, but ``Workflow.department`` is still free text, so the comparison this
-    feeds needs the name. Taken via ``department_id`` rather than
-    ``department`` so a profile with no department cannot drag a query in just
-    to be compared as ``None``.
-    """
-    profile = getattr(application.employee, "employee_profile", None)
-    if profile is None:
-        return ("", "")
-    department = (
-        getattr(profile, "department", None) or Department.objects.only("name")
-        .filter(pk=profile.department_id)
-        .first()
-    )
-    return (profile.category, (department.name if department else "").strip())
-
-
 def _employee_team(application: Any):
     """The applicant's team, or ``None`` when they have not been assigned one."""
     profile = getattr(application.employee, "employee_profile", None)
@@ -136,6 +125,12 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
        nothing. The applicant is excluded at resolution time rather than at
        configuration time, so an approver can never be the approver of their own
        leave no matter which surface asks later (invariant 12.3).
+
+       The applicant holding a stage is decided upstream, not here:
+       :func:`DatabaseWorkflowProvider.get_stage_definitions` marks that stage and
+       everything below it skipped rather than resolving it at all (Unit 30). The
+       refusal below is what catches a caller that asks this function directly,
+       which is why it stays rather than becoming a branch nothing can reach.
     2. Only when the section has no approver at all and its role is
        institution-wide does the global holder decide — and then there must be
        exactly one, because a global fallback is not a race anyone can see.
@@ -207,44 +202,6 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
     )
 
 
-def resolve_applicable_workflow(application: Any):
-    """The active HR workflow governing ``application``, or ``None``.
-
-    Scope precedence against the employee's (category, department) — blank
-    scope means "any" (D5): exact ``(category, department)`` wins, then
-    ``(category, any)``, then ``(any, department)``, then ``(any, any)``.
-    Only ``is_active`` workflows with ``effective_from <= today`` apply; ties
-    within a bucket break to the earliest effective date.
-
-    Retained for reference only: routing is team-based (see
-    :class:`DatabaseWorkflowProvider`) and no longer calls this.
-    """
-    from django.db.models import Q
-
-    from .models import Workflow
-
-    category, department = _employee_key(application)
-    today = timezone.localdate()
-    base = Workflow.objects.filter(
-        is_active=True, effective_from__isnull=False, effective_from__lte=today
-    )
-    for query in (
-        Q(employee_category=category, department=department),
-        Q(employee_category=category, department=""),
-        Q(employee_category="", department=department),
-        Q(employee_category="", department=""),
-    ):
-        candidate = (
-            base.filter(query)
-            .order_by("effective_from", "id")
-            .only("pk", "name")
-            .first()
-        )
-        if candidate is not None:
-            return candidate
-    return None
-
-
 class SnapshotStagesMixin:
     """Cancellation/workflow-membership reads from the materialised stage chain.
 
@@ -292,9 +249,9 @@ class SnapshotStagesMixin:
         """Every user in the original workflow snapshot (event recipients).
 
         Reads the ``eligible_approvers`` snapshot rather than
-        ``assigned_approver``: a section is resolved by whoever acts first, so
-        ``assigned_approver`` is null until somebody does and would leave the
-        undecided members of every chain out of the recipient list.
+        ``assigned_approver``: a step is still undecided until somebody acts, so
+        ``assigned_approver`` is null until then and would leave every approver in
+        the chain out of the recipient list.
         """
         from .models import ApplicationStage, ApplicationStageApprover
 
@@ -314,7 +271,7 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
 
     The applicant's :class:`~workflows.models.Team` names the workflow; the
     workflow's ordered :class:`~workflows.models.Section` rows are its steps; and
-    each section's members are resolved to a set of people by
+    each section's appointed approver is resolved by
     :func:`resolve_section_approvers`, with the applicant removed.
     """
 
@@ -376,7 +333,7 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         sections = list(
             workflow.sections.filter(is_active=True)
             .order_by("order")
-            .select_related("approver_role")
+            .select_related("approver_role", "approver")
             .prefetch_related("members__user")
         )
         if not sections:
@@ -385,24 +342,132 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
             )
 
         applicant_id = getattr(application, "employee_id", None)
+        applicant_order = _applicant_section_order(sections, applicant_id)
+
         definitions: list[StageDefinition] = []
         for section in sections:
             role = section.approver_role
+            skip_reason = _skip_reason_for(section, applicant_order)
             definitions.append(
                 StageDefinition(
                     order=section.order,
                     role=role.code,
                     role_label=role.label,
-                    approver_user_ids=resolve_section_approvers(
-                        section, applicant_id
+                    # A skipped stage resolves nobody on purpose: its whole point
+                    # is that the applicant must not be the one who acts there.
+                    approver_user_ids=(
+                        ()
+                        if skip_reason
+                        else resolve_section_approvers(section, applicant_id)
                     ),
                     role_id=role.pk,
                     history_scope=role.history_scope,
                     handles_cancellation=role.handles_cancellation,
                     section_id=section.pk,
+                    skipped=bool(skip_reason),
+                    skip_reason=skip_reason,
                 )
             )
+
+        if applicant_order is not None and applicant_order == sections[-1].order:
+            # The applicant holds the last step, so there is no higher stage to
+            # send this to. Hand it to HR rather than refusing it or, worse,
+            # letting it be finalised by nobody.
+            definitions.append(_hr_review_stage(sections[-1].order + 1, applicant_id))
         return definitions
+
+
+def _applicant_section_order(sections, applicant_id) -> int | None:
+    """The order of the stage the applicant would have to act on alone, if any.
+
+    At most one, because ``section_workflow_approver_unique`` (Unit 30) puts an
+    employee on one stage per workflow. That is what makes the skip-forward
+    decision a single comparison rather than a search for a safe landing point.
+
+    "Would have to act on" is resolved the same way :func:`resolve_section_approvers`
+    resolves the stage -- the configured approver, or the sole institution-wide
+    holder when the section is unstaffed -- so the applicant is recognised as
+    holding a stage whether they were appointed to it directly or reached it
+    through a role's fallback.
+    """
+    if applicant_id is None:
+        return None
+    for section in sections:
+        if _section_candidate_ids(section) == {applicant_id}:
+            return section.order
+    return None
+
+
+def _section_candidate_ids(section) -> set[int]:
+    """Every active person who could act on ``section``, applicant included.
+
+    The pre-exclusion view of a stage. Used only to recognise the applicant's own
+    stage; a stage that resolves to nobody is not the applicant's to skip, and
+    still fails the ordinary configuration check naming the section.
+    """
+    if section.approver_id is not None:
+        return {section.approver_id} if section.approver.is_active else set()
+    if section.approver_role.is_institution_wide:
+        return set(_institution_wide_holder_ids(section.approver_role))
+    return set()
+
+
+def _skip_reason_for(section, applicant_order: int | None) -> str:
+    """Why this stage is skipped for this applicant, or ``""`` to route to it.
+
+    Two different reasons, because they answer different questions for whoever
+    reads the history: their own stage is skipped because an approver cannot
+    approve their own leave, and a stage below it is skipped because the applicant
+    outranks it.
+    """
+    if applicant_order is None:
+        return ""
+    if section.order == applicant_order:
+        return "Applicant cannot approve their own application."
+    if section.order < applicant_order:
+        return "Applicant is a higher-stage approver."
+    return ""
+
+
+def _hr_review_stage(order: int, applicant_id: int | None) -> StageDefinition:
+    """The HR destination for an application that has no team stage left.
+
+    Modelled as one more stage rather than a flag on the application, so HR's
+    authority, the approval history, and the decision path are the ones that
+    already exist: ``get_decision_authority`` resolves through
+    ``user_may_act`` -> the ``eligible_approvers`` snapshot, exactly as it does
+    for a team's stage. Approving it finalises; rejecting it rejects.
+
+    The applicant is excluded from the eligible set. If that leaves nobody — the
+    only HR account belongs to the person applying — the submission is refused
+    rather than parked on a stage nobody can act on.
+    """
+    hr_ids = list(
+        User.objects.filter(role=User.Role.HR, is_active=True)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    eligible = [pk for pk in hr_ids if pk != applicant_id]
+    if not eligible:
+        raise WorkflowConfigError(
+            "This employee's own position is the final approval step, so their "
+            "application goes to Human Resources to be decided. No other active "
+            "HR account is available to decide it. Ask HR to add an HR account, "
+            "or to appoint another approver to the final step, before this "
+            "application is submitted."
+        )
+    return StageDefinition(
+        order=order,
+        role="hr",
+        role_label="Human Resources",
+        approver_user_ids=tuple(eligible),
+        role_id=None,
+        # HR is the oversight role: it reviews across departments, so its stage
+        # carries the broadest scope rather than the narrowest default.
+        history_scope=ApproverRole.HistoryScope.ALL,
+        handles_cancellation=False,
+        section_id=None,
+    )
 
 
 def _chain_cycle(application) -> int:

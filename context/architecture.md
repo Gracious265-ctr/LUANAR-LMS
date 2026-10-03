@@ -501,13 +501,21 @@ The employee identity must come from the authenticated backend identity, not fro
 
 ### 12.3 Sequential Workflow
 
-**A leave application must never skip a mandatory configured approval stage.**
+**A leave application must never skip a mandatory configured approval stage, and an approver must never approve their own leave — so the two rules resolve the applicant's own stage by skipping forward, and only ever that stage.**
 
-An application can move to the next stage only after the current stage has completed its required action. A workflow is an ordered list of **sections**; each section is a step that runs in exactly that order, and advancement is always to the immediately following section. There is **no bypass and no `skipped` state**: a step is either not reached yet, the open one, or decided.
+An application can move to the next stage only after the current stage has completed its required action. A workflow is an ordered list of **sections**; each section is a step that runs in exactly that order, and advancement is always to the next stage that was not skipped. A stage is one of: not reached yet (`waiting`), open (`pending`), decided, or `skipped`.
 
-A step is resolved to **one named person**, so the question "who can act at this step" has one answer and the decision record has one author. The applicant is excluded from every section's eligibility at submission — a person can never sit in judgment of their own leave — which means a section whose approver *is* the applicant has nobody left to act: that step is refused, never skipped.
+A step is resolved to **one named person**, so the question "who can act at this step" has one answer and the decision record has one author. A person can never sit in judgment of their own leave. Where the applicant holds a stage — as its sole approver — that stage, and every stage below it, is **skipped** rather than refused or routed to a stand-in:
 
-A section that cannot resolve an eligible approver is a configuration error, never a silent bypass: an application whose chain contains such a step is refused at submission with `workflow_unavailable` (422), and the request never leaves the employee. The advance-time refusal (409 `workflow_unavailable`) remains only as defence in depth for applications whose workflow changed after submission.
+- a stage the applicant is the approver of is skipped because an approver cannot approve their own application;
+- a stage below the applicant's is skipped because they outrank it;
+- both are materialised as `skipped` with the reason recorded, so the approval history shows a considered step rather than a quietly dropped one. A skipped stage is terminal, resolves nobody, never appears in an approver's queue, and never raises a notification.
+
+Advancement therefore continues at the first stage above the applicant's own. If the applicant holds the **last** stage there is nowhere to continue to, so the application is handed to **Human Resources**: one further stage with `section_ref = NULL`, `role = "hr"`, `history_scope = "all"`, and every active HR user — other than the applicant — in `eligible_approvers`. HR's authority, the history and the decision path are the ones that already exist, because `get_decision_authority` resolves through `user_may_act` to that snapshot. Approving it finalises; rejecting it rejects. If excluding the applicant leaves no eligible HR user, submission is refused rather than parked on a stage nobody may act on.
+
+Within one workflow, one employee appears on **one** stage and one role on **one** stage (`section_workflow_approver_unique`, `section_workflow_role_unique`): one office cannot sign off twice on the same application. The same employee or role may still appear in a different team's workflow. The admin and the API agree on this by construction, because it is a model constraint rather than two rules kept in step by hand.
+
+A section that cannot resolve an eligible approver for any *other* reason is a configuration error, never a silent bypass: an application whose chain contains such a step is refused at submission with `workflow_unavailable` (422), and the request never leaves the employee. The advance-time refusal (409 `workflow_unavailable`) remains only as defence in depth for applications whose workflow changed after submission.
 
 ---
 
