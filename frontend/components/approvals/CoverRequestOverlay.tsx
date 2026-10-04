@@ -59,7 +59,8 @@ function CoverRequestOverlayInner({
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[calc(100vh-4rem)] max-w-2xl overflow-y-auto"
+        className="max-w-2xl"
+        scrollable
         showCloseButton={!delegation}
       >
         {delegation ? (

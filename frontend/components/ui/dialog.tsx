@@ -45,13 +45,30 @@ export function DialogOverlay({
   );
 }
 
+/**
+ * Centred modal surface.
+ *
+ * Pass `scrollable` for a dialog that can outgrow the viewport. It splits the
+ * radius from the scroll: the outer element keeps `rounded-xl` and clips with
+ * `overflow-hidden`, while a child carries `overflow-y-auto`. Putting both on
+ * one element lets the scrollbar track square off the rounded corners, so the
+ * clipping has to live on an ancestor of the scroller.
+ *
+ * `min-h-0` on the scroller is load-bearing: a flex item defaults to
+ * `min-height: auto`, which would stop it shrinking to the available height and
+ * leave it overflowing instead of scrolling.
+ */
 export function DialogContent({
   className,
   children,
   showCloseButton = true,
+  scrollable = false,
+  scrollClassName,
   ...props
 }: React.ComponentPropsWithRef<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  scrollable?: boolean;
+  scrollClassName?: string;
 }) {
   return (
     <DialogPortal>
@@ -59,15 +76,27 @@ export function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed left-1/2 top-1/2 z-modal grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4",
-          "rounded-xl border border-border-default bg-surface-card p-6 shadow-lg",
+          "fixed left-1/2 top-1/2 z-modal w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+          "rounded-xl border border-border-default bg-surface-card shadow-lg",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          scrollable
+            ? "flex max-h-[calc(100vh-4rem)] flex-col overflow-hidden"
+            : "grid gap-4 p-6",
           className
         )}
         {...props}
       >
-        {children}
+        {scrollable ? (
+          <div
+            data-slot="dialog-scroll"
+            className={cn("grid min-h-0 flex-1 gap-4 overflow-y-auto p-6", scrollClassName)}
+          >
+            {children}
+          </div>
+        ) : (
+          children
+        )}
         {showCloseButton ? <DialogCloseButton /> : null}
       </DialogPrimitive.Content>
     </DialogPortal>

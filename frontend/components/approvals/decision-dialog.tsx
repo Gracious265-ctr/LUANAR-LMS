@@ -149,7 +149,8 @@ function DecisionDialogInner({
       }}
     >
       <DialogContent
-        className="gap-0 max-h-[calc(100vh-4rem)] overflow-y-auto"
+        scrollClassName="gap-0"
+        scrollable
         showCloseButton={!busy}
         onOpenAutoFocus={(event) => {
           event.preventDefault();

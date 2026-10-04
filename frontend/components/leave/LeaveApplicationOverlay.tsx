@@ -147,7 +147,8 @@ function LeaveApplicationOverlayInner({
     <Dialog open onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={stage !== "done"}
-        className="max-w-2xl max-h-[calc(100vh-4rem)] overflow-y-auto"
+        className="max-w-2xl"
+        scrollable
         onEscapeKeyDown={() => {
           if (stage !== "done") formRef.current?.flush();
         }}

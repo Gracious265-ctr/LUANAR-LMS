@@ -45,7 +45,11 @@ describe("AdminFormOverlay sizing", () => {
       </AdminFormOverlay>
     );
     expect(screen.getByRole("dialog").className).toContain("max-w-2xl");
-    expect(screen.getByRole("dialog").className).toContain("overflow-y-auto");
+    // The scroller is a child so the outer can clip its rounded corners; see
+    // the "scrollable dialog" block below for the full structural contract.
+    expect(
+      screen.getByRole("dialog").querySelector('[data-slot="dialog-scroll"]')
+    ).not.toBeNull();
     unmount();
 
     render(

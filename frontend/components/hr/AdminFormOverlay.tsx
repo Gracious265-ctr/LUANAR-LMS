@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -111,14 +110,7 @@ function AdminFormOverlayInner({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent
-        className={cn(
-          SIZES[size],
-          // Same scroll ceiling as the leave overlay: a form that outgrows the
-          // viewport scrolls inside the dialog instead of past the screen edge.
-          scrollable && "max-h-[calc(100vh-4rem)] overflow-y-auto"
-        )}
-      >
+      <DialogContent className={SIZES[size]} scrollable={scrollable}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
