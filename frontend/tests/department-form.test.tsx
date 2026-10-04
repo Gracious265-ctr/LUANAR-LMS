@@ -78,6 +78,62 @@ describe("DepartmentForm", () => {
     expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/departments");
   });
 
+  it("reports a save to its host instead of navigating, when hosted", async () => {
+    // The overlay closes and refetches in place; pushing the list route as well
+    // would fight the dialog it just dismissed.
+    vi.mocked(updateDepartment).mockResolvedValue(ict);
+    const onSuccess = vi.fn();
+    render(<DepartmentForm department={ict} onSuccess={onSuccess} />);
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "ICT" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(ict));
+    expect(push).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("reports a retirement to the same host callback", async () => {
+    vi.mocked(retireDepartment).mockResolvedValue({
+      ...ict,
+      is_active: false,
+    });
+    const onSuccess = vi.fn();
+    render(<DepartmentForm department={ict} onSuccess={onSuccess} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retire department" }));
+
+    await waitFor(() =>
+      expect(onSuccess).toHaveBeenCalledWith({ ...ict, is_active: false })
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("offers a dismiss action when hosted, and it is a button not a link", () => {
+    const onCancel = vi.fn();
+    render(<DepartmentForm department={ict} onCancel={onCancel} />);
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    // A link would leave the overlay behind; the dialog owns dismissal.
+    expect(screen.queryByRole("link", { name: "Cancel" })).toBeNull();
+
+    fireEvent.click(cancel);
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves Cancel as a link when there is nothing to dismiss to", () => {
+    render(<DepartmentForm department={ict} />);
+
+    expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/departments"
+    );
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
   it("shows a sentence when the backend refuses the change", async () => {
     vi.mocked(updateDepartment).mockRejectedValue(
       new Error("A department with this name already exists.")

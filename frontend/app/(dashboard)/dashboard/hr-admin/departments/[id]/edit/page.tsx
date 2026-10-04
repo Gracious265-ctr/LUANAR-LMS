@@ -1,50 +1,34 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { DepartmentForm } from "@/components/hr/department-form";
 import { getCurrentUser } from "@/lib/auth";
-import { getDepartment } from "@/lib/departments";
 
-export default async function EditDepartmentPage({
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the table's row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a non-HR
+ * user following one of these still lands on `/dashboard` instead of bouncing
+ * through a list page that would refuse them anyway.
+ *
+ * No read happens here. The overlay resolves the department from the rows the
+ * list already fetched, so a bogus id is reported by the dialog rather than
+ * costing a request that would 404 here.
+ */
+export default async function ShimPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "hr") redirect("/dashboard");
-
   const { id } = await params;
+  const user = await getCurrentUser();
 
-  let department;
-  try {
-    department = await getDepartment(id);
-  } catch {
-    notFound();
+  if (!user) {
+    redirect("/login");
+  }
+  if (user.role !== "hr") {
+    redirect("/dashboard");
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/departments"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to departments
-        </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
-          {department.name}
-        </h2>
-        <p className="text-text-secondary">
-          Rename the department, or retire it once nothing uses it.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <DepartmentForm department={department} />
-      </div>
-    </div>
-  );
+  redirect(`/dashboard/hr-admin/departments?department=${id}`);
 }

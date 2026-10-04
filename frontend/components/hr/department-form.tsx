@@ -11,6 +11,9 @@ import {
   updateDepartment,
 } from "@/lib/departments-client";
 
+/** Where the standalone form returns to, and what Cancel links back to. */
+const LIST_ROUTE = "/dashboard/hr-admin/departments";
+
 /**
  * A department is a name and nothing else.
  *
@@ -19,10 +22,37 @@ import {
  * the teams and employees inside it are relationships those rows own, so they
  * are shown, not edited.
  */
-export function DepartmentForm({ department }: { department?: Department }) {
+export function DepartmentForm({
+  department,
+  onSuccess,
+  onCancel,
+}: {
+  department?: Department;
+  /**
+   * Replaces the default `router.push(listRoute)` + `router.refresh()`. The
+   * overlay passes this so it can close itself and refetch; with it omitted the
+   * form navigates on its own, which is what a standalone page needs.
+   *
+   * Retirement reports through here too: it is the same write with the same
+   * consequence for the list, so it does not need its own escape hatch.
+   */
+  onSuccess?: (department: Department) => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  /** Close-and-refresh when hosted, navigate when standalone. */
+  function done(saved: Department) {
+    if (onSuccess) {
+      onSuccess(saved);
+      return;
+    }
+    router.push(LIST_ROUTE);
+    router.refresh();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,13 +62,10 @@ export function DepartmentForm({ department }: { department?: Department }) {
     const name = String(new FormData(event.currentTarget).get("name") || "");
 
     try {
-      if (department) {
-        await updateDepartment(department.id, { name });
-      } else {
-        await createDepartment({ name });
-      }
-      router.push("/dashboard/hr-admin/departments");
-      router.refresh();
+      const saved = department
+        ? await updateDepartment(department.id, { name })
+        : await createDepartment({ name });
+      done(saved);
     } catch (err) {
       setError(
         err instanceof Error
@@ -55,9 +82,7 @@ export function DepartmentForm({ department }: { department?: Department }) {
     setError("");
     setLoading(true);
     try {
-      await retireDepartment(department.id);
-      router.push("/dashboard/hr-admin/departments");
-      router.refresh();
+      done(await retireDepartment(department.id));
     } catch (err) {
       setError(
         err instanceof Error
@@ -132,12 +157,22 @@ export function DepartmentForm({ department }: { department?: Department }) {
             Retire department
           </button>
         ) : null}
-        <Link
-          href="/dashboard/hr-admin/departments"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </button>
+        ) : (
+          <Link
+            href={LIST_ROUTE}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

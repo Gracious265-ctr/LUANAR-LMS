@@ -1,4 +1,6 @@
-import { EditActionLink } from "./edit-action-link";
+import Link from "next/link";
+
+import { EditActionLink, EditIconButton } from "./edit-action-link";
 
 import type { Department } from "@/lib/departments";
 
@@ -12,8 +14,14 @@ import type { Department } from "@/lib/departments";
  */
 export function DepartmentTable({
   departments,
+  onEdit,
 }: {
   departments: Department[];
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit route, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (departments.length === 0) {
     return (
@@ -43,7 +51,12 @@ export function DepartmentTable({
               className="border-b border-border-default last:border-0"
             >
               <td className="px-3 py-2 font-medium text-text-primary">
-                {department.name}
+                <Link
+                  href={`/dashboard/hr-admin/departments/${department.id}/edit`}
+                  className="hover:text-brand-primary-hover"
+                >
+                  {department.name}
+                </Link>
               </td>
               <td className="px-3 py-2 text-text-secondary">
                 {department.team_count}
@@ -55,9 +68,16 @@ export function DepartmentTable({
                 {department.is_active ? "Active" : "Retired"}
               </td>
               <td className="px-3 py-2 text-right">
-                <EditActionLink
-                  href={`/dashboard/hr-admin/departments/${department.id}/edit`}
-                />
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(department.id)}
+                    label={`Edit ${department.name}`}
+                  />
+                ) : (
+                  <EditActionLink
+                    href={`/dashboard/hr-admin/departments/${department.id}/edit`}
+                  />
+                )}
               </td>
             </tr>
           ))}

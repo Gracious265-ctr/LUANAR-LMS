@@ -1,37 +1,25 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { DepartmentForm } from "@/components/hr/department-form";
 import { getCurrentUser } from "@/lib/auth";
 
-export default async function NewDepartmentPage() {
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the table's row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a non-HR
+ * user following one of these still lands on `/dashboard` instead of bouncing
+ * through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (user.role !== "hr") redirect("/dashboard");
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/departments"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to departments
-        </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
-          New department
-        </h2>
-        <p className="text-text-secondary">
-          A department is what scopes a team&apos;s approvers: only its own
-          employees may hold a stage on one of its teams.
-        </p>
-      </div>
+  if (!user) {
+    redirect("/login");
+  }
+  if (user.role !== "hr") {
+    redirect("/dashboard");
+  }
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <DepartmentForm />
-      </div>
-    </div>
-  );
+  redirect("/dashboard/hr-admin/departments?department=new");
 }

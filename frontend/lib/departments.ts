@@ -54,10 +54,6 @@ export async function listDepartments(includeRetired = false): Promise<Departmen
   return readAllPages<Department>(`/api/v1/departments/${query}`);
 }
 
-export async function getDepartment(id: number | string): Promise<Department> {
-  return apiClientUrl<Department>(`/api/v1/departments/${id}/`);
-}
-
 /** The name of a department id, for a label beside an id that has already been chosen. */
 export function departmentName(
   departments: Department[],
