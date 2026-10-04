@@ -59,7 +59,11 @@ export function Toast({
           type="button"
           onClick={onDismiss}
           aria-label={dismissLabel}
-          className="shrink-0 rounded-control transition-colors hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+          // `bg-current/10` rather than a fixed `black/10`: the wash has to be
+          // legible on the toast's own surface, which is near-white in light and
+          // near-black in dark. Deriving it from `currentColor` follows the
+          // surface automatically instead of being right in one theme only.
+          className="shrink-0 rounded-control transition-colors hover:bg-current/10 focus-ring"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

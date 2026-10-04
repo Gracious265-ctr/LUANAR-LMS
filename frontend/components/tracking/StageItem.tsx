@@ -12,8 +12,8 @@ const STATE_MARKER: Record<
 > = {
   approved: {
     icon: Check,
-    markerClass: "bg-status-approved text-white",
-    iconClass: "text-white",
+    markerClass: "bg-status-approved text-status-approved-on",
+    iconClass: "text-status-approved-on",
   },
   awaiting: {
     icon: Clock,
@@ -22,13 +22,13 @@ const STATE_MARKER: Record<
   },
   rejected: {
     icon: X,
-    markerClass: "bg-status-rejected text-white",
-    iconClass: "text-white",
+    markerClass: "bg-status-rejected text-status-rejected-on",
+    iconClass: "text-status-rejected-on",
   },
   returned: {
     icon: RotateCcw,
-    markerClass: "bg-status-correction text-white",
-    iconClass: "text-white",
+    markerClass: "bg-status-correction text-status-correction-on",
+    iconClass: "text-status-correction-on",
   },
   upcoming: {
     icon: Check,

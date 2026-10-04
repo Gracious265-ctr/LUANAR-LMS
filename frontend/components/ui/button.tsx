@@ -5,7 +5,11 @@ import { cn } from "@/lib/utils";
 
 const CONTROL_BASE = [
   "inline-flex items-center justify-center rounded-control font-medium whitespace-nowrap",
-  "transition-[background-color,border-color,color,box-shadow] duration-base ease-standard",
+  // `transform` is in the list so the extracted `scale(0.95)` press animates
+  // rather than snapping; the colour, border and shadow properties animate for
+  // the same reason.
+  "transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-standard",
+  "active:scale-[0.95]",
   "focus-ring",
   "disabled:cursor-not-allowed disabled:opacity-60",
   "[&_svg]:shrink-0",

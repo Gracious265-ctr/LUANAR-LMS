@@ -199,7 +199,7 @@ function CancellationDecisionDialogInner({
               disabled={busy || !validatedConfirm}
               className={cn(
                 isApprove
-                  ? "border border-transparent bg-[#009119] text-white hover:bg-[#008017]"
+                  ? "border border-transparent bg-button-primary text-button-primary-foreground hover:bg-button-primary-hover"
                   : "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover"
               )}
             >

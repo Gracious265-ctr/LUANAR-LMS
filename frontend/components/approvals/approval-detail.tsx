@@ -247,7 +247,7 @@ function MobileDecisionButton({
 }) {
   const className =
     kind === "approve"
-      ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-[#009119] px-3 py-2 text-sm font-medium text-white"
+      ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent bg-button-primary px-3 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
       : kind === "reject"
         ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm font-medium text-status-rejected"
         : "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-correction bg-status-correction-subtle px-3 py-2 text-sm font-medium text-status-correction";

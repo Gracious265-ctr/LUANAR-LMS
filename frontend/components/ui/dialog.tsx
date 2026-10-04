@@ -140,7 +140,7 @@ function DialogCloseButton({
         "absolute right-4 top-4 grid size-8 place-content-center rounded-control",
         "text-text-muted transition-colors",
         "hover:bg-surface-hover hover:text-text-primary",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2",
+        "focus-ring",
         "disabled:pointer-events-none",
         className
       )}

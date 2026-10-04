@@ -3,7 +3,6 @@
 import React, { memo, useCallback, useState } from "react";
 import {
   ArrowLeftRight,
-  Bell,
   Building2,
   Calendar,
   CalendarDays,
@@ -34,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 import { PlansNavItem } from "@/components/plans/plans-nav-item";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Dialog,
   DialogDescription,
@@ -643,9 +643,10 @@ const Header = memo(function Header({
           </div>
         </div>
 
-        <Button aria-label="Notifications" variant="secondary" size="icon" className="size-10">
-          <Bell className="h-5 w-5" />
-        </Button>
+        {/* Sits beside sign-out rather than in the rail: on a phone the rail is
+            a drawer, so a rail-hosted control is only reachable after opening
+            it, and the header renders at every breakpoint. */}
+        <ThemeToggle />
 
         <Button
           onClick={onLogout}

@@ -152,7 +152,7 @@ export const ACTION_META: Record<PlanAction, ActionMeta> = {
     icon: CheckCircle2,
     badgeTone: "approved",
     buttonClass:
-      "bg-[#009119] text-white hover:bg-[#008017] focus:ring-2 focus:ring-[#009119]/40",
+      "border border-transparent bg-button-primary text-button-primary-foreground hover:bg-button-primary-hover",
   },
   reject: {
     label: "Rejected",

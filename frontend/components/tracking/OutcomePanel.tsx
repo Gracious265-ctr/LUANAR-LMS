@@ -88,7 +88,7 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
       {resubmission.can_resubmit && (
         <Link
           href={`/dashboard/leave/${data.application.id}/edit`}
-          className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 sm:w-auto"
+          className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-ring sm:w-auto"
         >
           Edit &amp; resubmit
         </Link>

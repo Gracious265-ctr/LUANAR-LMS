@@ -196,7 +196,6 @@ export function LeaveReviewPanel({
           disabled={submitDisabled}
           variant="primary"
           size="lg"
-          className="bg-brand-secondary text-brand-secondary-foreground border-transparent hover:bg-brand-secondary-hover"
         >
           {isSubmitting ? (
             <>

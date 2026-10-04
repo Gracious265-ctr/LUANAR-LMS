@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { confirmPasswordSet, validatePasswordSetToken } from "@/lib/password-set";
 import { FadeIn } from "@/components/motion/FadeIn";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type Phase = "checking" | "ready" | "dead";
 
@@ -86,7 +87,12 @@ function SetPasswordForm() {
 
   if (phase === "checking") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-page">
+      <div className="relative min-h-screen flex items-center justify-center bg-surface-page">
+        {/* The auth pages have no sidebar, so the toggle has no natural
+            home and is pinned to the corner of the canvas. */}
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
         <Card className="border-0 w-full max-w-md shadow-card">
           <p className="text-center text-text-secondary">Checking the link...</p>
         </Card>
@@ -95,7 +101,12 @@ function SetPasswordForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-page">
+    <div className="relative min-h-screen flex items-center justify-center bg-surface-page">
+      {/* The auth pages have no sidebar, so the toggle has no natural
+          home and is pinned to the corner of the canvas. */}
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <Card className="border-0 w-full max-w-md shadow-card">
         <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           Set your password

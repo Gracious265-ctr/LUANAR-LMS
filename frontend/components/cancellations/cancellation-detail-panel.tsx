@@ -248,7 +248,7 @@ function CancellationDecisionSection({
         onClick={onApprove}
         variant="primary"
         size="lg"
-        className="w-full bg-[#009119] text-white hover:bg-[#008017] border border-transparent"
+        className="w-full"
       >
         <Check className="h-4 w-4" aria-hidden="true" />
         Approve

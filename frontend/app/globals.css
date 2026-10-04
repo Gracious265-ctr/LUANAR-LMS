@@ -272,6 +272,129 @@
   --theme-accent-foreground: var(--text-primary);
 }
 
+:root.dark {
+  /* Brand and Primary — hue held at 202°, lightness lifted for a dark ground */
+  --brand-primary: #0097F0;
+  --brand-primary-hover: #33A9F5;
+  --brand-primary-active: #66BEF8;
+  --brand-primary-subtle: #1A2C36;
+  --brand-primary-muted: #16303D;
+  --brand-primary-border: #24506B;
+  --brand-primary-foreground: #FFFFFF;
+
+  /* Institutional Secondary — brightened to the reference's success tone, with
+     the dark green reserved for the subtle fill it sits behind. */
+  --brand-secondary: #6EE6B6;
+  --brand-secondary-hover: #86EFAC;
+  --brand-secondary-subtle: #1C6537;
+  --brand-secondary-muted: #17472A;
+  --brand-secondary-border: #2A7A47;
+  --brand-secondary-foreground: #FFFFFF;
+
+  /* Neutral Surfaces — the measured elevation ladder */
+  --surface-page: #1A212E;
+  --surface-card: #1D222F;
+  --surface-elevated: #242D3A;
+  --surface-muted: #1F2532;
+  --surface-subtle: #202633;
+  --surface-hover: #1E2633;
+  --surface-active: #1A2C36;
+  --surface-disabled: #1B202C;
+
+  /* Text */
+  --text-primary: #F3F4F6;
+  --text-secondary: #E4E6EA;
+  --text-muted: #9BA2AE;
+  --text-placeholder: #909AA8;
+  --text-disabled: #4A5261;
+  --text-on-brand: #FFFFFF;
+  --text-link: #85C7EE;
+  --text-link-hover: #A9DBF5;
+
+  /* Borders and Dividers — the hairline that defines every dark surface */
+  --border-default: #3A4352;
+  --border-subtle: #2A3341;
+  --border-strong: #4A5468;
+  --border-focus: #85C7EE;
+  --border-error: #EF4444;
+  --border-success: #2A7A47;
+  --border-warning: #FB913E;
+
+  /* Semantic Status Colors */
+  --status-pending: #FDBA74;
+  --status-pending-subtle: #704119;
+  --status-approved: #6EE6B6;
+  --status-approved-subtle: #1C6537;
+  --status-rejected: #FEE1E1;
+  --status-rejected-subtle: #7E2323;
+  --status-correction: #C4B5FD;
+  --status-correction-subtle: #3B2A63;
+  --status-cancelled: #9BA2AE;
+  --status-cancelled-subtle: #242D3A;
+  --status-info: #85C7EE;
+  --status-info-subtle: #1A2C36;
+
+  /* The fills above are bright in dark, so the on-colour text goes dark —
+     roughly 12:1 against the pale green and better still against the near-white
+     red. This is the whole reason these are separate tokens. */
+  --status-pending-on: #0F172A;
+  --status-approved-on: #0F172A;
+  --status-rejected-on: #0F172A;
+  --status-correction-on: #0F172A;
+  --status-cancelled-on: #0F172A;
+  --status-info-on: #0F172A;
+
+  /* Form and Interaction */
+  --input-background: #1D222F;
+  --input-border: #3A4352;
+  --input-border-hover: #4A5468;
+  --input-border-focus: #85C7EE;
+  --input-ring-focus: #85C7EE33;
+  --input-disabled: #1B202C;
+  --button-primary: #0097F0;
+  --button-primary-hover: #33A9F5;
+  --button-secondary: #1F2532;
+  --button-secondary-hover: #1E2633;
+  --button-destructive: #7E2323;
+  --button-destructive-hover: #93292A;
+
+  /* Accent Colors */
+  --accent-blue: #85C7EE;
+  --accent-blue-subtle: #1A2C36;
+  --accent-green: #6EE6B6;
+  --accent-green-subtle: #1C6537;
+  --accent-orange: #FDBA74;
+  --accent-orange-subtle: #704119;
+  --accent-red: #FEE1E1;
+  --accent-red-subtle: #7E2323;
+  --accent-purple: #C4B5FD;
+  --accent-purple-subtle: #3B2A63;
+  --accent-slate: #9BA2AE;
+  --accent-slate-subtle: #242D3A;
+
+  /* AI Accent — a light purple on dark takes dark text, not white */
+  --ai-primary: #C4B5FD;
+  --ai-subtle: #3B2A63;
+  --ai-border: #4C3A7A;
+  --ai-foreground: #1A212E;
+
+  /* Depth
+     The light theme's 5% black is nearly invisible against a #1A212E ground, so
+     the same shadows are deepened rather than removed — a dark surface needs a
+     stronger drop to separate, exactly as it needs a stronger hairline.
+
+     `--shadow-focus` is the one that cannot simply be scaled: its inner ring is
+     an opaque *surface-coloured* ring, and on a dark surface that colour must be
+     the dark ground or the focus indicator reads as a white halo. */
+  --shadow-subtle: 0 1px 2px 0 #00000026;
+  --shadow-card: 0 1px 2px 0 #00000026;
+  --shadow-hover: 0 2px 8px 0 #00000033;
+  --shadow-dropdown: 0 4px 4px 0 #0000003d;
+  --shadow-modal: 0 8px 16px -4px #0000004d, 0 24px 32px -8px #00000066;
+  --shadow-pressed: inset 0 1px 1px #00000026;
+  --shadow-focus: 0 0 0 2px #1A212E, 0 0 0 4px #85c7ee;
+}
+
 @theme inline {
   --color-background: var(--theme-background);
   --color-foreground: var(--theme-foreground);

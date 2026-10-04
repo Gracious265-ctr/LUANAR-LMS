@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
@@ -190,12 +197,57 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
-  it("does not render a theme toggle", () => {
+  it("offers a theme toggle that repaints the document and persists the choice", async () => {
+    renderShell(mockUser);
+
+    const toggle = screen.getByRole("button", {
+      name: /switch to dark theme/i,
+    });
+    expect(toggle).toBeInTheDocument();
+    expect(document.documentElement).not.toHaveClass("dark");
+
+    fireEvent.click(toggle);
+
+    // The MutationObserver behind `useTheme` reports asynchronously, so the
+    // assertion waits rather than reading the class in the same tick.
+    await waitFor(() =>
+      expect(document.documentElement).toHaveClass("dark")
+    );
+    expect(document.cookie).toMatch(/theme=dark/);
+
+    // And the control now offers the way back, so it is not a one-way switch.
+    expect(
+      screen.getByRole("button", { name: /switch to light theme/i })
+    ).toBeInTheDocument();
+  });
+
+  it("places the theme toggle beside sign-out in the header, not in the rail", () => {
+    renderShell(mockUser);
+
+    const toggle = screen.getByRole("button", { name: /switch to dark theme/i });
+    const signOut = screen.getByRole("button", { name: "Sign out" });
+
+    // Same parent, so they are adjacent controls in the header's action group.
+    expect(toggle.parentElement).toBe(signOut.parentElement);
+    expect(screen.getByRole("banner")).toContainElement(toggle);
+    expect(screen.getByRole("navigation")).not.toContainElement(toggle);
+  });
+
+  it("keeps the theme toggle reachable when the rail collapses into a drawer", () => {
+    // Below `md` the rail is a drawer, so a rail-hosted control would only be
+    // reachable after opening it. The header renders at every breakpoint, so the
+    // control stays reachable either way.
+    setNarrowViewport(true);
     renderShell(mockUser);
 
     expect(
-      screen.queryByRole("button", { name: /theme|dark mode/i })
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /switch to dark theme/i })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(
+      screen.getByRole("button", { name: /switch to dark theme/i })
+    ).toHaveAccessibleName(/switch to dark theme/i);
   });
 
   it("renders the hide toggle at the top of the sidebar", () => {
@@ -235,7 +287,13 @@ beforeEach(() => {
   currentPath = "/dashboard";
 });
 
-afterEach(() => setNarrowViewport(false));
+afterEach(() => {
+  setNarrowViewport(false);
+  // The theme lives on the document, so it outlives the render and would leak
+  // into the next test unless it is cleared alongside the viewport.
+  document.documentElement.classList.remove("light", "dark");
+  document.cookie = "theme=; path=/; max-age=0";
+});
 
 describe("DashboardShell mobile drawer", () => {
   it("keeps the rail hidden and the drawer closed on a phone", () => {

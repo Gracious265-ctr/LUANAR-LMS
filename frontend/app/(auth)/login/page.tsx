@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Card } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion/FadeIn";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function LoginForm() {
   const router = useRouter();
@@ -55,7 +56,12 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-page">
+    <div className="relative min-h-screen flex items-center justify-center bg-surface-page">
+      {/* The auth pages have no sidebar, so the toggle has no natural
+          home and is pinned to the corner of the canvas. */}
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <Card className="border-0 w-full max-w-md shadow-card">
         <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           LUANAR Leave Management

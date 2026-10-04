@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { requestPasswordSetLink } from "@/lib/password-set";
 import { FadeIn } from "@/components/motion/FadeIn";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
@@ -38,7 +39,12 @@ export default function ForgotPasswordPage() {
 
   return (
     <FadeIn>
-      <div className="min-h-screen flex items-center justify-center bg-surface-page">
+      <div className="relative min-h-screen flex items-center justify-center bg-surface-page">
+        {/* The auth pages have no sidebar, so the toggle has no natural
+            home and is pinned to the corner of the canvas. */}
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
         <Card className="border-0 w-full max-w-md shadow-card">
           <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
             Forgot your password?
