@@ -157,21 +157,11 @@ def resolved_annual_entitlement(
     return resolve_annual_balance_entitlement(grade, as_of)
 
 
+
 def leave_types_available_to(
     grade: str | None, as_of: date | None = None
 ) -> QuerySet[LeaveType]:
-    """Active leave types a grade is granted, by an effective band.
-
-    This is the employee's selection, so it is the authoritative answer to "what
-    may this person apply for" rather than a hint the validators later contradict.
-    A type with no band is offered to nobody, and neither is a band dated in the
-    future: HR granting leave from a date that has not arrived is a scheduled
-    change, not a grant in force.
-
-    A blank or unmapped grade resolves to nothing. That is the honest answer --
-    the employee has not been classified -- and the empty state says so rather
-    than leaving a bare dropdown.
-    """
+    """Active leave types a grade is granted, by an effective band."""
     key = normalize_grade(grade)
     if key is None:
         return LeaveType.objects.none()
@@ -186,6 +176,56 @@ def leave_types_available_to(
     }
     granted_ids.discard(None)
     return LeaveType.objects.filter(is_active=True, pk__in=granted_ids)
+
+
+ANNUAL_LEAVE_CODE = "annual"
+ANNUAL_LEAVE_NAME = "Annual Leave"
+
+
+def find_annual_leave_type() -> LeaveType | None:
+    """Read-only lookup of the canonical annual type. Never writes."""
+    for code in (ANNUAL_LEAVE_CODE, f"{ANNUAL_LEAVE_CODE}-leave"):
+        try:
+            return LeaveType.objects.get(code=code)
+        except LeaveType.DoesNotExist:
+            continue
+    try:
+        return LeaveType.objects.get(name__iexact=ANNUAL_LEAVE_NAME)
+    except LeaveType.DoesNotExist:
+        return None
+
+
+def get_or_create_annual_leave_type() -> tuple[LeaveType, bool]:
+    """Adopt-or-create the canonical annual leave type."""
+    annual = find_annual_leave_type()
+    if annual is not None:
+        return annual, False
+    return (
+        LeaveType.objects.create(
+            name=ANNUAL_LEAVE_NAME,
+            code=ANNUAL_LEAVE_CODE,
+            is_active=True,
+        ),
+        True,
+    )
+
+
+def ensure_annual_leave_rule(
+    leave_type: LeaveType, effective_from: date, max_duration_days: int
+) -> LeaveRule | None:
+    """Create the default effective rule, or None when one already exists."""
+    if leave_type.rules.exists():
+        return None
+    return LeaveRule.objects.create(
+        leave_type=leave_type,
+        max_duration_days=max_duration_days,
+        eligibility="",
+        eligibility_rules=[],
+        min_notice_days=0,
+        requires_supporting_document=False,
+        consumes_annual_entitlement=True,
+        effective_from=effective_from,
+    )
 
 
 def normalize_leave_code(value: str) -> str | None:

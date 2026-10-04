@@ -20,7 +20,12 @@ from ..services import (
     normalize_grade,
     normalize_leave_code,
     resolve_leave_rule,
+    ensure_annual_leave_rule,
+    get_or_create_annual_leave_type,
+    find_annual_leave_type,
+    resolve_grade_entitlement,
 )
+from audit.services import current_actor, record_audit
 from ..services.storage import signed_document_url
 
 
@@ -92,8 +97,9 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
         self, grade_start: str, grade_end: str, leave_type
     ) -> None:
         exclude_pk = self.instance.pk if self.instance is not None else None
+        check_type = leave_type or find_annual_leave_type()
         overlapping = find_overlapping_rule(
-            grade_start, grade_end, leave_type=leave_type, exclude_pk=exclude_pk
+            grade_start, grade_end, leave_type=check_type, exclude_pk=exclude_pk
         )
         if overlapping is not None:
             granted = (
@@ -108,6 +114,55 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
                     )
                 }
             )
+
+    def create(self, validated_data):
+        with transaction.atomic():
+            if validated_data.get("leave_type") is None:
+                annual, created = get_or_create_annual_leave_type()
+                validated_data["leave_type"] = annual
+                if created:
+                    actor = current_actor(self)
+                    record_audit(
+                        actor=actor,
+                        target_type=AuditEntry.TargetType.LEAVE_TYPE,
+                        target_id=annual.pk,
+                        action=AuditEntry.Action.CREATED,
+                        target_summary=str(annual),
+                        detail={
+                            "summary": f"Created leave type {annual.name} ({annual.code})",
+                            "before": None,
+                            "after": {"name": annual.name, "code": annual.code, "is_active": annual.is_active},
+                        },
+                    )
+                rule = ensure_annual_leave_rule(
+                    annual,
+                    validated_data["effective_from"],
+                    validated_data["days"],
+                )
+                if rule is not None:
+                    actor = current_actor(self)
+                    record_audit(
+                        actor=actor,
+                        target_type=AuditEntry.TargetType.LEAVE_RULE,
+                        target_id=rule.pk,
+                        action=AuditEntry.Action.CREATED,
+                        target_summary=str(rule),
+                        detail={
+                            "summary": f"Created leave rule for {annual.name}",
+                            "before": None,
+                            "after": {
+                                "leave_type": annual.pk,
+                                "max_duration_days": rule.max_duration_days,
+                                "eligibility": rule.eligibility,
+                                "eligibility_rules": rule.eligibility_rules,
+                                "min_notice_days": rule.min_notice_days,
+                                "requires_supporting_document": rule.requires_supporting_document,
+                                "consumes_annual_entitlement": rule.consumes_annual_entitlement,
+                                "effective_from": rule.effective_from.isoformat(),
+                            },
+                        },
+                    )
+            return super().create(validated_data)
 
 
 class LeaveTypeSerializer(AuditedModelSerializer):

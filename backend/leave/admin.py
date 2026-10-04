@@ -9,7 +9,12 @@ from .models import (
     LeaveType,
     PublicHoliday,
 )
-from .services import find_overlapping_financial_year, find_overlapping_rule
+from .services import (
+    ensure_annual_leave_rule,
+    find_overlapping_financial_year,
+    find_overlapping_rule,
+    get_or_create_annual_leave_type,
+)
 
 
 class GradeEntitlementAdminForm(forms.ModelForm):
@@ -51,6 +56,20 @@ class GradeEntitlementAdmin(admin.ModelAdmin):
     search_fields = ("grade_start", "grade_end", "leave_type__name")
     list_filter = ("leave_type", "effective_from")
     ordering = ("-effective_from", "grade_start", "grade_end")
+
+    def save_model(self, request, obj, form, change):
+        from django.db import transaction
+
+        if not change and obj.leave_type_id is None:
+            with transaction.atomic():
+                annual, _ = get_or_create_annual_leave_type()
+                obj.leave_type = annual
+                ensure_annual_leave_rule(
+                    annual,
+                    obj.effective_from,
+                    obj.days,
+                )
+        super().save_model(request, obj, form, change)
 
     def has_delete_permission(self, request, obj=None):
         return False
