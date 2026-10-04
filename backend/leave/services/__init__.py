@@ -161,21 +161,13 @@ def resolved_annual_entitlement(
 def leave_types_available_to(
     grade: str | None, as_of: date | None = None
 ) -> QuerySet[LeaveType]:
-    """Active leave types a grade is granted, by an effective band."""
-    key = normalize_grade(grade)
-    if key is None:
-        return LeaveType.objects.none()
+    """Return active leave types for selection.
 
-    as_of = as_of or timezone.localdate()
-    granted_ids = {
-        rule.leave_type_id
-        for rule in GradeEntitlement.objects.filter(
-            leave_type_id__isnull=False, effective_from__lte=as_of
-        )
-        if grade_in_range(key, rule.grade_start, rule.grade_end)
-    }
-    granted_ids.discard(None)
-    return LeaveType.objects.filter(is_active=True, pk__in=granted_ids)
+    The application form should list all configured active leave types so HR
+    can manage types centrally; entitlement/eligibility determine whether a
+    particular employee may actually take a given type at submission time.
+    """
+    return LeaveType.objects.filter(is_active=True)
 
 
 ANNUAL_LEAVE_CODE = "annual"
