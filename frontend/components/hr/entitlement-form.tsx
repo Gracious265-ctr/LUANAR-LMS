@@ -133,12 +133,13 @@ export function EntitlementForm({
           defaultValue={entitlement?.leave_type ? String(entitlement.leave_type) : ""}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
-          <option value="">Annual Leave (created automatically)</option>
-          {leaveTypes?.results?.map((lt) => (
-            <option key={lt.id} value={lt.id}>
-              {lt.name}
-            </option>
-          ))}
+          {(leaveTypes?.results || [])
+            .filter((lt) => lt.name.toLowerCase().includes("annual"))
+            .map((lt) => (
+              <option key={lt.id} value={lt.id}>
+                {lt.name}
+              </option>
+            ))}
         </select>
         {ltError && (
           <p className="mt-1 text-xs text-status-rejected">{ltError}</p>
