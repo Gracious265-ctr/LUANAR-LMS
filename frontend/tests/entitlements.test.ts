@@ -34,6 +34,7 @@ describe("gradeOptionsFromEntitlements", () => {
       grade_end: "G",
       days: 24,
       effective_from: "2025-01-01",
+      leave_type: null,
     },
     {
       id: 2,
@@ -41,6 +42,7 @@ describe("gradeOptionsFromEntitlements", () => {
       grade_end: "C",
       days: 21,
       effective_from: "2025-01-01",
+      leave_type: null,
     },
     {
       id: 3,
@@ -48,6 +50,7 @@ describe("gradeOptionsFromEntitlements", () => {
       grade_end: "U",
       days: 30,
       effective_from: "2030-01-01",
+      leave_type: null,
     },
   ];
 

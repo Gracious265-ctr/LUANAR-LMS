@@ -23,6 +23,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
       const input = {
         name: String(formData.get("name") || "").trim(),
         code: String(formData.get("code") || "").trim() || undefined,
+        is_active: formData.get("is_active") === "on",
       };
       if (leaveType) {
         await updateLeaveType(leaveType.id, input);
@@ -74,6 +75,19 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
         <p className="mt-1 text-xs text-text-muted">
           Short slug used to identify this type. Leave blank to derive it from the name.
         </p>
+      </div>
+
+      <div className="flex items-center gap-2 md:col-span-2">
+        <input
+          id="is_active"
+          name="is_active"
+          type="checkbox"
+          defaultChecked={leaveType?.is_active !== false}
+          className="h-4 w-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
+        />
+        <label htmlFor="is_active" className="text-sm text-text-primary">
+          Active (offered to employees with a matching entitlement)
+        </label>
       </div>
 
       {error && (

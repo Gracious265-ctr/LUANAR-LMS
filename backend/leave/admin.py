@@ -23,9 +23,13 @@ class GradeEntitlementAdminForm(forms.ModelForm):
         cleaned = super().clean()
         grade_start = cleaned.get("grade_start")
         grade_end = cleaned.get("grade_end")
+        leave_type = cleaned.get("leave_type")
         if grade_start and grade_end:
             overlapping = find_overlapping_rule(
-                grade_start, grade_end, exclude_pk=self.instance.pk
+                grade_start,
+                grade_end,
+                leave_type=leave_type,
+                exclude_pk=self.instance.pk,
             )
             if overlapping is not None:
                 raise ValidationError(
@@ -43,9 +47,9 @@ class GradeEntitlementAdminForm(forms.ModelForm):
 @admin.register(GradeEntitlement)
 class GradeEntitlementAdmin(admin.ModelAdmin):
     form = GradeEntitlementAdminForm
-    list_display = ("grade_start", "grade_end", "days", "effective_from")
-    search_fields = ("grade_start", "grade_end")
-    list_filter = ("effective_from",)
+    list_display = ("grade_start", "grade_end", "days", "leave_type", "effective_from")
+    search_fields = ("grade_start", "grade_end", "leave_type__name")
+    list_filter = ("leave_type", "effective_from")
     ordering = ("-effective_from", "grade_start", "grade_end")
 
     def has_delete_permission(self, request, obj=None):
@@ -54,7 +58,8 @@ class GradeEntitlementAdmin(admin.ModelAdmin):
 
 @admin.register(LeaveType)
 class LeaveTypeAdmin(admin.ModelAdmin):
-    list_display = ("name", "code")
+    list_display = ("name", "code", "is_active")
+    list_filter = ("is_active",)
     search_fields = ("name", "code")
     ordering = ("name",)
 

@@ -3,6 +3,7 @@ export interface LeaveType {
   name: string;
   requiresDocuments: boolean;
   maxDurationDays: number | null;
+  entitlementDays?: number | null;
 }
 
 interface LeaveTypeOptionsResponse {
@@ -11,6 +12,7 @@ interface LeaveTypeOptionsResponse {
   code: string;
   max_duration_days: number | null;
   requires_supporting_document: boolean;
+  entitlement_days?: number | null;
 }
 
 export async function getLeaveTypes(): Promise<LeaveType[]> {
@@ -30,5 +32,6 @@ export async function getLeaveTypes(): Promise<LeaveType[]> {
     name: t.name,
     requiresDocuments: t.requires_supporting_document,
     maxDurationDays: t.max_duration_days,
+    entitlementDays: t.entitlement_days ?? null,
   }));
 }

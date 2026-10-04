@@ -35,6 +35,7 @@ export function EntitlementTable({
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Grade range</th>
             <th className="py-3 pr-4">Annual days</th>
+            <th className="py-3 pr-4">Leave type</th>
             <th className="py-3 pr-4">Effective from</th>
             <th className="py-3 pr-4">Status</th>
             <th className="py-3 text-right">Actions</th>
@@ -57,6 +58,9 @@ export function EntitlementTable({
                   </Link>
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">{rule.days} days</td>
+                <td className="py-3 pr-4 text-text-secondary">
+                  {rule.leave_type_name || "Annual (untyped)"}
+                </td>
                 <td className="py-3 pr-4 text-text-secondary">
                   {rule.effective_from}
                 </td>

@@ -5,11 +5,13 @@ export interface LeaveType {
   id: number;
   name: string;
   code: string;
+  is_active?: boolean;
 }
 
 export interface LeaveTypeInput {
   name: string;
   code?: string;
+  is_active?: boolean;
 }
 
 export interface LeaveTypeListResponse {

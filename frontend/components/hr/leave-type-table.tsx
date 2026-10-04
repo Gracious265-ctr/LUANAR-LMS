@@ -24,6 +24,7 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Name</th>
             <th className="py-3 pr-4">Code</th>
+            <th className="py-3 pr-4">Status</th>
             <th className="py-3 text-right">Actions</th>
           </tr>
         </thead>
@@ -42,6 +43,17 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
                 </Link>
               </td>
               <td className="py-3 pr-4 text-text-secondary">{leaveType.code}</td>
+              <td className="py-3 pr-4">
+                <span
+                  className={
+                    leaveType.is_active !== false
+                      ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
+                      : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
+                  }
+                >
+                  {leaveType.is_active !== false ? "Active" : "Inactive"}
+                </span>
+              </td>
               <td className="py-3 text-right">
                 <EditActionLink
                   href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`}

@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { apiErrorMessage } from "@/lib/utils";
+import { listLeaveTypes, type LeaveTypeListResponse } from "@/lib/leave-rules";
 
 export function EntitlementForm({
   entitlement,
@@ -19,6 +20,14 @@ export function EntitlementForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeListResponse | null>(null);
+  const [ltError, setLtError] = useState("");
+
+  useEffect(() => {
+    listLeaveTypes()
+      .then((data) => setLeaveTypes(data))
+      .catch(() => setLtError("Unable to load leave types. Please try again."));
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,6 +35,7 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+    const leaveTypeValue = formData.get("leave_type");
 
     try {
       const response = await fetch(endpoint, {
@@ -36,6 +46,7 @@ export function EntitlementForm({
           grade_end: formData.get("grade_end"),
           days: Number(formData.get("days")),
           effective_from: formData.get("effective_from"),
+          leave_type: leaveTypeValue && leaveTypeValue !== "" ? Number(leaveTypeValue) : null,
         }),
       });
 
@@ -106,6 +117,34 @@ export function EntitlementForm({
           defaultValue={entitlement?.days}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
+      </div>
+
+      <div>
+        <label
+          htmlFor="leave_type"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Leave type
+        </label>
+        <select
+          id="leave_type"
+          name="leave_type"
+          defaultValue={entitlement?.leave_type ? String(entitlement.leave_type) : ""}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+        >
+          <option value="">None (untype annual)</option>
+          {leaveTypes?.results?.map((lt) => (
+            <option key={lt.id} value={lt.id}>
+              {lt.name}
+            </option>
+          ))}
+        </select>
+        {ltError && (
+          <p className="mt-1 text-xs text-status-rejected">{ltError}</p>
+        )}
+        <p className="mt-1 text-xs text-text-muted">
+          Granting a specific type makes it appear in the employee&apos;s leave-type selection.
+        </p>
       </div>
 
       <div>
