@@ -134,7 +134,7 @@ export function EntitlementForm({
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         >
           {(leaveTypes?.results || [])
-            .filter((lt) => lt.name.toLowerCase().includes("annual"))
+            .filter((lt) => lt.code === "annual")
             .map((lt) => (
               <option key={lt.id} value={lt.id}>
                 {lt.name}
