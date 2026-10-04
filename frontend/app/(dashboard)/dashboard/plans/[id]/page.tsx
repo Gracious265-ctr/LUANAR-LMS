@@ -1,4 +1,5 @@
 import { PlanDetailView } from "@/components/plans/plan-detail";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
  * One plan, from the owner's side of the read.
@@ -13,5 +14,9 @@ export default async function PlanDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <PlanDetailView id={id} />;
+  return (
+    <FadeIn>
+      <PlanDetailView id={id} />
+    </FadeIn>
+  );
 }

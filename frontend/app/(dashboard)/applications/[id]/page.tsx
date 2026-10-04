@@ -1,4 +1,5 @@
 import { TrackingView } from "@/components/tracking/TrackingView";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export default async function ApplicationTrackingPage({
   params,
@@ -6,5 +7,9 @@ export default async function ApplicationTrackingPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <TrackingView applicationId={id} />;
+  return (
+    <FadeIn>
+      <TrackingView applicationId={id} />
+    </FadeIn>
+  );
 }

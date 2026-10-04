@@ -1,4 +1,5 @@
 import { PasswordChangeForm } from "@/components/account/password-change-form";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
  * The signed-in user's own account page.
@@ -10,14 +11,16 @@ import { PasswordChangeForm } from "@/components/account/password-change-form";
  */
 export default function AccountPage() {
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-ink-strong">My account</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Your sign-in details. Ask HR to change anything else about your record.
-        </p>
-      </header>
-      <PasswordChangeForm />
-    </div>
+    <FadeIn>
+      <div className="mx-auto w-full max-w-2xl space-y-6">
+        <header>
+          <h1 className="text-2xl font-semibold text-ink-strong">My account</h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            Your sign-in details. Ask HR to change anything else about your record.
+          </p>
+        </header>
+        <PasswordChangeForm />
+      </div>
+    </FadeIn>
   );
 }

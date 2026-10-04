@@ -1,6 +1,7 @@
 import { ApprovalsWorkspace } from "@/components/approvals/approvals-workspace";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, loadCoverData } from "@/lib/delegations";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export const metadata = {
   title: "Approvals",
@@ -35,12 +36,14 @@ export default async function ApprovalsPage({
   const { delegations, candidates, error } = await loadCoverData();
 
   return (
-    <ApprovalsWorkspace
-      canRequestCover
-      initialView={initialView}
-      delegations={delegations}
-      candidates={candidates}
-      delegationsError={error}
-    />
+    <FadeIn>
+      <ApprovalsWorkspace
+        canRequestCover
+        initialView={initialView}
+        delegations={delegations}
+        candidates={candidates}
+        delegationsError={error}
+      />
+    </FadeIn>
   );
 }

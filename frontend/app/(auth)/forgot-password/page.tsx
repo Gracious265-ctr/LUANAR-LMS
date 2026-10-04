@@ -8,6 +8,7 @@ import { FormError } from "@/components/ui/form-error";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { requestPasswordSetLink } from "@/lib/password-set";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
@@ -36,45 +37,47 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-page">
-      <Card className="border-0 w-full max-w-md shadow-card">
-        <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
-          Forgot your password?
-        </h1>
-        <p className="text-sm text-center text-text-secondary mb-8">
-          Enter your email address and a set-password link will be sent to it.
-        </p>
+    <FadeIn>
+      <div className="min-h-screen flex items-center justify-center bg-surface-page">
+        <Card className="border-0 w-full max-w-md shadow-card">
+          <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
+            Forgot your password?
+          </h1>
+          <p className="text-sm text-center text-text-secondary mb-8">
+            Enter your email address and a set-password link will be sent to it.
+          </p>
 
-        {!sent ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Field label="Email" htmlFor="email">
-              <Input id="email" name="email" type="email" required placeholder="you@luanar.ac.mw" />
-            </Field>
-            {error && <FormError>{error}</FormError>}
-            <Button type="submit" variant="primary" className="w-full" loading={loading}>
-              {loading ? "Sending..." : "Send link"}
-            </Button>
-            <div className="text-center text-sm text-text-secondary">
-              Remembered it?{" "}
-              <Link href="/login" className="text-accent underline-offset-2 hover:underline">
+          {!sent ? (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Field label="Email" htmlFor="email">
+                <Input id="email" name="email" type="email" required placeholder="you@luanar.ac.mw" />
+              </Field>
+              {error && <FormError>{error}</FormError>}
+              <Button type="submit" variant="primary" className="w-full" loading={loading}>
+                {loading ? "Sending..." : "Send link"}
+              </Button>
+              <div className="text-center text-sm text-text-secondary">
+                Remembered it?{" "}
+                <Link href="/login" className="text-accent underline-offset-2 hover:underline">
+                  Back to sign in
+                </Link>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-4 text-center">
+              <Alert tone="approved">
+                If that address has an account, a set-password link is on its way.
+              </Alert>
+              <p className="text-sm text-text-secondary">
+                Check your email for the link. It expires after 72 hours.
+              </p>
+              <Link href="/login" className={buttonVariants({ variant: "secondary" })}>
                 Back to sign in
               </Link>
             </div>
-          </form>
-        ) : (
-          <div className="space-y-4 text-center">
-            <Alert tone="approved">
-              If that address has an account, a set-password link is on its way.
-            </Alert>
-            <p className="text-sm text-text-secondary">
-              Check your email for the link. It expires after 72 hours.
-            </p>
-            <Link href="/login" className={buttonVariants({ variant: "secondary" })}>
-              Back to sign in
-            </Link>
-          </div>
-        )}
-      </Card>
-    </div>
+          )}
+        </Card>
+      </div>
+    </FadeIn>
   );
 }

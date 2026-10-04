@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { getLeaveSummary } from "@/lib/leave-summary";
 import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
+import { Stagger } from "@/components/motion/Stagger";
+import { StaggerItem } from "@/components/motion/StaggerItem";
 
 export default async function DashboardPage() {
   // All three reads are independent, and the first two are already resolved by
@@ -29,72 +32,82 @@ export default async function DashboardPage() {
   const profile = summary?.profile;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight text-text-primary">Dashboard</h2>
-        <p className="text-text-secondary">
-          Welcome back, {user.full_name}
-        </p>
-        {profile && (
-          <p className="text-sm text-text-muted mt-1">
-            {[profile.grade && `Grade ${profile.grade}`, profile.department]
-              .filter(Boolean)
-              .join(" · ") || "No employee record on file."}
+    <FadeIn>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Dashboard</h2>
+          <p className="text-text-secondary">
+            Welcome back, {user.full_name}
           </p>
-        )}
-      </div>
-
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Available Balance"
-          value={balance ?? "—"}
-          subtitle={
-            profile && fiscalPeriod
-              ? `${fiscalPeriod} · days remaining`
-              : "no financial year set"
-          }
-          icon={<Calendar className="w-5 h-5" />}
-          variant="primary"
-        />
-        <StatCard
-          title="Pending Applications"
-          value="0"
-          subtitle="awaiting review"
-          icon={<Clock className="w-5 h-5" />}
-          variant="pending"
-        />
-        {showApprovals && (
-          <StatCard
-            title="Awaiting My Approval"
-            value={String(pendingApprovals)}
-            subtitle="applications"
-            icon={<ShieldCheck className="w-5 h-5" />}
-            variant="info"
-          />
-        )}
-        <StatCard
-          title="Upcoming Leave"
-          value="0"
-          subtitle="days scheduled"
-          icon={<FileText className="w-5 h-5" />}
-          variant="secondary"
-        />
-      </div>
-
-      {/* Recent Activity */}
-      <Card>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">
-          Recent Activity
-        </h3>
-        <div className="text-center py-8 text-text-muted">
-          <p>No recent activity to display.</p>
-          <p className="text-sm mt-1">
-            Your leave applications and approvals will appear here.
-          </p>
+          {profile && (
+            <p className="text-sm text-text-muted mt-1">
+              {[profile.grade && `Grade ${profile.grade}`, profile.department]
+                .filter(Boolean)
+                .join(" · ") || "No employee record on file."}
+            </p>
+          )}
         </div>
-      </Card>
-    </div>
+
+        {/* Stat Cards */}
+        <Stagger className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StaggerItem>
+            <StatCard
+              title="Available Balance"
+              value={balance ?? "—"}
+              subtitle={
+                profile && fiscalPeriod
+                  ? `${fiscalPeriod} · days remaining`
+                  : "no financial year set"
+              }
+              icon={<Calendar className="w-5 h-5" />}
+              variant="primary"
+            />
+          </StaggerItem>
+          <StaggerItem>
+            <StatCard
+              title="Pending Applications"
+              value="0"
+              subtitle="awaiting review"
+              icon={<Clock className="w-5 h-5" />}
+              variant="pending"
+            />
+          </StaggerItem>
+          {showApprovals && (
+            <StaggerItem>
+              <StatCard
+                title="Awaiting My Approval"
+                value={String(pendingApprovals)}
+                subtitle="applications"
+                icon={<ShieldCheck className="w-5 h-5" />}
+                variant="info"
+              />
+            </StaggerItem>
+          )}
+          <StaggerItem>
+            <StatCard
+              title="Upcoming Leave"
+              value="0"
+              subtitle="days scheduled"
+              icon={<FileText className="w-5 h-5" />}
+              variant="secondary"
+            />
+          </StaggerItem>
+        </Stagger>
+
+        {/* Recent Activity */}
+        <Card>
+          <h3 className="text-lg font-semibold text-text-primary mb-4">
+            Recent Activity
+          </h3>
+          <div className="text-center py-8 text-text-muted">
+            <p>No recent activity to display.</p>
+            <p className="text-sm mt-1">
+              Your leave applications and approvals will appear here.
+            </p>
+          </div>
+        </Card>
+      </div>
+    </FadeIn>
   );
 }
 

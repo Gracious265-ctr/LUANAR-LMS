@@ -1,6 +1,7 @@
 import { PlansWorkspace } from "@/components/plans/plans-workspace";
 import { getCurrentUser } from "@/lib/auth";
 import { loadPlanCapabilities } from "@/lib/plans/capabilities";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 const HR_ROLE = "hr";
 
@@ -21,9 +22,11 @@ export default async function PlansPage() {
   ]);
 
   return (
-    <PlansWorkspace
-      isHR={user?.role === HR_ROLE}
-      isApprover={capabilities?.is_approver ?? false}
-    />
+    <FadeIn>
+      <PlansWorkspace
+        isHR={user?.role === HR_ROLE}
+        isApprover={capabilities?.is_approver ?? false}
+      />
+    </FadeIn>
   );
 }

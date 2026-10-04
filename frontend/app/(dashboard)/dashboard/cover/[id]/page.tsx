@@ -4,6 +4,7 @@ import { DelegationReview } from "@/components/hr/delegation-review";
 import { COVER_BASE_HREF } from "@/components/approvals/cover-panel";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, getDelegation } from "@/lib/delegations";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export const metadata = {
   title: "Delegation",
@@ -33,12 +34,14 @@ export default async function CoverDetailPage({
   }
 
   return (
-    <DelegationReview
-      delegation={delegation}
-      employees={[]}
-      readOnly
-      backHref={COVER_BASE_HREF}
-      title="Delegation"
-    />
+    <FadeIn>
+      <DelegationReview
+        delegation={delegation}
+        employees={[]}
+        readOnly
+        backHref={COVER_BASE_HREF}
+        title="Delegation"
+      />
+    </FadeIn>
   );
 }

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { ApplicationsList } from "@/components/leave/ApplicationsList";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
  * `ApplicationsList` reads the open-application state from the query string via
@@ -18,7 +19,9 @@ export default async function ApplicationsPage() {
         </div>
       }
     >
-      <ApplicationsList />
+      <FadeIn>
+        <ApplicationsList />
+      </FadeIn>
     </Suspense>
   );
 }

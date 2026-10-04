@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PlanSettingsForm } from "@/components/plans/plan-settings-form";
 import { PlansAdminTable } from "@/components/plans/plans-admin-table";
 import { getCurrentUser } from "@/lib/auth";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 const HR_ROLE = "hr";
 
@@ -25,26 +26,28 @@ export default async function HRPlansPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight text-text-primary">
-          Leave Day Plans
-        </h2>
-        <p className="text-sm text-text-secondary">
-          Every plan in the institution, and how long an owner has to confirm a
-          reserved block before it is released.
-        </p>
+    <FadeIn>
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
+            Leave Day Plans
+          </h2>
+          <p className="text-sm text-text-secondary">
+            Every plan in the institution, and how long an owner has to confirm a
+            reserved block before it is released.
+          </p>
+        </div>
+
+        <section className="space-y-3">
+          <h3 className="text-lg font-semibold text-text-primary">All plans</h3>
+          <PlansAdminTable />
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-lg font-semibold text-text-primary">Settings</h3>
+          <PlanSettingsForm />
+        </section>
       </div>
-
-      <section className="space-y-3">
-        <h3 className="text-lg font-semibold text-text-primary">All plans</h3>
-        <PlansAdminTable />
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-lg font-semibold text-text-primary">Settings</h3>
-        <PlanSettingsForm />
-      </section>
-    </div>
+    </FadeIn>
   );
 }

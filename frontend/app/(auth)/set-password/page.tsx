@@ -9,6 +9,7 @@ import { FormError } from "@/components/ui/form-error";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { confirmPasswordSet, validatePasswordSetToken } from "@/lib/password-set";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 type Phase = "checking" | "ready" | "dead";
 
@@ -156,7 +157,9 @@ function SetPasswordForm() {
 export default function SetPasswordPage() {
   return (
     <Suspense>
-      <SetPasswordForm />
+      <FadeIn>
+        <SetPasswordForm />
+      </FadeIn>
     </Suspense>
   );
 }

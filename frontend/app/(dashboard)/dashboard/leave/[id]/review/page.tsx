@@ -1,4 +1,5 @@
 import { ReviewSummaryClient } from "./ReviewSummaryClient";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
  * The review step is a stage of the compose overlay. This route stays available
@@ -13,8 +14,10 @@ export default async function ReviewLeavePage({
   const { id } = await params;
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <ReviewSummaryClient applicationId={id} />
-    </div>
+    <FadeIn>
+      <div className="max-w-2xl mx-auto">
+        <ReviewSummaryClient applicationId={id} />
+      </div>
+    </FadeIn>
   );
 }

@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 function LoginForm() {
   const router = useRouter();
@@ -118,7 +119,9 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense>
-      <LoginForm />
+      <FadeIn>
+        <LoginForm />
+      </FadeIn>
     </Suspense>
   );
 }

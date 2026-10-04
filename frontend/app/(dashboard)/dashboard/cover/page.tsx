@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CoverPanel } from "@/components/approvals/cover-panel";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { canRequestCover, loadCoverData } from "@/lib/delegations";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export const metadata = {
   title: "Request Cover",
@@ -23,20 +24,22 @@ export default async function CoverPage() {
   const { delegations, candidates, error } = await loadCoverData();
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight text-text-primary">Request Cover</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Nominate someone to handle your pending approvals while you are away.
-          HR approves every request before your cover takes effect.
-        </p>
-      </header>
+    <FadeIn>
+      <div className="space-y-6">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight text-text-primary">Request Cover</h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            Nominate someone to handle your pending approvals while you are away.
+            HR approves every request before your cover takes effect.
+          </p>
+        </header>
 
-      <CoverPanel
-        delegations={delegations}
-        candidates={candidates}
-        error={error}
-      />
-    </div>
+        <CoverPanel
+          delegations={delegations}
+          candidates={candidates}
+          error={error}
+        />
+      </div>
+    </FadeIn>
   );
 }

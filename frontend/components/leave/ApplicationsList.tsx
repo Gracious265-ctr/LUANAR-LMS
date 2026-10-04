@@ -9,6 +9,8 @@ import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Stagger } from "@/components/motion/Stagger";
+import { StaggerItem } from "@/components/motion/StaggerItem";
 
 import { ApplicationCard } from "./ApplicationCard";
 import {
@@ -189,21 +191,22 @@ export function ApplicationsList() {
           </Button>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <Stagger className="grid gap-4">
           {applications.map((app) => (
-            <ApplicationCard
-              key={app.id}
-              application={app}
-              leaveTypeName={
-                app.leave_type_id != null
-                  ? leaveTypeNames[app.leave_type_id] || `Type #${app.leave_type_id}`
-                  : "Not selected"
-              }
-              onDelete={refetch}
-              onEdit={openExisting}
-            />
+            <StaggerItem key={app.id}>
+              <ApplicationCard
+                application={app}
+                leaveTypeName={
+                  app.leave_type_id != null
+                    ? leaveTypeNames[app.leave_type_id] || `Type #${app.leave_type_id}`
+                    : "Not selected"
+                }
+                onDelete={refetch}
+                onEdit={openExisting}
+              />
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
     </div>
   );

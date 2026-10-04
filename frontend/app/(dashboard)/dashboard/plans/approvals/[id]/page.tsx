@@ -1,4 +1,5 @@
 import { PlanApprovalDetailView } from "@/components/plans/plan-approval-detail";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
  * One plan, from the approver's side of the read.
@@ -13,5 +14,9 @@ export default async function PlanApprovalDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <PlanApprovalDetailView id={id} />;
+  return (
+    <FadeIn>
+      <PlanApprovalDetailView id={id} />
+    </FadeIn>
+  );
 }
