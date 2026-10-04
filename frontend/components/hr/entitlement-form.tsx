@@ -6,7 +6,8 @@ import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { apiErrorMessage } from "@/lib/utils";
-import { listLeaveTypes, type LeaveTypeListResponse } from "@/lib/leave-rules";
+import { listLeaveTypes } from "@/lib/leave-types-client";
+import type { LeaveTypeListResponse } from "@/lib/leave-rules";
 
 export function EntitlementForm({
   entitlement,
