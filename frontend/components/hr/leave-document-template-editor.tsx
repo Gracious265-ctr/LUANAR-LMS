@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, Plus, Trash2 } from "lucide-react";
 
 import type {
   LeaveDocumentTemplate,
@@ -9,7 +9,9 @@ import type {
   TemplateField,
   TemplateSignatureArea,
 } from "@/lib/leave-document-template";
+import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { updateLeaveDocumentTemplate } from "@/lib/leave-document-template-client";
+import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { DocumentTemplatePreview } from "./document-template-preview";
 import { Field, Input } from "@/components/ui/input";
 import {
@@ -24,11 +26,15 @@ import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 
+/** Query key for the document preview overlay. */
+export const PREVIEW_PARAM = "preview";
+
 export function LeaveDocumentTemplateEditor({
   template,
 }: {
   template: LeaveDocumentTemplate;
 }) {
+  const overlay = useOverlayParam(PREVIEW_PARAM);
   const [title, setTitle] = useState(template.title);
   const [header, setHeader] = useState(template.header);
   const [intro, setIntro] = useState(template.intro);
@@ -164,7 +170,7 @@ export function LeaveDocumentTemplateEditor({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6">
       <div className="space-y-6">
         <Field
           label="Document title"
@@ -404,20 +410,29 @@ export function LeaveDocumentTemplateEditor({
           <Button type="submit" variant="primary" loading={loading}>
             {loading ? "Saving..." : "Save template"}
           </Button>
+          <Button type="button" variant="secondary" onClick={overlay.open}>
+            <Eye className="h-4 w-4" />
+            Preview
+          </Button>
           {saved && (
             <span className="text-sm text-text-muted">
-              Template saved — preview reflects the saved configuration.
+              Template saved.
             </span>
           )}
         </div>
       </div>
 
-      <div className="lg:sticky lg:top-6 lg:self-start">
-        <p className="mb-2 text-sm font-medium text-text-primary">
-          Preview
-        </p>
+      <AdminFormOverlay
+        open={overlay.isOpen}
+        size="lg"
+        title="Document preview"
+        description="The approved leave document as it will appear, using your unsaved changes."
+        onOpenChange={(open) => {
+          if (!open) overlay.close();
+        }}
+      >
         <DocumentTemplatePreview template={previewDraft} />
-      </div>
+      </AdminFormOverlay>
     </form>
   );
 }

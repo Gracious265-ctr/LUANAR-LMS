@@ -4,6 +4,7 @@ import { LeaveDocumentTemplateEditor } from "@/components/hr/leave-document-temp
 import { getCurrentUser } from "@/lib/auth";
 import { getLeaveDocumentTemplate } from "@/lib/leave-document-template";
 import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export default async function LeaveDocumentTemplatePage() {
   const user = await getCurrentUser();
@@ -24,28 +25,30 @@ export default async function LeaveDocumentTemplatePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight text-text-primary">
-          Approved Leave Document Template
-        </h2>
-        <p className="text-text-secondary">
-          Configure the official template used for approved leave documents:
-          branding wording, official text, data fields, and signature areas.
-          The data itself always comes from the approved application record;
-          values are never edited here.
-        </p>
-      </div>
-
-      {templateError ? (
-        <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-          {templateError}
+    <FadeIn>
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
+            Approved Leave Document Template
+          </h2>
+          <p className="text-text-secondary">
+            Configure the official template used for approved leave documents:
+            branding wording, official text, data fields, and signature areas.
+            The data itself always comes from the approved application record;
+            values are never edited here.
+          </p>
         </div>
-      ) : template ? (
-        <Card>
-          <LeaveDocumentTemplateEditor template={template} />
-        </Card>
-      ) : null}
-    </div>
+
+        {templateError ? (
+          <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
+            {templateError}
+          </div>
+        ) : template ? (
+          <Card>
+            <LeaveDocumentTemplateEditor template={template} />
+          </Card>
+        ) : null}
+      </div>
+    </FadeIn>
   );
 }

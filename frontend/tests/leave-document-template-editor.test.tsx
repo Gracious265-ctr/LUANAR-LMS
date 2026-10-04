@@ -9,6 +9,18 @@ import { selectOption } from "./helpers/select";
 
 let user: ReturnType<typeof userEvent.setup>;
 
+const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
+  routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
+  searchParamsRef: { current: new URLSearchParams() },
+  pathnameRef: { current: "/dashboard/hr-admin/leave-document-template" },
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => routerMock,
+  usePathname: () => pathnameRef.current,
+  useSearchParams: () => searchParamsRef.current,
+}));
+
 vi.mock("@/lib/leave-document-template-client", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/leave-document-template-client")>();
@@ -51,6 +63,7 @@ const template: LeaveDocumentTemplate = {
 describe("LeaveDocumentTemplateEditor", () => {
   beforeEach(() => {
     vi.mocked(updateLeaveDocumentTemplate).mockResolvedValue({ ...template });
+    searchParamsRef.current = new URLSearchParams();
     user = userEvent.setup();
   });
 
@@ -73,6 +86,7 @@ describe("LeaveDocumentTemplateEditor", () => {
   });
 
   it("updates a field label in the form and the preview", () => {
+    searchParamsRef.current = new URLSearchParams("preview=1");
     render(<LeaveDocumentTemplateEditor template={template} />);
 
     fireEvent.change(screen.getByLabelText("Edit label: employee_name"), {
@@ -140,6 +154,7 @@ describe("LeaveDocumentTemplateEditor", () => {
   });
 
   it("reorders fields via the move buttons", () => {
+    searchParamsRef.current = new URLSearchParams("preview=1");
     render(<LeaveDocumentTemplateEditor template={template} />);
 
     fireEvent.click(screen.getByLabelText("Move reference up"));
@@ -190,9 +205,7 @@ describe("LeaveDocumentTemplateEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save template" }));
 
     expect(
-      await screen.findByText(
-        "Template saved — preview reflects the saved configuration."
-      )
+      await screen.findByText("Template saved.")
     ).toBeInTheDocument();
   });
 
@@ -207,5 +220,60 @@ describe("LeaveDocumentTemplateEditor", () => {
     expect(
       await screen.findByText("fields: At least one data field is required.")
     ).toBeInTheDocument();
+  });
+
+  it("keeps the preview out of the page until it is asked for", () => {
+    render(<LeaveDocumentTemplateEditor template={template} />);
+
+    expect(
+      screen.queryByLabelText("Document template preview")
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the preview overlay from the button", () => {
+    render(<LeaveDocumentTemplateEditor template={template} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+
+    expect(routerMock.push).toHaveBeenCalledWith(
+      "/dashboard/hr-admin/leave-document-template?preview=1"
+    );
+  });
+
+  it("shows the preview in a dialog once the URL asks for it", () => {
+    searchParamsRef.current = new URLSearchParams("preview=1");
+    render(<LeaveDocumentTemplateEditor template={template} />);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Document template preview")
+    ).toBeInTheDocument();
+  });
+
+  it("carries unsaved edits into the preview overlay", () => {
+    searchParamsRef.current = new URLSearchParams("preview=1");
+    render(<LeaveDocumentTemplateEditor template={template} />);
+
+    fireEvent.change(screen.getByLabelText("Document title"), {
+      target: { value: "DRAFT CERTIFICATE" },
+    });
+
+    expect(screen.getByLabelText("Document template preview")).toHaveTextContent(
+      "DRAFT CERTIFICATE"
+    );
+  });
+
+  it("steps the preview closed", () => {
+    searchParamsRef.current = new URLSearchParams("preview=1");
+    render(<LeaveDocumentTemplateEditor template={template} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    // The lone JSDOM history entry takes close's replace fallback; either way
+    // the point is that it did not `push` the user off the page.
+    expect(routerMock.replace).toHaveBeenCalledWith(
+      "/dashboard/hr-admin/leave-document-template"
+    );
+    expect(routerMock.push).not.toHaveBeenCalled();
   });
 });

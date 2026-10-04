@@ -16,6 +16,11 @@ export interface OverlayParam {
   isCreate: boolean;
   /** Pushes `?<key>=new` without disturbing the host's own query. */
   openCreate: () => void;
+  /**
+   * Pushes `?<key>=1` for an overlay that has no record to edit — a preview or
+   * a confirmation, where the only state is open or shut.
+   */
+  open: () => void;
   /** Pushes `?<key>=<id>`. */
   openEdit: (id: number | string) => void;
   /**
@@ -67,6 +72,11 @@ export function useOverlayParam(key: string): OverlayParam {
     [pathname, query, router]
   );
 
+  const open = useCallback(
+    () => router.push(`${pathname}${query("1")}`),
+    [pathname, query, router]
+  );
+
   const openEdit = useCallback(
     (id: number | string) => router.push(`${pathname}${query(String(id))}`),
     [pathname, query, router]
@@ -88,10 +98,11 @@ export function useOverlayParam(key: string): OverlayParam {
       isOpen: target !== null,
       isCreate: target === CREATE,
       openCreate,
+      open,
       openEdit,
       close,
       hrefWithoutParam,
     }),
-    [target, openCreate, openEdit, close, hrefWithoutParam]
+    [target, openCreate, open, openEdit, close, hrefWithoutParam]
   );
 }
