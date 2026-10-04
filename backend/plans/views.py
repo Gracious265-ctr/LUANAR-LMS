@@ -493,7 +493,10 @@ class PlanAdminListAPIView(APIView):
             qs = qs.filter(status=plan_status)
         block_status = (request.query_params.get("block_status") or "").strip()
         if block_status:
-            qs = qs.filter(plan_blocks__status=block_status)
+            # Filtering across this reverse FK joins plan_blocks, so a plan
+            # holding several blocks in the same status would otherwise repeat
+            # once per block — duplicating table rows and inflating `count`.
+            qs = qs.filter(plan_blocks__status=block_status).distinct()
         qs = qs.order_by("-created_at")
 
         paginator = _Paginator()

@@ -1082,6 +1082,35 @@ class PlanAPITests(PlanServiceBase):
         admin = self.client.get("/api/v1/plans/admin/")
         self.assertEqual(admin.status_code, status.HTTP_200_OK)
 
+    def test_admin_block_status_filter_returns_each_plan_once(self):
+        hr = make_user("hr-admin-blocks@test.luanar", role=User.Role.HR)
+        plan = self.make_plan(
+            blocks=[
+                {
+                    "leave_type_id": self.annual_type_id,
+                    "start_date": BLOCK_START,
+                    "end_date": BLOCK_END,
+                },
+                {
+                    "leave_type_id": self.annual_type_id,
+                    "start_date": BLOCK_START + timedelta(days=14),
+                    "end_date": BLOCK_END + timedelta(days=14),
+                },
+            ]
+        )
+        self.approve_fully(plan)
+        self.assertEqual(
+            plan.plan_blocks.filter(status=LeavePlanBlock.Status.RESERVED).count(), 2
+        )
+
+        self.force(hr)
+        admin = self.client.get("/api/v1/plans/admin/?block_status=reserved")
+        self.assertEqual(admin.status_code, status.HTTP_200_OK, admin.data)
+        ids = [row["id"] for row in admin.data["results"]]
+        self.assertEqual(ids.count(str(plan.id)), 1)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(admin.data["count"], len(ids))
+
     def test_capabilities_counts(self):
         create = self.create_via_api()
         plan_id = create.data["meta"]["id"]
