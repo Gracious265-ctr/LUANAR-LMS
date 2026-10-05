@@ -7,44 +7,19 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 
-class GradeEntitlement(models.Model):
-    """Effective-dated annual leave entitlement for a grade range."""
-
-    grade_start = models.CharField(max_length=20)
-    grade_end = models.CharField(max_length=20)
-    days = models.PositiveIntegerField()
-    effective_from = models.DateField()
-
-    class Meta:
-        ordering = ["-effective_from", "grade_start", "grade_end"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(days__gte=1),
-                name="gradeentitlement_days_gte_1",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(grade_start__lte=models.F("grade_end")),
-                name="gradeentitlement_grade_start_le_grade_end",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.grade_start}–{self.grade_end}: {self.days} days "
-            f"(from {self.effective_from})"
-        )
-
-    def save(self, *args, **kwargs):
-        self.grade_start = self.grade_start.strip().upper()
-        self.grade_end = self.grade_end.strip().upper()
-        super().save(*args, **kwargs)
-
-
 class LeaveType(models.Model):
     """Named leave type registry entry (annual, maternity, paternity, ...)."""
 
     name = models.CharField(max_length=120, unique=True)
     code = models.SlugField(max_length=50, unique=True, blank=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether HR still offers this type. Retiring a type hides it from "
+            "employees without deleting it, so applications already filed against "
+            "it keep their type and its rules keep their history."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -58,6 +33,73 @@ class LeaveType(models.Model):
             self.code = slugify(self.name)
         else:
             self.code = self.code.strip().lower()
+        super().save(*args, **kwargs)
+
+
+class GradeEntitlement(models.Model):
+    """Effective-dated entitlement to a leave type for a grade range.
+
+    This is what makes a leave type appear in an employee's selection: the band
+    says which type the grade is granted, and ``effective_from`` says from when.
+    Without a band, the type is offered to nobody.
+
+    ``leave_type`` is nullable, and a null means the pre-existing meaning: this
+    band *is* the annual leave entitlement, with no type named. Rows created
+    before the field existed are left that way rather than being given an
+    invented type. A null grants no selectable type and does not fund a specific
+    one, so it is the fallback the balance resolver uses when nothing is linked.
+    """
+
+    grade_start = models.CharField(max_length=20)
+    grade_end = models.CharField(max_length=20)
+    days = models.PositiveIntegerField()
+    effective_from = models.DateField()
+    leave_type = models.ForeignKey(
+        LeaveType,
+        on_delete=models.PROTECT,
+        related_name="grade_entitlements",
+        null=True,
+        blank=True,
+        help_text=(
+            "The leave type this band grants. Naming it is what puts the type in "
+            "the employee's selection for grades in this range."
+        ),
+    )
+
+    class Meta:
+        ordering = ["-effective_from", "grade_start", "grade_end"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(days__gte=1),
+                name="gradeentitlement_days_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(grade_start__lte=models.F("grade_end")),
+                name="gradeentitlement_grade_start_le_grade_end",
+            ),
+            # One row per (type, grade range). Postgres treats the null in
+            # ``leave_type`` as distinct from itself and from every other null,
+            # so untyped bands are only constrained by the overlap check, which
+            # is where they are actually policed.
+            models.UniqueConstraint(
+                fields=["leave_type", "grade_start", "grade_end"],
+                name="gradeentitlement_type_range_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The type is in the label because the admin's band picker and the audit
+        # trail both read this string, and a list of bands that does not say
+        # which leave type each one grants is not distinguishable.
+        granted = self.leave_type.name if self.leave_type_id else "annual leave"
+        return (
+            f"{self.grade_start}–{self.grade_end}: {self.days} {granted} days "
+            f"(from {self.effective_from})"
+        )
+
+    def save(self, *args, **kwargs):
+        self.grade_start = self.grade_start.strip().upper()
+        self.grade_end = self.grade_end.strip().upper()
         super().save(*args, **kwargs)
 
 
@@ -229,10 +271,6 @@ class LeaveApplication(models.Model):
     calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
     financial_year_label = models.CharField(max_length=16, null=True, blank=True)
     rules_snapshot = models.JSONField(null=True, blank=True)
-
-    # Optimistic-lock version. Every employee edit bumps this by one so a stale
-    # edit context from a parallel tab/window is rejected with a conflict.
-    row_version = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["-updated_at"]

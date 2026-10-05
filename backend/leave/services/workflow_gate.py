@@ -41,10 +41,14 @@ def check_workflow_ready(application) -> bool:
     # rather than returning an empty set. This check is the belt to that
     # braces: a provider that returns an empty set has still failed the gate,
     # and the message has to say which step is stranded.
+    #
+    # A *skipped* stage (Unit 30) resolves nobody on purpose, so it is not
+    # stranded -- the same exemption ``assign_workflow`` applies to its own copy
+    # of this rule.
     missing = [
         f'No active approver for the "{definition.role_label}" approval section.'
         for definition in definitions
-        if not definition.approver_user_ids
+        if not definition.approver_user_ids and not definition.skipped
     ]
     if missing:
         raise WorkflowUnavailableError(missing)

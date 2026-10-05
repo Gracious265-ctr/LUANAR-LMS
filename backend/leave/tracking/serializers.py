@@ -62,6 +62,9 @@ class TrackedStageSerializer(serializers.Serializer):
             "assigned_at": _iso(stage.assigned_at),
             "decided_at": _iso(stage.decided_at),
             "comment": stage.comment,
+            # Why a skipped stage was passed over (Unit 30). Null for every other
+            # state, so a client can render the reason only where it applies.
+            "skip_reason": stage.skip_reason,
         }
 
 

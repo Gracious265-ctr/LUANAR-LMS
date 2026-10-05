@@ -15,12 +15,14 @@ import type {
   Team,
   TeamInput,
   TeamSectionInput,
-  TeamWorkflowInput,
 } from "@/lib/teams";
 import { createTeam, listEligibleApprovers, updateTeam } from "@/lib/teams-client";
 
 interface DraftSection {
-  name: string;
+  /**
+   * The role this step needs, by code. The step's name is derived from the
+   * role's label on save, so there is nothing typed here beyond the two picks.
+   */
   approver_role: string;
   approver: number | null;
 }
@@ -98,11 +100,9 @@ export function TeamForm({
     effective_from: team?.effective_from ?? "",
     effective_to: team?.effective_to ?? "",
   });
-  const [chainName, setChainName] = useState(team?.workflow_name ?? "");
   const [sections, setSections] = useState<DraftSection[]>(() =>
     team
       ? team.sections.map((section) => ({
-          name: section.name,
           approver_role: section.approver_role,
           approver: section.approver?.id ?? null,
         }))
@@ -127,6 +127,20 @@ export function TeamForm({
   }, [roles]);
 
   /**
+   * A step's name is its role's label.
+   *
+   * HR picks the role and nothing else, so the label is what the step is called:
+   * the chain then reads the way the Roles page does, and two people configuring
+   * the same team cannot end up with "HOD review" and "Head of Department
+   * approval" sitting on the same step.
+   */
+  const roleLabelByCode = useMemo(() => {
+    const labels = new Map<string, string>();
+    roles.forEach((role) => labels.set(role.code, role.label));
+    return labels;
+  }, [roles]);
+
+  /**
    * One picker per step, and each one asks the backend who may act at *that*
    * step. Fetching per step rather than once for the team is deliberate: the
    * eligible people differ per role, and a shared list would either offer
@@ -138,7 +152,8 @@ export function TeamForm({
   const [candidateError, setCandidateError] = useState("");
 
   // The departments and roles a fetch is needed for, as a stable string so that
-  // typing a step's name does not re-ask the same question on every keystroke.
+  // adding, reordering or re-picking a step's role does not re-ask the same
+  // question on every change.
   const candidateKeys = useMemo(() => {
     const departmentId = department ? Number(department) : null;
     if (departmentId === null) return "";
@@ -167,42 +182,8 @@ export function TeamForm({
     )
       .then((entries) => {
         if (cancelled) return;
-        const loaded = Object.fromEntries(entries);
-        setCandidates(loaded);
+        setCandidates(Object.fromEntries(entries));
         setCandidateError("");
-
-        /**
-         * Selecting an institution-wide role is the appointment.
-         *
-         * A role that approves across the whole institution is held outside the
-         * department, so its holder cannot be found by browsing this team's
-         * employees. When the fetched candidates leave exactly one holder, the
-         * step is filled in as soon as they are known — the same holder the
-         * backend appoints on save — so the reviewer sees who decides instead of
-         * a step that looks empty. Several holders stay a real choice and are left
-         * to HR.
-         *
-         * Applied here rather than in an effect of its own: the appointment is
-         * only possible once the candidates arrive, which is the same moment the
-         * picker gains the option.
-         */
-        const departmentId = department ? Number(department) : null;
-        if (departmentId === null) return;
-        setSections((current) => {
-          let changed = false;
-          const next = current.map((section) => {
-            if (section.approver !== null) return section;
-            const role = roleByCode.get(section.approver_role);
-            if (!role?.is_institution_wide) return section;
-            const roleId = roleIdByCode.get(section.approver_role);
-            if (roleId === undefined) return section;
-            const options = loaded[`${departmentId}:${roleId}`] ?? [];
-            if (options.length !== 1) return section;
-            changed = true;
-            return { ...section, approver: options[0].id };
-          });
-          return changed ? next : current;
-        });
       })
       .catch(() => {
         if (cancelled) return;
@@ -213,7 +194,50 @@ export function TeamForm({
     return () => {
       cancelled = true;
     };
-  }, [candidateKeys, department, roleByCode, roleIdByCode]);
+  }, [candidateKeys]);
+
+  /**
+   * The steps as they will be written: an institution-wide step with one holder
+   * *is* that holder, whether or not HR picked them from a list.
+   *
+   * A role that approves across the whole institution is held outside the
+   * department, so its holder could never be found by browsing this team's
+   * employees, and choosing the role is the whole instruction. Resolved while
+   * rendering rather than written into state, so a step is appointed the moment
+   * its role and its single holder are both known — including when that holder
+   * was already loaded for another step, where no new fetch would ever arrive to
+   * notice it. Several holders stay a real choice and are left to HR.
+   */
+  const resolvedSections: DraftSection[] = useMemo(
+    () =>
+      sections.map((section) => {
+        if (section.approver !== null) return section;
+        if (roleByCode.get(section.approver_role)?.is_institution_wide !== true) {
+          return section;
+        }
+        const roleId = roleIdByCode.get(section.approver_role);
+        if (roleId === undefined || department === "") return section;
+        const holders = candidates[`${department}:${roleId}`] ?? [];
+        if (holders.length !== 1) return section;
+        return { ...section, approver: holders[0].id };
+      }),
+    [candidates, department, roleIdByCode, roleByCode, sections]
+  );
+
+  /**
+   * Everyone the eligible-approver lookups have returned, by id.
+   *
+   * Only used to name a person in a validation message. A step can be appointed
+   * from a lookup that is no longer on screen, so the error names them from the
+   * loaded set rather than guessing from the id.
+   */
+  const candidateNames = useMemo(() => {
+    const byId = new Map<number, string>();
+    for (const list of Object.values(candidates)) {
+      for (const person of list) byId.set(person.id, person.full_name);
+    }
+    return byId;
+  }, [candidates]);
 
   function move(index: number, direction: -1 | 1) {
     setSections((current) => {
@@ -301,14 +325,39 @@ export function TeamForm({
     }
   }
 
+  /**
+   * The steps as the backend stores them: the role picked, and the person.
+   *
+   * The name is derived rather than typed, so the only thing HR has to get right
+   * per step is the role and who acts for it. Every step has a role by
+   * construction — "Add step" starts from the first role and is disabled when
+   * there are no roles to choose from — so nothing here has to be filtered out.
+   */
+  /**
+   * The value that appears twice across ``sections``, or null.
+   *
+   * Uniqueness is a workflow-level rule (one role, one person, one stage each), so
+   * this compares the whole list rather than a pair at a time and names the repeat
+   * rather than the two steps holding it: the steps are rendered as a numbered
+   * list already, and the repeated role or person is the thing HR has to change.
+   */
+  function repeatOf<T>(sections: T[], key: (section: T) => string | null | undefined) {
+    const seen = new Set<string>();
+    for (const section of sections) {
+      const value = key(section);
+      if (value == null) continue;
+      if (seen.has(value)) return value;
+      seen.add(value);
+    }
+    return null;
+  }
+
   function describeSteps(): TeamSectionInput[] {
-    return sections
-      .filter((section) => section.name.trim() !== "")
-      .map((section) => ({
-        name: section.name.trim(),
-        approver_role: section.approver_role,
-        ...(section.approver === null ? {} : { approver: section.approver }),
-      }));
+    return resolvedSections.map((section) => ({
+      name: roleLabelByCode.get(section.approver_role) ?? section.approver_role,
+      approver_role: section.approver_role,
+      ...(section.approver === null ? {} : { approver: section.approver }),
+    }));
   }
 
 interface TeamDetails {
@@ -319,7 +368,7 @@ interface TeamDetails {
   effective_to: string;
 }
 
-  async function save(draft: boolean, chainName = "") {
+  async function save(draft: boolean) {
     setError("");
     setLoading(true);
 
@@ -334,6 +383,32 @@ interface TeamDetails {
 
     const named = describeSteps();
 
+    // Uniqueness is checked before anything else because the backend enforces it
+    // as a constraint on the workflow: catching it here names the two steps, where
+    // a database error naming a constraint would not. Runs on a draft too --
+    // otherwise HR finds out about a repeated role only when they activate it.
+    const repeatedRole = repeatOf(named, (section) => section.approver_role);
+    if (repeatedRole) {
+      setError(
+        `Two steps both use the ${roleLabelByCode.get(repeatedRole) ?? repeatedRole} role. ` +
+          "Give each step its own role, so one office cannot sign off twice on the same application."
+      );
+      setLoading(false);
+      return;
+    }
+    const repeatedApprover = repeatOf(
+      named.filter((section) => section.approver != null),
+      (section) => String(section.approver)
+    );
+    if (repeatedApprover) {
+      setError(
+        `${candidateNames.get(Number(repeatedApprover)) ?? "The same person"} decides more than one step. ` +
+          "Each step needs its own approver, so it is clear who signs at each point."
+      );
+      setLoading(false);
+      return;
+    }
+
     if (!draft) {
       if (named.length === 0) {
         setError(
@@ -344,17 +419,11 @@ interface TeamDetails {
         setLoading(false);
         return;
       }
-      if (named.some((section) => section.approver_role === "")) {
-        setError("Every step needs a role, or the chain cannot be read.");
-        setLoading(false);
-        return;
-      }
       // An institution-wide step needs no pick: selecting its role appoints the
       // holder, and the backend writes them on save. Only a department-scoped
       // step with nobody named blocks submission.
-      const unstaffed = sections.filter(
+      const unstaffed = resolvedSections.filter(
         (section) =>
-          section.name.trim() !== "" &&
           section.approver === null &&
           roleByCode.get(section.approver_role)?.is_institution_wide !== true
       );
@@ -365,11 +434,10 @@ interface TeamDetails {
         setLoading(false);
         return;
       }
-      const newWorkflow: TeamWorkflowInput = {
-        name: chainName.trim() || undefined,
-        sections: named,
-      };
-      input.new_workflow = newWorkflow;
+      // No chain name is sent: the backend names a new chain after the team and
+      // keeps the existing one on an edit, so there is nothing for HR to decide
+      // and nothing that can disagree between two people configuring one team.
+      input.new_workflow = { sections: named };
     }
 
     try {
@@ -666,9 +734,10 @@ interface TeamDetails {
           Who approves for this team
         </h3>
         <p className="mt-1 text-xs text-text-muted">
-          The steps this team&apos;s applications follow, in order. Each step has
-          exactly one person: an application is routed to a named approver, not
-          to whichever of several people happens to act first.
+          The steps this team&apos;s applications follow, in order. A step is
+          named by the role it uses, so the role and the one person who acts for
+          it are all there is to choose: an application is routed to a named
+          approver, not to whichever of several people happens to act first.
           {department
             ? ` Candidates are the employees of ${
                 departments.find((item) => String(item.id) === department)?.name ??
@@ -687,25 +756,6 @@ interface TeamDetails {
         </p>
       ) : null}
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="chain_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Chain name
-        </label>
-        <input
-          id="chain_name"
-          name="chain_name"
-          value={chainName}
-          onChange={(event) => setChainName(event.target.value)}
-          placeholder={
-            team ? "Leave blank to keep the current name" : "Leave blank to name it after the team"
-          }
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        />
-      </div>
-
       <div className="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
         <span className="text-sm font-medium text-text-primary">Approval steps</span>
         <div className="flex items-center gap-2">
@@ -722,7 +772,7 @@ interface TeamDetails {
             onClick={() =>
               setSections((current) => [
                 ...current,
-                { name: "", approver_role: roles[0]?.code ?? "", approver: null },
+                { approver_role: roles[0]?.code ?? "", approver: null },
               ])
             }
             disabled={rolesUnavailable}
@@ -786,7 +836,7 @@ interface TeamDetails {
         </p>
       ) : null}
 
-      {sections.map((section, index) => {
+      {resolvedSections.map((section, index) => {
         const roleId = roleIdByCode.get(section.approver_role);
         const isInstitutionWide =
           roleByCode.get(section.approver_role)?.is_institution_wide === true;
@@ -804,13 +854,6 @@ interface TeamDetails {
               <span className="grid size-8 shrink-0 place-content-center rounded-full bg-brand-primary-subtle text-sm font-semibold text-brand-primary">
                 {index + 1}
               </span>
-              <input
-                aria-label={`Step ${index + 1} name`}
-                value={section.name}
-                onChange={(event) => update(index, { name: event.target.value })}
-                placeholder="e.g. Supervisor approval"
-                className="min-w-36 flex-1 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              />
               <select
                 aria-label={`Step ${index + 1} role`}
                 value={section.approver_role}
@@ -925,7 +968,7 @@ interface TeamDetails {
       <div className="flex flex-wrap items-center gap-3 md:col-span-2">
         <button
           type="button"
-          onClick={() => void save(false, chainName)}
+          onClick={() => void save(false)}
           disabled={loading}
           className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -933,7 +976,7 @@ interface TeamDetails {
         </button>
         <button
           type="button"
-          onClick={() => void save(true, chainName)}
+          onClick={() => void save(true)}
           disabled={loading}
           className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
         >

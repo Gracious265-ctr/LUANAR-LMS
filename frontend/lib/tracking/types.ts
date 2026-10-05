@@ -6,15 +6,18 @@ export type TrackingStatus =
   | "cancelled";
 
 /**
- * No `skipped` state: a section whose only member is the applicant is a
- * configuration error the backend refuses, so an application never advances
- * past a step. A step that has not been reached is `upcoming`.
+ * `skipped` means the applicant's own position made the stage unnecessary: they
+ * hold the stage, or sit above it, so it was never routed to them (Unit 30). It
+ * is settled rather than outstanding, which is why it is distinct from
+ * `upcoming` -- a step that has not been reached yet. A section with nobody in
+ * it at all is still a configuration error the backend refuses.
  */
 export type StageState =
   | "approved"
   | "awaiting"
   | "rejected"
   | "returned"
+  | "skipped"
   | "upcoming";
 
 export type EventType =
@@ -41,6 +44,8 @@ export interface TrackingStage {
   assigned_at: string | null;
   decided_at: string | null;
   comment: string | null;
+  /** Why a `skipped` stage was passed over. Null for every other state. */
+  skip_reason: string | null;
 }
 
 export interface TrackingActor {

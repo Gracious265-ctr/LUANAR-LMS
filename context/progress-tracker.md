@@ -2657,11 +2657,13 @@ with **0 users, no superuser**.
 `flush` re-emits `post_migrate`, so content types (42) and permissions (168)
 were rebuilt. `manage.py check` clean.
 
-**To rebuild dev data.** `uv run manage.py seed_dev_users` (accounts, grades,
-leave types) then `uv run manage.py seed_approvals_dev` (roles, campuses,
-workflows, teams, applications; needs `DEBUG=true` and an active financial
-year). A superuser for the Django admin must be created separately
-(`createsuperuser`) — the seeders do not create one.
+**To rebuild dev data.** `uv run manage.py seed_dev_users` creates the nine
+accounts (and their empty profiles). It creates **no** business
+configuration — no departments, approver roles, teams, chains, entitlements or
+leave types; those are HR data and are created from the app. A superuser must
+be created separately (`createsuperuser`), using the email address as the
+username because login resolves email through that column.
+
 
 ---
 
@@ -3601,3 +3603,223 @@ has to drop the overlay param on `back()`. Without that the dialog never
 unmounts, and Radix leaves the page behind it `aria-hidden` — so the post-save
 alert renders but cannot be found by role. That is a harness artefact, not a
 product failure, and the fix belongs in the mock.
+## Verification repair (2026-10-02)
+
+The tracker had been claiming a green suite for four commits. It was not.
+`8d472b3` shipped **4 failing tests** and nobody noticed, because every
+verification claim in this file predates it. Full suite on a fresh test
+database: **1155 tests, 4 failures.** Root cause and repair below.
+
+**Why they failed.** `8d472b3` removed the hard-coded fixture-registry
+fallback from `leave/cancellations/providers.py::_deducts_annual_balance`,
+leaving "no snapshot + no HR-configured rule → does not deduct". That was the
+correct change — whether a leave type deducts annual leave is business data HR
+owns, not a placeholder registry. Four tests in
+`leave/tests/test_cancellations.py` still built an approved
+`LeaveApplication` directly with `leave_type_id=1` and **no
+`rules_snapshot`**, relying on the removed fallback to mean "annual leave,
+deducts". They resolved to a restoration of `0` days instead of `5`, which is
+the invariant-12.4 breach they were written to guard.
+
+**The fix is the snapshot, not the fallback.** `CancellationBase` gained
+`snapshot_for(start, leave_type_id)`, which builds `rules_snapshot` with the
+**production** `build_rules_snapshot()` off the stub's own leave-type rules, so
+the fixture cannot drift from what `submit_application` writes. `make_approved`
+takes a `leave_type_id` and the snapshot is built for the type the row claims.
+
+**A fifth test had been passing for the wrong reason.** With the snapshot in
+place, `test_non_deducting_leave_type_returns_zero_restoration` started failing
+— it flipped `leave_type_id` to compassionate *after* creation, relying on the
+same removed fallback, and was only green because the fixture registry said id 4
+does not deduct. It now asks for `make_approved(leave_type_id=4)`, so the
+snapshot agrees with its own row. Worth recording: fixing a stale test can
+unmask another that was never testing what it claimed.
+
+**Doc drift that let it through.** `architecture.md` §12.3 and §12.11 still
+said a section "accepts several members and the first to act claims it" — true
+before `8d472b3`, false after it, since `Section.approver` is one FK. Corrected:
+a step resolves to one named person, so a step whose approver is the applicant
+has nobody left to act and is refused, not skipped. Two backend docstrings
+(`workflows/services.py::replace_workflow_sections`,
+`leave/tests/stubs.py::_active_user_id_for_role`) stated the same superseded
+rule and were corrected with it.
+
+**`--keepdb` is not safe here.** A reused test database reported **79 failures**
+against a suite that is green on a fresh one: leftover rows are visible to the
+next run, and suites that create configuration by id (approver roles, sections,
+leave types) then fail on state they did not create. The README no longer
+recommends it and now explains the delete-once step.
+
+**Also corrected in the README.** It documented `seed_approvals_dev`, which
+does not exist — it names `seed_dev_users` only, which creates no business
+configuration — and it omitted the two facts that make a bootstrap superuser
+usable: the email-as-username rule, and that `createsuperuser` leaves `role` at
+`employee`, which redirects every `/dashboard/hr-admin/*` page.
+
+**Verification.** Fresh test database: **1158 tests OK** (1155 + 3 new).
+`check` clean, `makemigrations --check` clean. `leave/0017` applies and reverses
+on the dev database. Frontend unchanged by this pass (66 files / 448 tests OK,
+`tsc` and `eslint` clean).
+
+## Unit 30 — Approver Applicants Skip Forward; Final Approvers Go to HR (implemented 2026-10-03)
+
+Spec `context/specs/30-approver-applicant-routing-spec.md`. Requested: an approver
+must be able to apply for leave. Their own stage, and every stage below it, is
+skipped rather than routed to them or refused outright; if they hold the last
+stage the application is handed to HR. Within one workflow, one employee sits on
+one stage and one role on one stage.
+
+**This reverses invariant 12.3 and migration `0017_drop_skipped_stage_status`,**
+which dropped the `skipped` status on the reasoning that a section whose approver
+*is* the applicant should refuse the submission. That reasoning was wrong about
+one thing: refusing is not the same as deciding, and an applicant who holds the
+final step would otherwise be stuck between a refusal and an unfinalisable
+application. The user chose this explicitly over keeping the refusal, so 12.3 and
+`tests_self_approval.py` were rewritten rather than worked around.
+
+**Most of the rest already held** and was verified rather than rebuilt: approvers
+could already submit, `policies.get_decision_authority` already blocks
+self-approval independently of stage assignment, `user_may_act` already authorises
+only the current stage, and `DatabaseWorkflowProvider` already reads the
+application's own team. **No submission notification was added** — there is none in
+this system to add to; only decision emails are registered.
+
+Two constraints, `section_workflow_approver_unique` and
+`section_workflow_role_unique` (migration `0024`). `Section.approver` stays
+nullable so unstaffed draft steps remain legal, and the dev database had no
+duplicates to clear. The admin needed **no** new rule: Django's cross-form
+`validate_unique` reports the repeat on the `approver_role` field from the model
+constraint itself. An earlier attempt to re-check it in `SectionInlineFormSet.clean`
+was dead code and was removed — the test now pins what the constraint actually
+produces instead of what the extra check would have produced.
+
+`SKIPPED` status plus `ApplicationStage.skip_reason` (migration
+`0025_application_stage_skipping`). Two distinct reasons, because they answer
+different questions for a reader of the history: the applicant's own stage reads
+*"Applicant cannot approve their own application."* and a stage below it reads
+*"Applicant is a higher-stage approver."*
+
+The applicant's stage is found by **resolving** the section the way
+`resolve_section_approvers` does — the configured approver, or the sole
+institution-wide holder — not by reading `Section.approver`. Reading the column
+would have missed every institution-wide step, which is where the final
+vice-chancellor step normally lives, and so would have missed the HR handoff
+entirely.
+
+The HR destination is **one more `ApplicationStage`**, not a flag: `section_ref =
+NULL`, `role = "hr"`, `history_scope = "all"`, every active HR user other than the
+applicant in `eligible_approvers`. Authority, history and the decision path are
+then the code that already existed, because `get_decision_authority` resolves
+through `user_may_act` to that snapshot. Excluding the applicant is what stops the
+handover becoming a back door to self-approval; if that leaves nobody, submission is
+refused rather than parked on a stage nobody may act on.
+
+Two bugs surfaced only because the stub provider had to be kept faithful to the real
+one, and both were real:
+
+- `leave/services/workflow_gate.py` carried a **second copy** of the
+  "no active approver" rule, and refused every skip. `assign_workflow` had its own
+  copy. Both now exempt skipped stages, and the duplication is the reason the rule
+  is worth stating once.
+- `assign_workflow` set `current_stage` to `stages[0]` and
+  `_next_activatable_stage` took `remaining[0]`. Both now go by status, so a chain
+  that opens with skipped stages points at the stage somebody can act on.
+
+Frontend: `skipped` added to `StageState` and `StageStatus`; both
+`STATE_MARKER` records and `META_LINE` carry it; `skip_reason` is on both stage
+payloads and rendered under the stage. `team-form.tsx` now refuses a repeated role
+or approver before submit, naming the role or person, because the backend enforces
+the same rule as a constraint and a database error naming a constraint tells HR
+nothing. `tests/team-form.test.tsx` had been asserting the duplicate as *correct* —
+that assertion was the bug, and it was replaced with the two refusal cases.
+
+Verified: `workflows` 513 tests OK; `workflows` + `leave` 923 OK; frontend 66
+files / 451 tests OK; `tsc --noEmit` and `tsconfig.test.json` clean; `eslint` clean;
+`makemigrations --check` clean. Unit 28's commit (`e993ed5`) also records that the
+verification gate was itself repaired before this unit, so these counts are from a
+gate that had been failing silently for four commits.
+
+## Unit 29 — One Department, Several Teams; One Chain Per Team (implemented 2026-10-02)
+
+Spec `context/specs/29-multiple-teams-per-department-spec.md`. Requested: a
+department must hold one or more teams, and each team uses its own workflow.
+
+**Most of it already held.** Verified against the code rather than assumed:
+`Team.department` is an FK with `related_name="teams"` (database-enforced
+one-to-many), `Team.workflow` is a `OneToOneField` so a chain cannot be shared,
+`TeamSerializer.workflow` is `read_only` with the inline `new_workflow` as the only
+writer, and `DatabaseWorkflowProvider` resolves `team.workflow` — routing already
+followed the team.
+
+**The defect was one function.** `_mismatched_department_team` made a second
+*active, in-force* team in the same department an activation-blocking
+`department_conflict`. That check was the only thing stopping the configuration,
+and it contradicted four docstrings that all say a department holds "one or more
+teams" — including `Department`'s own rule that "one employee holds one role
+across **every team** in the department", which presupposes more than one.
+
+Its own docstring argued two active teams are "nearly always accidental". That is
+a product judgment, and the product has now made a different one. The message it
+produced was also self-defeating: *"If sharing it is intended, deactivate that
+team first"* — so a department could hold several team records but never more than
+one *working* team, which is not what "one or more teams" means.
+
+This is Unit 28 §A pointing the other way: there the code under-delivered on the
+docs, here the docs were right and the code refused.
+
+Removed: `_mismatched_department_team`, the `department_conflict` issue, and the
+dead `resolve_applicable_workflow` / `_employee_key` pair that resolved a chain by
+free-text `(category, department)` scope — the model team routing replaced, whose
+docstring admitted "retained for reference only, no longer calls this" and which
+was reachable only from its own two tests. Also corrected the `providers.py` and
+`assign_workflow` docstrings that still described a section as "a set of people".
+
+`department_missing` deliberately **stays** (D2). A different rule: a team with no
+department cannot be staffed at all, so removing the conflict check must not
+remove that.
+
+**Three tests added, because the configuration they cover used to be
+unreachable.** Two teams in one department can both be activated; each employee is
+materialised with their own team's step and the two chains share no section; and
+one person cannot be appointed a *second* role on the department's other team —
+though re-appointing the *same* role is allowed, since the rule is one role per
+department, not one appointment per department. That third rule already worked
+(`ensure_role_consistency` filters `workflow__team__department_id`) but was never
+exercised while a department could hold only one active team.
+
+No frontend change: `teams-client.ts` renders `TeamReadiness.issues[].message`
+generically and never names `department_conflict`, so removing an issue code
+cannot strand the UI.
+
+**Verification.** Fresh test database: **1158 OK** (net −1 removed conflict test,
++3 new, −2 dead-routing tests). `workflows` + `leave`: 910 OK. `check` clean,
+`makemigrations --check` clean — no schema change. Frontend unchanged: 66 files /
+448 tests OK.
+
+## Unit 28 — Hardening and Integrity Review (spec written 2026-10-02)
+
+Spec `context/specs/28-hardening-and-integrity-review-spec.md`. **Not started.**
+Chosen over the other two candidates because the verification gate was broken for
+four consecutive commits and every verification claim in this file predated the
+commit that broke it — evidence the per-commit discipline has a systematic hole,
+not a one-off. Two features on top of an untrusted gate is how you get eight.
+
+The pass targets one defect class, because it is the class that survives review:
+**code that claims behaviour it does not have.** All three instances found on
+2026-10-02 were that class, and all three were deletions rather than missing
+behaviour — `row_version`, `leave/services/snapshots.py`, and the
+fixture-registry fallback four tests were still leaning on.
+
+Two contract questions answered during scoping, recorded so they are not
+re-opened: the **edit/resubmit path is sound** (`LeaveApplicationSerializer`
+marks every server-calculated field read-only), and **`WorkflowViewSet` is
+correctly read-only** — it is the `README` that is wrong, documenting a `POST` and
+a `PATCH` that return 405. The README's API table is also missing roughly eight
+routed endpoints Unit 26 added (`teams`, `approvals`, `approver-roles`,
+`campuses`, `role-assignments`, `section-members`, `departments`, and the
+`leave-document-template` actions), so the whole table needs verifying endpoint by
+endpoint against `config/urls.py`.
+
+D3 in the spec is the one that addresses how this got here: findings are recorded
+whether or not they are fixed, so a deferred item stays visible. The four defects
+Unit 24 deferred as "out of scope (D10)" were named in prose and never revisited.

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -10,6 +10,15 @@ import { Input, Field } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { listLeaveTypes } from "@/lib/leave-types-client";
+import type { LeaveTypeListResponse } from "@/lib/leave-rules";
 
 export function EntitlementForm({
   entitlement,
@@ -34,6 +43,19 @@ export function EntitlementForm({
   const [effectiveFrom, setEffectiveFrom] = useState(entitlement?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeListResponse | null>(null);
+  const [ltError, setLtError] = useState("");
+  // The picker is a popover trigger, so its value has to be mirrored into state
+  // for the display and still reach FormData through the Select's own name.
+  const [leaveTypeValue, setLeaveTypeValue] = useState(
+    entitlement?.leave_type ? String(entitlement.leave_type) : "",
+  );
+
+  useEffect(() => {
+    listLeaveTypes()
+      .then((data) => setLeaveTypes(data))
+      .catch(() => setLtError("Unable to load leave types. Please try again."));
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,6 +63,7 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+    const leaveTypeValue = formData.get("leave_type");
 
     // The picker is a popover trigger, so the browser can no longer enforce
     // `required` for it; check here instead of dropping the guarantee.
@@ -59,6 +82,7 @@ export function EntitlementForm({
           grade_end: formData.get("grade_end"),
           days: Number(formData.get("days")),
           effective_from: formData.get("effective_from"),
+          leave_type: leaveTypeValue && leaveTypeValue !== "" ? Number(leaveTypeValue) : null,
         }),
       });
 
@@ -115,6 +139,33 @@ export function EntitlementForm({
           required
           defaultValue={entitlement?.days}
         />
+      </Field>
+
+      <Field
+        label="Leave type"
+        htmlFor="leave_type"
+        hint="Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Rules."
+        error={ltError || null}
+      >
+        <Select
+          name="leave_type"
+          value={leaveTypeValue}
+          onValueChange={setLeaveTypeValue}
+        >
+          <SelectTrigger id="leave_type" aria-label="Leave type">
+            <SelectValue placeholder="Annual (untyped)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Annual (untyped)</SelectItem>
+            {(leaveTypes?.results || [])
+              .filter((lt) => lt.code === "annual")
+              .map((lt) => (
+                <SelectItem key={lt.id} value={String(lt.id)}>
+                  {lt.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
       </Field>
 
       <Field label="Effective from" htmlFor="effective_from">

@@ -46,6 +46,7 @@ export function EntitlementTable({
         <TableRow>
           <TableHead>Grade range</TableHead>
           <TableHead>Annual days</TableHead>
+          <TableHead>Leave type</TableHead>
           <TableHead>Effective from</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className="text-right">Actions</TableHead>
@@ -67,6 +68,9 @@ export function EntitlementTable({
                 </Link>
               </TableCell>
               <TableCell className="text-text-secondary">{rule.days} days</TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.leave_type_name || "Annual (untyped)"}
+              </TableCell>
               <TableCell className="text-text-secondary">
                 {rule.effective_from}
               </TableCell>

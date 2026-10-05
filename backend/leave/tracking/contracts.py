@@ -32,7 +32,8 @@ class TrackedStage:
 
     ``state`` is one of ``approved | awaiting | rejected | returned |
     skipped | upcoming``. ``approver`` is ``None`` until the stage has been
-    resolved to an approver.
+    resolved to an approver. ``skip_reason`` carries why a skipped stage was
+    passed over (Unit 30); it is ``None`` for every other state.
     """
 
     order: int
@@ -43,6 +44,7 @@ class TrackedStage:
     assigned_at: datetime | None
     decided_at: datetime | None
     comment: str | None
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)

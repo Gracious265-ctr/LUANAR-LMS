@@ -510,13 +510,21 @@ The employee identity must come from the authenticated backend identity, not fro
 
 ### 12.3 Sequential Workflow
 
-**A leave application must never skip a mandatory configured approval stage.**
+**A leave application must never skip a mandatory configured approval stage, and an approver must never approve their own leave — so the two rules resolve the applicant's own stage by skipping forward, and only ever that stage.**
 
-An application can move to the next stage only after the current stage has completed its required action. A workflow is an ordered list of **sections**; each section is a step that runs in exactly that order, and advancement is always to the immediately following section. There is **no bypass and no `skipped` state**: a step is either not reached yet, the open one, or decided.
+An application can move to the next stage only after the current stage has completed its required action. A workflow is an ordered list of **sections**; each section is a step that runs in exactly that order, and advancement is always to the next stage that was not skipped. A stage is one of: not reached yet (`waiting`), open (`pending`), decided, or `skipped`.
 
-The one thing that is removed from a chain is a **person**, not a step. The applicant is excluded from every section's eligibility at submission — a person can never sit in judgment of their own leave — so the question "who can act at this step" is answered from the section's members **minus the applicant**. Because a section holds several members and the first of them to act decides it, an applicant whose own section still has a colleague simply has that colleague decide instead of the step being skipped.
+A step is resolved to **one named person**, so the question "who can act at this step" has one answer and the decision record has one author. A person can never sit in judgment of their own leave. Where the applicant holds a stage — as its sole approver — that stage, and every stage below it, is **skipped** rather than refused or routed to a stand-in:
 
-A section that would be left with no eligible member is a configuration error, never a silent bypass: an application whose chain contains such a step is refused at submission with `workflow_unavailable` (422), and the request never leaves the employee. The advance-time refusal (409 `workflow_unavailable`) remains only as defence in depth for applications whose workflow changed after submission.
+- a stage the applicant is the approver of is skipped because an approver cannot approve their own application;
+- a stage below the applicant's is skipped because they outrank it;
+- both are materialised as `skipped` with the reason recorded, so the approval history shows a considered step rather than a quietly dropped one. A skipped stage is terminal, resolves nobody, never appears in an approver's queue, and never raises a notification.
+
+Advancement therefore continues at the first stage above the applicant's own. If the applicant holds the **last** stage there is nowhere to continue to, so the application is handed to **Human Resources**: one further stage with `section_ref = NULL`, `role = "hr"`, `history_scope = "all"`, and every active HR user — other than the applicant — in `eligible_approvers`. HR's authority, the history and the decision path are the ones that already exist, because `get_decision_authority` resolves through `user_may_act` to that snapshot. Approving it finalises; rejecting it rejects. If excluding the applicant leaves no eligible HR user, submission is refused rather than parked on a stage nobody may act on.
+
+Within one workflow, one employee appears on **one** stage and one role on **one** stage (`section_workflow_approver_unique`, `section_workflow_role_unique`): one office cannot sign off twice on the same application. The same employee or role may still appear in a different team's workflow. The admin and the API agree on this by construction, because it is a model constraint rather than two rules kept in step by hand.
+
+A section that cannot resolve an eligible approver for any *other* reason is a configuration error, never a silent bypass: an application whose chain contains such a step is refused at submission with `workflow_unavailable` (422), and the request never leaves the employee. The advance-time refusal (409 `workflow_unavailable`) remains only as defence in depth for applications whose workflow changed after submission.
 
 ---
 
@@ -587,9 +595,10 @@ The audit record must identify the actor, action, timestamp, and relevant previo
 * A role is retired, never removed: the API exposes retirement (`DELETE` → `is_active=False`), and the foreign keys that reference it are `PROTECT`.
 * Retirement is refused while an active workflow or a holder still needs the role, and the refusal names each blocker. Configured state is never left dangling.
 * Renaming a role must not rewrite the past. Sections, decisions, and cancellations keep the code and label they were routed with.
-* A section is identified by its **(role, name)** pair, so reordering a workflow keeps each section's members. A section whose role *or* name changes is a different step and is rebuilt empty — the old roster is deliberately never handed to a new role without HR asking.
-* Membership is held **on the section**, not on the team: a team's workflow's sections are shared, so there is exactly one place a person is recorded as able to act, and every team on the same workflow sees the same roster.
-* A section accepts several members and the first to act claims it; the same person may sit on several sections, but not twice on the one section. A team with no workflow routes nothing, so a workflow is **required** on a team.
+* A section is identified by its **(role, name)** pair, so re-ordering a chain keeps each step's appointed approver. A step whose role *or* name changes is a different step and is rebuilt empty — the old appointment is deliberately never handed to a new role without HR asking.
+* A step's name is **its role's label**, and a new chain is named after its team, so there is no second typed name per step and no chain name that can disagree with its own steps. The name is still stored, because it is part of a step's identity across writes and part of the snapshot an in-flight application is judged by.
+* Membership is held **on the section**, not on the team, and a team's chain is owned by that team alone, so there is exactly one place a person is recorded as able to act and no other team's chain can be changed by editing this one.
+* A section names **exactly one approver**, so a step always has a single person to decide whether it is done and the decision always has one author. The same person may hold several sections, and a handover is a removal plus an addition rather than a duplicate row (see 12.13). A team with no chain routes nothing, so a chain is required before a team can be activated.
 * A retired role confers no approver status, a section naming it cannot be activated, and its members are removed from routing.
 
 ---

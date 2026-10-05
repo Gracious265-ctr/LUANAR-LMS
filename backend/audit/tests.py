@@ -1,8 +1,10 @@
 import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
+from django.db.models import Count
 from django.test import RequestFactory, TestCase
 from django.utils import timezone
 from rest_framework import status
@@ -118,6 +120,55 @@ class AuditEntryModelTests(TestCase):
         )
         entry.refresh_from_db()
         self.assertEqual(entry.detail["before"]["effective_from"], "2026-01-01")
+
+    def test_detail_encodes_decimals_as_strings(self):
+        """A restored day count is a Decimal; json.dumps refuses it outright."""
+        actor = make_hr()
+        entry = record_audit(
+            actor=actor,
+            action=AuditEntry.Action.BALANCE_RESTORED,
+            target_type="cancellation",
+            target_id=1,
+            target_summary="Approved leave",
+            detail={"days": Decimal("5.0"), "nested": [Decimal("1.5")]},
+        )
+        entry.refresh_from_db()
+        self.assertEqual(entry.detail["days"], "5.0")
+        self.assertEqual(entry.detail["nested"], ["1.5"])
+
+    def test_detail_survives_a_value_it_cannot_encode(self):
+        """An audit write shares a transaction with the business write.
+
+        An entry that raises rolls the business write back with it, so an
+        unconvertible value is stringified rather than raised on: a value nobody
+        thought to convert is not worth losing an approval over.
+        """
+        actor = make_hr()
+        entry = record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type="leaverule",
+            target_id=3,
+            target_summary="Annual rule",
+            detail={"after": {"count": Count("id")}},
+        )
+        entry.refresh_from_db()
+        self.assertIsInstance(entry.detail["after"]["count"], str)
+        self.assertTrue(entry.detail["after"]["count"])
+
+    def test_detail_encodes_non_finite_floats_as_strings(self):
+        """json.dumps emits ``NaN``; PostgreSQL's jsonb then rejects it."""
+        actor = make_hr()
+        entry = record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type="leaverule",
+            target_id=3,
+            target_summary="Annual rule",
+            detail={"before": {"ratio": float("inf")}},
+        )
+        entry.refresh_from_db()
+        self.assertEqual(entry.detail["before"]["ratio"], "inf")
 
 
 class AuditServiceTests(TestCase):

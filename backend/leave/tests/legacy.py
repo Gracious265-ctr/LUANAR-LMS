@@ -647,8 +647,26 @@ class EmployeeLeaveTypeOptionsTests(TestCase):
             role=User.Role.HR,
         )
 
+        EmployeeProfile.objects.create(user=self.employee_user, grade="B")
+        EmployeeProfile.objects.create(user=self.hr_user, grade="B")
+
         self.annual = LeaveType.objects.create(name="Annual leave", code="annual")
         self.paternity = LeaveType.objects.create(name="Paternity leave", code="paternity")
+
+        GradeEntitlement.objects.create(
+            grade_start="A",
+            grade_end="C",
+            days=10,
+            effective_from=TODAY - timedelta(days=1),
+            leave_type=self.paternity,
+        )
+        GradeEntitlement.objects.create(
+            grade_start="A",
+            grade_end="C",
+            days=21,
+            effective_from=TODAY - timedelta(days=1),
+            leave_type=self.annual,
+        )
 
         self.effective_rule = LeaveRule.objects.create(
             leave_type=self.paternity,

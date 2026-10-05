@@ -1,4 +1,4 @@
-import { Check, Clock, RotateCcw, X } from "lucide-react";
+import { Check, Clock, Minus, RotateCcw, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,11 @@ const STATE_MARKER: Record<
     icon: RotateCcw,
     markerClass: "bg-status-correction text-status-correction-on",
     iconClass: "text-status-correction-on",
+  },
+  skipped: {
+    icon: Minus,
+    markerClass: "border-2 border-border-strong bg-surface-muted",
+    iconClass: "text-text-muted",
   },
   upcoming: {
     icon: Check,
@@ -133,6 +138,14 @@ export function StageItem({
             </blockquote>
           )}
 
+          {stage.state === "skipped" && (
+            <p className="mt-1 text-sm text-text-secondary break-words">
+              <span className="font-medium">Why skipped:</span>{" "}
+              {stage.skip_reason ??
+                "This stage was not needed for your application."}
+            </p>
+          )}
+
           {workflowStatus === "rejected" && stage.state === "rejected" && (
             <p className="mt-2 text-sm text-text-muted">
               Workflow stopped.
@@ -153,6 +166,7 @@ const META_LINE: Record<
     `Awaiting decision · assigned ${formatDateTime(stage.assigned_at)}`,
   rejected: (stage) => `Rejected ${formatDateTime(stage.decided_at)}`,
   returned: (stage) => `Returned for correction ${formatDateTime(stage.decided_at)}`,
+  skipped: () => "Skipped",
   upcoming: () => "Not yet reached",
 };
 

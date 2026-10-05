@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function LeaveTypeTable({
   leaveTypes,
@@ -38,6 +39,7 @@ export function LeaveTypeTable({
         <TableRow>
           <TableHead>Name</TableHead>
           <TableHead>Code</TableHead>
+          <TableHead>Status</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -55,6 +57,15 @@ export function LeaveTypeTable({
               </Link>
             </TableCell>
             <TableCell className="text-text-secondary">{leaveType.code}</TableCell>
+            <TableCell>
+              <Badge
+                size="sm"
+                tone={leaveType.is_active !== false ? "info" : "muted"}
+                className="font-medium"
+              >
+                {leaveType.is_active !== false ? "Active" : "Inactive"}
+              </Badge>
+            </TableCell>
             <TableCell className="text-right">
               {onEdit ? (
                 <EditIconButton

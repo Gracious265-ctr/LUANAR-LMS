@@ -200,11 +200,13 @@ The seed command creates one user per role with password `testpass123`:
 | Deputy Vice-Chancellor | dvc@test.luanar |
 | Human Resources | hr@test.luanar |
 
-The five accounts between Employee and HR all have `User.role=approver`: the
-name in the table is the *position* each person is expected to hold, not a
-system role. Which approval roles a person actually holds is seeded by
-`seed_approvals_dev` as `TeamMember` / `RoleAssignment` rows, which is what
-decides what each of them can approve.
+The accounts between Employee and HR all have `User.role=approver`: the name in
+the table is the *position* each person is expected to hold, not a system
+role. Which approval roles a person actually holds is recorded as
+`Section`/`RoleAssignment` rows, and that — not `User.role` — is what decides
+what each of them can approve. `seed_dev_users` deliberately creates none of
+that configuration: departments, approver roles, teams, chains, entitlements
+and leave types are HR data, created from the app or by your own fixtures.
 
 These are fixtures. `@test.luanar` is not a deliverable domain, so every
 notification to them fails on a real SMTP relay, and a published password on a
@@ -247,12 +249,31 @@ land back on the sign-in page with a message saying why.
 ### Admin / Django-Q2 task inspection
 
 The seed command does not create a superuser. Create one to inspect the Django
-admin (including the Django-Q2 queue and task results):
+admin (including the Django-Q2 queue and task results), and to reach
+`/dashboard/admin/users`, where HR accounts are created:
 
 ```bash
 cd backend
 uv run manage.py createsuperuser
 ```
+
+**Use the email address as the `Username`.** The product signs people in by
+email and resolves it through the `username` column, so an account whose two
+disagree is created and then cannot log in.
+
+`createsuperuser` does not set `User.role`, which defaults to `employee`. Every
+`/dashboard/hr-admin/*` page redirects anyone whose role is not `hr`, including
+your superuser, so set it once:
+
+```bash
+uv run manage.py shell -c "
+from django.contrib.auth import get_user_model
+u = get_user_model().objects.get(username='you@luanar.ac.mw')
+u.role = 'hr'; u.save()"
+```
+
+`/admin/users/user/add/` syncs `username` from `email` on save, so an account
+created there is usable without a second step.
 
 ## Running Tests
 
@@ -266,12 +287,20 @@ uv run manage.py test
 `manage.py test` automatically loads `config.settings.test`, which swaps the
 password hasher for a fast one so the suite does not spend most of its time
 hashing fixture passwords. Pass `--settings=config.settings.development` to run
-against the regular settings instead. Reuse the test database between runs and
-split work across workers when iterating:
+against the regular settings instead. Split work across workers when iterating:
 
 ```bash
-uv run manage.py test --keepdb
 uv run manage.py test --parallel auto
+```
+
+Do **not** reuse the test database with `--keepdb`. Rows a previous run left
+behind are visible to the next one, and suites that create configuration by id
+— approver roles, sections, leave types — then fail on state they did not
+create. A reused database reported 79 failures against a green suite. If the
+test database already exists from an earlier `--keepdb` run, delete it once:
+
+```bash
+uv run manage.py test --noinput
 ```
 
 If the test runner fails with `permission denied to create database`, the

@@ -366,14 +366,17 @@ describe("LeaveApplicationOverlay", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("gives the leave type dropdown a stacking layer above the dialog", () => {
+  it("gives the leave type dropdown a stacking layer above the dialog", async () => {
     render(
       <LeaveApplicationOverlay open mode="create" onOpenChange={vi.fn()} />
     );
 
     // Guards the z-portal-above fix: SelectContent portals to <body> at
     // z-popover (100), which would render behind the dialog at z-modal (1010).
+    // The trigger is disabled while the leave types load, so wait that out
+    // before opening it.
     const trigger = screen.getByRole("combobox");
+    await waitFor(() => expect(trigger).not.toBeDisabled());
     fireEvent.pointerDown(trigger);
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
 

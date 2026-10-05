@@ -107,9 +107,7 @@ async function fillCreateForm() {
   );
 
   fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-  fireEvent.change(screen.getByLabelText("Step 1 name"), {
-    target: { value: "Review" },
-  });
+  // A step is named by its role, so picking the role is the whole instruction.
   fireEvent.change(screen.getByLabelText("Step 1 role"), {
     target: { value: "hod" },
   });

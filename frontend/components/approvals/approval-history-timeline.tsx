@@ -24,6 +24,11 @@ const STATE_MARKER: Record<
     markerClass: "bg-status-correction text-status-correction-on",
     iconClass: "text-status-correction-on",
   },
+  skipped: {
+    icon: Minus,
+    markerClass: "border-2 border-border-strong bg-surface-muted",
+    iconClass: "text-text-muted",
+  },
   waiting: {
     icon: Minus,
     markerClass: "border-2 border-border-strong bg-surface-card",
@@ -86,6 +91,14 @@ export function ApprovalHistoryTimeline({ data }: { data: ApprovalReview }) {
                       <Badge size="sm" tone="pending">
                         Awaiting your decision
                       </Badge>
+                    ) : stage.status === "skipped" ? (
+                      <Badge
+                        size="sm"
+                        tone="muted"
+                        className="font-medium"
+                      >
+                        Skipped
+                      </Badge>
                     ) : (
                       <Badge
                         size="sm"
@@ -101,8 +114,15 @@ export function ApprovalHistoryTimeline({ data }: { data: ApprovalReview }) {
                       ? `${stage.assigned_approver} · ${formatDateTime(stage.decided_at) || "—"}`
                       : stage.status === "pending"
                         ? `Assigned to ${stage.assigned_approver}`
-                        : stage.assigned_approver}
+                        : stage.assigned_approver || "—"}
                   </p>
+                  {stage.status === "skipped" && (
+                    <p className="mt-1 text-sm text-text-secondary">
+                      <span className="font-medium">Why skipped:</span>{" "}
+                      {stage.skip_reason ??
+                        "This stage was not needed for this application."}
+                    </p>
+                  )}
                   {meta && (
                     <p className="mt-1 text-sm text-text-secondary">
                       {stage.comment || "No comment"}

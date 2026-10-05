@@ -1,6 +1,8 @@
 """Audit logging shared by the serializers, services, and views that own actions."""
 
+import math
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from audit.models import AuditEntry
@@ -36,18 +38,32 @@ def _jsonable(value):
     """Recursively convert values to JSON-field-safe primitives.
 
     PostgreSQL's psycopg adapter serializes JSON with the standard ``json``
-    encoder, so dates, datetimes, and UUIDs nested in ``detail`` must be
-    converted here (DjangoJSONEncoder does not apply).
+    encoder, so dates, datetimes, UUIDs and Decimals nested in ``detail`` must
+    be converted here (DjangoJSONEncoder does not apply).
+
+    ``Decimal`` becomes a string, which is how the balance ledger already
+    records its days by hand. Anything else unrecognised is stringified rather
+    than passed through: ``json.dumps`` raises ``TypeError`` on an object it
+    cannot encode, and because an audit entry is written inside the owning
+    business transaction, that failure would roll the business write back with
+    it. A value nobody thought to convert is not worth losing an approval over,
+    and ``str()`` keeps it legible in the trail. Non-finite floats are
+    stringified for the same reason from the other direction: ``json.dumps``
+    *does* emit ``NaN``, which PostgreSQL's ``jsonb`` then rejects.
     """
     if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if isinstance(value, UUID):
+    if isinstance(value, (UUID, Decimal)):
         return str(value)
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (list, tuple, set)):
         return [_jsonable(item) for item in value]
-    return value
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    return str(value)
 
 
 def record_audit(

@@ -497,6 +497,22 @@ class Section(models.Model):
                 fields=["workflow", "order"],
                 name="section_workflow_order_unique",
             ),
+            # One employee on one stage per workflow (Unit 30). Scoped to the
+            # workflow, not globally: the same person is the Supervisor on one
+            # team's chain and the Bursar on another's without either chain
+            # being wrong. It also makes "the applicant's stage" a single stage,
+            # which is what the skip-forward routing resolves against.
+            models.UniqueConstraint(
+                fields=["workflow", "approver"],
+                name="section_workflow_approver_unique",
+            ),
+            # One role on one stage per workflow. A role appearing twice would
+            # mean the same capacity signing off twice at two different points
+            # in one chain, which is not a thing HR can explain afterwards.
+            models.UniqueConstraint(
+                fields=["workflow", "approver_role"],
+                name="section_workflow_role_unique",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -689,6 +705,13 @@ class ApplicationStage(models.Model):
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUESTED = "correction_requested", "Correction requested"
         SUPERSEDED = "superseded", "Superseded by resubmission"
+        # A stage the applicant's own position made unnecessary (Unit 30). An
+        # approver applicant does not approve their own leave, and may not
+        # approve their own leave *or* sit below the step that has to decide it,
+        # so the stages at and below their own are skipped rather than routed to
+        # them. Terminal: a skipped stage is never reopened, because the reason it
+        # was skipped cannot change while the application is in flight.
+        SKIPPED = "skipped", "Skipped"
         # A pending stage closed by an employee withdrawing their application
         # (Unit 18). The application leaves the approver queues and any decision
         # on it returns 409.
@@ -785,6 +808,18 @@ class ApplicationStage(models.Model):
     is_final = models.BooleanField(
         default=False,
         help_text="True for the last stage; approving it finalises the application.",
+    )
+    skip_reason = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text=(
+            "Why this stage was skipped, set at materialisation and never "
+            "changed. Blank on any stage that was not skipped. Recorded because a "
+            "chain that visibly starts at step 2 with steps 1 marked skipped is "
+            "the only way a reader can tell a deliberate skip from a stage that "
+            "was quietly dropped."
+        ),
     )
     decision_version = models.PositiveIntegerField(
         default=1,

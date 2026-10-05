@@ -170,21 +170,21 @@ describe("TeamForm", () => {
     expect(updateTeam).not.toHaveBeenCalled();
   });
 
-  it("creates the chain with the team, naming one approver per step", async () => {
+  it("names each step after the role it uses, so nothing is typed for it", async () => {
     vi.mocked(createTeam).mockResolvedValue(makeTeam());
     render(
       <TeamForm campuses={campuses} departments={departments} roles={roles} />
     );
 
     openSteps();
-    fireEvent.change(screen.getByLabelText("Chain name"), {
-      target: { value: "Registrar chain" },
-    });
+
+    // HR only picks a role and a person: there is no box to name the step and
+    // no box to name the chain, so the two cannot drift from the role or from
+    // each other between two people configuring the same team.
+    expect(screen.queryByLabelText("Chain name")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Supervisor approval" },
-    });
+    expect(step(1).queryByLabelText("Step 1 name")).toBeNull();
     await waitFor(() =>
       expect(listEligibleApprovers).toHaveBeenCalledWith(1, 1)
     );
@@ -193,9 +193,6 @@ describe("TeamForm", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 2 name"), {
-      target: { value: "Head approval" },
-    });
     fireEvent.change(screen.getByLabelText("Step 2 role"), {
       target: { value: "hod" },
     });
@@ -214,15 +211,14 @@ describe("TeamForm", () => {
           name: "Registry",
           department: 1,
           new_workflow: {
-            name: "Registrar chain",
             sections: [
               {
-                name: "Supervisor approval",
+                name: "Supervisor",
                 approver_role: "supervisor",
                 approver: 3,
               },
               {
-                name: "Head approval",
+                name: "Head of Department",
                 approver_role: "hod",
                 approver: 5,
               },
@@ -231,6 +227,11 @@ describe("TeamForm", () => {
         })
       )
     );
+    // No chain name is sent: the backend names a new chain after the team and
+    // keeps the existing one on an edit.
+    expect(
+      vi.mocked(createTeam).mock.calls[0][0].new_workflow
+    ).not.toHaveProperty("name");
     expect(vi.mocked(createTeam).mock.calls[0][0]).not.toHaveProperty("workflow");
     expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/teams");
     expect(refresh).toHaveBeenCalled();
@@ -263,9 +264,6 @@ describe("TeamForm", () => {
 
     openSteps();
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Supervisor approval" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
     expect(
@@ -283,9 +281,6 @@ describe("TeamForm", () => {
 
     openSteps({ department: "1" });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Supervisor approval" },
-    });
     await waitFor(() =>
       expect(step(1).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
     );
@@ -317,9 +312,6 @@ describe("TeamForm", () => {
       screen.getByRole("button", { name: "Continue to approval steps" })
     );
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Supervisor approval" },
-    });
 
     expect(step(1).getByLabelText("Step 1 approver")).toBeDisabled();
     expect(
@@ -327,7 +319,7 @@ describe("TeamForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("prefills an existing team's details and its one approver per step", () => {
+  it("prefills an existing team's details and its one approver per step", async () => {
     render(
       <TeamForm
         team={makeTeam({
@@ -361,13 +353,11 @@ describe("TeamForm", () => {
     expect(
       screen.getByRole("heading", { name: "Who approves for this team" })
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Chain name")).toHaveValue(
-      "Administrative approval"
-    );
-    expect(screen.getByLabelText("Step 1 name")).toHaveValue(
-      "Supervisor approval"
-    );
     expect(screen.getByLabelText("Step 1 role")).toHaveValue("supervisor");
+    // The approver the step already had, once its people have been fetched.
+    await waitFor(() =>
+      expect(step(1).getByLabelText("Step 1 approver")).toHaveValue("3")
+    );
     expect(
       screen.getByRole("button", { name: "Save changes" })
     ).toBeInTheDocument();
@@ -398,9 +388,6 @@ describe("TeamForm", () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Dean approval" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
@@ -409,10 +396,9 @@ describe("TeamForm", () => {
         expect.objectContaining({
           department: 1,
           new_workflow: {
-            name: "Academic approval",
             sections: [
               {
-                name: "Dean approval",
+                name: "Supervisor",
                 approver_role: "supervisor",
                 approver: 3,
               },
@@ -433,9 +419,6 @@ describe("TeamForm", () => {
 
     openSteps();
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "First" },
-    });
     await waitFor(() =>
       expect(step(1).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
     );
@@ -444,9 +427,6 @@ describe("TeamForm", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 2 name"), {
-      target: { value: "Second" },
-    });
     fireEvent.change(screen.getByLabelText("Step 2 role"), {
       target: { value: "hod" },
     });
@@ -465,8 +445,8 @@ describe("TeamForm", () => {
         expect.objectContaining({
           new_workflow: expect.objectContaining({
             sections: [
-              expect.objectContaining({ name: "Second", approver: 5 }),
-              expect.objectContaining({ name: "First", approver: 3 }),
+              expect.objectContaining({ approver_role: "hod", approver: 5 }),
+              expect.objectContaining({ approver_role: "supervisor", approver: 3 }),
             ],
           }),
         })
@@ -667,9 +647,6 @@ describe("TeamForm", () => {
 
     openSteps();
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Registrar approval" },
-    });
     fireEvent.change(screen.getByLabelText("Step 1 role"), {
       target: { value: "registrar" },
     });
@@ -691,7 +668,7 @@ describe("TeamForm", () => {
           new_workflow: expect.objectContaining({
             sections: [
               expect.objectContaining({
-                name: "Registrar approval",
+                name: "Registrar",
                 approver_role: "registrar",
                 approver: 11,
               }),
@@ -700,6 +677,96 @@ describe("TeamForm", () => {
         })
       )
     );
+  });
+
+  it("appoints a step whose role was already loaded, without asking again", async () => {
+    const registrar: ApproverRole = {
+      ...roles[0],
+      id: 9,
+      code: "registrar",
+      label: "Registrar",
+      is_institution_wide: true,
+    };
+    const holder: EligibleApprover = {
+      id: 11,
+      full_name: "Rita Registrar",
+      email: "rita.registrar@test.luanar",
+      designation: "Registrar",
+    };
+    mockCandidates({ 1: [jane], 2: [bob], 9: [holder] });
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+
+    render(
+      <TeamForm
+        campuses={campuses}
+        departments={departments}
+        roles={[registrar, ...roles]}
+      />
+    );
+
+    openSteps();
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    await waitFor(() =>
+      expect(step(1).getByLabelText("Step 1 approver")).toHaveValue("11")
+    );
+
+    // A second step takes the same role. Its people were already asked for, so
+    // nothing is fetched again — the step must still be appointed rather than
+    // waiting on a request that will never be made.
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    await waitFor(() =>
+      expect(step(2).getByLabelText("Step 2 approver")).toHaveValue("11")
+    );
+    expect(
+      vi
+        .mocked(listEligibleApprovers)
+        .mock.calls.filter(([, role]) => role === 9)
+    ).toHaveLength(1);
+
+    // ...and the repeat is refused on save. The backend enforces the same rule as
+    // a constraint on the workflow; catching it here names the role, where a
+    // database error naming a constraint would not.
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Two steps both use the Registrar role/
+    );
+    expect(createTeam).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save one person on two steps", async () => {
+    mockCandidates({ 1: [jane], 2: [jane] });
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+
+    render(<TeamForm campuses={campuses} departments={departments} roles={roles} />);
+
+    openSteps();
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    // Two different roles, one person: the roles are unique, so this is caught
+    // by the approver rule rather than the role one.
+    fireEvent.change(screen.getByLabelText("Step 2 role"), {
+      target: { value: "hod" },
+    });
+    await waitFor(() =>
+      expect(step(1).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
+    );
+    fireEvent.change(step(1).getByLabelText("Step 1 approver"), {
+      target: { value: "3" },
+    });
+    await waitFor(() =>
+      expect(step(2).getByRole("option", { name: /Jane Dean/ })).toBeInTheDocument()
+    );
+    fireEvent.change(step(2).getByLabelText("Step 2 approver"), {
+      target: { value: "3" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Jane Dean decides more than one step/
+    );
+    expect(createTeam).not.toHaveBeenCalled();
   });
 
   it("leaves an institution-wide step to HR when several hold the role", async () => {
@@ -735,9 +802,6 @@ describe("TeamForm", () => {
 
     openSteps();
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(screen.getByLabelText("Step 1 name"), {
-      target: { value: "Registrar approval" },
-    });
     fireEvent.change(screen.getByLabelText("Step 1 role"), {
       target: { value: "registrar" },
     });

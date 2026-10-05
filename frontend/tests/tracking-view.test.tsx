@@ -19,6 +19,7 @@ import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correcti
 import pending_first_stage from "@/lib/tracking/__fixtures__/pending_first_stage.json";
 import pending_mid_workflow from "@/lib/tracking/__fixtures__/pending_mid_workflow.json";
 import pending_with_applicant_excluded from "@/lib/tracking/__fixtures__/pending_with_applicant_excluded.json";
+import pending_with_skipped_stage from "@/lib/tracking/__fixtures__/pending_with_skipped_stage.json";
 import pending_with_delegate from "@/lib/tracking/__fixtures__/pending_with_delegate.json";
 import rejected_at_stage_2 from "@/lib/tracking/__fixtures__/rejected_at_stage_2.json";
 import resubmitted_after_correction from "@/lib/tracking/__fixtures__/resubmitted_after_correction.json";
@@ -31,6 +32,8 @@ const fixtures: Record<string, TrackingResponse> = {
   "pending_with_delegate": pending_with_delegate as unknown as TrackingResponse,
   "pending_with_applicant_excluded":
     pending_with_applicant_excluded as unknown as TrackingResponse,
+  "pending_with_skipped_stage":
+    pending_with_skipped_stage as unknown as TrackingResponse,
   "approved": approved as unknown as TrackingResponse,
   "rejected_at_stage_2": rejected_at_stage_2 as unknown as TrackingResponse,
   "correction_required_at_stage_3":
@@ -158,14 +161,32 @@ describe("TrackingView · statuses", () => {
     expect(stepCount()).toBe(1);
   });
 
-  it("shows a colleague deciding the section the applicant sat on, with nothing skipped", async () => {
+  it("shows a skipped stage with the reason, and keeps it in the chain", async () => {
+    mockOk(fixtures.pending_with_skipped_stage);
+    renderView();
+    const stepper = within(await screen.findByLabelText("Approval progress"));
+
+    // The applicant held the HOD stage, so it was skipped and the chain opened
+    // at the Registrar. The stage stays listed, not dropped: a reader has to be
+    // able to tell a deliberate skip from a stage that was quietly removed.
+    expect(stepper.getAllByRole("listitem")).toHaveLength(4);
+    expect(stepper.getByText("Skipped")).toBeInTheDocument();
+    expect(
+      stepper.getByText(/Applicant cannot approve their own application/)
+    ).toBeInTheDocument();
+    expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
+    expect(stepper.getAllByText("Not yet reached")).toHaveLength(1);
+    expect(stepCount()).toBe(1);
+  });
+
+  it("shows a colleague deciding the section the applicant shared, with nothing skipped", async () => {
     mockOk(fixtures.pending_with_applicant_excluded);
     renderView();
     const stepper = within(await screen.findByLabelText("Approval progress"));
 
     expect(stepper.getAllByRole("listitem")).toHaveLength(4);
-    // The applicant's own membership is removed at submission, so the chain
-    // runs through their section with a colleague instead of bypassing it.
+    // The applicant is removed from the section's eligibility at submission, so
+    // the chain runs through their section with a colleague instead of skipping it.
     expect(stepper.queryByText(/Skipped/i)).not.toBeInTheDocument();
     expect(stepper.getByText("Ms. Grace Kanyama")).toBeInTheDocument();
     expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();

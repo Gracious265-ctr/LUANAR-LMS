@@ -43,8 +43,22 @@ vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
 });
 
 const entitlements: Entitlement[] = [
-  { id: 3, grade_start: "G", grade_end: "H", days: 21, effective_from: "2026-01-01" },
-  { id: 4, grade_start: "E", grade_end: "F", days: 30, effective_from: "2026-01-01" },
+  {
+    id: 3,
+    grade_start: "G",
+    grade_end: "H",
+    days: 21,
+    effective_from: "2026-01-01",
+    leave_type: null,
+  },
+  {
+    id: 4,
+    grade_start: "E",
+    grade_end: "F",
+    days: 30,
+    effective_from: "2026-01-01",
+    leave_type: null,
+  },
 ];
 
 const leaveTypes: LeaveType[] = [
@@ -163,7 +177,11 @@ describe("HR admin registry overlays — wave 1", () => {
 
       expect(screen.getByLabelText("Annual days")).toHaveValue(30);
       expect(screen.getByLabelText("Grade start")).toHaveValue("E");
-      expect(fetchSpy).not.toHaveBeenCalled();
+      // The entitlement still comes from the row already on screen. The
+      // leave-type picker is the one thing the table cannot carry, so that one
+      // lookup is expected; a fetch for the entitlement itself is not.
+      const urls = fetchSpy.mock.calls.map(([input]) => String(input));
+      expect(urls.filter((url) => url.includes("/entitlements"))).toEqual([]);
     });
 
     it("explains a deep link to a rule that no longer exists", () => {

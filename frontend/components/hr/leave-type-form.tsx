@@ -40,6 +40,7 @@ export function LeaveTypeForm({
       const input = {
         name: String(formData.get("name") || "").trim(),
         code: String(formData.get("code") || "").trim() || undefined,
+        is_active: formData.get("is_active") === "on",
       };
       const saved = leaveType
         ? await updateLeaveType(leaveType.id, input)
@@ -81,6 +82,19 @@ export function LeaveTypeForm({
           placeholder="Optional; derived from name"
         />
       </Field>
+
+      <div className="flex items-center gap-2 md:col-span-2">
+        <input
+          id="is_active"
+          name="is_active"
+          type="checkbox"
+          defaultChecked={leaveType?.is_active !== false}
+          className="h-4 w-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
+        />
+        <label htmlFor="is_active" className="text-sm text-text-primary">
+          Active (offered to employees with a matching entitlement)
+        </label>
+      </div>
 
       {error && (
         <FormError className="md:col-span-2">{error}</FormError>

@@ -12,16 +12,19 @@ export type ApprovalStatus =
   | "submitted";
 
 /**
- * No `skipped` status: a step is never bypassed. A chain that cannot be
- * satisfied by its current membership is refused at submission, so every step
- * is either still `waiting`, the open `pending` one, or decided.
+ * `skipped` means the applicant's own position made the stage unnecessary: they
+ * hold the stage, or sit above it, so it was never routed to them (Unit 30). It is
+ * settled rather than outstanding, which is why it is distinct from `waiting` -- a
+ * step that has not been reached yet. A step with nobody to act on at all is
+ * still refused at submission.
  */
 export type StageStatus =
   | "waiting"
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_requested";
+  | "correction_requested"
+  | "skipped";
 
 export interface ApprovalCapabilities {
   is_approver: boolean;
@@ -147,6 +150,8 @@ export interface ApprovalStage {
   assigned_at: string | null;
   decided_at: string | null;
   comment: string | null;
+  /** Why a `skipped` stage was passed over. Null for every other status. */
+  skip_reason: string | null;
 }
 
 export interface CurrentStageBlock {

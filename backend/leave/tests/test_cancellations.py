@@ -17,7 +17,7 @@ from rest_framework.test import APITestCase
 from audit.models import AuditEntry
 from leave.models import LeaveApplication
 from leave.providers.fixture import FixtureRulesProvider
-from leave.services.submission import submit_application
+from leave.services.submission import build_rules_snapshot, submit_application
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
     TODAY,
@@ -25,6 +25,7 @@ from leave.tests.stubs import (
     ensure_annual_leave_rule,
     make_user,
 )
+from leave.validation.types import ValidationContext
 from workflows.models import ApplicationStage, ApplicationStageApprover
 from workflows.services import assign_workflow
 
@@ -111,7 +112,36 @@ class CancellationBase(StubProviderMixin, APITestCase):
         )
         return submit_application(user=self.employee, application_id=app.pk)
 
-    def make_approved(self, start=None, employee=None):
+    def snapshot_for(self, start, leave_type_id):
+        """The ``rules_snapshot`` submission writes for this application.
+
+        The cancellation balance provider reads ``deducts_annual_balance`` from
+        the snapshot and refuses to invent a restoration the configuration never
+        granted, so an approved row that was built directly rather than
+        submitted has to carry a snapshot too — as every real one does. It is
+        built with the production builder off the stub's own rules, so it cannot
+        drift from what ``submit_application`` writes, and it is built for the
+        leave type the row claims: a snapshot disagreeing with its own
+        application would be the thing under test.
+        """
+        return build_rules_snapshot(
+            ValidationContext(
+                user=self.employee,
+                employee=self.stub.employees.get(self.employee.id),
+                leave_type=self.stub.get_leave_type_rules(leave_type_id, TODAY),
+                start_date=start,
+                end_date=start + timedelta(days=3),
+                application=None,
+                today=TODAY,
+                financial_year=self.stub.get_financial_year_for(start),
+                holidays={},
+                working_days=5,
+                calendar_days=7,
+                available_balance=Decimal("21"),
+            )
+        )
+
+    def make_approved(self, start=None, employee=None, leave_type_id=1):
         """An approved annual-leave application with a materialised chain."""
         start = start or (TODAY + timedelta(days=15))
         app = LeaveApplication.objects.create(
@@ -121,9 +151,10 @@ class CancellationBase(StubProviderMixin, APITestCase):
             working_days=5,
             calendar_days=7,
             financial_year_label="2026-27",
-            leave_type_id=1,
+            leave_type_id=leave_type_id,
             reason="Family visit",
             status=LeaveApplication.Status.APPROVED,
+            rules_snapshot=self.snapshot_for(start, leave_type_id),
         )
         assign_workflow(app)
         return app
@@ -196,9 +227,12 @@ class EligibilityServiceTests(CancellationBase):
         )
 
     def test_non_deducting_leave_type_returns_zero_restoration(self):
-        app = self.make_approved()
-        app.leave_type_id = 4  # compassionate: never deducts
-        app.save(update_fields=["leave_type_id"])
+        # Compassionate leave is approved, and the snapshot it was approved
+        # under says it never deducted annual leave, so there is nothing to
+        # give back. The snapshot travels with the leave type on purpose: an
+        # annual-leave snapshot on a compassionate row would be the
+        # configuration disagreeing with itself.
+        app = self.make_approved(leave_type_id=4)
         eligibility = get_eligibility(app, self.employee, today=TODAY)
         self.assertEqual(eligibility.cancellation_action, "request")
         self.assertEqual(eligibility.estimated_restoration_days, Decimal("0"))

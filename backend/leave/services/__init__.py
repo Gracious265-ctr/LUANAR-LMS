@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.db.models import QuerySet
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -25,12 +26,24 @@ def ranges_overlap(start: str, end: str, other_start: str, other_end: str) -> bo
 
 
 def find_overlapping_rule(
-    grade_start: str, grade_end: str, exclude_pk: int | None = None
+    grade_start: str,
+    grade_end: str,
+    leave_type: LeaveType | int | None = None,
+    exclude_pk: int | None = None,
 ) -> GradeEntitlement | None:
     """Return an existing rule whose range overlaps the given range, or None.
 
-    Overlap is checked against every rule regardless of ``effective_from``.
-    ``exclude_pk`` skips the rule being edited.
+    Overlap is scoped to one leave type. HR must be able to grant a band more
+    than one type -- "grade A–C gets 21 days annual *and* 5 compassionate" is two
+    rows on the same band -- so a global overlap ban would leave an employee's
+    whole entitlement limited to a single type. Within one type a range may still
+    only be granted once, which is what ``exclude_pk`` exists for.
+
+    ``leave_type=None`` means "the untyped band", not "any": an untyped row is the
+    historical annual-leave entitlement and must not collide with a typed row for
+    a different type, or every first typed band would be refused.
+
+    Checked against every rule regardless of ``effective_from``.
     """
     start = normalize_grade(grade_start)
     end = normalize_grade(grade_end)
@@ -38,6 +51,10 @@ def find_overlapping_rule(
         return None
 
     queryset = GradeEntitlement.objects.all()
+    if leave_type is None:
+        queryset = queryset.filter(leave_type__isnull=True)
+    else:
+        queryset = queryset.filter(leave_type=leave_type)
     if exclude_pk is not None:
         queryset = queryset.exclude(pk=exclude_pk)
 
@@ -47,14 +64,36 @@ def find_overlapping_rule(
     return None
 
 
+def _covering_rules(
+    grade: str, as_of: date, leave_type: LeaveType | int | None
+) -> list[GradeEntitlement]:
+    """Effective rules covering ``grade``, narrowed to ``leave_type`` if given."""
+    queryset = GradeEntitlement.objects.filter(effective_from__lte=as_of)
+    if leave_type is not None:
+        queryset = queryset.filter(leave_type=leave_type)
+    return [
+        rule
+        for rule in queryset
+        if grade_in_range(grade, rule.grade_start, rule.grade_end)
+    ]
+
+
 def resolve_grade_entitlement(
-    grade: str, as_of: date | None = None
+    grade: str,
+    as_of: date | None = None,
+    leave_type: LeaveType | int | None = None,
 ) -> GradeEntitlement | None:
     """Return the effective entitlement rule for a grade on a date, or None.
 
     Rules with ``effective_from`` on or before ``as_of`` (default: today) whose
     grade range contains the grade are considered; the rule with the latest
     ``effective_from`` wins. Returns ``None`` for blank or unmapped grades.
+
+    ``leave_type`` narrows to one type, which matters now that a grade can be
+    granted several: "what does grade G get for maternity" is a different answer
+    from "what does grade G get". ``None`` means any type, and is only
+    unambiguous while a grade has at most one band -- prefer
+    :func:`resolve_annual_balance_entitlement` for the balance.
     """
     key = normalize_grade(grade)
     if key is None:
@@ -62,24 +101,123 @@ def resolve_grade_entitlement(
 
     as_of = as_of or timezone.localdate()
 
-    candidates = [
-        rule
-        for rule in GradeEntitlement.objects.filter(effective_from__lte=as_of)
-        if grade_in_range(key, rule.grade_start, rule.grade_end)
-    ]
+    candidates = _covering_rules(key, as_of, leave_type)
     if not candidates:
         return None
 
     return max(candidates, key=lambda rule: rule.effective_from)
 
 
+def resolve_annual_balance_entitlement(
+    grade: str | None, as_of: date | None = None
+) -> GradeEntitlement | None:
+    """Return the entitlement that funds the annual leave balance for a grade.
+
+    The balance is one number per employee per financial year, not one per leave
+    type -- ``LeaveBalanceTransaction`` is annual-scoped -- so the row that funds
+    it is the one whose leave type actually consumes annual entitlement. Where no
+    band names such a type, the untyped band is used, which is what a row created
+    before ``GradeEntitlement.leave_type`` existed means.
+
+    If HR marks two leave types as consuming annual entitlement on one grade, the
+    later ``effective_from`` wins. That is a configuration ambiguity rather than a
+    supported shape, and it is cheaper to document than to add a second ledger.
+    """
+    key = normalize_grade(grade)
+    if key is None:
+        return None
+
+    as_of = as_of or timezone.localdate()
+    candidates = _covering_rules(key, as_of, None)
+    if not candidates:
+        return None
+
+    annual_type_ids = set(
+        LeaveRule.objects.filter(
+            effective_from__lte=as_of,
+            consumes_annual_entitlement=True,
+        ).values_list("leave_type_id", flat=True)
+    )
+    annual = [rule for rule in candidates if rule.leave_type_id in annual_type_ids]
+    if annual:
+        return max(annual, key=lambda rule: rule.effective_from)
+
+    untyped = [rule for rule in candidates if rule.leave_type_id is None]
+    if not untyped:
+        return None
+    return max(untyped, key=lambda rule: rule.effective_from)
+
+
 def resolved_annual_entitlement(
     grade: str | None, as_of: date | None = None
 ) -> GradeEntitlement | None:
-    """Resolve a grade to its annual-days entitlement rule (or None)."""
+    """Resolve a grade to the annual-leave-days entitlement rule (or None)."""
     if not grade:
         return None
-    return resolve_grade_entitlement(grade, as_of)
+    return resolve_annual_balance_entitlement(grade, as_of)
+
+
+
+def leave_types_available_to(
+    grade: str | None, as_of: date | None = None
+) -> QuerySet[LeaveType]:
+    """Return active leave types for selection.
+
+    The application form should list all configured active leave types so HR
+    can manage types centrally; entitlement/eligibility determine whether a
+    particular employee may actually take a given type at submission time.
+    """
+    return LeaveType.objects.filter(is_active=True)
+
+
+ANNUAL_LEAVE_CODE = "annual"
+ANNUAL_LEAVE_NAME = "Annual Leave"
+
+
+def find_annual_leave_type() -> LeaveType | None:
+    """Read-only lookup of the canonical annual type. Never writes."""
+    for code in (ANNUAL_LEAVE_CODE, f"{ANNUAL_LEAVE_CODE}-leave"):
+        try:
+            return LeaveType.objects.get(code=code)
+        except LeaveType.DoesNotExist:
+            continue
+    try:
+        return LeaveType.objects.get(name__iexact=ANNUAL_LEAVE_NAME)
+    except LeaveType.DoesNotExist:
+        return None
+
+
+def get_or_create_annual_leave_type() -> tuple[LeaveType, bool]:
+    """Adopt-or-create the canonical annual leave type."""
+    annual = find_annual_leave_type()
+    if annual is not None:
+        return annual, False
+    return (
+        LeaveType.objects.create(
+            name=ANNUAL_LEAVE_NAME,
+            code=ANNUAL_LEAVE_CODE,
+            is_active=True,
+        ),
+        True,
+    )
+
+
+def ensure_annual_leave_rule(
+    leave_type: LeaveType, effective_from: date, max_duration_days: int
+) -> LeaveRule | None:
+    """Create the default effective rule, or None when one already exists."""
+    if leave_type.rules.exists():
+        return None
+    return LeaveRule.objects.create(
+        leave_type=leave_type,
+        max_duration_days=max_duration_days,
+        eligibility="",
+        eligibility_rules=[],
+        min_notice_days=0,
+        requires_supporting_document=False,
+        consumes_annual_entitlement=True,
+        effective_from=effective_from,
+    )
 
 
 def normalize_leave_code(value: str) -> str | None:

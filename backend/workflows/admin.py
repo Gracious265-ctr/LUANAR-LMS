@@ -58,6 +58,13 @@ class SectionInlineFormSet(BaseInlineFormSet):
     too, but as a database error at save time. Validating in the formset names
     the problem where HR can act on it, and does so for the whole form rather
     than failing on whichever row happened to be written first.
+
+    A repeated approver role is deliberately *not* re-checked here (Unit 30). It
+    needs no second implementation: ``section_workflow_role_unique`` is a model
+    constraint, so Django's own cross-form ``validate_unique`` already reports the
+    repeat on the ``approver_role`` field, where HR can act on it. Letting the
+    model constraint answer is also what keeps the admin and the API agreeing by
+    construction rather than by two code paths kept in step by hand.
     """
 
     def clean(self):
@@ -78,8 +85,10 @@ class SectionInlineFormSet(BaseInlineFormSet):
 class SectionInline(admin.TabularInline):
     """Workflow sections, in approval order.
 
-    A repeated approver role is deliberately allowed: the same person can sit at
-    more than one point in a chain, which is the point of sections.
+    A repeated approver role is refused: since Unit 30 a role belongs to exactly
+    one stage of a workflow, so that one office cannot sign off twice at two
+    points in the same chain. The same role may still be used by a different
+    workflow.
     """
 
     model = Section

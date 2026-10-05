@@ -64,14 +64,17 @@ def normalize_section_sequence(sections: list[dict]) -> list[dict]:
     payload carries the role's *code* so the sequence round-trips through the API
     without leaking database ids into saved forms.
 
-    A role **may** repeat across sections. That is the point of sections: one
-    person can sit at several points in a chain, and two steps can be performed
-    by the same position. Only ``order`` has to be unique.
+    A role may **not** repeat across sections of one workflow (Unit 30). It
+    could once, on the reasoning that one person can sit at several points in a
+    chain — but a role appearing twice means the same capacity signing off twice
+    at two different points, and ``section_workflow_role_unique`` now says so at
+    the database too. Repeating the role across *different* workflows is still
+    fine; the rule is per workflow, not global.
 
     Returns a list of ``{"name", "approver_role", "order"}``. Raises
     :class:`StageSequenceError` for an empty list, an unknown or inactive
-    approver role, a missing/blank name, or a missing/non-positive/duplicate
-    order.
+    approver role, a role already used by another section in the same payload, a
+    missing/blank name, or a missing/non-positive/duplicate order.
     """
     items = list(sections)
     if not items:
@@ -80,6 +83,7 @@ def normalize_section_sequence(sections: list[dict]) -> list[dict]:
         )
 
     seen_orders: set[int] = set()
+    seen_roles: dict[int, int] = {}
     normalized: list[dict] = []
 
     for index, item in enumerate(items):
@@ -115,6 +119,21 @@ def normalize_section_sequence(sections: list[dict]) -> list[dict]:
                 "order", "Section order numbers must be unique within a workflow.", index
             )
         seen_orders.add(order)
+
+        # The role check runs after the order check so the error a caller sees
+        # for a payload that is wrong in both ways names the ordering problem
+        # first, which is the one they have to fix to make progress.
+        first_use = seen_roles.get(role.pk)
+        if first_use is not None:
+            raise StageSequenceError(
+                "approver_role",
+                f"The {role.label} role is already assigned to another stage in "
+                "this workflow. A role can only be assigned to one stage per "
+                "workflow — give this stage a different role, or remove the "
+                f"other one (step {first_use + 1}).",
+                index,
+            )
+        seen_roles[role.pk] = index
 
         normalized.append(
             {"name": name, "approver_role": role.code, "order": index + 1}
@@ -213,16 +232,15 @@ def replace_workflow_sections(workflow: Workflow, sections) -> list[Section]:
     """Rewrite a workflow's section sequence, preserving membership.
 
     A section is identified across writes by its ``(role, name)`` pair. A
-    section whose pair still appears in the payload keeps its row, and so
-    keeps its members: re-ordering the chain must not silently strip the
-    people who can act for it, which is the whole reason a section holds
-    several approvers.
+    section whose pair still appears in the payload keeps its row, and so keeps
+    its appointed approver: re-ordering the chain must not silently unstaff the
+    people who can act for it.
 
     A section whose role **or** name changed is a different step and is
     rebuilt empty. Deliberately not carried over: a step that moved to a
     different approver role has a different authority, and quietly handing
-    the old roster to the new role would grant it without HR asking. The
-    step shows up with no members, which is visible and fixable, and
+    the old appointment to the new role would grant it without HR asking. The
+    step shows up with nobody appointed, which is visible and fixable, and
     submission is refused until it is staffed.
 
     ``(workflow, order)`` is unique, so the write is sequenced to avoid
@@ -261,8 +279,10 @@ def replace_workflow_sections(workflow: Workflow, sections) -> list[Section]:
             plan.append((payload, role, survivor.pk))
         else:
             # Either a genuinely new step, or the same role+name a second
-            # time in one payload — two steps may share a role and a label,
-            # so the second needs its own row rather than reusing the first.
+            # time in one payload. Role uniqueness (Unit 30) means the second
+            # cannot be the same *role*, so reaching here twice with one role
+            # means the role changed between the two entries — the second needs
+            # its own row rather than reusing the first.
             plan.append((payload, role, None))
 
     # 1. Drop the steps that are no longer in the payload. Their members
@@ -1084,13 +1104,13 @@ def assign_workflow(application):
     stage, and ``application.current_stage`` is pointed at it.
 
     **The chain always starts at section one, and no section is ever skipped.**
-    An employee who is also an approver is removed from the eligibility snapshot
-    of every section they belong to, by the provider, rather than by bypassing
-    stages here. So a section the applicant belongs to is still decided — by its
-    other members — and a section whose only member is the applicant cannot be
-    routed at all, so the submission is refused there (invariants 12.3, 12.7).
-    The old "start after the applicant's last stage, never travelling backwards"
-    rule is gone: with a set of approvers per section there is nothing to skip.
+    A step names one person, and if that person is the applicant they cannot act
+    on their own leave, so the provider refuses to resolve the step at all and
+    submission is refused there rather than routing the application past a step
+    (invariants 12.3, 12.7). The old "start after the applicant's last stage,
+    never travelling backwards" rule is gone with the multi-approver sections it
+    existed for: there is nothing to skip, because there is nothing else in a
+    step.
 
     Raises :class:`WorkflowAssignmentError` when the provider yields no/ill-formed
     sections or a section cannot be resolved to at least one active user other
@@ -1123,20 +1143,34 @@ def assign_workflow(application):
         unstaffed = [
             f'No active approver for the "{definition.role_label}" approval section.'
             for definition in definitions
-            if not definition.approver_user_ids
+            if not definition.approver_user_ids and not definition.skipped
         ]
         if unstaffed:
             raise WorkflowAssignmentError(unstaffed)
 
-        # Every definition is guaranteed to carry at least one eligible user:
-        # the provider refuses an unsatisfiable section rather than returning a
-        # gap, and it has already removed the applicant. So there is no longer a
-        # "which stages does the applicant hold" question to answer here — the
-        # chain always starts at section one, and self-approval is prevented by
-        # the snapshot rather than by skipping stages. There is consequently no
-        # "skipped" status to produce: the first stage is pending and the rest
-        # are waiting.
+        # Every routable definition carries at least one eligible user: the
+        # provider refuses an unsatisfiable section rather than returning a gap,
+        # and it has already removed the applicant. A *skipped* definition
+        # deliberately carries none -- nobody may act there -- so it is exempt
+        # from the check above (Unit 30).
+        #
+        # The chain's shape is therefore decided by the provider, not here. It
+        # starts at section one for an ordinary applicant, at the first stage
+        # above the applicant's own for an approver applicant, and at an appended
+        # HR stage when the applicant holds the final step.
         last_index = len(definitions) - 1
+        # The one stage that opens pending: the lowest order the provider did not
+        # skip. Every provider must leave at least one routable stage, or there
+        # is nothing to decide -- the HR destination is what stops that happening
+        # when the applicant holds the final step.
+        pending_order = min(
+            (d.order for d in definitions if not d.skipped),
+            default=None,
+        )
+        if pending_order is None:
+            raise WorkflowAssignmentError(
+                ["This workflow has no approval stage left for HR to decide."]
+            )
         stages = [
             ApplicationStage(
                 application=application,
@@ -1149,7 +1183,8 @@ def assign_workflow(application):
                 handles_cancellation=definition.handles_cancellation,
                 section_ref_id=definition.section_id,
                 assigned_approver=None,
-                status=_initial_stage_status(index),
+                status=_initial_stage_status(definition, pending_order),
+                skip_reason=definition.skip_reason,
                 is_final=index == last_index,
             )
             for index, definition in enumerate(definitions)
@@ -1166,22 +1201,72 @@ def assign_workflow(application):
             for user_id in definition.approver_user_ids
         )
 
-        first = stages[0]
-        application.current_stage = first
+        # The application opens at the stage that was materialised pending, not
+        # at the first stage in the chain: a chain that starts with skipped stages
+        # has to point at the one somebody can act on (Unit 30).
+        opening = next(
+            stage
+            for stage in stages
+            if stage.status == ApplicationStage.Status.PENDING
+        )
+        application.current_stage = opening
         application.current_approver = None
         application.save(update_fields=["current_stage", "current_approver", "updated_at"])
-        return first
+        _record_skipped_stages(application, stages)
+        return opening
 
 
-def _initial_stage_status(index: int) -> str:
+def _record_skipped_stages(application, stages) -> None:
+    """Audit the stages an application was not routed through (Unit 30).
+
+    Written by the applicant, because the applicant is who caused it: their own
+    position decided the chain. Without this the audit trail would show a chain
+    starting at stage two with nothing saying why, which is the one question an
+    audit exists to answer.
+    """
+    skipped = [
+        {
+            "order": stage.stage_order,
+            "role_label": stage.role_label,
+            "reason": stage.skip_reason,
+        }
+        for stage in stages
+        if stage.status == ApplicationStage.Status.SKIPPED
+    ]
+    if not skipped:
+        return
+    orders = ", ".join(str(entry["order"]) for entry in skipped)
+    record_audit(
+        actor=application.employee,
+        action=AuditEntry.Action.STAGE_SKIPPED,
+        target_type=AuditEntry.TargetType.APPLICATION,
+        target_id=application.pk,
+        target_summary=(
+            f"{application.reference_number}: stage(s) {orders} skipped"
+        ),
+        detail={
+            "stages": skipped,
+            "reason": "The applicant's own position is at or below this stage.",
+        },
+    )
+
+
+def _initial_stage_status(definition, pending_order: int) -> str:
     """The status a freshly materialised stage starts in.
 
-    A chain always starts at its first section, so there is exactly one pending
-    stage and the rest are waiting. A stage can no longer be born skipped: the
-    applicant is excluded from the eligibility snapshot instead of being jumped
-    over, and a section left with nobody able to act refuses the submission.
+    Driven by the definition rather than by its position (Unit 30). The provider
+    decides which stage the application actually opens at:
+
+    * a **skipped** stage is born ``SKIPPED`` -- terminal, carrying the reason the
+      provider recorded. It is never pending, so it never reaches an approver's
+      queue and never raises a notification;
+    * the first stage the provider did not skip is ``PENDING`` and the rest are
+      ``WAITING``. For an ordinary applicant that is section one; for an approver
+      applicant it is the first stage above their own.
     """
-    if index == 0:
+    if definition.skipped:
+        return ApplicationStage.Status.SKIPPED
+    if definition.order == pending_order:
         return ApplicationStage.Status.PENDING
     return ApplicationStage.Status.WAITING
 
@@ -1213,15 +1298,18 @@ class ApprovalValidationError(ValueError):
 def _next_activatable_stage(application, decided_stage):
     """The next stage to activate after ``decided_stage`` was approved.
 
-    The chain is contiguous and nothing is ever bypassed, so this is simply the
-    next stage by order. It is still looked up under a row lock and its
-    eligibility re-checked, because a stage with no one able to act is a chain
-    that cannot finish and must be reported rather than activated as a dead end.
+    The first stage above ``decided_stage`` that is still waiting. A **skipped**
+    stage is never activated (Unit 30): it resolves nobody by construction, so
+    activating it would strand the chain, and continuing past it is the whole
+    point of having skipped it in the first place. It is still looked up under a
+    row lock and its eligibility re-checked, because a stage with no one able to
+    act is a chain that cannot finish and must be reported rather than activated
+    as a dead end.
 
-    Raises ``ApprovalValidationError`` when the chain simply ends (a pre-existing
-    malformed chain) and :class:`SelfApprovalBlockedError` when the next stage has
-    no eligible approver — which can only happen on a chain materialised before
-    sections, where the applicant used to be skipped forward over.
+    Raises ``ApprovalValidationError`` when the chain simply ends or when only
+    skipped stages remain, and :class:`SelfApprovalBlockedError` when the next
+    stage has no eligible approver — which can only happen on a chain materialised
+    before sections, where the applicant used to be skipped forward over.
     """
     remaining = list(
         ApplicationStage.objects.select_for_update()
@@ -1235,7 +1323,16 @@ def _next_activatable_stage(application, decided_stage):
     if not remaining:
         raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
 
-    candidate = remaining[0]
+    candidate = next(
+        (
+            stage
+            for stage in remaining
+            if stage.status == ApplicationStage.Status.WAITING
+        ),
+        None,
+    )
+    if candidate is None:
+        raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
     if not candidate.eligible_approvers.exists():
         raise SelfApprovalBlockedError(
             [
@@ -1959,31 +2056,6 @@ def _unique_team_code(name: str) -> str:
     return candidate
 
 
-def _mismatched_department_team(team: Team) -> Team | None:
-    """Another active, in-force team covering the same department.
-
-    Routing follows the team, so two active teams in one department is not
-    ambiguous in the engine — each employee follows their own. It is ambiguous
-    to a human reading the configuration, though, and it is nearly always
-    accidental: the same staff being asked to approve the same department's
-    leave twice. Surfacing it as an activation issue makes HR say out loud
-    that it is intended. Blank departments never conflict, since a team with
-    no department is not claiming one.
-    """
-    if not team.department or not team.is_effective:
-        return None
-    for other in (
-        Team.objects.filter(
-            status=Team.Status.ACTIVE, department=team.department
-        )
-        .exclude(pk=team.pk)
-        .order_by("name")
-    ):
-        if other.is_effective:
-            return other
-    return None
-
-
 def validate_team(team: Team) -> TeamReadiness:
     """Check whether a team can route an application's approvals.
 
@@ -2155,18 +2227,6 @@ def validate_team(team: Team) -> TeamReadiness:
                 f"This team's last routing date was "
                 f"{team.effective_to.isoformat()}, which has passed. Move the end "
                 "date into the future, or leave it blank, to activate the team.",
-            )
-        )
-
-    conflict = _mismatched_department_team(team)
-    if conflict is not None:
-        issues.append(
-            TeamIssue(
-                "department_conflict",
-                "department",
-                f'Another active team already covers this department: '
-                f'"{conflict.name}". If sharing it is intended, deactivate that '
-                f"team first; otherwise give this team a different department.",
             )
         )
 
@@ -2779,6 +2839,11 @@ def ensure_membership_allowed(section: Section, user: User) -> None:
     Shared by the add-approver action and by writing a chain inline with a team,
     so there is one definition of "this person may be appointed here" and no way
     for the two paths to disagree about it.
+
+    Order matters for which refusal HR reads. The per-workflow check runs before
+    the per-department role check because an employee on two stages of one chain
+    breaks both, and "John is already on step 1 of this workflow" is the more
+    actionable of the two messages.
     """
     if not section.is_active:
         raise TeamActionError(
@@ -2801,7 +2866,49 @@ def ensure_membership_allowed(section: Section, user: User) -> None:
     if section.approver_id == user.pk:
         return
     ensure_department_eligibility(section, user)
+    ensure_single_stage_per_workflow(section, user)
     ensure_role_consistency(section, user)
+
+
+def ensure_single_stage_per_workflow(section: Section, user: User) -> None:
+    """Refuse an approver who already holds another stage of the same workflow.
+
+    Unit 30. Within one workflow an employee appears on exactly one stage, which
+    is the third leg of "one employee, one stage, one role per workflow". It also
+    is what makes the skip-forward routing unambiguous: "the applicant's stage" is
+    a single stage precisely because the employee cannot hold two.
+
+    Scoped to ``section.workflow``, so the same person may be the Supervisor on
+    one team's chain and the Bursar on another's — the restriction is per
+    workflow, never global.
+
+    The section being written is excluded from the comparison, so re-saving a
+    step that already appoints this person is not a conflict with itself; that is
+    what lets "John moves from step 1 to step 2" through.
+
+    Mirrored by ``section_workflow_approver_unique`` at the database level. This
+    check exists to produce a message naming the person and the other step; the
+    constraint exists so nothing can route around the check.
+    """
+    if section.workflow_id is None:
+        return
+    other = (
+        Section.objects.filter(workflow_id=section.workflow_id, approver=user)
+        .exclude(pk=section.pk)
+        .select_related("approver_role")
+        .order_by("order")
+        .first()
+    )
+    if other is None:
+        return
+    label = user.get_full_name() or user.username
+    raise TeamActionError(
+        "approver",
+        f"{label} is already assigned to step {other.order} "
+        f"({other.approver_role.label}) in this workflow. An employee can only "
+        "be assigned to one stage per workflow — appoint somebody else to this "
+        "step, or remove the other one.",
+    )
 
 
 def add_section_member(

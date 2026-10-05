@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
+from audit.services import current_actor, record_audit
 
 from ..models import (
     FinancialYear,
@@ -20,6 +21,10 @@ from ..services import (
     normalize_grade,
     normalize_leave_code,
     resolve_leave_rule,
+    ensure_annual_leave_rule,
+    get_or_create_annual_leave_type,
+    find_annual_leave_type,
+    resolve_grade_entitlement,
 )
 from ..services.storage import safe_signed_document_url
 
@@ -28,17 +33,40 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
     """HR-facing serializer for grade/entitlement rules."""
 
     target_type = AuditEntry.TargetType.ENTITLEMENT
-    audit_fields = ["grade_start", "grade_end", "days", "effective_from"]
+    # ``leave_type`` is audited rather than just ``days``: which type a band
+    # grants is the fact that decides what employees can apply for, so a change
+    # to it is exactly what an auditor needs to see and an edit to ``days`` is
+    # not enough to explain.
+    audit_fields = [
+        "grade_start",
+        "grade_end",
+        "days",
+        "effective_from",
+        "leave_type",
+    ]
+
+    leave_type_name = serializers.CharField(
+        source="leave_type.name", read_only=True, default=None
+    )
 
     class Meta:
         model = GradeEntitlement
-        fields = ["id", "grade_start", "grade_end", "days", "effective_from"]
+        fields = [
+            "id",
+            "grade_start",
+            "grade_end",
+            "days",
+            "effective_from",
+            "leave_type",
+            "leave_type_name",
+        ]
 
     def validate(self, attrs: dict) -> dict:
         grade_start = normalize_grade(self._value(attrs, "grade_start"))
         grade_end = normalize_grade(self._value(attrs, "grade_end"))
         effective_from = self._value(attrs, "effective_from")
         days = self._value(attrs, "days")
+        leave_type = self._value(attrs, "leave_type")
 
         if grade_start is None:
             raise serializers.ValidationError(
@@ -61,36 +89,91 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
 
         attrs["grade_start"] = grade_start
         attrs["grade_end"] = grade_end
-        self._validate_no_overlap(grade_start, grade_end)
+        self._validate_no_overlap(grade_start, grade_end, leave_type)
 
         return attrs
 
-    def _validate_no_overlap(self, grade_start: str, grade_end: str) -> None:
+    def _validate_no_overlap(
+        self, grade_start: str, grade_end: str, leave_type
+    ) -> None:
         exclude_pk = self.instance.pk if self.instance is not None else None
+        check_type = leave_type or find_annual_leave_type()
         overlapping = find_overlapping_rule(
-            grade_start, grade_end, exclude_pk=exclude_pk
+            grade_start, grade_end, leave_type=check_type, exclude_pk=exclude_pk
         )
         if overlapping is not None:
+            granted = (
+                f" for {leave_type.name}" if leave_type is not None else ""
+            )
             raise serializers.ValidationError(
                 {
                     "grade_start": (
-                        "This grade range overlaps the existing rule "
+                        f"This grade range is already granted{granted} by "
                         f"{overlapping.grade_start}–{overlapping.grade_end} "
                         f"(effective {overlapping.effective_from.isoformat()})."
                     )
                 }
             )
 
+    def create(self, validated_data):
+        with transaction.atomic():
+            if validated_data.get("leave_type") is None:
+                annual, created = get_or_create_annual_leave_type()
+                validated_data["leave_type"] = annual
+                if created:
+                    actor = current_actor(self)
+                    record_audit(
+                        actor=actor,
+                        target_type=AuditEntry.TargetType.LEAVE_TYPE,
+                        target_id=annual.pk,
+                        action=AuditEntry.Action.CREATED,
+                        target_summary=str(annual),
+                        detail={
+                            "summary": f"Created leave type {annual.name} ({annual.code})",
+                            "before": None,
+                            "after": {"name": annual.name, "code": annual.code, "is_active": annual.is_active},
+                        },
+                    )
+                rule = ensure_annual_leave_rule(
+                    annual,
+                    validated_data["effective_from"],
+                    validated_data["days"],
+                )
+                if rule is not None:
+                    actor = current_actor(self)
+                    record_audit(
+                        actor=actor,
+                        target_type=AuditEntry.TargetType.LEAVE_RULE,
+                        target_id=rule.pk,
+                        action=AuditEntry.Action.CREATED,
+                        target_summary=str(rule),
+                        detail={
+                            "summary": f"Created leave rule for {annual.name}",
+                            "before": None,
+                            "after": {
+                                "leave_type": annual.pk,
+                                "max_duration_days": rule.max_duration_days,
+                                "eligibility": rule.eligibility,
+                                "eligibility_rules": rule.eligibility_rules,
+                                "min_notice_days": rule.min_notice_days,
+                                "requires_supporting_document": rule.requires_supporting_document,
+                                "consumes_annual_entitlement": rule.consumes_annual_entitlement,
+                                "effective_from": rule.effective_from.isoformat(),
+                            },
+                        },
+                    )
+            return super().create(validated_data)
+
 
 class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
 
     target_type = AuditEntry.TargetType.LEAVE_TYPE
-    audit_fields = ["name", "code"]
+    audit_fields = ["name", "code", "is_active"]
 
     class Meta:
         model = LeaveType
-        fields = ["id", "name", "code"]
+        fields = ["id", "name", "code", "is_active"]
 
     def validate(self, attrs: dict) -> dict:
         name = self._value(attrs, "name")
@@ -129,14 +212,26 @@ class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
     Resolves ``max_duration_days`` and ``requires_supporting_document`` from
     the currently effective ``LeaveRule`` so employees see the live policy
     instead of a hard-coded list.
+
+    ``entitlement_days`` is the effective days granted to the viewer's grade by
+    this type, so the selection can display "X days" without making the employee
+    cross-reference the balance card.
     """
 
     max_duration_days = serializers.SerializerMethodField()
     requires_supporting_document = serializers.SerializerMethodField()
+    entitlement_days = serializers.SerializerMethodField()
 
     class Meta:
         model = LeaveType
-        fields = ["id", "name", "code", "max_duration_days", "requires_supporting_document"]
+        fields = [
+            "id",
+            "name",
+            "code",
+            "max_duration_days",
+            "requires_supporting_document",
+            "entitlement_days",
+        ]
 
     def get_max_duration_days(self, obj: LeaveType):
         rule = resolve_leave_rule(obj)
@@ -145,6 +240,17 @@ class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
     def get_requires_supporting_document(self, obj: LeaveType):
         rule = resolve_leave_rule(obj)
         return rule.requires_supporting_document if rule else False
+
+    def get_entitlement_days(self, obj: LeaveType):
+        request = self.context.get("request")
+        grade = None
+        if request is not None:
+            profile = getattr(request.user, "employee_profile", None)
+            grade = getattr(profile, "grade", None) if profile else None
+        entitlement = resolve_grade_entitlement(
+            grade, leave_type=obj, as_of=None
+        ) if grade else None
+        return entitlement.days if entitlement else None
 
 
 class LeaveRuleSerializer(AuditedModelSerializer):

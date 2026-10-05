@@ -30,7 +30,11 @@ from ..serializers import (
     LeaveTypeSerializer,
     PublicHolidaySerializer,
 )
-from ..services import normalize_grade, resolve_grade_entitlement
+from ..services import (
+    leave_types_available_to,
+    normalize_grade,
+    resolve_grade_entitlement,
+)
 from ..services.storage import delete_document
 from ..services.working_days import calculate_working_days, holidays_in_range
 from .documents import SupportingDocumentViewSet
@@ -52,7 +56,7 @@ class GradeEntitlementViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        return GradeEntitlement.objects.all()
+        return GradeEntitlement.objects.all().select_related("leave_type")
 
     @action(detail=False, methods=["get"])
     def resolve(self, request):
@@ -109,9 +113,10 @@ class EmployeeLeaveTypeViewSet(
 ):
     """Employee-facing, read-only catalog of leave types.
 
-    Serializes each type with its currently effective rule's
-    ``max_duration_days`` and ``requires_supporting_document`` so the leave
-    application form reflects live policy rather than hard-coded values.
+    A type is offered only if it is active and there is an effective
+    ``GradeEntitlement`` for the viewer's grade. That is the "configured and
+    available now" rule — a scheduled entitlement does not make it appear, and
+    an unmapped grade sees an empty list.
     """
 
     serializer_class = EmployeeLeaveTypeSerializer
@@ -120,7 +125,9 @@ class EmployeeLeaveTypeViewSet(
     http_method_names = ["get", "head", "options"]
 
     def get_queryset(self):
-        return LeaveType.objects.all()
+        profile = getattr(self.request.user, "employee_profile", None)
+        grade = getattr(profile, "grade", None) if profile else None
+        return leave_types_available_to(grade)
 
 
 class LeaveRuleViewSet(

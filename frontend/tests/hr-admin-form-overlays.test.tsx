@@ -207,7 +207,11 @@ describe("HR admin form overlays", () => {
       );
 
       await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
-      expect(createLeaveType).toHaveBeenCalledWith({ name: "Study leave" });
+      expect(createLeaveType).toHaveBeenCalledWith({
+        name: "Study leave",
+        code: undefined,
+        is_active: true,
+      });
       // The lone JSDOM history entry takes close's replace fallback; either way
       // the point is that it did not `push` the user off the list.
       expect(routerMock.replace).toHaveBeenCalledWith(
@@ -225,6 +229,7 @@ describe("HR admin form overlays", () => {
       expect(updateLeaveType).toHaveBeenCalledWith(2, {
         name: "Maternity leave",
         code: "maternity",
+        is_active: true,
       });
       expect(createLeaveType).not.toHaveBeenCalled();
     });
