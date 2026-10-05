@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
@@ -17,6 +17,13 @@ import { Button } from "@/components/ui/button";
 /** Query key for the team overlay. Distinct from the `?retired` list filter. */
 export const TEAM_PARAM = "team";
 
+/** One entry in the retired/in-force toggle. The page owns every href. */
+export interface TeamStatusFilter {
+  label: string;
+  href: string;
+  current: boolean;
+}
+
 export interface TeamsSectionProps {
   teams: Team[];
   campuses: Campus[];
@@ -26,8 +33,17 @@ export interface TeamsSectionProps {
   /** Set when the departments fetch failed; the picker is then shown unusable. */
   departmentsError: string;
   rolesError: string;
-  /** The retired/in-force toggle, passed in as a slot because the page owns the URLs. */
-  filter?: ReactNode;
+  /**
+   * The retired/in-force toggle.
+   *
+   * Plain data rather than a JSX slot, because markup authored in the page's
+   * server component and rendered inside this client component crosses the RSC
+   * boundary. The boundary re-creates those elements without the dev runtime's
+   * "written as static siblings" flag, so React treats them as a list and warns
+   * that each child needs a key. Passing data keeps the array on this side of
+   * the boundary, and the page still owns the URLs.
+   */
+  filters?: TeamStatusFilter[];
   error?: string;
 }
 
@@ -51,7 +67,7 @@ export function TeamsSection({
   departments,
   departmentsError,
   rolesError,
-  filter,
+  filters = [],
   error,
 }: TeamsSectionProps) {
   const router = useRouter();
@@ -77,7 +93,28 @@ export function TeamsSection({
         </Button>
       </div>
 
-      {filter}
+      {filters.length > 0 && (
+        <div
+          className="mb-4 flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Filter teams by status"
+        >
+          {filters.map((filter) => (
+            <Link
+              key={filter.label}
+              href={filter.href}
+              aria-current={filter.current ? "page" : undefined}
+              className={`rounded-sm px-3 py-1 text-xs font-medium ${
+                filter.current
+                  ? "bg-brand-primary text-button-primary-foreground"
+                  : "border border-border-default bg-surface-card text-text-secondary hover:bg-button-secondary-hover"
+              }`}
+            >
+              {filter.label}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {error ? (
         <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { CampusForm } from "@/components/hr/campus-form";
@@ -98,28 +97,7 @@ async function TeamsPage({
             departmentsError={departmentsResult.error}
                     rolesError={rolesResult.error}
                     error={teamsResult.error}
-            filter={
-              <div
-                className="mb-4 flex flex-wrap items-center gap-2"
-                role="group"
-                aria-label="Filter teams by status"
-              >
-                {filters.map((filter) => (
-                  <Link
-                    key={filter.label}
-                    href={filter.href}
-                    aria-current={filter.current ? "page" : undefined}
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${
-                      filter.current
-                        ? "bg-brand-primary text-button-primary-foreground"
-                        : "border border-border-default bg-surface-card text-text-secondary hover:bg-button-secondary-hover"
-                    }`}
-                  >
-                    {filter.label}
-                  </Link>
-                ))}
-              </div>
-            }
+            filters={filters}
           />
         </div>
 

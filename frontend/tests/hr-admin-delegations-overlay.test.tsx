@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Delegation } from "@/lib/delegations";
@@ -129,6 +129,46 @@ describe("DelegationsSection — wave 2", () => {
 
     expect(routerMock.push).toHaveBeenCalledWith(
       "/dashboard/hr-admin/delegations?state=active&delegation=new"
+    );
+  });
+
+  it("renders the state tab bar from the page's tabs data", () => {
+    // The tab bar arrives as data rather than as a JSX slot. Markup authored in
+    // the page's server component and rendered inside this client component
+    // crosses the RSC boundary, where React stops recognising statically written
+    // siblings and warns that each child in the list needs a key. The page still
+    // owns every href and decides which tab is current.
+    renderSection({
+      tabs: [
+        { label: "All", href: "/dashboard/hr-admin/delegations", current: false },
+        {
+          label: "Active",
+          href: "/dashboard/hr-admin/delegations?state=active",
+          current: true,
+        },
+      ],
+    });
+
+    // The tab bar renders before the table, and the row name is a link to the
+    // review page, so the first two links are the tabs.
+    const tabs = screen.getAllByRole("link").slice(0, 2);
+
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "Active"]);
+    expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
+      "/dashboard/hr-admin/delegations",
+      "/dashboard/hr-admin/delegations?state=active",
+    ]);
+    expect(tabs[0]).not.toHaveAttribute("aria-current");
+    expect(tabs[1]).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders no tab bar at all when the page sends no tabs", () => {
+    renderSection();
+
+    // Only the row link, which is the point: an empty tab bar would be a stray
+    // bordered strip above the table.
+    expect(within(screen.getByRole("table")).getAllByRole("link")).toHaveLength(
+      1,
     );
   });
 

@@ -40,6 +40,12 @@ export function HolidaysSection({
    * The page's year filter, rendered between the header and the table it
    * narrows. Passed in as a slot because the filter is a GET form the server
    * page owns, while the header, table, and overlay belong together here.
+   *
+   * Pass data rather than markup where you can. JSX authored in the page's
+   * server component and rendered inside this client component crosses the RSC
+   * boundary, where React stops recognising statically written siblings and
+   * warns that each child in the list needs a key — which is why the teams and
+   * delegations sections take `filters`/`tabs` as data instead.
    */
   filter?: ReactNode;
 }) {

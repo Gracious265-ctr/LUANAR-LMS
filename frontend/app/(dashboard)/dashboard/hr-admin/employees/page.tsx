@@ -80,8 +80,15 @@ export default async function EmployeesPage({
             search={query}
             error={error}
             filter={
+              // This JSX is authored in a server component and rendered inside the
+              // client `EmployeesSection`, so it crosses the RSC boundary. The
+              // boundary re-creates these elements without the dev runtime's
+              // "written as static siblings" flag, which makes React treat them as
+              // a list and demand keys. The keys below are what satisfies that;
+              // without them React warns "Each child in a list should have a
+              // unique key prop" and names this section.
               <form method="get" className="mb-4 flex max-w-md items-center gap-2">
-                <div className="relative flex-1">
+                <div key="search-field" className="relative flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
                   <Input
                     name="search"
@@ -90,7 +97,7 @@ export default async function EmployeesPage({
                     className="pl-9 pr-3"
                   />
                 </div>
-                <Button type="submit" variant="secondary">
+                <Button key="search-submit" type="submit" variant="secondary">
                   Search
                 </Button>
               </form>

@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
@@ -18,6 +18,13 @@ import { Button } from "@/components/ui/button";
 /** Query key for the delegation overlay. Distinct from the `?state` list filter. */
 export const DELEGATION_PARAM = "delegation";
 
+/** One entry in the state tab bar. The page owns every href. */
+export interface DelegationStateTab {
+  label: string;
+  href: string;
+  current: boolean;
+}
+
 export interface DelegationsSectionProps {
   delegations: Delegation[];
   /** Every employee, not one page: both pickers must offer the whole staff. */
@@ -27,8 +34,15 @@ export interface DelegationsSectionProps {
    * the filter keeps out of the table.
    */
   stateFilter: string;
-  /** The state tab bar, passed in as a slot because the page owns the URLs. */
-  filter?: ReactNode;
+  /**
+   * The state tab bar.
+   *
+   * Plain data rather than a JSX slot for the same reason as `TeamsSection`:
+   * markup authored in the page's server component and rendered inside this
+   * client component crosses the RSC boundary, where React stops recognising
+   * statically written siblings and warns that each child needs a key.
+   */
+  tabs?: DelegationStateTab[];
   heading: string;
   /** Where "Show all states" goes, as a plain href across the RSC boundary. */
   clearFiltersHref?: string;
@@ -57,7 +71,7 @@ export function DelegationsSection({
   delegations,
   employees,
   stateFilter,
-  filter,
+  tabs = [],
   heading,
   clearFiltersHref,
   error,
@@ -92,7 +106,24 @@ export function DelegationsSection({
         </Button>
       </div>
 
-      {filter}
+      {tabs.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-border-default bg-surface-card p-1 shadow-subtle">
+          {tabs.map((tab) => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={tab.current ? "page" : undefined}
+              className={
+                tab.current
+                  ? "rounded-md bg-brand-primary px-4 py-1.5 text-sm font-medium text-brand-primary-foreground"
+                  : "rounded-md px-4 py-1.5 text-sm font-medium text-text-secondary hover:text-text-primary"
+              }
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {createdHidden && (
         <Alert tone="info" className="mb-4 flex-col items-start">

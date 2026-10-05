@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApproverRole } from "@/lib/approver-roles";
@@ -159,6 +159,51 @@ describe("TeamsSection — wave 2", () => {
         .getByRole("link", { name: /Bunda College Faculty/ })
         .getAttribute("href"),
     ).toBe("/dashboard/hr-admin/teams/4");
+  });
+
+  it("renders the retired/in-force toggle from the page's filters data", () => {
+    // The toggle arrives as data rather than as a JSX slot. Markup authored in
+    // the page's server component and rendered inside this client component
+    // crosses the RSC boundary, where React stops recognising statically written
+    // siblings and warns that each child in the list needs a key. The page
+    // still owns every href and decides which tab is current.
+    renderSection({
+      filters: [
+        {
+          label: "In force and draft",
+          href: "/dashboard/hr-admin/teams",
+          current: false,
+        },
+        {
+          label: "Including retired",
+          href: "/dashboard/hr-admin/teams?retired=1",
+          current: true,
+        },
+      ],
+    });
+
+    const links = within(
+      screen.getByRole("group", { name: /Filter teams by status/ }),
+    ).getAllByRole("link");
+
+    expect(links.map((link) => link.textContent)).toEqual([
+      "In force and draft",
+      "Including retired",
+    ]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/dashboard/hr-admin/teams",
+      "/dashboard/hr-admin/teams?retired=1",
+    ]);
+    expect(links[0]).not.toHaveAttribute("aria-current");
+    expect(links[1]).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders no toggle at all when the page sends no filters", () => {
+    renderSection();
+
+    expect(
+      screen.queryByRole("group", { name: /Filter teams by status/ }),
+    ).toBeNull();
   });
 
   it("keeps the retired filter when opening the create form", () => {
