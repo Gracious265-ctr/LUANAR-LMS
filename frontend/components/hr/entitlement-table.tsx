@@ -59,7 +59,7 @@ export function EntitlementTable({
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">{rule.days} days</td>
                 <td className="py-3 pr-4 text-text-secondary">
-                  {rule.leave_type_name || "Annual (untyped)"}
+                  {rule.leave_type_name || "Annual leave"}
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">
                   {rule.effective_from}

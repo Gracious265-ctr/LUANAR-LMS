@@ -21,6 +21,22 @@ export interface LeaveTypeListResponse {
   results: LeaveType[];
 }
 
+/** Codes the canonical annual leave type is found under, matching the backend. */
+export const ANNUAL_LEAVE_CODES = ["annual", "annual-leave"];
+
+/**
+ * Whether a leave type is the canonical annual leave type, which an entitlement
+ * provisions and which is therefore not editable from Leave Types.
+ *
+ * Kept in step with `leave.services.find_annual_leave_type`: both codes are
+ * recognised because a database written before the canonical code existed holds
+ * annual leave under whichever one it was given.
+ */
+export function isAnnualLeaveType(leaveType: Pick<LeaveType, "code"> | null | undefined): boolean {
+  if (!leaveType?.code) return false;
+  return ANNUAL_LEAVE_CODES.includes(leaveType.code.trim().toLowerCase());
+}
+
 export interface LeaveRule {
   id: number;
   leave_type: number;

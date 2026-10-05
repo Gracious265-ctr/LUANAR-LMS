@@ -5,12 +5,45 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
+import { isAnnualLeaveType } from "@/lib/leave-rules";
 import { createLeaveType, updateLeaveType } from "@/lib/leave-rules-client";
 
 export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Annual leave is provisioned by saving an entitlement, so this form has
+  // nothing to submit for it. The backend refuses the write as well; this is the
+  // surface telling HR where the number actually lives.
+  if (leaveType && isAnnualLeaveType(leaveType)) {
+    return (
+      <div className="rounded-lg border border-border-default bg-surface-muted p-6">
+        <h2 className="text-base font-medium text-text-primary">
+          {leaveType.name} is managed in Entitlements
+        </h2>
+        <p className="mt-2 text-sm text-text-secondary">
+          Annual leave is created for you the first time you add an entitlement, and
+          it cannot be created or edited here. Change how many days a grade range
+          receives by editing its entitlement.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          <Link
+            href="/dashboard/hr-admin/entitlements"
+            className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
+          >
+            Go to Entitlements
+          </Link>
+          <Link
+            href="/dashboard/hr-admin/leave-types"
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Back to Leave Types
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +106,8 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
         <p className="mt-1 text-xs text-text-muted">
-          Short slug used to identify this type. Leave blank to derive it from the name.
+          Short slug used to identify this type. Leave blank to derive it from the
+          name. <code>annual</code> is reserved for annual leave.
         </p>
       </div>
 

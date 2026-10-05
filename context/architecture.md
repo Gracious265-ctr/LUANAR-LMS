@@ -444,6 +444,12 @@ Examples include:
 
 Configuration changes must have an effective date where historical behavior could otherwise be affected.
 
+One configuration row is owned rather than curated: annual leave and its starting rule
+are created on demand when HR saves a grade entitlement, rather than seeded or entered
+by hand in Leave Types. The annual leave type is therefore read-only there and its rule
+is edited under Leave Rules. See
+`context/specs/31-entitlement-linked-leave-type-availability-spec.md`.
+
 ---
 
 ## 11. Historical Integrity

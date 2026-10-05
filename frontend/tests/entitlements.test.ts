@@ -5,7 +5,24 @@ import {
   expandGradeRange,
   gradeOptionsFromEntitlements,
 } from "@/lib/entitlements";
+import { isAnnualLeaveType } from "@/lib/leave-rules";
 import { currentDateIso } from "@/lib/utils";
+
+describe("isAnnualLeaveType", () => {
+  it("recognises either code the annual type is provisioned under", () => {
+    expect(isAnnualLeaveType({ code: "annual" })).toBe(true);
+    expect(isAnnualLeaveType({ code: "annual-leave" })).toBe(true);
+    expect(isAnnualLeaveType({ code: "Annual-Leave" })).toBe(true);
+  });
+
+  it("does not claim any other leave type", () => {
+    expect(isAnnualLeaveType({ code: "maternity" })).toBe(false);
+    expect(isAnnualLeaveType({ code: "study" })).toBe(false);
+    expect(isAnnualLeaveType({ code: "anniversary" })).toBe(false);
+    expect(isAnnualLeaveType(null)).toBe(false);
+    expect(isAnnualLeaveType(undefined)).toBe(false);
+  });
+});
 
 describe("currentDateIso", () => {
   it("formats the date in the app time zone, not UTC", () => {

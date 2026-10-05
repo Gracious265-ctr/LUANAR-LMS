@@ -171,12 +171,17 @@ def leave_types_available_to(
 
 
 ANNUAL_LEAVE_CODE = "annual"
+#: Every code :func:`find_annual_leave_type` treats as the canonical annual
+#: type. Held as a constant because the write guard (:func:`is_annual_leave_identity`)
+#: and the read lookup must recognise the same rows; a second hand-written copy
+#: of this list is how a second "Annual Leave" gets created.
+ANNUAL_LEAVE_CODES = frozenset({ANNUAL_LEAVE_CODE, f"{ANNUAL_LEAVE_CODE}-leave"})
 ANNUAL_LEAVE_NAME = "Annual Leave"
 
 
 def find_annual_leave_type() -> LeaveType | None:
     """Read-only lookup of the canonical annual type. Never writes."""
-    for code in (ANNUAL_LEAVE_CODE, f"{ANNUAL_LEAVE_CODE}-leave"):
+    for code in sorted(ANNUAL_LEAVE_CODES):
         try:
             return LeaveType.objects.get(code=code)
         except LeaveType.DoesNotExist:
@@ -185,6 +190,41 @@ def find_annual_leave_type() -> LeaveType | None:
         return LeaveType.objects.get(name__iexact=ANNUAL_LEAVE_NAME)
     except LeaveType.DoesNotExist:
         return None
+
+
+def is_annual_leave_type(leave_type: LeaveType | None) -> bool:
+    """Whether ``leave_type`` is the canonical annual type.
+
+    Resolved through :func:`find_annual_leave_type` rather than comparing codes
+    at each call site, so a database that already holds an annual type under
+    either recognised code is honoured instead of being told it has none.
+    """
+    if leave_type is None:
+        return False
+    annual = find_annual_leave_type()
+    return annual is not None and annual.pk == leave_type.pk
+
+
+def is_annual_leave_identity(name: object, code: object) -> bool:
+    """Whether a name/code pair would claim the canonical annual type.
+
+    The write-side twin of :func:`is_annual_leave_type`, and the reason it
+    exists: a leave type becomes canonical the moment it is saved, so the guard
+    has to answer the question *before* there is a row to compare against.
+    ``code`` is the effective code (already slugified, or derived from the name),
+    which is the value ``LeaveType.save`` would store.
+
+    Both halves of the lookup are checked because ``LeaveType.save`` slugifies
+    the name into the code: "Annual Leave" arrives as code ``annual-leave``, so a
+    name-only check would wave it through.
+    """
+    normalized_code = normalize_leave_code(code if isinstance(code, str) else "")
+    if normalized_code is not None and normalized_code in ANNUAL_LEAVE_CODES:
+        return True
+    normalized_name = name.strip() if isinstance(name, str) else ""
+    return bool(normalized_name) and normalized_name.casefold() == (
+        ANNUAL_LEAVE_NAME.casefold()
+    )
 
 
 def get_or_create_annual_leave_type() -> tuple[LeaveType, bool]:
@@ -218,6 +258,83 @@ def ensure_annual_leave_rule(
         consumes_annual_entitlement=True,
         effective_from=effective_from,
     )
+
+
+def provision_annual_leave(
+    *, effective_from: date, days: int, actor=None
+) -> LeaveType:
+    """Adopt-or-create annual leave and guarantee it has a rule. Returns the type.
+
+    The single authoritative implementation of annual-leave provisioning. An
+    entitlement *is* an annual-leave entitlement, so this is what runs when HR
+    saves one: the leave type and its first :class:`LeaveRule` come into being
+    here and nowhere else, which is why the leave-type form cannot create or
+    rename them (see :class:`~leave.serializers.LeaveTypeSerializer`).
+
+    The rule is what makes annual leave visible in HR's Leave Rules table and
+    what gives the employee catalog a duration to show, so provisioning the type
+    without it would leave a granted entitlement invisible in both places. Only
+    the first rule is created: later bands adjust the entitlement's ``days``,
+    and the type's policy is effective-dated configuration HR edits under Leave
+    Rules.
+
+    Idempotent, so the second band of a grade range costs one existence check.
+    Each row written here is audited, because an entitlement's real effect on
+    configuration is larger than the band row the admin table shows.
+    """
+    from audit.models import AuditEntry
+    from audit.services import record_audit
+
+    annual, created = get_or_create_annual_leave_type()
+    if created:
+        record_audit(
+            actor=actor,
+            target_type=AuditEntry.TargetType.LEAVE_TYPE,
+            target_id=annual.pk,
+            action=AuditEntry.Action.CREATED,
+            target_summary=str(annual),
+            detail={
+                "summary": (
+                    f"Created leave type {annual.name} ({annual.code}) for the "
+                    "annual leave entitlement"
+                ),
+                "before": None,
+                "after": {
+                    "name": annual.name,
+                    "code": annual.code,
+                    "is_active": annual.is_active,
+                },
+            },
+        )
+
+    rule = ensure_annual_leave_rule(annual, effective_from, days)
+    if rule is not None:
+        record_audit(
+            actor=actor,
+            target_type=AuditEntry.TargetType.LEAVE_RULE,
+            target_id=rule.pk,
+            action=AuditEntry.Action.CREATED,
+            target_summary=str(rule),
+            detail={
+                "summary": f"Created the default leave rule for {annual.name}",
+                "before": None,
+                "after": {
+                    "leave_type": annual.pk,
+                    "max_duration_days": rule.max_duration_days,
+                    "eligibility": rule.eligibility,
+                    "eligibility_rules": rule.eligibility_rules,
+                    "min_notice_days": rule.min_notice_days,
+                    "requires_supporting_document": (
+                        rule.requires_supporting_document
+                    ),
+                    "consumes_annual_entitlement": (
+                        rule.consumes_annual_entitlement
+                    ),
+                    "effective_from": rule.effective_from.isoformat(),
+                },
+            },
+        )
+    return annual
 
 
 def normalize_leave_code(value: str) -> str | None:

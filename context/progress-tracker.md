@@ -4,6 +4,10 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Unit 31 — annual leave is provisioned by entitlements** — implementing on
+  `feature/updated-hr-track`; see "Unit 31 — Annual leave is owned by the
+  entitlement form" at the end of this file. Saving an entitlement creates annual
+  leave and its starting rule, and annual leave is read-only in Leave Types.
 - **Team Management (Units 1–10) COMPLETE** — backend, frontend, and docs; see
   "Completed — Team Management (Units 1–10)" at the end of this file. Team
   lifecycle is one authoritative field, membership is effective-dated, and a
@@ -2844,3 +2848,65 @@ endpoint against `config/urls.py`.
 D3 in the spec is the one that addresses how this got here: findings are recorded
 whether or not they are fixed, so a deferred item stays visible. The four defects
 Unit 24 deferred as "out of scope (D10)" were named in prose and never revisited.
+
+## Unit 31 — Annual leave is owned by the entitlement form (implemented 2026-10-05)
+
+Spec `context/specs/31-entitlement-linked-leave-type-availability-spec.md`, branch
+`feature/updated-hr-track`. The defect this fixes is one of sequence, not of data:
+Unit 31's own D1 said HR picks a leave type while configuring an entitlement and that
+**no `LeaveType` row is ever created**. So HR configured a band of annual-leave days
+and then had to go to a *different* form to create "Annual Leave" before any employee
+could select it. The two halves of the original request were both implemented and still
+did not connect, because the join depended on a manual step in between.
+
+**Annual leave is now provisioned by saving an entitlement.** `provision_annual_leave`
+is idempotent, shared by the API and the Django admin, and creates the `LeaveType` plus
+a balance-deducting `LeaveRule` capped at the band's days, auditing each row it creates.
+`GradeEntitlementSerializer.leave_type` is now **read-only** and `EntitlementInput` no
+longer carries it, so a client cannot ask for a different type and get one. The admin
+form disables the field and `save_model` provisions inside the save's transaction, so a
+half-provisioned band is never committed.
+
+**Leave Types refuses annual leave on both write paths.** The API refuses to create any
+type that would claim the annual identity and refuses to edit the canonical type on
+**any** field — including `is_active`, which looks like an ordinary flag and retires
+annual leave into an empty dropdown for every employee. `LeaveTypeAdminForm` applies
+the same two guards. Other leave types stay fully editable, and the annual *rule* stays
+editable under Leave Rules, which is where the day cap and balance behaviour belong.
+
+**One thing deliberately not blocked.** `has_add_permission` was first made to return
+`False` for the whole admin, on the reading that Leave Types should not create anything.
+That was over-reach: maternity, paternity and compassionate leave still have to come
+from somewhere, and removing every add left HR no way to create them at all. Reverted to
+a form guard that refuses only the annual identity.
+
+Canonical annual identity is matched through `find_annual_leave_type`, honouring code
+`annual`, code `annual-leave`, and a case-insensitive `Annual Leave` name — a database
+written before the canonical code existed holds annual leave under whichever one it was
+given, and the previous commits on this branch had also drifted between `annual` and
+`annual-leave`, so the guard had to accept both rather than pick one.
+
+**Frontend.** The entitlement form drops its leave-type dropdown and its
+`listLeaveTypes` fetch entirely and now says the band grants Annual Leave, linking to
+Leave Rules. `leave-type-form` renders annual leave as a read-only panel pointing at
+Entitlements. `leave-type-table` shows "Managed in Entitlements" and an "Edit days"
+link on the annual row while other rows keep their edit action. `isAnnualLeaveType` in
+`lib/leave-rules.ts` mirrors the backend's two-code rule.
+
+The **empty-state copy and the entitlement table's fallback label** both said annual
+leave is something HR adds, which is now wrong; the fallback reads "Annual leave"
+rather than "Annual (untyped)".
+
+**Tests.** One backend test, `test_hr_can_patch_leave_type`, patched *annual* leave and
+asserted 200 — it was asserting the exact behaviour being removed, so it was rewritten
+against maternity and the annual cases were added alongside it. A new
+`LeaveTypeAdminFormTests` class covers the admin guards in both directions.
+`tests/entitlement-form.test.tsx` is new and pins that no `leave_type` is sent.
+`test_admin_save_provisions_annual_leave` had to build its own HR user: the admin test
+class has no `hr_user` fixture.
+
+Verified: backend full suite **1192 tests OK** (was 1192, net 0 — 21 added, 4 obsolete
+annual-patch expectations replaced); `leave` alone 174 OK; frontend **67 files / 462
+tests OK** (was 66/451); `tsc --noEmit` and `tsc -p tsconfig.test.json` clean;
+`eslint` clean on every touched file; `manage.py check` and `makemigrations --check`
+clean — no schema change.

@@ -1,13 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { apiErrorMessage } from "@/lib/utils";
-import { listLeaveTypes } from "@/lib/leave-types-client";
-import type { LeaveTypeListResponse } from "@/lib/leave-rules";
 
 export function EntitlementForm({
   entitlement,
@@ -21,14 +19,6 @@ export function EntitlementForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeListResponse | null>(null);
-  const [ltError, setLtError] = useState("");
-
-  useEffect(() => {
-    listLeaveTypes()
-      .then((data) => setLeaveTypes(data))
-      .catch(() => setLtError("Unable to load leave types. Please try again."));
-  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,18 +26,18 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const leaveTypeValue = formData.get("leave_type");
 
     try {
       const response = await fetch(endpoint, {
         method,
         headers: { "Content-Type": "application/json" },
+        // No leave_type: an entitlement always grants annual leave, and the
+        // server provisions the type and its starting rule on save.
         body: JSON.stringify({
           grade_start: formData.get("grade_start"),
           grade_end: formData.get("grade_end"),
           days: Number(formData.get("days")),
           effective_from: formData.get("effective_from"),
-          leave_type: leaveTypeValue && leaveTypeValue !== "" ? Number(leaveTypeValue) : null,
         }),
       });
 
@@ -122,35 +112,6 @@ export function EntitlementForm({
 
       <div>
         <label
-          htmlFor="leave_type"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Leave type
-        </label>
-        <select
-          id="leave_type"
-          name="leave_type"
-          defaultValue={entitlement?.leave_type ? String(entitlement.leave_type) : ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {(leaveTypes?.results || [])
-            .filter((lt) => lt.code === "annual")
-            .map((lt) => (
-              <option key={lt.id} value={lt.id}>
-                {lt.name}
-              </option>
-            ))}
-        </select>
-        {ltError && (
-          <p className="mt-1 text-xs text-status-rejected">{ltError}</p>
-        )}
-        <p className="mt-1 text-xs text-text-muted">
-          Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Rules.
-        </p>
-      </div>
-
-      <div>
-        <label
           htmlFor="effective_from"
           className="mb-1 block text-sm font-medium text-text-primary"
         >
@@ -165,6 +126,20 @@ export function EntitlementForm({
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
       </div>
+
+      <p className="text-xs text-text-muted md:col-span-2">
+        This band grants <strong>Annual Leave</strong>, which is created for you the
+        first time you save an entitlement and then appears in every employee&apos;s
+        leave-type selection for their grade. Its defaults (the day cap, whether it
+        deducts the balance) are editable under{" "}
+        <Link
+          href="/dashboard/hr-admin/leave-types"
+          className="underline underline-offset-2 hover:text-text-primary"
+        >
+          Leave Rules
+        </Link>
+        .
+      </p>
 
       {error && (
         <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
