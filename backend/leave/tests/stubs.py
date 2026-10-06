@@ -450,9 +450,10 @@ class StubProviderMixin:
     """TestCase mixin that installs a stub provider + fixed ``today``.
 
     Call ``use_stub()`` at the start of a test (or in ``setUp``); it patches the
-    two ``get_provider`` import sites and ``get_today`` for the duration of the
-    test and returns the :class:`StubRulesProvider`. A stub workflow provider
-    is attached as ``stub.workflow`` and installed for ``assign_workflow``.
+    two ``get_provider`` import sites, the validation clock and Unit 18's own
+    cancellation clock for the duration of the test and returns the
+    :class:`StubRulesProvider`. A stub workflow provider is attached as
+    ``stub.workflow`` and installed for ``assign_workflow``.
     """
 
     def use_stub(self, stub=None, today=TODAY) -> StubRulesProvider:
@@ -462,6 +463,10 @@ class StubProviderMixin:
             mock.patch("leave.validation.pipeline.get_provider", return_value=stub),
             mock.patch("leave.validation.pipeline.get_today", return_value=today),
             mock.patch("leave.providers.get_provider", return_value=stub),
+            # Unit 18 keeps its own clock seam and the HTTP views never pass a
+            # ``today``, so without these two the suite reads the wall clock.
+            mock.patch("leave.cancellations.services.get_today", return_value=today),
+            mock.patch("leave.cancellations.providers.get_today", return_value=today),
             mock.patch(
                 "workflows.providers.get_workflow_provider",
                 return_value=stub.workflow,
