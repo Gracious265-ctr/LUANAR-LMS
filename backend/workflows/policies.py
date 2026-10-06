@@ -252,16 +252,31 @@ def get_leave_history_scope(
 
 
 def _same_profile_field(employee, approver, field: str) -> bool:
+    """Whether two profiles carry the same value for one field.
+
+    Comparison has to be type-aware because ``department`` and ``faculty`` are
+    not the same kind of thing. ``department`` became a reference row in
+    8d472b3 (from ``CharField`` to ``ForeignKey``) while this comparison still
+    stringified whatever it was handed, so a non-empty department raised
+    ``AttributeError: 'Department' object has no attribute 'strip'`` and took
+    the whole review payload down with it — a 500 on the approval page. Two
+    departments are the same when they are the same row.
+
+    ``faculty`` is still free text and keeps its normalisation. Blank and
+    absent values stay unequal, so two people who have recorded nothing do not
+    thereby match: a comparison that widens an approver's history because a
+    field was left empty is the wrong direction to fail in.
+    """
     if employee is None or approver is None:
         return False
-    employee_value = _profile_value(employee, field)
-    approver_value = _profile_value(approver, field)
-    return employee_value and employee_value == approver_value
-
-
-def _profile_value(profile, field: str) -> str:
-    value = getattr(profile, field, "")
-    return (value or "").strip().lower()
+    employee_value = getattr(employee, field, None)
+    approver_value = getattr(approver, field, None)
+    if not employee_value or not approver_value:
+        return False
+    if hasattr(employee_value, "pk") and hasattr(approver_value, "pk"):
+        return employee_value.pk == approver_value.pk
+    return (str(employee_value).strip().lower()
+            == str(approver_value).strip().lower())
 
 
 def _decided_this_cycle(user, application) -> bool:

@@ -685,7 +685,12 @@ class StageRoutingTests(PlanServiceBase):
         # stage still reads correctly after HR edits the role.
         self.assertEqual(
             [s.history_scope for s in stages],
-            ["all", "same_department", "current_financial_year", "current_financial_year"],
+            [
+                "same_department",
+                "same_department",
+                "current_financial_year",
+                "current_financial_year",
+            ],
         )
         self.assertTrue(stages[-1].is_final)
         self.assertFalse(any(s.is_final for s in stages[:-1]))
@@ -1008,7 +1013,7 @@ class PlanAPITests(PlanServiceBase):
         self.assertIsNotNone(stages[0]["section_ref_id"])
         self.assertIsNotNone(stages[0]["role_ref_id"])
         self.assertEqual(stages[0]["role"], "supervisor")
-        self.assertEqual(stages[0]["history_scope"], "all")
+        self.assertEqual(stages[0]["history_scope"], "same_department")
 
     def test_approval_queue_requires_an_approver(self):
         self.force(self.employee)

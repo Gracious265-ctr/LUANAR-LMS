@@ -59,12 +59,14 @@ def department_for(name: str | None) -> Department | None:
         return None
     return Department.objects.get_or_create(name=name)[0]
 
-# The six shipped roles, with the behaviour each one carries. Mirrors the seed and
-# migration 0011; kept here as data so a test can assert on exact values.
+# The six shipped roles, with the behaviour each one carries. Kept here as data
+# so a test can assert on exact values; mirrors the seed, not migration 0011 —
+# that migration is history and still carries `all` for supervisor, which HR
+# narrowed to `same_department` on 2026-10-05 (audit entry 156).
 ROLE_SPECS = {
     "supervisor": {
         "label": "Supervisor",
-        "history_scope": ApproverRole.HistoryScope.ALL,
+        "history_scope": ApproverRole.HistoryScope.SAME_DEPARTMENT,
         "handles_cancellation": True,
         "is_institution_wide": False,
     },

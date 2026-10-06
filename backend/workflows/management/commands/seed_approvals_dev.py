@@ -60,16 +60,19 @@ from users.models import Department, EmployeeProfile, User
 FIYEAR_PREFIX = "800"
 DEV_PASSWORD = "testpass123"
 
-# The shipped approver roles. Mirrors what migration 0011 backfills, so a
-# database that has been migrated and one that has only been seeded end up with
-# the same six roles. `update_or_create` on `code` keeps the two in step.
+# The shipped approver roles. `update_or_create` on `code` restores the shipped
+# configuration on every run, so an admin's ad-hoc edit in development cannot
+# quietly diverge from what we ship. Migration 0011 backfilled the original six
+# and is history rather than a source of truth: it still carries `all` for
+# supervisor, which HR narrowed to `same_department` on 2026-10-05 (audit entry
+# 156).
 SEED_ROLES = [
     # code, label, description, history_scope, handles_cancellation, wide
     {
         "code": "supervisor",
         "label": "Supervisor",
         "description": "Line manager of the applicant.",
-        "history_scope": "all",
+        "history_scope": "same_department",
         "handles_cancellation": True,
         "is_institution_wide": False,
     },
