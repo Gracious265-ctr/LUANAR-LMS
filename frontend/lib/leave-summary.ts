@@ -20,11 +20,20 @@ export interface LeaveSummaryFinancialYear {
   end: string;
 }
 
+export interface LeaveSummaryUpcomingLeave {
+  days: number;
+  applications: number;
+}
+
 export interface LeaveSummary {
   profile: LeaveSummaryProfile | null;
   entitlement: LeaveSummaryEntitlement | null;
   financial_year: LeaveSummaryFinancialYear | null;
   available_balance: string | null;
+  /** Applications still waiting on someone: submitted or returned for correction. */
+  pending_applications: number;
+  /** Approved leave starting within the backend's upcoming window. */
+  upcoming_leave: LeaveSummaryUpcomingLeave | null;
 }
 
 export async function getLeaveSummary(): Promise<LeaveSummary | null> {

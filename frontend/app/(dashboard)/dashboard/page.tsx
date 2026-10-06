@@ -30,6 +30,10 @@ export default async function DashboardPage() {
   const balance = summary?.available_balance ?? null;
   const fiscalPeriod = summary?.financial_year?.label;
   const profile = summary?.profile;
+  // Applicant-side, unlike ``pendingApprovals`` above: this is what the signed-in
+  // person has sent, that is what they are being asked to decide.
+  const pendingApplications = summary?.pending_applications ?? 0;
+  const upcomingDays = summary?.upcoming_leave?.days ?? 0;
 
   return (
     <FadeIn>
@@ -66,7 +70,7 @@ export default async function DashboardPage() {
           <StaggerItem>
             <StatCard
               title="Pending Applications"
-              value="0"
+              value={String(pendingApplications)}
               subtitle="awaiting review"
               icon={<Clock className="w-5 h-5" />}
               variant="pending"
@@ -86,7 +90,7 @@ export default async function DashboardPage() {
           <StaggerItem>
             <StatCard
               title="Upcoming Leave"
-              value="0"
+              value={String(upcomingDays)}
               subtitle="days scheduled"
               icon={<FileText className="w-5 h-5" />}
               variant="secondary"
