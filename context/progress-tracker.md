@@ -1041,8 +1041,10 @@ No pushes; all 7 commits remain on `feature/hr-track` for a later merge.
   The default `LEAVE_RULES_PROVIDER` is now `DatabaseRulesProvider`; the
   dashboard's hard-coded `"21"` balance is replaced by the live summary
   endpoint. Two gotchas worth flagging: (1) the DB-backed `get_employee_for_user`
-  treats a blank grade or missing `appointment_date` as "no employee" (matches
-  the precondition `EMPLOYEE_PROFILE_MISSING`), and `department_id` stays
+  treats a blank grade as "no employee" (the precondition
+  `EMPLOYEE_PROFILE_MISSING`), while a missing `appointment_date` maps through
+  as `None` so the rule that needs it reports `ELIGIBILITY_DATA_MISSING`
+  instead; `department_id` stays
   `None` because `EmployeeProfile.department` is free text; (2) `seed_dev_users`
   LeaveRule seeding switched from `get_or_create` to `update_or_create` so
   databases seeded before Unit 20 pick up `gender`/`eligibility_rules`

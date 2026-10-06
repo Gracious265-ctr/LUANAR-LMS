@@ -42,7 +42,7 @@ class FixtureRulesProvider:
         if appointment is None and row:
             appointment = row["appointment_date"]
 
-        if not grade or not appointment:
+        if not grade:
             return None
 
         category = None

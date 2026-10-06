@@ -114,7 +114,7 @@ class DatabaseRulesProvider:
             return None
 
         grade = (profile.grade or "").strip().upper()
-        if not grade or not profile.appointment_date:
+        if not grade:
             return None
 
         return EmployeeInfo(

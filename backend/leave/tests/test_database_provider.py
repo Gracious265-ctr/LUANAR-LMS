@@ -73,10 +73,15 @@ class GetEmployeeForUserTests(ProviderSetupMixin, TestCase):
         self.profile.save()
         self.assertIsNone(self.provider.get_employee_for_user(self.user))
 
-    def test_missing_appointment_date_returns_none(self):
+    def test_missing_appointment_date_maps_to_none(self):
+        # The column is nullable, so a profile without one is still a profile:
+        # returning None here would make submission claim no profile exists.
         self.profile.appointment_date = None
         self.profile.save()
-        self.assertIsNone(self.provider.get_employee_for_user(self.user))
+        info = self.provider.get_employee_for_user(self.user)
+
+        self.assertIsNotNone(info)
+        self.assertIsNone(info.appointment_date)
 
 
 class GetLeaveTypeRulesTests(ProviderSetupMixin, TestCase):

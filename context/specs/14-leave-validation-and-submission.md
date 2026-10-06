@@ -156,7 +156,7 @@ class EmployeeInfo:
     id: int
     user_id: int
     grade: str                     # letter, "A".."U"
-    appointment_date: date
+    appointment_date: date | None  # None = not recorded; the rule that needs it reports ELIGIBILITY_DATA_MISSING
     category: str | None
     department_id: int | None
     gender: str | None             # optional; None means not recorded

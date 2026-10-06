@@ -50,7 +50,7 @@ is the Unit 21 boundary (Workflow-to-Approver Integration).
 
 All five protocol methods, real tables, no fixture imports, `select_related`/filters to avoid N+1:
 
-- `get_employee_for_user(user)`: `EmployeeProfile` via `user.employee_profile`; requires non-blank `grade` and `appointment_date` (else `None`, per contract); `category` (or `None`), `department_id=None` (department is a string, not a FK — documented), `gender` from the new column. Blocker statuses: none evaluated (D2).
+- `get_employee_for_user(user)`: `EmployeeProfile` via `user.employee_profile`; requires non-blank `grade` (else `None`, per contract); `appointment_date` maps through as `date | None` because the column is nullable — a profile that exists without one is still an employee, and the run reports `ELIGIBILITY_DATA_MISSING` on the rule that needs it rather than `EMPLOYEE_PROFILE_MISSING`, which would deny the profile exists. `category` (or `None`), `department_id=None` (department is a string, not a FK — documented), `gender` from the new column. Blocker statuses: none evaluated (D2).
 - `get_leave_type_rules(leave_type_id, as_of)`: effective `LeaveRule` via `resolve_leave_rule`; `None` if absent (D9). Units by code (D4). `eligibility` tuple from `eligibility_rules`. `effective_from` = rule's date.
 - `get_financial_year_for(d)`: `financial_year_for_date(d)` mapped to the dataclass with `label` from D6.
 - `get_public_holidays(start, end)`: `public_holidays_between` → `{date: name}`.
