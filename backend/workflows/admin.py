@@ -388,15 +388,16 @@ class SectionMemberAdmin(admin.ModelAdmin):
 
 @admin.register(RoleAssignment)
 class RoleAssignmentAdmin(admin.ModelAdmin):
-    """Institution-wide role holdings.
+    """Role holdings, scoped to a unit or to the institution.
 
-    Only roles flagged ``is_institution_wide`` may appear here; the API enforces
-    that, and the inline form filter keeps the admin honest without duplicating
-    the check.
+    Both scopes are editable here. A holding with no unit is the
+    institution-wide kind and only an ``is_institution_wide`` role may be given
+    one; a holding *with* a unit is how a role is held at one place in the tree,
+    and the model enforces that on the way in.
     """
 
-    list_display = ("user", "role", "created_at")
-    list_filter = ("role",)
+    list_display = ("user", "role", "org_unit", "created_at")
+    list_filter = ("role", "org_unit")
     search_fields = ("user__first_name", "user__last_name", "user__email", "role__label")
     raw_id_fields = ("user",)
 

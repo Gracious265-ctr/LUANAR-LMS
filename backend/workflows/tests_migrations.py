@@ -654,8 +654,28 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
         )
         return role.pk, user.pk
 
-    def _read(self):
-        from workflows.models import ApproverRole, RoleAssignment, Section  # noqa: PLC0415
+    def _read(self, target=None):
+        """Read the DVC's three facts through the models of the state being read.
+
+        Passing ``target`` reads through that state's historical models instead
+        of the live ones. That distinction is load-bearing: ``RoleAssignment``
+        gained an ``org_unit`` column after 0023, so querying the *current* model
+        while the database sits at 0022 asks for a column that does not exist
+        yet and fails with a driver error that says nothing about the migration
+        being tested. Reading through the historical models keeps the assertion
+        about the migration rather than about whichever schema happens to be
+        loaded.
+        """
+        if target is None:
+            from django.apps import apps as live_apps  # noqa: PLC0415
+
+            registry = live_apps
+        else:
+            registry = self.state(target)
+
+        ApproverRole = registry.get_model("workflows", "ApproverRole")
+        RoleAssignment = registry.get_model("workflows", "RoleAssignment")
+        Section = registry.get_model("workflows", "Section")
 
         role = ApproverRole.objects.get(code="dvc")
         return {
@@ -721,8 +741,9 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
         """Deleting the row would revoke a real approval right on rollback."""
         self._legacy_state()
         self.latest()
-        self.migrate(("workflows", "0022_team_workflow_optional"))
+        target = ("workflows", "0022_team_workflow_optional")
+        self.migrate(target)
 
-        result = self._read()
+        result = self._read(target)
         self.assertFalse(result["is_institution_wide"])
         self.assertEqual(result["holdings"], 1)

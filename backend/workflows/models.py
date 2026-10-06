@@ -191,6 +191,21 @@ class Team(models.Model):
             "the team is still a draft being configured."
         ),
     )
+    org_unit = models.OneToOneField(
+        "organization.OrgUnit",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="team",
+        help_text=(
+            "The place in the institutional tree this team occupies. Set only "
+            "while the tree is authoritative for this team: with it bound, the "
+            "approval chain is derived by climbing from the employee's home unit "
+            "instead of read off this team's workflow sections. Blank means the "
+            "hand-configured chain still routes, which is what every team "
+            "started as."
+        ),
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -346,11 +361,21 @@ class SectionMember(models.Model):
 
 
 class RoleAssignment(models.Model):
-    """An institution-wide holding of an :class:`ApproverRole`.
+    """A holding of an :class:`ApproverRole`, scoped to a unit or the institution.
 
-    Only roles with ``is_institution_wide = True`` can be assigned this way;
-    every other role is held through a :class:`TeamMember`, which is what makes
-    "who approves what" a property of the team rather than of the person.
+    Two scopes, because "who may approve what" stops being a property of the
+    team once the chain comes from the organizational tree:
+
+    * ``org_unit`` set — the role is held **at that unit**. A head holds "Head
+      of Department" at their department; the same person may hold a different
+      role at a different unit.
+    * ``org_unit`` null — the role is held **institution-wide** and may be
+      resolved as the fallback for any unit whose designated approver is
+      unavailable. Only roles with ``is_institution_wide = True`` qualify.
+
+    A role with neither scope is refused: a role nobody is recorded as holding
+    cannot be an escalation target, and letting the row exist would let the
+    tree silently fall back to it.
     """
 
     user = models.ForeignKey(
@@ -359,31 +384,60 @@ class RoleAssignment(models.Model):
     role = models.ForeignKey(
         ApproverRole, on_delete=models.PROTECT, related_name="role_assignments"
     )
+    org_unit = models.ForeignKey(
+        "organization.OrgUnit",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="role_holdings",
+        help_text=(
+            "The unit this role is held at. Blank means the role is held "
+            "institution-wide and may be resolved as any unit's fallback — "
+            "which only roles flagged institution-wide are allowed to do."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["role", "user"]
+        ordering = ["role", "user", "org_unit"]
         constraints = [
+            # ``nulls_distinct=False`` is load-bearing, not decoration. An
+            # institution-wide holding has ``org_unit_id IS NULL``, and
+            # PostgreSQL treats NULLs as distinct in a unique index, so without
+            # this two identical institution-wide holdings for one user and
+            # role would both be accepted -- the exact thing the pre-tree
+            # ``(user, role)`` constraint used to forbid. Scoping by unit must
+            # widen holdings, never quietly permit duplicates within a scope.
             models.UniqueConstraint(
-                fields=["user", "role"], name="roleassignment_user_role_unique"
+                fields=["user", "role", "org_unit"],
+                nulls_distinct=False,
+                name="roleassignment_user_role_unit_unique",
             ),
         ]
 
+    @property
+    def is_institution_wide(self) -> bool:
+        """Whether this holding is the institution-wide kind."""
+        return self.org_unit_id is None
+
     def __str__(self) -> str:
-        return f"{self.user.get_full_name()} — {self.role.label} (institution-wide)"
+        scope = "institution-wide" if self.org_unit_id is None else self.org_unit.name
+        return f"{self.user.get_full_name()} — {self.role.label} ({scope})"
 
     def clean(self) -> None:
-        """Reject a non-institution-wide role; point HR at team membership."""
+        """Reject a holding that has neither a unit nor institution-wide scope."""
         super().clean()
         if self.role_id is None:
+            return
+        if self.org_unit_id is not None:
             return
         if not self.role.is_institution_wide:
             raise ValidationError(
                 {
-                    "role": (
-                        f'"{self.role.label}" is a team role, not an '
-                        "institution-wide role. Mark it institution-wide to assign "
-                        "it here, or add this person to the team that uses it."
+                    "org_unit": (
+                        f'"{self.role.label}" is neither an institution-wide role '
+                        "nor a team role. Give this holding a unit, or mark the "
+                        "role institution-wide to assign it here."
                     )
                 }
             )
@@ -825,6 +879,17 @@ class ApplicationStage(models.Model):
         default=1,
         help_text="Optimistic-lock counter, incremented on every decision.",
     )
+    last_reminder_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When a reminder was last sent for this pending stage. Null until "
+            "the first one goes out. Deduplication lives here rather than in a "
+            "separate reminder table because the question is only ever asked "
+            "about the single stage that is currently open, and a column cannot "
+            "drift out of step with the stage it describes."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -984,6 +1049,32 @@ class ApprovalDecision(models.Model):
     approver_name = models.CharField(
         max_length=150,
         help_text="Snapshot of the approver's full name at decision time.",
+    )
+    on_behalf_of = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approval_decisions_on_behalf",
+        help_text=(
+            "The approver this person was covering, snapshotted at decision "
+            "time. Null when the approver acted in their own right. Stored "
+            "rather than derived because 'acting for' is a fact about a moment "
+            "in the past: recomputing it at read time from today's active "
+            "delegations answers what is true now, not who decided then."
+        ),
+    )
+    acting_assignment = models.ForeignKey(
+        "organization.ActingAssignment",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approval_decisions",
+        help_text=(
+            "The organizational actancy this decision was made under, when it "
+            "was an actancy rather than a delegation. Points at the record so "
+            "an audit reader can see the reason and the dates as HR wrote them."
+        ),
     )
     role_label = models.CharField(
         max_length=80,

@@ -20,6 +20,15 @@ class LeaveType(models.Model):
             "it keep their type and its rules keep their history."
         ),
     )
+    requires_institutional_approval = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whether an application of this type must reach the institution even "
+            "when the applicant's own chain would stop earlier. Off by default: "
+            "a type that quietly required the registrar to sign off every "
+            "request would be discovered by an employee, not by HR."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]

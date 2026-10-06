@@ -59,6 +59,18 @@ class Department(models.Model):
     """
 
     name = models.CharField(max_length=200, unique=True)
+    org_unit = models.OneToOneField(
+        "organization.OrgUnit",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="department",
+        help_text=(
+            "The place in the institutional tree this department occupies. "
+            "Bound while the tree is authoritative; an employee with no team "
+            "escalates from here."
+        ),
+    )
     is_active = models.BooleanField(
         default=True,
         help_text=(

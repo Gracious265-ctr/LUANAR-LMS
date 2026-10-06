@@ -351,11 +351,9 @@ def is_approver_user(user) -> bool:
     The one and only definition of "is an approver", replacing every former
     role-name check. A person is an approver when they can act for at least one
     section whose :class:`~workflows.models.ApproverRole` is active, or when they
-    hold an institution-wide role:
-
-    * a :class:`~workflows.models.SectionMember` row, or
-    * a :class:`~workflows.models.RoleAssignment` row, for an
-      institution-wide role.
+    hold an :class:`~workflows.models.RoleAssignment` row at **either** scope — at
+    one organizational unit, or institution-wide. Holding a role at a unit is
+    exactly what being its designated approver means, so both scopes count here.
 
     Deactivating a role therefore retires the approver status it conferred, and
     ``User.role`` is irrelevant: it records system access, not a place in an
@@ -1642,7 +1640,9 @@ def role_usage_map(roles) -> dict[int, list[str]]:
         )
 
     holders = (
-        RoleAssignment.objects.filter(role_id__in=role_ids, user__is_active=True)
+        RoleAssignment.objects.filter(
+            role_id__in=role_ids, user__is_active=True, org_unit__isnull=True
+        )
         .select_related("user")
         .order_by("user_id")
     )
@@ -1844,7 +1844,7 @@ def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssi
                 "Activate the account before assigning a role.",
             )
         assignment, created = RoleAssignment.objects.get_or_create(
-            user=user, role=role
+            user=user, role=role, org_unit=None
         )
         if not created:
             raise RoleActionError(
@@ -2405,7 +2405,9 @@ def _appoint_institution_wide_holder(*, section: Section, actor=None) -> None:
     if not role.is_institution_wide:
         return
     holders = list(
-        RoleAssignment.objects.filter(role=role, user__is_active=True)
+        RoleAssignment.objects.filter(
+            role=role, user__is_active=True, org_unit__isnull=True
+        )
         .order_by("user_id")
         .select_related("user")
     )

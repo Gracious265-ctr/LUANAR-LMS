@@ -44,6 +44,19 @@ class AuditEntry(models.Model):
         CANCELLED = "cancelled", "Cancelled"
         REASSIGNED = "reassigned", "Reassigned"
         STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
+        ACTING_ASSIGNMENT_CREATED = (
+            "acting_assignment_created",
+            "Acting assignment created",
+        )
+        ACTING_ASSIGNMENT_ENDED = (
+            "acting_assignment_ended",
+            "Acting assignment ended",
+        )
+        ACTING_APPROVER_ADDED = (
+            "acting_approver_added",
+            "Acting approver added to a pending stage",
+        )
+        ORG_UNIT_MOVED = "org_unit_moved", "Organizational unit moved"
         SUBMITTED = "submitted", "Submitted"
         CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
@@ -87,6 +100,8 @@ class AuditEntry(models.Model):
         APPROVER_ROLE = "approver-role", "Approver role"
         CAMPUS = "campus", "Campus"
         DEPARTMENT = "department", "Department"
+        ORG_UNIT = "org-unit", "Organizational unit"
+        ACTING_ASSIGNMENT = "acting-assignment", "Acting assignment"
         TEAM = "team", "Team"
         EMPLOYEE = "employee", "Employee"
         APPLICATION = "application", "Application"

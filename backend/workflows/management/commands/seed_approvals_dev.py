@@ -529,7 +529,9 @@ class Command(BaseCommand):
         # makes the "section role with no member" case work in development.
         registrar_role = roles["registrar"]
         registrar = User.objects.get(username="registrar@test.luanar")
-        RoleAssignment.objects.get_or_create(user=registrar, role=registrar_role)
+        RoleAssignment.objects.get_or_create(
+            user=registrar, role=registrar_role, org_unit=None
+        )
 
         # The campus registrar is seeded as a holder too, but of no team: with
         # nothing pointing at a campus-specific chain it deliberately resolves to
@@ -537,6 +539,7 @@ class Command(BaseCommand):
         RoleAssignment.objects.get_or_create(
             user=User.objects.get(username="dvc@test.luanar"),
             role=roles["campus_registrar"],
+            org_unit=None,
         )
 
     def _place_people(self, roles: dict) -> None:

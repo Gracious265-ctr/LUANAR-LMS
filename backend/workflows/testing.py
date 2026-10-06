@@ -202,7 +202,7 @@ def make_approver(
     if institution_wide:
         role.is_institution_wide = True
         role.save(update_fields=["is_institution_wide"])
-        RoleAssignment.objects.get_or_create(user=user, role=role)
+        RoleAssignment.objects.get_or_create(user=user, role=role, org_unit=None)
     return user
 
 
@@ -418,7 +418,9 @@ def build_routing(
             user = make_approver(
                 role_code, roles=roles, institution_wide=True
             )
-        RoleAssignment.objects.get_or_create(user=user, role=roles[role_code])
+        RoleAssignment.objects.get_or_create(
+            user=user, role=roles[role_code], org_unit=None
+        )
 
     employee = employee or make_employee(employee_username)
     profile = EmployeeProfile.objects.filter(user=employee).first()
@@ -453,7 +455,7 @@ def grant_approver_role(user, role_code: str, *, institution_wide: bool = True):
         if not role.is_institution_wide:
             role.is_institution_wide = True
             role.save(update_fields=["is_institution_wide"])
-        RoleAssignment.objects.get_or_create(user=user, role=role)
+        RoleAssignment.objects.get_or_create(user=user, role=role, org_unit=None)
     return role
 
 

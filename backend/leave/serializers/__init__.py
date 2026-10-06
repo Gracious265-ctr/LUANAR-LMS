@@ -169,11 +169,17 @@ class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
 
     target_type = AuditEntry.TargetType.LEAVE_TYPE
-    audit_fields = ["name", "code", "is_active"]
+    audit_fields = ["name", "code", "is_active", "requires_institutional_approval"]
 
     class Meta:
         model = LeaveType
-        fields = ["id", "name", "code", "is_active"]
+        fields = [
+            "id",
+            "name",
+            "code",
+            "is_active",
+            "requires_institutional_approval",
+        ]
 
     def validate(self, attrs: dict) -> dict:
         name = self._value(attrs, "name")

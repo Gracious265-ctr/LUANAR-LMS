@@ -107,9 +107,17 @@ def _employee_team(application: Any):
 
 
 def _institution_wide_holder_ids(role: ApproverRole) -> list[int]:
-    """Active users holding ``role`` institution-wide, lowest id first."""
+    """Active users holding ``role`` institution-wide, lowest id first.
+
+    ``org_unit__isnull=True`` is load-bearing, not decoration: a role may now
+    also be held *at a unit*, and a unit-scoped holder is not a fallback for
+    everybody. Resolving a section through them would route another team's
+    application to somebody whose authority stops at one department.
+    """
     return list(
-        RoleAssignment.objects.filter(role=role, user__is_active=True)
+        RoleAssignment.objects.filter(
+            role=role, user__is_active=True, org_unit__isnull=True
+        )
         .order_by("user_id")
         .values_list("user_id", flat=True)
     )

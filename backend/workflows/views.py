@@ -560,7 +560,7 @@ class TeamViewSet(
             # step no department employee is allowed to fill.
             already_offered = {profile.user_id for profile in candidates}
             holder_ids = RoleAssignment.objects.filter(
-                role=role, user__is_active=True
+                role=role, user__is_active=True, org_unit__isnull=True
             ).values_list("user_id", flat=True)
             candidates.extend(
                 EmployeeProfile.objects.filter(
