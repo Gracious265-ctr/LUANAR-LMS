@@ -440,7 +440,7 @@ class DocumentValuesTests(TestCase):
         on an official document.
         """
         values = document_values(self.application)
-        for key in ("employee_grade", "designation", "department"):
+        for key in ("employee_grade", "designation", "team"):
             sample = next(f["sample"] for f in FIELD_CATALOG if f["key"] == key)
             self.assertTrue(sample, f"{key} should have a sample to leak")
             self.assertEqual(values[key], "")
@@ -458,7 +458,7 @@ class DocumentValuesTests(TestCase):
         values = document_values(self.application)
         self.assertEqual(values["employee_grade"], "")
         self.assertEqual(values["designation"], "")
-        self.assertEqual(values["department"], "")
+        self.assertEqual(values["team"], "")
 
 
 class RenderPdfTests(TestCase):

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
-import { isAnnualLeaveType } from "@/lib/leave-rules";
+import { isAnnualLeaveType } from "@/lib/leave-rules-pure";
 import { EditActionLink } from "./edit-action-link";
 
 export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {

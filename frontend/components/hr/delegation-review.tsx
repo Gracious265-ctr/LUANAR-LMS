@@ -52,7 +52,7 @@ export function DelegationReview({
     !readOnly &&
     (delegation.state === "scheduled" || delegation.state === "active");
   const delegates = approverRolePeople(employees).filter(
-    (employee) => employee.id !== delegation.approver
+    (employee) => employee.user_id !== delegation.approver
   );
 
   const period = delegation.ends_on
@@ -238,7 +238,7 @@ export function DelegationReview({
               >
                 <option value="">Select the delegate</option>
                 {delegates.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
+                  <option key={employee.id} value={employee.user_id}>
                     {employee.full_name}
                   </option>
                 ))}

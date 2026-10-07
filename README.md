@@ -78,9 +78,6 @@ uv sync
 # Run migrations
 uv run manage.py migrate
 
-# Seed development users
-uv run manage.py seed_dev_users
-
 # Start the Django development server
 uv run manage.py runserver
 ```
@@ -152,32 +149,12 @@ Without these the document pipeline cannot store anything: the render task
 records the failure on the document row and the UI reports that the document
 could not be generated. Everything else in the system works without them.
 
-## Development Users
+## First account
 
-The seed command creates one user per role with password `testpass123`:
-
-| Role | Email |
-|------|-------|
-| Employee | employee@test.luanar |
-| Supervisor | supervisor@test.luanar |
-| Head of Department | hod@test.luanar |
-| Dean | dean@test.luanar |
-| Registrar | registrar@test.luanar |
-| Deputy Vice-Chancellor | dvc@test.luanar |
-| Human Resources | hr@test.luanar |
-
-The accounts between Employee and HR all have `User.role=approver`: the name in
-the table is the *position* each person is expected to hold, not a system
-role. Which approval roles a person actually holds is recorded as
-`Section`/`RoleAssignment` rows, and that — not `User.role` — is what decides
-what each of them can approve. `seed_dev_users` deliberately creates none of
-that configuration: departments, approver roles, teams, chains, entitlements
-and leave types are HR data, created from the app or by your own fixtures.
-
-### Admin / Django-Q2 task inspection
-
-The seed command does not create a superuser. Create one to inspect the Django
-admin (including the Django-Q2 queue and task results), and to reach
+There is no seed command and no fixture users. A fresh database has the schema
+and **nothing else** — no approver roles, teams, campuses, workflows, leave
+types, or accounts. Create the bootstrap administrator to inspect the Django
+admin (including the Django-Q2 queue and task results) and to reach
 `/dashboard/admin/users`, where HR accounts are created:
 
 ```bash
@@ -189,9 +166,12 @@ uv run manage.py createsuperuser
 email and resolves it through the `username` column, so an account whose two
 disagree is created and then cannot log in.
 
-`createsuperuser` does not set `User.role`, which defaults to `employee`. Every
-`/dashboard/hr-admin/*` page redirects anyone whose role is not `hr`, including
-your superuser, so set it once:
+`createsuperuser` does not set `User.role`, which defaults to `employee`.
+The superuser is the bootstrap administrator outside the product's HR pages:
+they create the first HR account through `/dashboard/admin/users` (or
+`POST /api/v1/admin-users/`), and HR then creates roles, campuses, teams,
+workflows, and leave types through the frontend. If you also want the
+superuser to open HR screens directly, set the role once:
 
 ```bash
 uv run manage.py shell -c "

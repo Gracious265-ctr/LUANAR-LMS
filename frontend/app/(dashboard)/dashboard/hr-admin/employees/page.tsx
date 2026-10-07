@@ -58,7 +58,7 @@ export default async function EmployeesPage({
           <input
             name="search"
             defaultValue={query}
-            placeholder="Search name, email, department..."
+            placeholder="Search name, email, team..."
             className="w-full rounded-md border border-input-border bg-input-background py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
         </div>

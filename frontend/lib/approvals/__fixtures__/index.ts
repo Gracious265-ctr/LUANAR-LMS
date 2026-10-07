@@ -74,7 +74,7 @@ const BASE_REVIEW: ApprovalReview = {
   employee_info: {
     name: "Chikondi Mbewe",
     designation: "Lecturer",
-    department: "Computer Science",
+    team: "Computer Science Team",
     faculty: "Faculty of Agriculture",
     staff_id: null,
     grade: "C",
@@ -247,7 +247,7 @@ export function makeListItem(
     id: "app-1",
     reference: "LV-2026-000123",
     employee_name: "Chikondi Mbewe",
-    department: "Computer Science",
+    team: "Computer Science Team",
     leave_type: { id: 1, code: "Annual", name: "Annual Leave" },
     start_date: "2026-09-28",
     end_date: "2026-10-02",

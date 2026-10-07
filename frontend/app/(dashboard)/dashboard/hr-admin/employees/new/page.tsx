@@ -8,10 +8,6 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import { listDepartments, type Department } from "@/lib/departments";
-
-const DEPARTMENTS_ERROR =
-  "Departments could not be loaded, so this employee cannot be placed in one. Reload the page, or create a department first.";
 
 export default async function NewEmployeePage() {
   const user = await getCurrentUser();
@@ -29,14 +25,6 @@ export default async function NewEmployeePage() {
     gradeOptions = gradeOptionsFromEntitlements(entitlements.results);
   } catch {
     // Manual grade entry remains available if entitlements cannot be loaded.
-  }
-
-  let departments: Department[] = [];
-  let departmentsError = "";
-  try {
-    departments = await listDepartments();
-  } catch {
-    departmentsError = DEPARTMENTS_ERROR;
   }
 
   return (
@@ -60,8 +48,6 @@ export default async function NewEmployeePage() {
           endpoint="/api/hr/employees"
           method="POST"
           gradeOptions={gradeOptions}
-          departments={departments}
-          departmentsError={departmentsError}
         />
       </div>
     </div>

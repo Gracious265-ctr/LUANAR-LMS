@@ -28,7 +28,7 @@ class EmployeeInfo:
     grade: str
     appointment_date: date
     category: str | None
-    department_id: int | None
+    team_id: int | None
     gender: str | None
 
 

@@ -7,44 +7,70 @@ from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication, LeaveType
-from users.models import Department, User
+from users.models import User
 
 from .models import (
     ApproverRole,
     Campus,
+    CampusRoleAssignment,
     Delegation,
     Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
     Team,
+    TeamRoleAssignment,
     Workflow,
+    WorkflowMember,
 )
+from .providers import section_resolution
 from .services import (
     ReassignmentError,
     StageSequenceError,
+    WorkflowMemberError,
     _resolve_stage_role,
     _role_usage,
     acting_approver_identity,
     add_section_member,
+    add_team_member,
     approver_role_codes_for,
     approver_role_labels_for,
+    assign_workflow_member,
     create_approver_role,
     create_campus,
+    create_campus_role_assignment,
     create_role_assignment,
     create_team,
+    create_team_role_assignment,
+    create_workflow,
     deactivate_approver_role,
     delegation_summary,
     is_approver_user,
     normalize_section_sequence,
     open_request_exists,
     reassign_application,
+    remove_campus_role_assignment,
+    remove_team_member,
+    remove_team_role_assignment,
+    remove_workflow_member,
     role_usage_map,
+    sync_workflow_members,
+    team_member_summaries,
     update_campus,
     update_approver_role,
     update_team,
+    update_workflow,
+    workflow_member_pool,
     workflow_section_roles,
 )
+
+RESOLUTION_LABELS = {
+    "section": "Set on this step",
+    "team": "Team-wide approver",
+    "campus": "Campus-wide approver",
+    "institution": "Institution-wide approver",
+    "unresolved": "Nobody can act here yet",
+}
 
 
 def _record_delegation_created_audit(delegation: Delegation) -> None:
@@ -212,12 +238,12 @@ class SectionSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
         help_text=(
-            "The one person who approves this step. Must be an employee of the "
-            "owning team's department, and must already hold this step's role "
-            "for that department."
+            "The one person who approves this step. Must be a member of the "
+            "owning team, and must already hold this step's role on that team."
         ),
     )
     approver_name = serializers.SerializerMethodField()
+    resolution = serializers.SerializerMethodField()
     memberships = SectionMemberSerializer(many=True, read_only=True)
 
     class Meta:
@@ -230,45 +256,119 @@ class SectionSerializer(serializers.ModelSerializer):
             "approver_role_label",
             "approver",
             "approver_name",
+            "resolution",
             "description",
             "is_active",
             "memberships",
         ]
-        read_only_fields = ["id", "approver_role_label", "memberships"]
+        read_only_fields = [
+            "id",
+            "approver_role_label",
+            "resolution",
+            "memberships",
+        ]
 
     def get_approver_name(self, instance) -> str | None:
         if instance.approver_id is None:
             return None
         return instance.approver.get_full_name() or instance.approver.username
 
+    def get_resolution(self, instance) -> dict:
+        """Where this step's approver comes from, and whether HR put it there.
+
+        The workflow screen has to tell a **workflow-specific** approver —
+        somebody appointed to this step by hand — apart from a **wide** one that
+        resolves automatically (team, campus, institution), because they are
+        configured in two different places and HR must not go looking for the
+        wrong one when the holder changes.
+        """
+        source, user_id = section_resolution(instance)
+        user_name = None
+        if user_id is not None:
+            user = User.objects.filter(pk=user_id).first()
+            if user is not None:
+                user_name = user.get_full_name() or user.username
+        return {
+            "source": source,
+            "automatic": source in ("team", "campus", "institution"),
+            "user": user_id,
+            "user_name": user_name,
+            "label": RESOLUTION_LABELS.get(source, source),
+        }
+
 
 class WorkflowSerializer(serializers.ModelSerializer):
-    """Read-only view of a chain.
+    """A workflow, its owning team, and every stage it is made of.
 
-    A chain is written in the same request as the team that owns it — created
-    with the team, and rewritten by saving the team again. This serializer
-    exists so the team screens, the roster views, and the audit trail can read
-    one, and it deliberately exposes no writable field: a chain has no edit of
-    its own to offer, so the only way to change one is to name the team whose
-    steps are changing.
+    A workflow is readable on its own because HR configures one on its own: the
+    workflow screen shows the stages, how each stage resolves its approver
+    (set by hand, or automatically from a team/campus/institution-wide
+    holding), who is a member of each, and the normal-member pool. Writing goes
+    through :class:`WorkflowWriteSerializer`, which is where the team and the
+    stage list are checked.
     """
 
     sections = SectionSerializer(many=True, read_only=True)
     state = serializers.CharField(read_only=True)
+    team_name = serializers.CharField(source="team.name", read_only=True)
+    is_routing = serializers.SerializerMethodField()
+    section_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
 
     class Meta:
         model = Workflow
         fields = [
             "id",
             "name",
-            "employee_category",
-            "department",
+            "team",
+            "team_name",
             "effective_from",
             "is_active",
             "state",
+            "is_routing",
+            "section_count",
+            "sections",
+            "members",
+        ]
+        read_only_fields = [
+            "id",
+            "state",
+            "is_routing",
+            "section_count",
             "sections",
         ]
-        read_only_fields = fields
+
+    def get_is_routing(self, instance) -> bool:
+        """True when this is the workflow the owning team actually routes."""
+        team = instance.team
+        return team is not None and team.workflow_id == instance.pk
+
+    def get_section_count(self, instance) -> int:
+        return instance.sections.count()
+
+    def get_members(self, instance: Workflow) -> list[dict]:
+        """The workflow's normal-member pool, with display names attached.
+
+        Separate from ``sections``: section approvers decide each step; these
+        are the team members on the chain who are not step appointments.
+        """
+        rows = list(
+            instance.workflow_members.select_related("user", "team").order_by(
+                "user__first_name", "user__last_name", "user_id"
+            )
+        )
+        return [
+            {
+                "id": row.user_id,
+                "user": row.user_id,
+                "full_name": row.user.get_full_name() or row.user.username,
+                "email": row.user.email,
+                "team": row.team_id,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
 
 
 class DelegationSerializer(serializers.ModelSerializer):
@@ -852,6 +952,112 @@ class TeamWorkflowInputSerializer(serializers.Serializer):
         return numbered
 
 
+class WorkflowWriteSerializer(serializers.Serializer):
+    """Create a workflow for a team, or edit one's fields and stages.
+
+    ``team`` is required on create — a workflow exists *for* a team, and stage
+    rules (an approver must be a member of the team) have nothing to check
+    against otherwise. It is not accepted on update: a workflow's owner is not
+    something an edit changes, and moving one would orphan every stage rule
+    written against the old team.
+
+    ``sections`` replaces the stage list when supplied, through the same
+    sequence rules the team form uses. It may be omitted on create, so HR can
+    create the workflow first and configure its stages on the next screen.
+    """
+
+    name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    team = serializers.PrimaryKeyRelatedField(
+        queryset=Team.objects.all(), required=False, allow_null=True
+    )
+    effective_from = serializers.DateField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
+    sections = TeamSectionInputSerializer(many=True, required=False)
+    # The normal-member pool for this workflow: team members who are not
+    # section approvers. Written as the whole list so what is saved is what the
+    # screen showed; ``None`` on update leaves membership untouched.
+    members = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_null=True,
+        help_text=(
+            "User ids of the normal workflow members. Each must already be a "
+            "member of the workflow's team. Omit to leave membership unchanged; "
+            "send an empty list to clear it."
+        ),
+    )
+
+    def validate_sections(self, value: list[dict]) -> list[dict]:
+        if not value:
+            raise serializers.ValidationError(
+                "At least one approval step is required."
+            )
+        numbered = [
+            {**step, "order": step.get("order") or position}
+            for position, step in enumerate(value, start=1)
+        ]
+        try:
+            normalize_section_sequence(numbered)
+        except StageSequenceError as exc:
+            raise serializers.ValidationError({exc.field: [exc.message]})
+        return numbered
+
+    def validate(self, attrs: dict) -> dict:
+        # A chain does not schedule itself or switch itself off. When it starts
+        # applying is when the team that routes through it is activated, and
+        # switching a chain off is retiring the team — a decision that has to
+        # name the team so the team's own history records why. Accepting a date
+        # or a flag here would let a chain say it starts in June while the team
+        # routing through it went live in May, with neither screen showing the
+        # other. So the field is named, explained, and refused.
+        for field, message in (
+            (
+                "effective_from",
+                "A chain does not carry its own start date. When it begins "
+                "applying is decided when the team that routes through it is "
+                "activated, on the team.",
+            ),
+            (
+                "is_active",
+                "A chain is not switched on or off on its own. Activating or "
+                "retiring a team decides whether its chain is in force, so it "
+                "is done on the team and audited there.",
+            ),
+        ):
+            if field in attrs:
+                raise serializers.ValidationError({field: [message]})
+
+        if self.instance is None:
+            if attrs.get("team") is None:
+                raise serializers.ValidationError(
+                    {"team": ["A workflow has to be created for a team."]}
+                )
+        elif "team" in attrs:
+            raise serializers.ValidationError(
+                {
+                    "team": [
+                        "A workflow cannot be moved between teams. Create it "
+                        "under the team it belongs to."
+                    ]
+                }
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> Workflow:
+        return create_workflow(
+            team=validated_data.pop("team"),
+            actor=self.context["actor"],
+            data=dict(validated_data),
+        )
+
+    def update(self, instance: Workflow, validated_data: dict) -> Workflow:
+        return update_workflow(
+            workflow=instance,
+            actor=self.context["actor"],
+            data=dict(validated_data),
+        )
+
+
 class TeamSerializer(serializers.ModelSerializer):
     """A team: the routing unit HR assigns people to."""
 
@@ -872,25 +1078,29 @@ class TeamSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     campus_name = serializers.CharField(source="campus.name", read_only=True)
-    # A department is a reference the browser picks from, not free text: whether
-    # an approver is eligible is decided by comparing two department ids, so a
-    # typed string could not be compared to anything. See DepartmentViewSet.
-    department = serializers.PrimaryKeyRelatedField(
-        queryset=Department.objects.filter(is_active=True),
+    # No DRF default, and deliberately so: a field default is filled in before
+    # ``validate`` runs, which would make "a campus was sent but no category"
+    # indistinguishable from "an administration team was sent". The model's own
+    # default still applies on create, and ``validate`` infers the category
+    # where the campus says one.
+    category = serializers.ChoiceField(
+        choices=Team.Category.choices,
         required=False,
-        allow_null=True,
         help_text=(
-            "The department this team belongs to. It decides who may be appointed "
-            "as this team's approvers: only employees in the same department."
+            "Academic teams sit at a campus and may use campus-wide approvers; "
+            "administration teams are not campus-based and are the only teams "
+            "an institution-wide approver may serve."
         ),
     )
-    department_name = serializers.CharField(source="department.name", read_only=True)
-    # Read-only. A chain is not something a team points at; it is the chain that
-    # was built with the team, and it is edited by writing its steps again. If
-    # this were writable, a team's chain could be swapped for somebody else's
-    # and every application inside it would be stranded at a step nobody staffs.
-    workflow = serializers.PrimaryKeyRelatedField(read_only=True)
+    # Writable, and deliberately narrow: the workflow named has to be one this
+    # team already owns (the service refuses anything else), so "route through
+    # this chain instead" can never become "adopt somebody else's chain" — which
+    # would strand every application inside the old one at a step nobody staffs.
+    workflow = serializers.PrimaryKeyRelatedField(
+        queryset=Workflow.objects.all(), required=False, allow_null=True
+    )
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
+    workflows = serializers.SerializerMethodField()
     # The chain, written inline. On create it is created with the team, so there
     # is never a team that exists pointing at a chain HR has not finished
     # describing. On update it replaces the steps of the chain the team already
@@ -913,12 +1123,12 @@ class TeamSerializer(serializers.ModelSerializer):
             "name",
             "code",
             "description",
-            "department",
-            "department_name",
+            "category",
             "campus",
             "campus_name",
             "workflow",
             "workflow_name",
+            "workflows",
             "new_workflow",
             "status",
             "effective_from",
@@ -938,6 +1148,7 @@ class TeamSerializer(serializers.ModelSerializer):
             # neither can happen by accident or without a validation record.
             "status",
             "is_effective",
+            "workflows",
             "stage_roles",
             "member_count",
             "members",
@@ -951,13 +1162,55 @@ class TeamSerializer(serializers.ModelSerializer):
         if supplied is not None:
             self._new_workflow = supplied
 
-        department = attrs.get("department", getattr(self.instance, "department", None))
-        if department is not None and not department.is_active:
+        campus = self._value(attrs, "campus")
+        # A team being placed at a campus is an academic one unless HR says
+        # otherwise. Campus has always been the marker of an academic team, so a
+        # caller that sends a campus without naming a category is asking for
+        # exactly that — not for an administration team that cannot have one.
+        if "category" not in attrs and campus is not None and (
+            self.instance is None
+            or self.instance.category == Team.Category.ADMINISTRATION
+        ):
+            attrs["category"] = Team.Category.ACADEMIC
+        category = attrs.get(
+            "category",
+            self.instance.category if self.instance is not None else Team.Category.ADMINISTRATION,
+        )
+        if campus is not None and not campus.is_active:
+            raise serializers.ValidationError(
+                {"campus": f'"{campus.name}" is retired. Choose an active campus.'}
+            )
+        # The category decides the campus relationship, so the pair is checked
+        # here with the sentence that names the fix rather than left to a
+        # database constraint that would only say the row is invalid.
+        if category == Team.Category.ACADEMIC and campus is None:
             raise serializers.ValidationError(
                 {
-                    "department": (
-                        f'"{department.name}" is retired. Choose an active '
-                        "department."
+                    "campus": (
+                        "An academic team sits at a campus — pick one, or "
+                        "create it first. The campus is what makes campus-wide "
+                        "approvers reachable for this team's stages."
+                    )
+                }
+            )
+        if category == Team.Category.ADMINISTRATION and campus is not None:
+            raise serializers.ValidationError(
+                {
+                    "campus": (
+                        "An administration team is not campus-based. Clear the "
+                        "campus, or switch the category to Academic if this "
+                        "team should sit at one."
+                    )
+                }
+            )
+
+        if "workflow" in attrs and self.instance is None and attrs["workflow"] is not None:
+            raise serializers.ValidationError(
+                {
+                    "workflow": (
+                        "A new team cannot adopt an existing workflow. Its "
+                        "approval steps are written with it, or added "
+                        "afterwards under the team."
                     )
                 }
             )
@@ -974,6 +1227,26 @@ class TeamSerializer(serializers.ModelSerializer):
                 }
             )
         return attrs
+
+    def get_workflows(self, instance: Team) -> list[dict]:
+        """Every workflow this team owns, flagging the one it routes through.
+
+        A team may hold several chains, so the team screen lists them rather
+        than showing only the live one — otherwise a replacement HR is building
+        would be invisible until somebody pointed the team at it.
+        """
+        return [
+            {
+                "id": workflow.pk,
+                "name": workflow.name,
+                "state": workflow.state,
+                "is_active": workflow.is_active,
+                "effective_from": workflow.effective_from,
+                "is_routing": workflow.pk == instance.workflow_id,
+                "section_count": workflow.sections.count(),
+            }
+            for workflow in instance.workflows.order_by("name")
+        ]
 
     def get_members(self, instance: Team) -> list[dict]:
         """The people appointed on this team's chain, deduped across steps.
@@ -1140,3 +1413,221 @@ class CampusSerializer(serializers.ModelSerializer):
         return update_campus(
             campus=instance, actor=self.context["actor"], data=dict(validated_data)
         )
+
+
+class WideRoleAssignmentSerializer(serializers.ModelSerializer):
+    """Shared shape of the team- and campus-wide holding screens.
+
+    Deliberately the same three fields as the institution-wide one — an
+    employee, a role, and the scope it is held at — so "who approves what" is
+    configured the same way wherever it is configured. The service owns
+    uniqueness, so saving a second holder for the same role and scope replaces
+    the first rather than failing; the validator list is emptied for the same
+    reason the institution-wide one is.
+    """
+
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    role = serializers.PrimaryKeyRelatedField(
+        queryset=ApproverRole.objects.all()
+    )
+    user_name = serializers.SerializerMethodField()
+    role_label = serializers.SerializerMethodField()
+
+    def get_user_name(self, instance) -> str:
+        return instance.user.get_full_name() or instance.user.username
+
+    def get_role_label(self, instance) -> str:
+        return instance.role.label
+
+    def validate_role(self, value: ApproverRole) -> ApproverRole:
+        if not value.is_active:
+            raise serializers.ValidationError(
+                f'"{value.label}" is deactivated. Reactivate it in Roles, or '
+                "pick an active role."
+            )
+        if value.is_institution_wide:
+            raise serializers.ValidationError(
+                f'"{value.label}" is an institution-wide role. Assign its '
+                "holder under Approvers, not here."
+            )
+        return value
+
+    def validate_user(self, value: User) -> User:
+        if not value.is_active:
+            raise serializers.ValidationError(
+                f"{value.get_full_name() or value.username} is not an active "
+                "user. Activate the account before assigning a role."
+            )
+        if getattr(value, "employee_profile", None) is None:
+            raise serializers.ValidationError(
+                f"{value.get_full_name() or value.username} has no employee "
+                "record, so there is nothing to hold an approver role with. "
+                "Complete their employee record first."
+            )
+        return value
+
+
+class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
+    """One team-wide holding: this role, on this team, held by this person."""
+
+    class Meta:
+        model = TeamRoleAssignment
+        fields = [
+            "id",
+            "team",
+            "role",
+            "user",
+            "user_name",
+            "role_label",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+        validators: list = []
+
+    def create(self, validated_data: dict) -> TeamRoleAssignment:
+        return create_team_role_assignment(
+            team=validated_data["team"],
+            role=validated_data["role"],
+            user=validated_data["user"],
+            actor=self.context["actor"],
+        )
+
+
+class CampusRoleAssignmentSerializer(WideRoleAssignmentSerializer):
+    """One campus-wide holding, which reaches every team at that campus."""
+
+    class Meta:
+        model = CampusRoleAssignment
+        fields = [
+            "id",
+            "campus",
+            "role",
+            "user",
+            "user_name",
+            "role_label",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+        validators: list = []
+
+    def create(self, validated_data: dict) -> CampusRoleAssignment:
+        return create_campus_role_assignment(
+            campus=validated_data["campus"],
+            role=validated_data["role"],
+            user=validated_data["user"],
+            actor=self.context["actor"],
+        )
+
+
+class TeamMemberSummarySerializer(serializers.Serializer):
+    """One employee on a team, with their workflow footprint for the roster."""
+
+    id = serializers.IntegerField(read_only=True)
+    user = serializers.IntegerField(read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    email = serializers.CharField(read_only=True)
+    designation = serializers.CharField(read_only=True)
+    category = serializers.CharField(read_only=True)
+    faculty = serializers.CharField(read_only=True)
+    grade = serializers.CharField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    is_section_approver = serializers.BooleanField(read_only=True)
+    team_role = serializers.CharField(allow_null=True, read_only=True)
+    workflow_memberships = serializers.ListField(read_only=True)
+    workflow_count = serializers.IntegerField(read_only=True)
+
+
+class TeamMemberAddSerializer(serializers.Serializer):
+    """Place one employee on this team as a normal member."""
+
+    user = serializers.IntegerField(
+        min_value=1,
+        help_text="The employee's user id. They must be active and have an employee record.",
+    )
+
+    def validate_user(self, value: int):
+        user = User.objects.filter(pk=value).select_related(
+            "employee_profile", "employee_profile__team"
+        ).first()
+        if user is None:
+            raise serializers.ValidationError("That employee account is missing.")
+        self.context["_resolved_user"] = user
+        return value
+
+    def create(self, validated_data: dict):
+        user = self.context["_resolved_user"]
+        return add_team_member(
+            team=self.context["team"], user=user, actor=self.context["actor"]
+        )
+
+
+class WorkflowMemberSerializer(serializers.ModelSerializer):
+    """One normal member of a workflow, with the person and the owning team."""
+
+    user_name = serializers.SerializerMethodField()
+    user_email = serializers.SerializerMethodField()
+    designation = serializers.SerializerMethodField()
+    workflow_name = serializers.CharField(source="workflow.name", read_only=True)
+    team_name = serializers.CharField(source="team.name", read_only=True)
+
+    class Meta:
+        model = WorkflowMember
+        fields = [
+            "id",
+            "workflow",
+            "workflow_name",
+            "user",
+            "user_name",
+            "user_email",
+            "designation",
+            "team",
+            "team_name",
+            "is_wide_approver",
+            "added_by",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_user_name(self, instance) -> str:
+        return instance.user.get_full_name() or instance.user.username
+
+    def get_user_email(self, instance) -> str:
+        return instance.user.email
+
+    def get_designation(self, instance) -> str:
+        profile = getattr(instance.user, "employee_profile", None)
+        return getattr(profile, "designation", "") or ""
+
+
+class WorkflowMemberWriteSerializer(serializers.Serializer):
+    """Add one team member to a workflow's normal-member pool."""
+
+    user = serializers.IntegerField(min_value=1)
+
+    def validate_user(self, value: int):
+        user = User.objects.filter(pk=value).select_related(
+            "employee_profile", "employee_profile__team"
+        ).first()
+        if user is None:
+            raise serializers.ValidationError("That employee account is missing.")
+        self.context["_resolved_user"] = user
+        return value
+
+    def create(self, validated_data: dict):
+        user = self.context["_resolved_user"]
+        return assign_workflow_member(
+            workflow=self.context["workflow"],
+            user=user,
+            actor=self.context["actor"],
+            added_by=self.context["actor"],
+        )
+
+
+class WorkflowMemberPoolSerializer(serializers.Serializer):
+    """The eligibility pool for a team's workflow memberships."""
+
+    team = serializers.DictField(read_only=True)
+    workflow = serializers.DictField(allow_null=True, read_only=True)
+    available = serializers.ListField(read_only=True)
+    current = serializers.ListField(read_only=True)
+    assigned_elsewhere = serializers.ListField(read_only=True)

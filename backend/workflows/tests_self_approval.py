@@ -48,7 +48,7 @@ from leave.tests.stubs import (
 )
 from users.models import EmployeeProfile
 
-from .testing import department_for
+from .testing import team_for
 from .models import (
     ApplicationStage,
     ApprovalDecision,
@@ -115,7 +115,7 @@ class SelfApprovalBase(StubProviderMixin, TestCase):
         EmployeeProfile.objects.create(
             user=self.employee,
             designation="Officer",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="B",
         )
 

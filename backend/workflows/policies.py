@@ -224,8 +224,10 @@ def get_leave_history_scope(
     the role the stage was materialised with — not from a role name:
 
     ``all``                    every application.
-    ``same_department``        only employees in the applicant's department, and
-                               only when the approver is in that department.
+    ``same_team``              only employees on the applicant's team, and only
+                               when the approver is on it.
+    ``same_campus``            only employees at the applicant's campus, and only
+                               when the approver is at that campus.
     ``same_faculty``           likewise, on faculty.
     ``current_financial_year`` only the current financial year.
     ``none``                   nothing.
@@ -241,14 +243,47 @@ def get_leave_history_scope(
         return (False, "none")
     if scope == ApproverRole.HistoryScope.ALL:
         return (True, "all")
-    if scope == ApproverRole.HistoryScope.SAME_DEPARTMENT:
-        same = _same_profile_field(employee_profile, approver_profile, "department")
+    if scope == ApproverRole.HistoryScope.SAME_TEAM:
+        same = _same_team(employee_profile, approver_profile)
+        return (same, "all")
+    if scope == ApproverRole.HistoryScope.SAME_CAMPUS:
+        same = _same_campus(employee_profile, approver_profile)
         return (same, "all")
     if scope == ApproverRole.HistoryScope.SAME_FACULTY:
         same = _same_profile_field(employee_profile, approver_profile, "faculty")
         return (same, "all")
     return (True, "current_financial_year")
 
+
+
+def _same_team(employee, approver) -> bool:
+    """Whether both profiles sit on the same team.
+
+    Compared by id, not by name: a team rename moves every reference with it, and
+    an id comparison cannot be defeated by two teams that read identically.
+    """
+    if employee is None or approver is None:
+        return False
+    employee_team_id = getattr(employee, "team_id", None)
+    return employee_team_id is not None and employee_team_id == approver.team_id
+
+
+def _same_campus(employee, approver) -> bool:
+    """Whether both profiles are at the same campus, read through their team.
+
+    A campus is a property of the *team*, not of the employee: an employee is on
+    a campus because their team is. An employee on no team is on no campus, and two
+    unteamed employees are not "at the same campus" — an absent campus is not a
+    shared one.
+    """
+    if employee is None or approver is None:
+        return False
+    employee_campus_id = getattr(getattr(employee, "team", None), "campus_id", None)
+    approver_campus_id = getattr(getattr(approver, "team", None), "campus_id", None)
+    return (
+        employee_campus_id is not None
+        and employee_campus_id == approver_campus_id
+    )
 
 
 def _same_profile_field(employee, approver, field: str) -> bool:

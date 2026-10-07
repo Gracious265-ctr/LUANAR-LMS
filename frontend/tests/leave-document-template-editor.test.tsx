@@ -20,7 +20,7 @@ const availableFields = [
   { key: "employee_name", label: "Employee", sample: "Jane Employee" },
   { key: "employee_grade", label: "Grade", sample: "G" },
   { key: "designation", label: "Designation", sample: "Lecturer" },
-  { key: "department", label: "Department", sample: "Department of Agronomy" },
+  { key: "team", label: "Team", sample: "Agronomy Team" },
   { key: "leave_type", label: "Leave type", sample: "Annual leave" },
   { key: "start_date", label: "Start date", sample: "2026-10-05" },
   { key: "end_date", label: "End date", sample: "2026-10-23" },

@@ -86,7 +86,7 @@ export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
           readOnly={role !== undefined}
           defaultValue={role?.label}
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus read-only:bg-surface-muted read-only:text-text-secondary"
-          placeholder="e.g. Head of Department"
+          placeholder="e.g. Team Supervisor"
         />
         <p className="mt-1 text-xs text-text-muted">
           {role
@@ -166,8 +166,8 @@ export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
               </span>
               <span className="block text-xs text-text-muted">
                 One holder covers every application, so this role is not staffed
-                team by team. Use it for a single Registrar, not a Head of
-                Department.
+                team by team. Use it for a single Registrar, not for a team&apos;s
+                own Supervisor.
               </span>
             </span>
           </label>

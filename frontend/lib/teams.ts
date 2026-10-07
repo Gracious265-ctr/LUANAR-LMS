@@ -1,4 +1,18 @@
 import { apiClientUrl } from "./api-client";
+import type { TeamCategory } from "./team-category";
+
+// The category vocabulary is client-safe and lives beside this module, not
+// inside it: this file reads Django through `api-client`, which is server-only,
+// and a client component that imported the labels from here would put
+// `next/headers` into the browser bundle. Re-exported so server callers keep
+// one import path.
+export {
+  TEAM_CATEGORY_CODES,
+  TEAM_CATEGORY_LABELS,
+  teamCategoryBadgeClass,
+  teamCategoryLabel,
+  type TeamCategory,
+} from "./team-category";
 
 /**
  * Where a team is in its life. Three states, not a checkbox, because the step
@@ -69,6 +83,27 @@ export interface TeamSectionApprover {
   user_email: string;
 }
 
+/**
+ * How a step finds the person who acts for it.
+ *
+ * Display data rather than an instruction: it is what the backend already
+ * resolved, so a screen can say "staffed on this team" or "falls back to a
+ * campus-wide holder" without being the second place the rule is written.
+ */
+export type SectionResolution = "staffed" | "team_wide" | "campus_wide" | "institution_wide" | "unresolved";
+
+export const SECTION_RESOLUTION_LABELS: Record<SectionResolution, string> = {
+  staffed: "Appointed on this team",
+  team_wide: "Team-wide holder",
+  campus_wide: "Campus-wide holder",
+  institution_wide: "Institution-wide holder",
+  unresolved: "Nobody can act here yet",
+};
+
+export function sectionResolutionLabel(resolution: string): string {
+  return SECTION_RESOLUTION_LABELS[resolution as SectionResolution] ?? resolution;
+}
+
 /** A team row's read-only summary of one step of the workflow it routes through. */
 export interface TeamSection {
   id: number;
@@ -78,6 +113,8 @@ export interface TeamSection {
   approver_role: string;
   approver_role_label: string;
   approver: TeamSectionApprover | null;
+  /** Who the backend would route this step to, and where that person comes from. */
+  resolution: string;
 }
 
 /**
@@ -98,19 +135,36 @@ export interface TeamStageRole {
   label: string;
 }
 
+/**
+ * A chain the team owns, named so a screen can show every one of them without
+ * reading them all. `is_routing` is the one the team is currently pointed at —
+ * a team may own several and route exactly one, and switching between them is
+ * a decision rather than an edit to whichever one happens to be first.
+ */
+export interface WorkflowRef {
+  id: number;
+  name: string;
+  is_routing: boolean;
+  section_count: number;
+  effective_from: string | null;
+  is_active: boolean;
+}
+
 export interface Team {
   id: number;
   name: string;
   code: string;
   description: string;
-  /** A pick from the departments HR maintains; it decides who may be appointed. */
-  department: number | null;
-  department_name: string;
+  /** Academic teams sit at a campus; administration teams do not. */
+  category: TeamCategory | string;
+  /** The campus this team sits in, required when the category is academic. */
   campus: number | null;
   campus_name: string;
   /** The chain this team routes through, or null while the team is a draft. */
   workflow: number | null;
   workflow_name: string;
+  /** Every chain this team owns, including the one it routes through. */
+  workflows: WorkflowRef[];
   status: TeamStatus | string;
   effective_from: string | null;
   effective_to: string | null;
@@ -147,15 +201,14 @@ export interface EligibleApprover {
 }
 
 /**
- * The people eligible for one team's steps, and which department they were
- * scoped to.
+ * The people eligible for one team's steps, and which team they were scoped to.
  *
- * Returned rather than filtered in the browser: eligibility is the department,
- * so the list must come from the same rule the write enforces, or the picker
- * would offer people the backend then refuses.
+ * Returned rather than filtered in the browser: eligibility is the team, so the
+ * list must come from the same rule the write enforces, or the picker would
+ * offer people the backend then refuses.
  */
 export interface EligibleApprovers {
-  department: { id: number; name: string };
+  team: { id: number; name: string };
   candidates: EligibleApprover[];
 }
 
@@ -176,11 +229,19 @@ export interface TeamWorkflowInput {
 export interface TeamInput {
   name: string;
   description?: string;
-  /** The department this team belongs to, as a pick from the departments list. */
-  department?: number | null;
+  /** Academic teams must name a campus; administration teams must not. */
+  category?: TeamCategory;
+  /** The campus this team sits in. Required when the category is academic. */
   campus?: number | null;
   effective_from?: string | null;
   effective_to?: string | null;
+  /**
+   * The chain this team routes through. On create it must be omitted — a new
+   * team cannot adopt a chain that already exists, because that chain belongs
+   * to whichever team it was built for. On edit it must name one the team
+   * already owns, which is how HR points a team at its replacement chain.
+   */
+  workflow?: number | null;
   /**
    * The team's approval chain. Omitted to leave the existing chain's steps
    * untouched; a team's chain can never be swapped for somebody else's.
@@ -214,6 +275,8 @@ export interface TeamListOptions {
   /** Include retired teams. The default view is the teams that still matter. */
   includeInactive?: boolean;
   status?: TeamStatus | string;
+  /** Only teams of this kind. Used by the campus and approver screens. */
+  category?: TeamCategory;
 }
 
 /** Whole list, not page one: a picker built from one page understates the choice. */
@@ -237,10 +300,25 @@ export async function listTeams(options: TeamListOptions = {}): Promise<Team[]> 
   if (options.status) {
     params.set("status", options.status);
   }
+  if (options.category) {
+    params.set("category", options.category);
+  }
   const query = params.toString();
   return readAllPages<Team>(
     `/api/v1/teams/${query ? `?${query}` : ""}`
   );
+}
+
+/**
+ * One team's workflows, and which one it routes through.
+ *
+ * Scoped by team rather than read whole: a team may own several chains, and
+ * the question this answers is always "which chains does *this* team have".
+ */
+export async function listTeamWorkflows(
+  team: number | string
+): Promise<WorkflowRef[]> {
+  return readAllPages<WorkflowRef>(`/api/v1/workflows/?team=${team}`);
 }
 
 export async function getTeam(id: number | string): Promise<Team> {
@@ -250,4 +328,8 @@ export async function getTeam(id: number | string): Promise<Team> {
 export async function listCampuses(includeInactive = false): Promise<Campus[]> {
   const query = includeInactive ? "?include_inactive=1" : "";
   return readAllPages<Campus>(`/api/v1/campuses/${query}`);
+}
+
+export async function getCampus(id: number | string): Promise<Campus> {
+  return apiClientUrl<Campus>(`/api/v1/campuses/${id}/`);
 }

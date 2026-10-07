@@ -17,7 +17,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
   const [approverId, setApproverId] = useState("");
   const approvers = approverRolePeople(employees);
   const delegates = approverRolePeople(employees).filter(
-    (employee) => String(employee.id) !== approverId
+    (employee) => String(employee.user_id) !== approverId
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -69,7 +69,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         >
           <option value="">Select the approver</option>
           {approvers.map((employee) => (
-            <option key={employee.id} value={employee.id}>
+            <option key={employee.id} value={employee.user_id}>
               {employee.full_name}
             </option>
           ))}
@@ -93,7 +93,7 @@ export function DelegationForm({ employees }: { employees: Employee[] }) {
         >
           <option value="">No nomination</option>
           {delegates.map((employee) => (
-            <option key={employee.id} value={employee.id}>
+            <option key={employee.id} value={employee.user_id}>
               {employee.full_name}
             </option>
           ))}

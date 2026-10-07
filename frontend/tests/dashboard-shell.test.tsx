@@ -131,21 +131,6 @@ describe("DashboardShell", () => {
     );
   });
 
-  it("offers HR the Departments item, because a team is scoped by one", () => {
-    renderShell(mockHRUser);
-
-    expect(screen.getByRole("link", { name: "Departments" })).toHaveAttribute(
-      "href",
-      "/dashboard/hr-admin/departments"
-    );
-  });
-
-  it("keeps Departments out of a non-HR sidebar", () => {
-    renderShell(mockUser);
-
-    expect(screen.queryByRole("link", { name: "Departments" })).toBeNull();
-  });
-
   it("renders a sign-out control", () => {
     renderShell(mockUser);
 

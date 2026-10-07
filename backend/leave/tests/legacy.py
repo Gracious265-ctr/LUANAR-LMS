@@ -1,16 +1,31 @@
+"""Leave entitlement, leave-type, rule, and holiday coverage.
+
+The department suite that used to live alongside this — ``Department`` itself, its
+HR-only CRUD, and the ``Department`` assertion in the bootstrap test below — was
+removed with the model. A fresh database is now checked for the entities that do
+exist instead.
+"""
 from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
-from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import Department, EmployeeProfile, User
+from users.models import EmployeeProfile, User
 
 from audit.models import AuditEntry
+from workflows.models import (
+    ApproverRole,
+    Campus,
+    RoleAssignment,
+    Section,
+    SectionMember,
+    Team,
+    Workflow,
+)
 
 from ..admin import (
     FinancialYearAdmin,
@@ -462,32 +477,73 @@ class GradeEntitlementEndpointTests(TestCase):
         self.assertEqual(rule_entry.first().actor, self.hr_user)
 
 
-class SeedDevelopmentCommandTests(TestCase):
-    """The dev seeder makes accounts only, never business configuration.
+class CleanDatabaseBootstrapTests(TestCase):
+    """The product must run from an empty database.
 
-    The product must run from an empty database: a superadmin creates HR, and HR
-    creates departments, roles, teams, workflows, entitlements, and leave types
-    through the frontend. This command exists so a developer can sign in; it must
-    not quietly supply rows the UI is supposed to create.
+    A superadmin creates HR, and HR creates campuses, teams, workflows,
+    entitlements, and leave types through the frontend. Nothing may supply those
+    rows behind the UI's back — a seeder or a data migration that quietly created
+    them would leave HR looking at configuration it did not create and could not
+    explain. A test database is built by the migrations alone, which makes it
+    exactly that starting point.
+
+    Approver roles are HR data too: a fresh install has **none**. Migration
+    0011 used to seed six canonical codes for the old hardcoded stages; 0028
+    removes them again when nothing references them, so migrate-from-zero ends
+    at zero roles. HR creates the roles the institution actually uses through
+    the Roles screen.
     """
 
-    def test_seed_creates_only_users_idempotently(self):
-        call_command("seed_dev_users")
-        call_command("seed_dev_users")
+    def test_a_fresh_database_has_no_accounts(self):
+        self.assertFalse(User.objects.exists())
+        self.assertFalse(EmployeeProfile.objects.exists())
 
-        # Nine, not seven: Central Administration has its own supervisor and HOD,
-        # because a team's approvers are its own department's employees and the
-        # academic pair sit in Bunda College.
-        self.assertEqual(User.objects.count(), 9)
-        self.assertEqual(EmployeeProfile.objects.count(), 9)
+    def test_a_fresh_database_has_no_approver_roles(self):
+        self.assertFalse(ApproverRole.objects.exists())
 
-    def test_seed_creates_no_business_data(self):
-        call_command("seed_dev_users")
-
-        self.assertFalse(Department.objects.exists())
+    def test_a_fresh_database_has_no_business_data(self):
+        self.assertFalse(Campus.objects.exists())
+        self.assertFalse(Team.objects.exists())
+        self.assertFalse(Workflow.objects.exists())
+        self.assertFalse(Section.objects.exists())
+        self.assertFalse(SectionMember.objects.exists())
+        self.assertFalse(RoleAssignment.objects.exists())
         self.assertFalse(GradeEntitlement.objects.exists())
         self.assertFalse(LeaveType.objects.exists())
         self.assertFalse(LeaveRule.objects.exists())
+
+    def test_the_first_hr_account_arrives_through_the_admin_users_endpoint(self):
+        """The bootstrap door is the API, and it hands over no configuration.
+
+        Creating HR is the first write a deployment makes, so it is the moment a
+        stray seed row would first become visible. The account arrives alone:
+        nothing about approving leave comes with it.
+        """
+        superuser = User.objects.create_superuser(
+            username="root@test.luanar",
+            email="root@test.luanar",
+            password=SEED_PASSWORD,
+        )
+        client = APIClient()
+        client.force_authenticate(user=superuser)
+        response = client.post(
+            "/api/v1/admin-users/",
+            {
+                "first_name": "Ada",
+                "last_name": "Person",
+                "email": "ada@test.luanar",
+                "password": "longenough",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(User.objects.get(email="ada@test.luanar").role, User.Role.HR)
+        self.assertFalse(Campus.objects.exists())
+        self.assertFalse(Team.objects.exists())
+        self.assertFalse(Workflow.objects.exists())
+        self.assertFalse(RoleAssignment.objects.exists())
+        self.assertFalse(GradeEntitlement.objects.exists())
+        self.assertFalse(LeaveType.objects.exists())
 
 
 class GradeEntitlementAdminTests(TestCase):

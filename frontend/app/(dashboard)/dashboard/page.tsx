@@ -36,7 +36,7 @@ export default async function DashboardPage() {
         </p>
         {profile && (
           <p className="text-sm text-text-muted mt-1">
-            {[profile.grade && `Grade ${profile.grade}`, profile.department]
+            {[profile.grade && `Grade ${profile.grade}`, profile.team]
               .filter(Boolean)
               .join(" · ") || "No employee record on file."}
           </p>

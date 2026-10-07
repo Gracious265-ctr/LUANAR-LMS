@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
-import { CampusForm } from "@/components/hr/campus-form";
+import { CampusQuickAdd } from "@/components/hr/campus-form";
 import { TeamTable } from "@/components/hr/team-table";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
@@ -62,8 +62,9 @@ async function TeamsPage({
           <h2 className="text-2xl font-bold text-text-primary">Teams</h2>
           <p className="text-text-secondary">
             The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application. Only a
-            team that is in force routes anything.
+            team&apos;s chain decides who approves their application. A team is
+            either academic — sitting at a campus — or administration-wide, and
+            only a team that is in force routes anything.
           </p>
         </div>
         <Link
@@ -107,13 +108,19 @@ async function TeamsPage({
       )}
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-2 text-lg font-semibold text-text-primary">
-          Campuses
-        </h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-text-primary">Campuses</h3>
+          <Link
+            href="/dashboard/hr-admin/campuses"
+            className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+          >
+            Manage campuses
+          </Link>
+        </div>
         {campusesError ? (
           <p className="text-sm text-status-rejected">{campusesError}</p>
         ) : (
-          <CampusForm campuses={campuses} />
+          <CampusQuickAdd campuses={campuses} />
         )}
       </div>
     </div>

@@ -25,7 +25,6 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
           <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
             <th className="py-3 pr-4">Name</th>
             <th className="py-3 pr-4">Email</th>
-            <th className="py-3 pr-4">Department</th>
             <th className="py-3 pr-4">Designation</th>
             <th className="py-3 pr-4">Category</th>
             <th className="py-3 pr-4">Grade</th>
@@ -49,9 +48,6 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
                 </Link>
               </td>
               <td className="py-3 pr-4 text-text-secondary">{employee.email}</td>
-              <td className="py-3 pr-4 text-text-secondary">
-                {employee.department_name || "—"}
-              </td>
               <td className="py-3 pr-4 text-text-secondary">
                 {employee.designation || "—"}
               </td>

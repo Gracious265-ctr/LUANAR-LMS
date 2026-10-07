@@ -3,7 +3,8 @@ import { apiClient } from "./api-client";
 export interface LeaveSummaryProfile {
   grade: string;
   category: string | null;
-  department: string;
+  /** The team name, or null when the employee is on no team. */
+  team: string | null;
   faculty: string | null;
   gender: string | null;
   appointment_date: string | null;

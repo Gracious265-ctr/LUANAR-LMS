@@ -11,7 +11,7 @@ import { getCurrentUser } from "@/lib/auth";
  *
  * This is the top of the provisioning chain: a deployment is bootstrapped with
  * one superuser (created outside the product), and every HR account that then
- * configures departments, roles, teams, and workflows is created here. Nothing
+ * configures roles, teams, and workflows is created here. Nothing
  * on this page is seeded.
  */
 export default async function AdminUsersPage() {

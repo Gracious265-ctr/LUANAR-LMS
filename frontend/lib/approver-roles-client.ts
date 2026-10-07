@@ -1,4 +1,10 @@
-import type { ApproverRole, ApproverRoleInput, RoleAssignment } from "./approver-roles";
+import type {
+  ApproverRole,
+  ApproverRoleInput,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "./approver-roles";
 import { apiErrorMessage } from "./utils";
 
 export {
@@ -65,4 +71,46 @@ async function send<T>(
     throw new Error(apiErrorMessage(data));
   }
   return response.json();
+}
+
+/**
+ * Give a role one holder across a whole team, replacing any existing one.
+ *
+ * Saving a second holder is the replacement, not an error: the screen is a
+ * pick-a-role, pick-a-person form, and asking HR to delete before they may
+ * change their mind is a step that only exists to satisfy the database.
+ */
+export async function createTeamRoleAssignment(input: {
+  team: number | string;
+  role: number | string;
+  user: number | string;
+}): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    "/api/hr/team-role-assignments",
+    "POST",
+    input
+  );
+}
+
+export async function removeTeamRoleAssignment(id: number | string): Promise<void> {
+  await send<void>(`/api/hr/team-role-assignments/${id}`, "DELETE");
+}
+
+/** The same contract as the team-wide holding, scoped to a campus. */
+export async function createCampusRoleAssignment(input: {
+  campus: number | string;
+  role: number | string;
+  user: number | string;
+}): Promise<CampusRoleAssignment> {
+  return send<CampusRoleAssignment>(
+    "/api/hr/campus-role-assignments",
+    "POST",
+    input
+  );
+}
+
+export async function removeCampusRoleAssignment(
+  id: number | string
+): Promise<void> {
+  await send<void>(`/api/hr/campus-role-assignments/${id}`, "DELETE");
 }

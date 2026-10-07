@@ -10,21 +10,31 @@ import { apiErrorMessage } from "./utils";
 
 /**
  * The people who may be appointed to a team's approval steps, scoped to the
- * team's department and optionally to the step's role.
+ * team itself and optionally to the step's role.
  *
  * Fetched from the backend rather than filtered in the browser because
- * eligibility *is* the department: a picker built from the whole staff would
- * offer people the write then refuses. The role narrowing is the same idea —
- * one person holds one role per department, so the list is only the people who
- * can pass that.
+ * eligibility *is* the team: a picker built from the whole staff would offer
+ * people the write then refuses. The role narrowing is the same idea — one
+ * person holds one role per team, so the list is only the people who can pass
+ * that.
+ *
+ * ``workflow`` scopes the pool to one of the team's own chains, so people who
+ * already serve a *different* chain of the team (as a step approver or as a
+ * normal member) are dropped — one employee serves one chain. Use the chain's
+ * id when editing it, or the sentinel ``"new"`` when configuring one that does
+ * not exist yet.
  */
 export async function listEligibleApprovers(
-  department: number,
-  role?: number
+  team: number,
+  role?: number,
+  workflow?: number | "new"
 ): Promise<EligibleApprover[]> {
-  const params = new URLSearchParams({ department: String(department) });
+  const params = new URLSearchParams({ team: String(team) });
   if (role !== undefined) {
     params.set("role", String(role));
+  }
+  if (workflow !== undefined) {
+    params.set("workflow", String(workflow));
   }
   const response = await fetch(
     `/api/hr/teams/eligible-approvers/?${params.toString()}`
@@ -75,8 +85,39 @@ export async function deactivateTeam(id: number | string): Promise<Team> {
   return send<Team>(`/api/hr/teams/${id}/deactivate`, "POST");
 }
 
+/**
+ * Point a team at one of the chains it already owns.
+ *
+ * This is the routing decision, not an edit to a chain: the chain keeps its
+ * steps, and what changes is which of the team's chains new applications go
+ * through. The backend refuses a chain the team does not own, so this can
+ * never move a team onto somebody else's steps.
+ */
+export async function routeTeamThrough(
+  teamId: number | string,
+  workflowId: number | string | null
+): Promise<Team> {
+  return send<Team>(`/api/hr/teams/${teamId}`, "PATCH", {
+    workflow: workflowId,
+  });
+}
+
 export async function createCampus(input: CampusInput): Promise<Campus> {
   return send<Campus>("/api/hr/campuses", "POST", input);
+}
+
+/**
+ * Edit a campus.
+ *
+ * The code is editable on purpose for as long as no team uses the campus: a
+ * team stores the campus's id, not its code, so renaming the campus everywhere
+ * is one write here rather than one per team.
+ */
+export async function updateCampus(
+  id: number | string,
+  input: Partial<CampusInput>
+): Promise<Campus> {
+  return send<Campus>(`/api/hr/campuses/${id}`, "PATCH", input);
 }
 
 async function send<T>(

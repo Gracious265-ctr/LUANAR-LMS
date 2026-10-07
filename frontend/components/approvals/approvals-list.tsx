@@ -254,7 +254,7 @@ function TableRow({
         <td className="px-4 py-3">
           <span className="font-medium text-text-primary">{row.employee_name}</span>
           <span className="mt-0.5 block text-xs text-text-muted">
-            {row.department || "—"}
+            {row.team || "—"}
           </span>
         </td>
         <td className="px-4 py-3 text-text-secondary">

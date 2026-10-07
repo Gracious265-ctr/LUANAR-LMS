@@ -27,11 +27,11 @@ vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
 function makeRole(overrides: Partial<ApproverRole> = {}): ApproverRole {
   return {
     id: 1,
-    code: "hod",
-    label: "Head of Department",
+    code: "lead",
+    label: "Team Leader",
     description: "",
     is_active: true,
-    history_scope: "same_department",
+    history_scope: "same_team",
     handles_cancellation: false,
     is_institution_wide: false,
     is_in_use: false,
@@ -70,9 +70,9 @@ describe("ApproverRoleTable", () => {
       />
     );
 
-    expect(screen.getByText("Head of Department")).toBeInTheDocument();
-    expect(screen.getByText("hod")).toBeInTheDocument();
-    expect(screen.getByText("Same department only")).toBeInTheDocument();
+    expect(screen.getByText("Team Leader")).toBeInTheDocument();
+    expect(screen.getByText("lead")).toBeInTheDocument();
+    expect(screen.getByText("Same team only")).toBeInTheDocument();
     expect(screen.getByText("Team role")).toBeInTheDocument();
     expect(screen.getByText("Registrar")).toBeInTheDocument();
     expect(screen.getByText("Full history")).toBeInTheDocument();
@@ -136,7 +136,7 @@ describe("ApproverRoleTable", () => {
 
   it("shows the backend's refusal when a role is still in use", async () => {
     vi.mocked(deactivateApproverRole).mockRejectedValue(
-      new Error('role: "Head of Department" is still used by 1 workflow.')
+      new Error('role: "Team Leader" is still used by 1 workflow.')
     );
     render(<ApproverRoleTable roles={[makeRole()]} assignments={{}} />);
 
@@ -144,7 +144,7 @@ describe("ApproverRoleTable", () => {
 
     expect(
       await screen.findByText(
-        'role: "Head of Department" is still used by 1 workflow.'
+        'role: "Team Leader" is still used by 1 workflow.'
       )
     ).toBeInTheDocument();
     expect(refresh).not.toHaveBeenCalled();

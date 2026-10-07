@@ -22,8 +22,8 @@ export function ReassignmentForm({
 
   const candidates = approverRolePeople(employees).filter(
     (employee) =>
-      String(employee.id) !== String(application.employee) &&
-      String(employee.id) !== String(application.current_approver)
+      String(employee.user_id) !== String(application.employee) &&
+      String(employee.user_id) !== String(application.current_approver)
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -96,7 +96,7 @@ export function ReassignmentForm({
         >
           <option value="">Select the replacement approver</option>
           {candidates.map((employee) => (
-            <option key={employee.id} value={employee.id}>
+            <option key={employee.id} value={employee.user_id}>
               {employee.full_name}
             </option>
           ))}

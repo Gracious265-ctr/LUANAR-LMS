@@ -59,7 +59,7 @@ class FixtureRulesProvider:
             grade=grade,
             appointment_date=appointment,
             category=category,
-            department_id=None,
+            team_id=None,
             gender=gender,
         )
 

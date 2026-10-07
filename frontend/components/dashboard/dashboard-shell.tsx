@@ -198,13 +198,6 @@ const Sidebar = memo(function Sidebar({
               open={open}
             />
             <Option
-              Icon={Building2}
-              title="Departments"
-              href="/dashboard/hr-admin/departments"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
               Icon={CalendarRange}
               title="Entitlements"
               href="/dashboard/hr-admin/entitlements"
@@ -222,6 +215,20 @@ const Sidebar = memo(function Sidebar({
               Icon={Users}
               title="Teams"
               href="/dashboard/hr-admin/teams"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={Building2}
+              title="Campuses"
+              href="/dashboard/hr-admin/campuses"
+              currentPath={currentPath}
+              open={open}
+            />
+            <Option
+              Icon={UserCheck}
+              title="Approvers"
+              href="/dashboard/hr-admin/approvers"
               currentPath={currentPath}
               open={open}
             />

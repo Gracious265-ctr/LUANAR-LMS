@@ -6,12 +6,14 @@ from django.forms import BaseInlineFormSet
 from .models import (
     ApproverRole,
     Campus,
+    CampusRoleAssignment,
     Delegation,
     Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
     Team,
+    TeamRoleAssignment,
     Workflow,
 )
 from .services import approver_role_codes_for, ensure_role_not_in_use
@@ -129,14 +131,12 @@ class WorkflowAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "owner",
-        "employee_category",
-        "department",
         "effective_from",
         "is_active",
         "section_summary",
     )
-    list_filter = ("employee_category", "is_active")
-    search_fields = ("name", "department")
+    list_filter = ("is_active",)
+    search_fields = ("name",)
     ordering = ("name",)
     inlines = [SectionInline]
 
@@ -333,14 +333,14 @@ class TeamAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "code",
-        "department",
+        "category",
         "campus",
         "workflow",
         "status",
         "effective_window",
     )
-    list_filter = ("status", "campus", "department")
-    search_fields = ("name", "code", "description", "department")
+    list_filter = ("status", "category", "campus")
+    search_fields = ("name", "code", "description")
     raw_id_fields = ("workflow", "campus")
     ordering = ("name",)
     readonly_fields = ("status", "created_at", "updated_at")
@@ -404,5 +404,64 @@ class RoleAssignmentAdmin(admin.ModelAdmin):
         if db_field.name == "role":
             kwargs["queryset"] = ApproverRole.objects.filter(
                 is_institution_wide=True
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(TeamRoleAssignment)
+class TeamRoleAssignmentAdmin(admin.ModelAdmin):
+    """Team-wide role holdings.
+
+    One holder per role per team is a model constraint, so the admin is a
+    lookup and not a second configuration surface: the pick-a-role,
+    pick-a-person form with its replacement-and-audit contract lives on the
+    team's own approvers screen. Only non-institution-wide roles belong here,
+    and the inline form filter keeps the admin honest about that without
+    duplicating the check the API already makes.
+    """
+
+    list_display = ("user", "role", "team", "created_at")
+    list_filter = ("role", "team")
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+        "role__label",
+        "team__name",
+    )
+    raw_id_fields = ("user", "team")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "role":
+            kwargs["queryset"] = ApproverRole.objects.filter(
+                is_active=True, is_institution_wide=False
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(CampusRoleAssignment)
+class CampusRoleAssignmentAdmin(admin.ModelAdmin):
+    """Campus-wide role holdings, scoped to the campus they resolve at.
+
+    Same one-holder, replace-on-save contract as the team-wide holding, and the
+    same reason the API owns that contract: the admin is for looking a holding
+    up, not for being the second place it can be written.
+    """
+
+    list_display = ("user", "role", "campus", "created_at")
+    list_filter = ("role", "campus")
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "user__email",
+        "role__label",
+        "campus__name",
+    )
+    raw_id_fields = ("user", "campus")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "role":
+            kwargs["queryset"] = ApproverRole.objects.filter(
+                is_active=True, is_institution_wide=False
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)

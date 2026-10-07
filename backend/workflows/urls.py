@@ -13,11 +13,13 @@ from .approval_views import (
 )
 from .views import (
     ApproverRoleViewSet,
+    CampusRoleAssignmentViewSet,
     CampusViewSet,
     DelegationViewSet,
     ReassignmentViewSet,
     RoleAssignmentViewSet,
     SectionMemberViewSet,
+    TeamRoleAssignmentViewSet,
     TeamViewSet,
     WorkflowViewSet,
 )
@@ -31,6 +33,16 @@ router.register("reassignments", ReassignmentViewSet, basename="reassignment")
 router.register("approver-roles", ApproverRoleViewSet, basename="approver-role")
 router.register(
     "role-assignments", RoleAssignmentViewSet, basename="role-assignment"
+)
+router.register(
+    "team-role-assignments",
+    TeamRoleAssignmentViewSet,
+    basename="team-role-assignment",
+)
+router.register(
+    "campus-role-assignments",
+    CampusRoleAssignmentViewSet,
+    basename="campus-role-assignment",
 )
 router.register("teams", TeamViewSet, basename="team")
 router.register("campuses", CampusViewSet, basename="campus")

@@ -22,11 +22,13 @@ describe("history scopes", () => {
   it("falls back to a scope this build does not know", () => {
     // A scope added to the backend after this build must render as itself
     // rather than as `undefined` or by crashing.
-    expect(historyScopeLabel("same_campus")).toBe("same_campus");
+    expect(historyScopeLabel("same_office")).toBe("same_office");
   });
 
   it("rejects a scope the picker must not offer", () => {
-    expect(HISTORY_SCOPES).not.toContain("same_team");
+    // An office is not a boundary a leave history can be cut at, so the picker
+    // must not offer one even if the backend someday accepts it.
+    expect(HISTORY_SCOPES).not.toContain("same_office");
   });
 
   it("is one list, shared by the client picker and the server reader", () => {

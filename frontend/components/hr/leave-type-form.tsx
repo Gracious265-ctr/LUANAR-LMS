@@ -4,8 +4,10 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import type { LeaveType } from "@/lib/leave-rules";
-import { isAnnualLeaveType } from "@/lib/leave-rules";
+import {
+  isAnnualLeaveType,
+  type LeaveType,
+} from "@/lib/leave-rules-pure";
 import { createLeaveType, updateLeaveType } from "@/lib/leave-rules-client";
 
 export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {

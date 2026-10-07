@@ -36,7 +36,7 @@ vi.mock("@/lib/teams-client", async (importOriginal) => {
 
 const SECTION_NAMES: Record<number, string> = {
   1: "Direct supervisor",
-  2: "Department head",
+  2: "Team leader",
 };
 
 function makeSectionMember(
@@ -51,8 +51,8 @@ function makeSectionMember(
     section_name: SECTION_NAMES[sectionId],
     section_order: sectionId,
     workflow: 1,
-    approver_role: sectionId === 1 ? "supervisor" : "hod",
-    approver_role_label: sectionId === 1 ? "Supervisor" : "Head of Department",
+    approver_role: sectionId === 1 ? "supervisor" : "lead",
+    approver_role_label: sectionId === 1 ? "Supervisor" : "Team Leader",
     user,
     user_name: name,
     user_email: `${name.toLowerCase().replace(/\s+/g, ".")}@luanar.ac.mw`,
@@ -69,8 +69,6 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     name: "Bunda College Faculty",
     code: "bunda-faculty",
     description: "",
-    department: 1,
-    department_name: "Bunda College",
     campus: null,
     campus_name: "",
     workflow: 1,
@@ -81,7 +79,7 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     is_effective: true,
     stage_roles: [
       { id: 1, code: "supervisor", label: "Supervisor" },
-      { id: 2, code: "hod", label: "Head of Department" },
+      { id: 2, code: "lead", label: "Team Leader" },
     ],
     member_count: 2,
     members: [],
@@ -101,11 +99,11 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
       },
       {
         id: 2,
-        name: "Department head",
+        name: "Team leader",
         order: 2,
         is_active: true,
-        approver_role: "hod",
-        approver_role_label: "Head of Department",
+        approver_role: "lead",
+        approver_role_label: "Team Leader",
         approver: null,
       },
     ],
@@ -130,7 +128,7 @@ const sam: EligibleApprover = {
 };
 
 const jane = makeSectionMember(9, 1, 3, "Jane Dean");
-const bob = makeSectionMember(10, 2, 5, "Bob HOD");
+const bob = makeSectionMember(10, 2, 5, "Bob Lead");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -145,20 +143,27 @@ describe("TeamMemberList", () => {
     render(<TeamMemberList team={makeTeam()} />);
 
     expect(await screen.findByText("Supervisor")).toBeInTheDocument();
-    expect(screen.getByText("Head of Department")).toBeInTheDocument();
+    expect(screen.getByText("Team Leader")).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", { name: "Approver for Direct supervisor" })
     ).toHaveValue("3");
     // The second step has nobody appointed yet, but the people who could hold
     // it are offered.
     expect(
-      screen.getByRole("combobox", { name: "Approver for Department head" })
+      screen.getByRole("combobox", { name: "Approver for Team leader" })
     ).toHaveValue("");
     expect(
       within(
-        screen.getByRole("group", { name: "Section 2: Department head" })
+        screen.getByRole("group", { name: "Section 2: Team leader" })
       ).getByRole("option", { name: /Sam Staff/ })
     ).toBeInTheDocument();
+
+    // Eligibility is the team, so the list is asked for by team id — scoped to
+    // the chain the team routes through, so people already serving one of its
+    // other chains are not offered. Offering anybody the team does not have
+    // would be offering somebody the write then refuses.
+    expect(listEligibleApprovers).toHaveBeenCalledWith(4, 1, 1);
+    expect(listEligibleApprovers).toHaveBeenCalledWith(4, 2, 1);
   });
 
   it("appoints one person to a step by id and refreshes", async () => {
@@ -177,19 +182,19 @@ describe("TeamMemberList", () => {
 
   it("explains a refusal instead of silently failing", async () => {
     vi.mocked(addSectionMember).mockRejectedValue(
-      new Error("user: Sam Staff already holds another role in this department.")
+      new Error("user: Sam Staff already holds another role on this team.")
     );
     render(<TeamMemberList team={makeTeam()} />);
     await screen.findByText("Supervisor");
 
     fireEvent.change(
-      screen.getByRole("combobox", { name: "Approver for Department head" }),
+      screen.getByRole("combobox", { name: "Approver for Team leader" }),
       { target: { value: "8" } }
     );
 
     expect(
       await screen.findByText(
-        "user: Sam Staff already holds another role in this department."
+        "user: Sam Staff already holds another role on this team."
       )
     ).toBeInTheDocument();
   });
@@ -231,15 +236,12 @@ describe("TeamMemberList", () => {
     expect(screen.getByText(/no approval steps/i)).toBeInTheDocument();
   });
 
-  it("says a team with no department cannot have approvers yet", () => {
-    render(
-      <TeamMemberList
-        team={makeTeam({ department: null, department_name: "" })}
-      />
-    );
+  it("says a step nobody on the team can hold has nobody to appoint", async () => {
+    vi.mocked(listEligibleApprovers).mockResolvedValue([]);
+    render(<TeamMemberList team={makeTeam()} />);
 
     expect(
-      screen.getByText(/an approver is one of the team's own employees/i)
+      await screen.findByText(/Nobody on this team holds this role yet/)
     ).toBeInTheDocument();
   });
 });

@@ -274,10 +274,11 @@ class RoleListingTests(RoleAPIBase):
 
         Roles are open-ended: HR adds codes without a deploy, so the query
         count has to be a function of what the screen asks for, not of how many
-        roles have accumulated. A per-role version would pass the first
+        roles have accumulated.         A per-role version would pass the first
         assertion in the test above only because that screen happened to hold a
         fixed handful.
         """
+        ensure_roles("supervisor", "hod", "dean", "registrar", "dvc")
         with self.assertNumQueries(self.LIST_QUERY_COUNT):
             first = self.client.get(LIST_URL)
 

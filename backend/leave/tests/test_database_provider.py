@@ -23,7 +23,7 @@ from leave.models import (
     LeaveType,
     PublicHoliday,
 )
-from workflows.testing import department_for
+from workflows.testing import team_for
 from leave.providers.database import DatabaseRulesProvider
 from users.models import EmployeeProfile
 
@@ -42,7 +42,7 @@ class ProviderSetupMixin:
         )
         self.profile = EmployeeProfile.objects.create(
             user=self.user,
-            department=department_for("Administration"),
+            team=team_for("Administration Team"),
             designation="Administrative Officer",
             category=Grade.ADMINISTRATION,
             grade="B",
@@ -274,7 +274,7 @@ class LeaveSummaryEndpointTests(TestCase):
     def test_summary_reflects_hr_record(self):
         EmployeeProfile.objects.create(
             user=self.user,
-            department=department_for("Administration"),
+            team=team_for("Administration Team"),
             designation="Administrative Officer",
             category=Grade.ADMINISTRATION,
             grade="B",

@@ -7,18 +7,18 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import Department, EmployeeProfile
+from .models import EmployeeProfile
 from .permissions import IsHRRole, IsSuperUser
 from .serializers import (
     AdminUserSerializer,
-    DepartmentSerializer,
-    DepartmentWriteSerializer,
     EmployeeSerializer,
     LoginSerializer,
     UserSerializer,
 )
-from .services import DepartmentActionError, retire_department
 from .throttles import LoginRateThrottle
+
+from workflows.models import Team
+from workflows.services import wide_approver_ids_for_team
 
 User = get_user_model()
 
@@ -86,7 +86,6 @@ class EmployeeViewSet(
         "user__last_name",
         "user__email",
         "designation",
-        "department__name",
         "grade",
     ]
     ordering_fields = [
@@ -94,7 +93,6 @@ class EmployeeViewSet(
         "user__last_name",
         "user__email",
         "designation",
-        "department__name",
         "grade",
         "appointment_date",
     ]
@@ -103,11 +101,8 @@ class EmployeeViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        department = self.request.query_params.get("department")
         team = self.request.query_params.get("team")
-        queryset = EmployeeProfile.objects.select_related("user", "department", "team")
-        if department:
-            queryset = queryset.filter(department_id=department)
+        queryset = EmployeeProfile.objects.select_related("user", "team")
         if team:
             # ``team=none`` answers "who is not on a team yet", which the team
             # screen needs to offer candidates; otherwise it is a team id.
@@ -115,6 +110,32 @@ class EmployeeViewSet(
                 queryset = queryset.filter(team__isnull=True)
             else:
                 queryset = queryset.filter(team_id=team)
+
+        # A team's roster matches its category: an academic team takes academic
+        # employees and an administration team takes administration employees,
+        # so the member picker is filtered by the team's own category rather
+        # than offering every unassigned employee and refusing the mismatch.
+        category = self.request.query_params.get("category")
+        if category in EmployeeProfile.Category.values:
+            queryset = queryset.filter(category=category)
+
+        # ``not_wide_for_team=<id>`` drops the people who staff the team's steps
+        # as wide approvers (institution-wide, team-wide on that team, or
+        # campus-wide at its campus): an approver is managed on the Approvers
+        # tab, not placed on the roster, so they are offered to nothing here.
+        # The same rule the write path enforces, read once for the picker.
+        not_wide_for_team = self.request.query_params.get("not_wide_for_team")
+        if not_wide_for_team:
+            try:
+                team_id = int(not_wide_for_team)
+            except ValueError:
+                team_id = None
+            if team_id is not None:
+                wide_team = Team.objects.filter(pk=team_id).first()
+                if wide_team is not None:
+                    queryset = queryset.exclude(
+                        user_id__in=wide_approver_ids_for_team(wide_team)
+                    )
         return queryset
 
 
@@ -129,7 +150,7 @@ class AdminUserViewSet(
 
     This is the front door the product was missing: a fresh database has no HR
     user, and without one nobody can reach the HR back office to create the
-    departments, roles, and teams the rest of the app is configured from. The
+    campuses, roles, and teams the rest of the app is configured from. The
     superuser (the one account a deployment is bootstrapped with) lists the HR
     accounts here, creates them, resets their password, and activates or
     deactivates them.
@@ -149,75 +170,3 @@ class AdminUserViewSet(
 
     def get_queryset(self):
         return User.objects.filter(role=User.Role.HR).order_by("first_name", "last_name")
-
-
-class DepartmentViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for departments (no hard delete).
-
-    Read and write go through separate serializers because the two answer
-    different questions: the read shape carries the teams and employee count a
-    department screen displays, and the write shape carries only the name that
-    HR is allowed to set.
-    """
-
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name"]
-    ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        queryset = Department.objects.prefetch_related("teams")
-        if self.request.query_params.get("include_retired") != "1":
-            queryset = queryset.filter(is_active=True)
-        return queryset
-
-    def get_serializer_class(self):
-        if self.action in ("create", "update", "partial_update"):
-            return DepartmentWriteSerializer
-        return DepartmentSerializer
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["actor"] = self.request.user
-        return context
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            department = serializer.save()
-        except DepartmentActionError as exc:
-            raise ValidationError({exc.field: [exc.message]}) from exc
-        return Response(
-            DepartmentSerializer(department).data, status=status.HTTP_201_CREATED
-        )
-
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        try:
-            department = serializer.save()
-        except DepartmentActionError as exc:
-            raise ValidationError({exc.field: [exc.message]}) from exc
-        return Response(DepartmentSerializer(department).data)
-
-    @action(detail=True, methods=["post"])
-    def retire(self, request, pk=None):
-        """Retire a department; it cannot be deleted while anything uses it."""
-        department = self.get_object()
-        try:
-            department = retire_department(
-                department=department, actor=request.user
-            )
-        except DepartmentActionError as exc:
-            raise ValidationError({exc.field: [exc.message]}) from exc
-        return Response(DepartmentSerializer(department).data)

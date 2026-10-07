@@ -149,6 +149,12 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("workflows", "0013_sections"),
+        # Step 4 reads the applicant's team to trace a stage back to a section,
+        # so this needs EmployeeProfile.team to exist. users.0005 adds that
+        # field and already depends on workflows.0010, which is an ancestor of
+        # 0013 — so this edge cannot form a cycle, it just stops 0014 being free
+        # to run before users.0005.
+        ("users", "0005_employeeprofile_team"),
     ]
 
     operations = [

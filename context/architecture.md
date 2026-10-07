@@ -173,14 +173,17 @@ Examples:
 | Employee records                        | Database |
 | Employee roles                          | Database |
 | Employee team membership                | Database |
+| Team membership roster (who routes a team) | Database |
+| Normal workflow memberships (team member on a chain) | Database |
 | Employee grades                         | Database |
 | Grade entitlement configuration         | Database |
 | Approver-role definitions (HR-managed)  | Database |
-| Departments (HR-managed)                | Database |
 | Campuses                                | Database |
-| Teams (workflow + department scoped)    | Database |
-| Section approvers (one per step, effective-dated) | Database |
+| Teams (academic / administration; campus-scoped when academic) | Database |
+| Team-wide role assignments              | Database |
+| Campus-wide role assignments            | Database |
 | Institution-wide role assignments       | Database |
+| Section approvers (one per step, effective-dated) | Database |
 | Leave applications                      | Database |
 | Leave types                             | Database |
 | Leave-type rules                        | Database |
@@ -307,26 +310,42 @@ Access is controlled by two separate things, and conflating them was the defect 
 
 **2. Approver role** — a position in an approval chain, maintained by HR as configuration (`ApproverRole`: `code`, `label`, `description`, `history_scope`, `is_institution_wide`, `handles_cancellation`). Approver roles are open-ended: HR defines the codes. No role is privileged in code.
 
-An approver role is held in exactly one of two places:
+An approver role is held in one of four places, and a stage's role resolves through
+them in a fixed order — the nearest scope wins:
 
-| Holding                | Model                 | Scope                                                        |
-| ---------------------- | --------------------- | ------------------------------------------------------------ |
-| Team membership        | `TeamMember`          | One role per person, one person per role, within a `Team`'s `stage_roles` |
-| Institution-wide grant | `RoleAssignment`      | One holder for a role marked `is_institution_wide`             |
+| Holding                | Model                          | Scope                                                        |
+| ---------------------- | ------------------------------ | ------------------------------------------------------------ |
+| Section appointee      | `Section.approver`             | The one person HR put on this step, effective-dated          |
+| Team-wide grant        | `TeamRoleAssignment`           | One holder per role per team                                 |
+| Campus-wide grant      | `CampusRoleAssignment`         | One holder per role per campus                               |
+| Institution-wide grant | `RoleAssignment`               | One holder for a role marked `is_institution_wide`           |
 
-A `Team` binds a group of people to a workflow (`team.workflow`, `null` = institution-wide workflow) and optionally to a `Campus`, which scopes reporting and history. `EmployeeProfile.team` places an employee on a team, so routing is per-employee rather than per-category guesswork.
+A `Team` is either **academic** — it sits at a `Campus`, and its stages may resolve to a
+campus-wide holder — or **administration** — institution-wide, and the only kind of team
+an institution-wide approver may serve. `EmployeeProfile.team` places an employee on a
+team, so routing is per-employee rather than per-category guesswork. `Team.workflow` is
+the routing pointer (a team routes exactly one chain); `Workflow.team` is ownership (a
+team may own several chains and switch which one it routes).
 
 Access principles:
 
 | Principal                                  | Access Principle                                                                 |
 | ------------------------------------------ | -------------------------------------------------------------------------------- |
 | Employee                                   | Own applications and personal leave information                                  |
-| Holder of an approver role                 | Only the applications whose current stage names a role they hold                |
-| Institution-wide holder                     | Decides for any applicant whose stage reaches that role and whose team has no member holding it |
+| Holder of an approver role                 | Only the applications whose current stage names a role they hold, at any scope    |
+| Institution-wide holder                     | Decides for any applicant whose stage reaches that role, whose team has no nearer holder, and whose team is an administration team |
 | Holder of a role marked `handles_cancellation` | Decides cancellation requests, not only stage approvals                      |
 | HR                                         | Organization-wide administrative/configuration access                            |
 
-**Resolution is the backend's, per applicant, at submission time** (`resolve_stage_approver`): the team member holding the role wins; failing that, an institution-wide role must have exactly one active holder; otherwise the configuration is incomplete and the submission is refused with an error that names the role and what HR must do.
+**Resolution is the backend's, per applicant, at submission time**
+(`workflows.providers.resolve_section_approvers`): the section's own appointee wins;
+failing that the team-wide holder; failing that the campus-wide holder; failing that an
+institution-wide holder — and only when the routing team is an administration team (a
+`team=None` lookup may still reach it, since institution-wide roles have no team).
+Otherwise the configuration is incomplete and the submission is refused with an error
+that names the role and what HR must do. The same answer is exposed as display data
+(`section_resolution`) and never raises, so a screen can show who would act here
+without the lookup failing first.
 
 A person is an approver when they hold at least one **active** approver role (`is_approver_user`). Retiring a role therefore retires the approver status it conferred, which is why roles are retired rather than deleted.
 
@@ -384,7 +403,7 @@ Supervisor → HOD → Registrar → DVC
 
 Different employee categories may use different configured workflows.
 
-A team belongs to exactly one `Department`, and eligibility to approve is a fact about where the person works: a non-institution-wide approver must be an employee of the team's own department. Each workflow section has exactly one approver (`Section.approver`); replacements are effective-dated handovers that keep the closed periods as history, so "who could act on a given day" stays answerable after a handover.
+The team is the unit of organization; the `Department` concept is removed. Eligibility to approve is a fact about appointment, not location: a step's approver is its section appointee, or a holder of the step's role at team, campus, or (administration teams only) institution scope. Each workflow section has exactly one appointee (`Section.approver`); replacements are effective-dated handovers that keep the closed periods as history, so "who could act on a given day" stays answerable after a handover.
 
 A stage names an approver role by `code`, resolved at submission time against the `ApproverRole` registry — not against a list in code. Consequences that the implementation must honour:
 
@@ -609,9 +628,10 @@ The audit record must identify the actor, action, timestamp, and relevant previo
 * The gate lives in the routing provider, not in the UI, and every failure names the team — and the date, where a date is the reason — so an applicant's refusal is actionable rather than a stage error nobody can act on.
 * Activation and retirement are actions, not fields: `status` is read-only on `PATCH`. Activation validates first and is refused, leaving the team `draft`, if the chain cannot route. Both are audited, and the audit entry records the status *before* the change.
 * A team's detail and action routes reach it whatever its status. A retired team is exactly the one HR needs to read, and a 404 would make retirement indistinguishable from deletion.
-* A team is created with its chain, not before it, and keeps it. `Team.workflow` is one-to-one (`PROTECT`), so a chain has exactly one owner and two teams can never be pointed at the same steps. There is no shared chain to hand out and no "which chain does this team use?" question to answer.
-* The chain is written inside the team write. `POST /teams/` takes `new_workflow`; `PATCH /teams/<id>/` may too, and rewrites the chain the team already owns rather than replacing it. Steps are matched by `(approver_role, name)`, so reordering moves a step with its roster intact while a renamed step is a different step and starts empty. Applications already inside a step are unaffected either way: `section_ref` is `PROTECT`, so a step an application used cannot be deleted out from under it.
-* There is no separate chain screen or write API. `Workflow` remains as the thing routing, snapshots, and audit entries point at, but it is read-only over the API and the admin — a chain changes because its team was saved, which is one audited action rather than two.
+* A team owns its chains and routes exactly one of them. `Workflow.team` is the ownership relation (a team may own several, `SET_NULL` when a chain is orphaned); `Team.workflow` is the routing pointer, still one-to-one (`PROTECT`), so a chain is routed by at most one team and two teams can never both route the same steps. There is no shared chain to hand out and no "which chain does this team use?" question to answer — the answer is `Team.workflow`.
+* A team is created with its first chain. `POST /teams/` takes `new_workflow`, and `PATCH /teams/<id>/` may too, rewriting the chain the team already routes through rather than replacing it. Steps are matched by `(approver_role, name)`, so reordering moves a step with its roster intact while a renamed step is a different step and starts empty. Applications already inside a step are unaffected either way: `section_ref` is `PROTECT`, so a step an application used cannot be deleted out from under it.
+* Creating a team need not send `new_workflow`: a team without one is a chainless draft and routes nothing until its chain is added. The **create form is details-only for that reason** — it writes the team without a chain and lands on the new team's **Members** tab, so employees are added before anyone is appointed — and the chain is configured afterwards from the team's Overview, where a chain added later offers only the people now on the roster.
+* Each owned chain is configured on its own through `POST/PATCH /workflows/`, which takes `name`, `team` (create only) and `sections` and *refuses* `effective_from` and `is_active` by name — when a chain begins applying is decided when the team that routes through it is activated, and switching a chain off is retiring that team. A team may not adopt a chain it does not own: the serializer refuses `workflow` on create outright and on update unless the team already owns it. `GET /workflows/?team=` lists a team's own chains.
 * Validation returns **every** problem at once, each with a stable code, and is side-effect free. A chain with three unstaffed steps takes one pass, not three.
 * `ApplicationStage.section_ref` stays `PROTECT` and `decide()` still reads the `ApplicationStageApprover` snapshot, so retiring a team, re-approving it, or rebuilding a chain cannot change the meaning of an application already inside it.
 
@@ -626,6 +646,32 @@ The audit record must identify the actor, action, timestamp, and relevant previo
 * Uniqueness is on the **open** membership: one person, one section, one time. That is what makes a handover — remove, then add — a normal sequence rather than a duplicate-row error.
 * The API mirrors the split: the default view is who can act now, `?history=1` is every period.
 * Effective-dating never rewrites a running application. The approval snapshot is the authority for anything already submitted.
+
+### 12.14 Team Roster Is Managed on the Team
+
+**Who routes a team's applications is this team's roster, read and written through the team rather than edited on the employee.**
+
+* `EmployeeProfile.team` remains the source of truth for which team an employee routes through (`users.EmployeeProfile`, `related_name="members"`). The team members screen reads it via `GET /teams/<id>/members/`, and `POST` places one employee on the team. Assigning from a picker that offers another team's employee is refused with a message naming that team rather than silently moving the person.
+* A roster change is `select_for_update`-protected on the profile row, so concurrent HR edits cannot interleave two writers on one employee.
+* Removal refuses while the person still ties to the team: an active section approver, an open approver period, a normal membership on one of the team's chains, or a team-wide role holding. Every blocker is named in the same 409, so HR can release them one at a time rather than being sent back with a bare "no".
+* Adding and removing a roster row is audited against `TargetType.EMPLOYEE` with the before/after detail, so membership is part of the personnel history.
+* **A roster matches its team's category, and never collects a wide approver.** An academic team takes academic employees; an administration team takes administration employees. `GET /employees/?team=none&category=<...>&not_wide_for_team=<id>` reads the same scoping the write enforces: `EmployeeViewSet` filters by the team's category and excludes the people who already serve it as wide approvers (institution-wide holders, team-wide holders on that team, or campus-wide at its campus), so the member picker offers exactly who `POST /teams/<id>/members/` will accept — and the write refuses both a category mismatch and a wide approver by name, because an approver is placed from the Approvers tab, not booked onto a roster that would silently route their leave.
+* **Pickers that write a `User` field must read `employee.user_id`, never `employee.id`.** An `Employee` row from `EmployeeSerializer` carries its record pk as `id` and the linked account as `user_id`; every write that appoints a member, a step member, a delegate, or a `to_approver` resolves against `User`, so a picker that options on `id` sends a record pk as a user pk. When the record pk collided with another account's user pk the write hit the wrong person (a profile-less `User` then failed with "no employee record"); when they diverged the picker stoped offering people the write accepts. The team member add, the team-wide holder feed, delegation create/review, and reassignment pickers are all corrected to option on `user_id`.
+* **The team-wide holder picker reads the whole matching directory, not the roster.** A team-wide holder need not be a member of the team — `create_team_role_assignment` accepts any active employee with a record — so the Approvers tab is fed by `listAllEmployees(team.category)`, the directory's half whose holders the write will take. The roster's wide-approver filter belongs to the *members* picker alone; reusing that scoped list on the Approvers tab would silently remove a currently-holding approver from their own replacement picker.
+* **A scoped holding carries its scope from the page, not from a select that may not exist.** `WideHoldingPanel` takes a fixed `scopeId` (the team or campus whose page renders it) and draws no scope picker — there is nothing to choose. Only the Approvers page, which offers the choice among many teams, passes `scopeOptions`. The write guard refuses a scoped save with no id (`scope !== "institution" && !scopeId`) rather than sending pk 0, which the backend answers with `Invalid pk "0" - object does not exist`.
+* **A wide approver is the same category as the teams they cover.** `create_team_role_assignment` refuses a holder whose profile category differs from the team's; `create_campus_role_assignment` refuses any non-Academic holder — every team at a campus is academic, so a campus holding is always an academic-team holding. Institution-wide holdings serve administration teams only and stay category-free. The pickers offer only what the write accepts: `listAllEmployees(category?)` scopes the team/campus Approvers feeds server-side, and `ScopeOption.category` / `requiredCategory` let the panel filter per chosen scope on the Approvers page.
+
+### 12.15 Normal Workflow Membership Is a Team-Scoped Assignment
+
+**"A team member on this chain" is its own record, separate from the step appointments that decide applications.**
+
+* `WorkflowMember` is the pair (workflow, user) with a denormalised `team` for scoping, unique at the database level on both (workflow, user) and — unless the person is a **wide approver** — (team, user). The second constraint is a conditional `UniqueConstraint` on `(team, user)` where `is_wide_approver = False`, so one employee serves one of the team's chains at a time *except* the wide exception, and even a concurrent write cannot route around either side of that rule.
+* Membership is written through the workflow (`POST /workflows/<id>/members/`, whole-list `members: [user_id]` on the workflow write) and the eligibility pool is read from the team (`GET /teams/<id>/workflow-member-pool/?workflow=<id>`). The pool splits `available` (may join), `current` (already on this chain), and `assigned_elsewhere` (on a sibling chain — a step approver counts exactly like a normal member — read-only and named), so an edit screen can only ever offer people the write will accept.
+* One employee serves **one of the team's chains at a time**, whether staffing a step (active `Section.approver`) or as a normal member. The write paths agree: `ensure_not_assigned_elsewhere` runs inside `ensure_membership_allowed` for step appointments, and `assign_workflow_member` refuses a non-wide person who already serves another chain. A section's own workflow is excluded from the comparison, so re-saving the same appointment is not a conflict with itself.
+* A **wide approver** is the exception: someone holding a team-wide role on this team, a campus-wide role at this team's campus, or an institution-wide role staffs chains automatically, so they may sit on several at once. The eligibility pool, the approver picker, and both write paths keep offering them; `WorkflowMember.is_wide_approver` is set at write time from the live holdings and is what the conditional constraint keys on.
+* The approver picker applies the same rule before HR picks: `GET /teams/<id>/eligible-approvers/?workflow=<id>` drops anyone already on a *different* chain of the team, `?workflow=new` drops anyone on *any* of the team's chains (a chain not created yet), and the workflow form writes each step's `approver` at chain-write time. Wide approvers stay offered.
+* Members are the submitters a chain decides; step approvers (Sections) are who acts. The two are kept visibly distinct in the data and in the UI.
+* Add/remove/sync membership changes are audited against `WORKFLOW` with before/after details, so a chain's member list is part of its history like its steps.
 
 ---
 

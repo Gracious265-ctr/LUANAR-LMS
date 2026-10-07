@@ -7,7 +7,8 @@
  */
 export const HISTORY_SCOPES = [
   "all",
-  "same_department",
+  "same_team",
+  "same_campus",
   "same_faculty",
   "current_financial_year",
   "none",
@@ -17,7 +18,8 @@ export type HistoryScope = (typeof HISTORY_SCOPES)[number];
 
 export const HISTORY_SCOPE_LABELS: Record<HistoryScope, string> = {
   all: "Full history",
-  same_department: "Same department only",
+  same_team: "Same team only",
+  same_campus: "Same campus only",
   same_faculty: "Same faculty only",
   current_financial_year: "Current financial year only",
   none: "No history",

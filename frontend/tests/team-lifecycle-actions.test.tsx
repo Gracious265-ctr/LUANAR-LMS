@@ -31,9 +31,9 @@ const notReady: TeamReadiness = {
       code: "no_approver",
       field: "sections",
       message:
-        'Nobody can act on the "Department head" step (Head of Department). Add at least one active member, or a holder of the role.',
+        'Nobody can act on the "Team leader" step (Team Leader). Add at least one active member, or a holder of the role.',
       section: 2,
-      approver_role: "hod",
+      approver_role: "lead",
     },
     {
       code: "no_sections",
@@ -59,7 +59,7 @@ describe("TeamLifecycleActions", () => {
     expect(
       await screen.findByText(/Bunda College Faculty cannot be put into force yet/)
     ).toBeInTheDocument();
-    expect(screen.getByText(/Nobody can act on the "Department head" step/)).toBeInTheDocument();
+    expect(screen.getByText(/Nobody can act on the "Team leader" step/)).toBeInTheDocument();
     expect(
       screen.getByText("This team has no approval chain, so nothing can be approved.")
     ).toBeInTheDocument();

@@ -28,7 +28,7 @@ from .events import (
     register_consumer,
 )
 from .testing import (
-    department_for,
+    team_for,
     grant_approver_role,
     make_approver,
     make_section,
@@ -96,13 +96,13 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="B",
         )
         EmployeeProfile.objects.create(
             user=self.supervisor,
             designation="Direct Supervisor",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="E",
         )
         for role, user in (
@@ -165,7 +165,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         today = timezone.localdate()
         self.admin_workflow = Workflow.objects.create(
             name="Admin chain",
-            employee_category=EmployeeProfile.Category.ADMINISTRATION,
             effective_from=today,
             is_active=True,
         )
@@ -175,7 +174,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             make_section(self.admin_workflow, index, role)
         self.academic_workflow = Workflow.objects.create(
             name="Academic chain",
-            employee_category=EmployeeProfile.Category.ACADEMIC,
             effective_from=today,
             is_active=True,
         )
@@ -214,7 +212,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             profile = EmployeeProfile.objects.create(
                 user=user,
                 designation="Officer",
-                department=department_for("Administration"),
+                team=team_for("Administration"),
                 grade="B",
             )
         profile.team = team
@@ -238,7 +236,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         EmployeeProfile.objects.create(
             user=deputy,
             designation="Deputy",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="E",
         )
         supervisor_section.approver = deputy
@@ -374,10 +372,14 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
 
         self.assertEqual(definitions[-1].approver_user_ids, (active.pk,))
 
-    def test_chain_for_academic_without_department_starts_with_hod(self):
+    def test_chain_for_academic_on_the_academic_team_starts_with_hod(self):
+        """Routing follows the applicant's team, whatever the person's category.
+
+        The team carries no academic/administration split of its own: the chain
+        that governs an applicant is the one belonging to the team they are on.
+        """
         profile = self._place_on_team(self.employee, self.academic_team)
         profile.category = EmployeeProfile.Category.ACADEMIC
-        profile.department = department_for("Mathematics")
         profile.save()
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
             LeaveApplication(employee=self.employee)

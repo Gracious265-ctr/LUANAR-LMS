@@ -9,10 +9,6 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import { listDepartments, type Department } from "@/lib/departments";
-
-const DEPARTMENTS_ERROR =
-  "Departments could not be loaded, so this employee's department cannot be changed. Reload the page to try again.";
 
 export default async function EmployeeDetailPage({
   params,
@@ -42,14 +38,6 @@ export default async function EmployeeDetailPage({
     gradeOptions = gradeOptionsFromEntitlements(entitlements.results);
   } catch {
     // Manual grade entry remains available if entitlements cannot be loaded.
-  }
-
-  let departments: Department[] = [];
-  let departmentsError = "";
-  try {
-    departments = await listDepartments();
-  } catch {
-    departmentsError = DEPARTMENTS_ERROR;
   }
 
   return (
@@ -88,8 +76,6 @@ export default async function EmployeeDetailPage({
           endpoint={`/api/hr/employees/${employee.id}`}
           method="PATCH"
           gradeOptions={gradeOptions}
-          departments={departments}
-          departmentsError={departmentsError}
         />
       </div>
     </div>

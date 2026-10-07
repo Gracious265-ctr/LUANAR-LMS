@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+import {
+  teamCategoryBadgeClass,
+  teamCategoryLabel,
+} from "@/lib/team-category";
 import type { Team } from "@/lib/teams";
 import { teamStatusBadgeClass, teamStatusLabel } from "@/lib/teams";
 
@@ -61,7 +65,6 @@ export function TeamTable({ teams }: { teams: Team[] }) {
                 </Link>
                 <p className="text-xs text-text-muted">
                   {[
-                    team.department_name && `Department: ${team.department_name}`,
                     team.campus_name && `Campus: ${team.campus_name}`,
                     `${team.member_count} ${
                       team.member_count === 1 ? "person" : "people"
@@ -70,6 +73,13 @@ export function TeamTable({ teams }: { teams: Team[] }) {
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                <span
+                  className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${teamCategoryBadgeClass(
+                    team.category
+                  )}`}
+                >
+                  {teamCategoryLabel(team.category)}
+                </span>
               </th>
               <td className="px-4 py-3 text-text-secondary">
                 {team.workflow_name || (
