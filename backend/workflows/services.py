@@ -1881,6 +1881,7 @@ def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssi
                 f"{user.get_full_name() or user.username} is not an active user. "
                 "Activate the account before assigning a role.",
             )
+        _ensure_single_wide_holding(user, exclude_role=role)
         assignment, created = RoleAssignment.objects.get_or_create(
             user=user, role=role
         )
@@ -1968,6 +1969,7 @@ def create_team_role_assignment(
                 f"is an {team.get_category_display()} team. A team-wide approver "
                 f"must match the team's category.",
             )
+        _ensure_single_wide_holding(user, exclude_role=role, exclude_team=team)
         previous = (
             TeamRoleAssignment.objects.select_for_update()
             .filter(team=team, role=role)
@@ -2053,6 +2055,7 @@ def create_campus_role_assignment(
                 f"campus is an academic team, so a campus-wide approver must be "
                 f"an Academic employee.",
             )
+        _ensure_single_wide_holding(user, exclude_role=role, exclude_campus=campus)
         previous = (
             CampusRoleAssignment.objects.select_for_update()
             .filter(campus=campus, role=role)
@@ -2142,6 +2145,61 @@ def _ensure_wide_role(role: ApproverRole, user: User, scope: str) -> None:
             f"{user.get_full_name() or user.username} has no employee record, so "
             "there is nothing to hold an approver role with. Complete their "
             "employee record first.",
+        )
+
+
+def _ensure_single_wide_holding(
+    user: User,
+    *,
+    exclude_role: ApproverRole | None = None,
+    exclude_team: Team | None = None,
+    exclude_campus: Campus | None = None,
+) -> None:
+    """Refuse a person a second wide approver role, anywhere in the school.
+
+    A wide approver is someone a whole scope falls back to, and HR changes them
+    per role per scope; one person covering a role on one team, a role at one
+    campus, *and* a role institution-wide means three sections claim the same
+    person, and a role written onto a team page is how somebody keeps appearing
+    in the other sections' pickers. So a person holds **one** wide approver role,
+    at one of the three scopes — which is also the promise the pickers make:
+    once assigned, somebody is gone from every other wide-approver section.
+
+    The exclusions name the (scope, role) pair this write is replacing: the same
+    role at the same scope is that write's own target (already its holder, or
+    about to be), not a second holding, so a save can still re-point a holding
+    in place.
+    """
+    holdings = RoleAssignment.objects.filter(user=user)
+    if exclude_role is not None:
+        holdings = holdings.exclude(role=exclude_role)
+    holding = holdings.select_related("role").first()
+    if holding is not None:
+        where = f"{holding.role.label} institution-wide"
+    else:
+        team_holdings = TeamRoleAssignment.objects.filter(user=user)
+        if exclude_team is not None and exclude_role is not None:
+            team_holdings = team_holdings.exclude(team=exclude_team, role=exclude_role)
+        holding = team_holdings.select_related("role", "team").first()
+        if holding is not None:
+            where = f"{holding.role.label} as a team-wide approver on {holding.team.name}"
+        else:
+            campus_holdings = CampusRoleAssignment.objects.filter(user=user)
+            if exclude_campus is not None and exclude_role is not None:
+                campus_holdings = campus_holdings.exclude(
+                    campus=exclude_campus, role=exclude_role
+                )
+            holding = campus_holdings.select_related("role", "campus").first()
+            if holding is not None:
+                where = f"{holding.role.label} as a campus-wide approver at {holding.campus.name}"
+            else:
+                where = None
+    if where is not None:
+        raise RoleActionError(
+            "user",
+            f"A person may hold only one wide approver role, and "
+            f"{user.get_full_name() or user.username} already holds {where}. "
+            f"Remove that holding before assigning another one.",
         )
 
 

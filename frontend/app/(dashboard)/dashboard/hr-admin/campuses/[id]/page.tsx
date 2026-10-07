@@ -2,10 +2,17 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
-import type { ApproverRole, CampusRoleAssignment } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
 import {
   listApproverRoles,
   listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import type { Employee } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
@@ -53,13 +60,15 @@ export default async function CampusPage({
     notFound();
   }
 
-  const [teamsResult, holdersResult, rolesResult, employeesResult] =
+  const [teamsResult, holdersResult, rolesResult, employeesResult, institutionHoldingsResult, teamHoldingsResult] =
     await Promise.all([
       listTeams({ includeInactive: true }).then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Team[], error: TEAMS_ERROR })
       ),
-      listCampusRoleAssignments(campus.id).then(
+      // Every campus's holdings, so this campus's own can be filtered out here
+      // and the whole set still fed to the panel as the one-wide-approver pool.
+      listCampusRoleAssignments().then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as CampusRoleAssignment[], error: HOLDERS_ERROR })
       ),
@@ -73,17 +82,32 @@ export default async function CampusPage({
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Employee[], error: EMPLOYEES_ERROR })
       ),
+      listRoleAssignments().catch(() => [] as RoleAssignment[]),
+      listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[]),
     ]);
 
   const teams = teamsResult.value.filter((team) => team.campus === campus.id);
-  const holdings = holdersResult.value.map(
-    (assignment): WideHolding => ({
-      id: assignment.id,
-      role: assignment.role,
-      user: assignment.user,
-      user_name: assignment.user_name,
-      role_label: assignment.role_label,
-    })
+  const holdings = holdersResult.value
+    .filter((assignment) => assignment.campus === campus.id)
+    .map(
+      (assignment): WideHolding => ({
+        id: assignment.id,
+        role: assignment.role,
+        user: assignment.user,
+        user_name: assignment.user_name,
+        role_label: assignment.role_label,
+      })
+    );
+  // A person holds one wide approver role, so everyone who already holds one
+  // anywhere (institution, any team, any campus) is offered nowhere.
+  const wideHolderUserIds = Array.from(
+    new Set(
+      [
+        ...institutionHoldingsResult,
+        ...teamHoldingsResult,
+        ...holdersResult.value,
+      ].map((assignment) => assignment.user)
+    )
   );
   const roles = rolesResult.value.filter(
     (role) => role.is_active && !role.is_institution_wide
@@ -216,20 +240,16 @@ export default async function CampusPage({
             teams.
           </p>
         ) : (
-          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {roles.map((role) => (
-              <WideHoldingPanel
-                key={role.id}
-                role={role}
-                scope="campus"
-                scopeId={campus.id}
-                requiredCategory="academic"
-                employees={employees}
-                holdings={holdings.filter(
-                  (holding) => holding.role === role.id
-                )}
-              />
-            ))}
+          <div className="mt-4">
+            <WideHoldingPanel
+              scope="campus"
+              roles={roles}
+              scopeId={campus.id}
+              requiredCategory="academic"
+              employees={employees}
+              holdings={holdings}
+              excludedUserIds={wideHolderUserIds}
+            />
           </div>
         )}
       </div>

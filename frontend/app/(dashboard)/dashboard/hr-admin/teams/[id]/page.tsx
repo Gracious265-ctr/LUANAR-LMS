@@ -5,9 +5,16 @@ import { ArrowLeft, Pencil } from "lucide-react";
 import { TeamLifecycleActions } from "@/components/hr/team-lifecycle-actions";
 import { TeamMemberList } from "@/components/hr/team-member-list";
 import { TeamMembersPanel } from "@/components/hr/team-members-panel";
-import type { ApproverRole, TeamRoleAssignment } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
 import {
   listApproverRoles,
+  listCampusRoleAssignments,
+  listRoleAssignments,
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
@@ -80,7 +87,7 @@ export default async function TeamPage({
     ? (tabParam as TabValue)
     : "overview";
 
-  const [employeesResult, candidatesResult, workflowsResult, holdersResult, rolesResult] =
+  const [employeesResult, candidatesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
     await Promise.all([
       // A team-wide holder must be the same category as the team, so the
       // Approvers tab's feed is the whole directory's matching half, read as a
@@ -97,19 +104,36 @@ export default async function TeamPage({
         team.id
       ).catch(() => [] as Employee[]),
       listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
-      listTeamRoleAssignments(team.id).catch(() => [] as TeamRoleAssignment[]),
+      // Every team's holdings, so this team's own can be filtered out here and
+      // the whole set still fed to the panel as the one-wide-approver pool.
+      listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[]),
       listApproverRoles().catch(() => [] as ApproverRole[]),
+      listRoleAssignments().catch(() => [] as RoleAssignment[]),
+      listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
     ]);
 
   const candidates = candidatesResult;
   const workflows = workflowsResult;
-  const holdings: WideHolding[] = holdersResult.map((assignment) => ({
-    id: assignment.id,
-    role: assignment.role,
-    user: assignment.user,
-    user_name: assignment.user_name,
-    role_label: assignment.role_label,
-  }));
+  const holdings: WideHolding[] = holdersResult
+    .filter((assignment) => assignment.team === team.id)
+    .map((assignment) => ({
+      id: assignment.id,
+      role: assignment.role,
+      user: assignment.user,
+      user_name: assignment.user_name,
+      role_label: assignment.role_label,
+    }));
+  // A person holds one wide approver role, so everyone who already holds one
+  // anywhere (institution, any team, any campus) is offered nowhere.
+  const wideHolderUserIds = Array.from(
+    new Set(
+      [
+        ...institutionHoldingsResult,
+        ...holdersResult,
+        ...campusHoldingsResult,
+      ].map((assignment) => assignment.user)
+    )
+  );
   const roles = rolesResult.filter(
     (role) => role.is_active && !role.is_institution_wide
   );
@@ -341,20 +365,16 @@ export default async function TeamPage({
               page, and reaches only administration teams.
             </p>
           ) : (
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {roles.map((role) => (
-                <WideHoldingPanel
-                  key={role.id}
-                  role={role}
-                  scope="team"
-                  scopeId={team.id}
-                  requiredCategory={team.category as EmployeeCategory}
-                  employees={employees}
-                  holdings={holdings.filter(
-                    (holding) => holding.role === role.id
-                  )}
-                />
-              ))}
+            <div className="mt-4">
+              <WideHoldingPanel
+                scope="team"
+                roles={roles}
+                scopeId={team.id}
+                requiredCategory={team.category as EmployeeCategory}
+                employees={employees}
+                holdings={holdings}
+                excludedUserIds={wideHolderUserIds}
+              />
             </div>
           )}
         </div>

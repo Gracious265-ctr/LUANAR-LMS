@@ -61,6 +61,16 @@ const supervisor: ApproverRole = {
   is_institution_wide: false,
 };
 
+const dean: ApproverRole = {
+  ...registrar,
+  id: 2,
+  code: "dean",
+  label: "Dean",
+  is_institution_wide: false,
+};
+
+const ALL_ROLES = [registrar, supervisor, dean];
+
 function makeEmployee(overrides: Partial<Employee> = {}): Employee {
   return {
     id: 3,
@@ -101,12 +111,20 @@ const aliceAdmin = makeEmployee({
   category: "administration",
 });
 
-const holding: WideHolding = {
+const institutionHolding: WideHolding = {
   id: 77,
   role: 9,
   user: 3,
   user_name: "Jane Dean",
   role_label: "Registrar",
+};
+
+const supervisorHolding: WideHolding = {
+  id: 78,
+  role: 1,
+  user: 3,
+  user_name: "Jane Dean",
+  role_label: "Supervisor",
 };
 
 const teams = [
@@ -121,8 +139,8 @@ function renderPanel(
 ) {
   return render(
     <WideHoldingPanel
-      role={scope === "institution" ? registrar : supervisor}
       scope={scope}
+      roles={ALL_ROLES}
       employees={[jane, bob]}
       holdings={[]}
       {...props}
@@ -130,23 +148,46 @@ function renderPanel(
   );
 }
 
+/** Options currently visible in the person picker. */
+function personOptions(): (string | null)[] {
+  return Array.from(
+    screen.getByLabelText("Person").querySelectorAll("option")
+  ).map((option) => option.textContent);
+}
+
+function choose(label: string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), {
+    target: { value },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("WideHoldingPanel", () => {
-  it("names the role and the scope it is being written at", () => {
+  it("says which scope it is, and offers the roles from a drop down", () => {
     renderPanel("institution");
 
-    expect(screen.getByText("Registrar")).toBeInTheDocument();
     expect(screen.getByText("Institution-wide")).toBeInTheDocument();
+
+    const roleOptions = Array.from(
+      screen.getByLabelText("Role").querySelectorAll("option")
+    ).map((option) => option.textContent);
+    expect(roleOptions).toContain("Registrar");
+    expect(roleOptions).toContain("Supervisor");
+    expect(roleOptions).toContain("Dean");
   });
 
-  it("shows the current holder, and removes them through the right collection", async () => {
+  it("shows the holder with its role, and removes through the right collection", async () => {
     vi.mocked(removeRoleAssignment).mockResolvedValue(undefined);
-    renderPanel("institution", { holdings: [holding] });
+    renderPanel("institution", { holdings: [institutionHolding] });
 
-    expect(screen.getByText("Jane Dean")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, node) => node?.textContent === "Registrar · Jane Dean"
+      )
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
@@ -160,7 +201,7 @@ describe("WideHoldingPanel", () => {
     renderPanel("team", { scopeOptions: teams });
 
     expect(
-      screen.getByText(/No holder\. A stage whose role is unheld falls back/i)
+      screen.getByText(/No holders here\. A stage whose role is unheld falls back/i)
     ).toBeInTheDocument();
   });
 
@@ -168,13 +209,13 @@ describe("WideHoldingPanel", () => {
     vi.mocked(removeTeamRoleAssignment).mockResolvedValue(undefined);
     renderPanel("team", {
       scopeOptions: teams,
-      holdings: [{ ...holding, role: 1, role_label: "Supervisor" }],
+      holdings: [supervisorHolding],
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() =>
-      expect(removeTeamRoleAssignment).toHaveBeenCalledWith(77)
+      expect(removeTeamRoleAssignment).toHaveBeenCalledWith(78)
     );
   });
 
@@ -182,17 +223,17 @@ describe("WideHoldingPanel", () => {
     vi.mocked(removeCampusRoleAssignment).mockResolvedValue(undefined);
     renderPanel("campus", {
       scopeOptions: campuses,
-      holdings: [{ ...holding, role: 1, role_label: "Supervisor" }],
+      holdings: [supervisorHolding],
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() =>
-      expect(removeCampusRoleAssignment).toHaveBeenCalledWith(77)
+      expect(removeCampusRoleAssignment).toHaveBeenCalledWith(78)
     );
   });
 
-  it("writes an institution-wide holding without asking for a scope", async () => {
+  it("writes an institution-wide holding from a chosen role, without asking for a scope", async () => {
     vi.mocked(createRoleAssignment).mockResolvedValue({
       id: 80,
       role: 9,
@@ -204,9 +245,8 @@ describe("WideHoldingPanel", () => {
     expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Campus")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "5" },
-    });
+    choose("Role", "9");
+    choose("Person", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     await waitFor(() =>
@@ -224,20 +264,17 @@ describe("WideHoldingPanel", () => {
     } as never);
     renderPanel("team", { scopeOptions: teams });
 
-    // A person is chosen but no team: the scope is the half of the holding
-    // that is still missing, and the message names it rather than the person.
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "5" },
-    });
+    // A role and person are chosen but no team: the scope is the half of the
+    // holding that is still missing, and the message names it.
+    choose("Role", "1");
+    choose("Person", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
     expect(
       await screen.findByText("Choose the team this holding applies to.")
     ).toBeInTheDocument();
     expect(createTeamRoleAssignment).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText("Team"), {
-      target: { value: "4" },
-    });
+    choose("Team", "4");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     await waitFor(() =>
@@ -258,12 +295,9 @@ describe("WideHoldingPanel", () => {
     } as never);
     renderPanel("campus", { scopeOptions: campuses });
 
-    fireEvent.change(screen.getByLabelText("Campus"), {
-      target: { value: "1" },
-    });
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "3" },
-    });
+    choose("Role", "1");
+    choose("Person", "3");
+    choose("Campus", "1");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     await waitFor(() =>
@@ -289,9 +323,8 @@ describe("WideHoldingPanel", () => {
     // never rendered (which used to send pk 0 to the backend).
     expect(screen.queryByLabelText("Team")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "5" },
-    });
+    choose("Role", "1");
+    choose("Person", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     await waitFor(() =>
@@ -314,9 +347,8 @@ describe("WideHoldingPanel", () => {
 
     expect(screen.queryByLabelText("Campus")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "3" },
-    });
+    choose("Role", "1");
+    choose("Person", "3");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     await waitFor(() =>
@@ -333,9 +365,8 @@ describe("WideHoldingPanel", () => {
     // backend's answer to pk 0 is "Invalid pk \"0\" - object does not exist".
     renderPanel("team");
 
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "5" },
-    });
+    choose("Role", "1");
+    choose("Person", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     expect(
@@ -344,9 +375,21 @@ describe("WideHoldingPanel", () => {
     expect(createTeamRoleAssignment).not.toHaveBeenCalled();
   });
 
-  it("refuses to save with nobody chosen, and names the choice", async () => {
+  it("refuses to save without a role chosen", async () => {
     renderPanel("institution");
 
+    fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
+
+    expect(
+      await screen.findByText("Choose a role to assign.")
+    ).toBeInTheDocument();
+    expect(createRoleAssignment).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save with a role but nobody chosen", async () => {
+    renderPanel("institution");
+
+    choose("Role", "9");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     expect(
@@ -355,14 +398,68 @@ describe("WideHoldingPanel", () => {
     expect(createRoleAssignment).not.toHaveBeenCalled();
   });
 
-  it("offers only people who are not already the holder", () => {
-    renderPanel("institution", { holdings: [holding] });
+  it("offers only people who do not already hold the chosen role here", () => {
+    renderPanel("institution", { holdings: [institutionHolding] });
 
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).not.toContain("Jane Dean");
-    expect(options).toContain("Bob Lead");
+    // Jane holds Registrar here, so she is not a candidate for it.
+    choose("Role", "9");
+    expect(personOptions()).not.toContain("Jane Dean");
+    expect(personOptions()).toContain("Bob Lead");
+
+    // A role with nobody holding it here offers Jane again.
+    choose("Role", "1");
+    expect(personOptions()).toContain("Jane Dean");
+  });
+
+  it("hides the people list when nobody is left for the chosen role", () => {
+    renderPanel("institution", {
+      roles: [supervisor],
+      employees: [jane],
+      holdings: [supervisorHolding],
+    });
+
+    choose("Role", "1");
+
+    expect(
+      screen.getByText(/Every active matching employee already holds/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
+  });
+
+  it("does not offer an inactive employee", () => {
+    renderPanel("institution", {
+      employees: [jane, makeEmployee({ ...bob, is_active: false })],
+    });
+
+    choose("Role", "1");
+
+    expect(personOptions()).toContain("Jane Dean");
+    expect(personOptions()).not.toContain("Bob Lead");
+  });
+
+  it("does not offer a person who already holds a wide approver role elsewhere", () => {
+    renderPanel("institution", { excludedUserIds: [5] });
+
+    // Bob already holds a wide approver role somewhere, so he is no longer a
+    // candidate in this section even though nothing here is his.
+    choose("Role", "1");
+    expect(personOptions()).toContain("Jane Dean");
+    expect(personOptions()).not.toContain("Bob Lead");
+  });
+
+  it("hides the person list when every candidate already holds a wide approver role", () => {
+    renderPanel("institution", {
+      roles: [supervisor],
+      employees: [jane, bob],
+      excludedUserIds: [3, 5],
+    });
+
+    choose("Role", "1");
+
+    expect(
+      screen.getByText(/Every active matching employee already holds/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
   });
 
   it("offers only the fixed scope's category on a team page", () => {
@@ -374,11 +471,9 @@ describe("WideHoldingPanel", () => {
 
     // The write refuses a team-wide holder who does not match the team's
     // category, so the picker offers only the half that can be saved.
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toContain("Alice Admin");
-    expect(options).not.toContain("Bob Lead");
+    choose("Role", "1");
+    expect(personOptions()).toContain("Alice Admin");
+    expect(personOptions()).not.toContain("Bob Lead");
   });
 
   it("offers only academic employees on a fixed campus page", () => {
@@ -388,11 +483,9 @@ describe("WideHoldingPanel", () => {
       employees: [bob, aliceAdmin],
     });
 
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toContain("Bob Lead");
-    expect(options).not.toContain("Alice Admin");
+    choose("Role", "1");
+    expect(personOptions()).toContain("Bob Lead");
+    expect(personOptions()).not.toContain("Alice Admin");
   });
 
   it("follows the chosen team's category for the person list", () => {
@@ -405,22 +498,15 @@ describe("WideHoldingPanel", () => {
     });
 
     // An academic team offers academic employees only...
-    fireEvent.change(screen.getByLabelText("Team"), {
-      target: { value: "4" },
-    });
-    let options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toContain("Bob Lead");
-    expect(options).not.toContain("Alice Admin");
+    choose("Role", "1");
+    choose("Team", "4");
+    expect(personOptions()).toContain("Bob Lead");
+    expect(personOptions()).not.toContain("Alice Admin");
 
     // ...and switching to an administration team swaps the person list.
-    fireEvent.change(screen.getByLabelText("Team"), {
-      target: { value: "6" },
-    });
-    options = screen.getAllByRole("option").map((option) => option.textContent);
-    expect(options).toContain("Alice Admin");
-    expect(options).not.toContain("Bob Lead");
+    choose("Team", "6");
+    expect(personOptions()).toContain("Alice Admin");
+    expect(personOptions()).not.toContain("Bob Lead");
   });
 
   it("restricts a campus holding to academic employees once a campus is chosen", () => {
@@ -429,38 +515,20 @@ describe("WideHoldingPanel", () => {
       employees: [bob, aliceAdmin],
     });
 
-    fireEvent.change(screen.getByLabelText("Campus"), {
-      target: { value: "1" },
-    });
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toContain("Bob Lead");
-    expect(options).not.toContain("Alice Admin");
+    choose("Role", "1");
+    choose("Campus", "1");
+
+    expect(personOptions()).toContain("Bob Lead");
+    expect(personOptions()).not.toContain("Alice Admin");
   });
 
-  it("hides the people list rather than offering one when none are left", () => {
-    renderPanel("institution", {
-      employees: [jane],
-      holdings: [holding],
-    });
+  it("says when no roles may be held at this scope", () => {
+    renderPanel("team", { scopeOptions: teams, roles: [] });
 
     expect(
-      screen.getByText(/Every active employee with an employee record/i)
+      screen.getByText(/No roles may be held at this scope right now/i)
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
-  });
-
-  it("does not offer an inactive employee", () => {
-    renderPanel("institution", {
-      employees: [jane, makeEmployee({ ...bob, is_active: false })],
-    });
-
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => option.textContent);
-    expect(options).toContain("Jane Dean");
-    expect(options).not.toContain("Bob Lead");
+    expect(screen.queryByLabelText("Role")).not.toBeInTheDocument();
   });
 
   it("shows a refusal from the server and stays usable", async () => {
@@ -469,9 +537,8 @@ describe("WideHoldingPanel", () => {
     );
     renderPanel("institution");
 
-    fireEvent.change(screen.getByLabelText("Person"), {
-      target: { value: "5" },
-    });
+    choose("Role", "9");
+    choose("Person", "5");
     fireEvent.click(screen.getByRole("button", { name: "Save holder" }));
 
     expect(

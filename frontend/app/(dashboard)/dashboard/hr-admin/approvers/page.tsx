@@ -125,23 +125,30 @@ export default async function ApproversPage({
     category: "academic" as const,
   }));
 
-  const institutionByRole = groupByRole(
-    holders.institution.map((assignment) => toHolding(assignment))
-  );
-  const teamByRole = groupByRole(
-    holders.team
-      .filter((assignment) => teamFilter === null || assignment.team === teamFilter)
-      .map((assignment) => toHolding(assignment))
-  );
-  const campusByRole = groupByRole(
-    holders.campus
-      .filter(
-        (assignment) => campusFilter === null || assignment.campus === campusFilter
+  const institutionHoldings = holders.institution.map(toHolding);
+  const teamHoldings = holders.team
+    .filter((assignment) => teamFilter === null || assignment.team === teamFilter)
+    .map(toHolding);
+  const campusHoldings = holders.campus
+    .filter(
+      (assignment) => campusFilter === null || assignment.campus === campusFilter
+    )
+    .map(toHolding);
+
+  // A person holds one wide approver role, so everybody who already holds one
+  // anywhere (read unfiltered, not just the scope shown) is offered nowhere.
+  const wideHolderUserIds = Array.from(
+    new Set(
+      [...holders.institution, ...holders.team, ...holders.campus].map(
+        (assignment) => assignment.user
       )
-      .map((assignment) => toHolding(assignment))
+    )
   );
 
   const activeRoles = roles.filter((role) => role.is_active);
+  // A team or campus holding may only use a scoped role; institution-wide
+  // roles are written at the institution scope alone.
+  const scopedRoles = activeRoles.filter((role) => !role.is_institution_wide);
   const scopeChips = SCOPE_FILTERS.map((filter) => {
     const query = new URLSearchParams();
     query.set("scope", filter.value);
@@ -255,86 +262,50 @@ export default async function ApproversPage({
           </Link>
         </div>
       ) : (
-        <div className="space-y-6">
-          {activeRoles.map((role) => {
-            const panels: React.ReactNode[] = [];
-            if (showInstitution) {
-              panels.push(
-                <WideHoldingPanel
-                  key={`institution-${role.id}`}
-                  role={role}
-                  scope="institution"
-                  employees={employees}
-                  holdings={institutionByRole.get(role.id) ?? []}
-                />
-              );
-            }
-            if (showTeam) {
-              panels.push(
-                <WideHoldingPanel
-                  key={`team-${role.id}`}
-                  role={role}
-                  scope="team"
-                  scopeOptions={teamOptions}
-                  employees={employees}
-                  holdings={teamByRole.get(role.id) ?? []}
-                />
-              );
-            }
-            if (showCampus) {
-              panels.push(
-                <WideHoldingPanel
-                  key={`campus-${role.id}`}
-                  role={role}
-                  scope="campus"
-                  scopeOptions={campusOptions}
-                  employees={employees}
-                  holdings={campusByRole.get(role.id) ?? []}
-                />
-              );
-            }
-
-            return (
-              <section
-                key={role.id}
-                className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"
-                aria-label={role.label}
-              >
-                <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-                  <div>
-                    <h3 className="text-lg font-semibold text-text-primary">
-                      {role.label}
-                    </h3>
-                    <p className="text-sm text-text-secondary">
-                      {role.description ||
-                        "Held at one or more of the three scopes below."}
-                    </p>
-                  </div>
-                  <span className="text-xs uppercase tracking-wide text-text-muted">
-                    {role.is_institution_wide
-                      ? "Institution-wide role"
-                      : "Scoped role"}
-                  </span>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {panels}
-                </div>
-                {!role.is_institution_wide && (
-                  <p className="mt-3 text-xs text-text-muted">
-                    An institution-wide role is held here only; a team or campus
-                    holding cannot serve an administration team&apos;s stages.
-                  </p>
-                )}
-                {role.is_institution_wide && showInstitution && (
-                  <p className="mt-3 text-xs text-text-muted">
-                    Institution-wide holdings are the only ones an
-                    administration team&apos;s stages may fall back to.
-                  </p>
-                )}
-              </section>
-            );
-          })}
-        </div>
+        <section
+          className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"
+          aria-label="Wide approver holdings"
+        >
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {showInstitution && (
+              <WideHoldingPanel
+                key="institution"
+                scope="institution"
+                roles={activeRoles}
+                employees={employees}
+                holdings={institutionHoldings}
+                excludedUserIds={wideHolderUserIds}
+              />
+            )}
+            {showTeam && (
+              <WideHoldingPanel
+                key="team"
+                scope="team"
+                roles={scopedRoles}
+                scopeOptions={teamOptions}
+                employees={employees}
+                holdings={teamHoldings}
+                excludedUserIds={wideHolderUserIds}
+              />
+            )}
+            {showCampus && (
+              <WideHoldingPanel
+                key="campus"
+                scope="campus"
+                roles={scopedRoles}
+                scopeOptions={campusOptions}
+                employees={employees}
+                holdings={campusHoldings}
+                excludedUserIds={wideHolderUserIds}
+              />
+            )}
+          </div>
+          <p className="mt-3 text-xs text-text-muted">
+            Saving a holder replaces that role&apos;s current holder at the
+            chosen scope — and a person holds only one wide approver role, so a
+            saved holder disappears from the other sections.
+          </p>
+        </section>
       )}
 
     </div>
@@ -354,17 +325,4 @@ function toHolding(
     user_name: assignment.user_name,
     role_label: assignment.role_label,
   };
-}
-
-function groupByRole(holdings: WideHolding[]): Map<number, WideHolding[]> {
-  const byRole = new Map<number, WideHolding[]>();
-  for (const holding of holdings) {
-    const bucket = byRole.get(holding.role);
-    if (bucket) {
-      bucket.push(holding);
-    } else {
-      byRole.set(holding.role, [holding]);
-    }
-  }
-  return byRole;
 }

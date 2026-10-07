@@ -54,30 +54,37 @@ export interface ScopeOption {
 }
 
 /**
- * One role's holders at one scope, and the form that changes them.
+ * One scope's holders, and the form that changes them.
  *
- * Saving a second holder replaces the first rather than failing, so the form is
- * "pick the person" rather than "add to a list" — there is never more than one
- * holder to manage, and HR is never asked to delete before they may change
- * their mind. A scope picker appears only where the scope is chosen per
- * holding: an institution-wide role has no scope to choose.
+ * The write is a pick-a-role, pick-a-person decision: saving a holder replaces
+ * the existing one for that role at that scope rather than failing, so the form
+ * is "choose the role, choose the person — and the scope where it is not the
+ * page's own" rather than a list to append to. HR is never asked to delete
+ * before they may change their mind, which is why the role is chosen from a
+ * drop down instead of each role owning its own save button.
  *
  * A wide approver is the same half of the institution they cover — the team's
  * category for a team holding, academic for a campus holding — so the person
- * list is scoped to the fixed scope's category or, where the scope is chosen
- * here, to the chosen option's.
+ * list follows the fixed scope's category or, where the scope is chosen here,
+ * the chosen option's. And a person holds only **one** wide approver role, so
+ * once somebody is a wide approver anywhere they are gone from every other
+ * wide-approver picker: the panel excludes the whole current holder list
+ * (`excludedUserIds`), not just the people who already hold the role being
+ * chosen.
  */
 export function WideHoldingPanel({
-  role,
   scope,
+  roles,
   scopeOptions = [],
   scopeId: fixedScopeId,
   requiredCategory,
   employees,
   holdings,
+  excludedUserIds = [],
 }: {
-  role: ApproverRole;
   scope: WideScope;
+  /** The roles that may be held at this scope, in the order to offer them. */
+  roles: ApproverRole[];
   /** Teams or campuses to choose between. Empty for the institution-wide scope. */
   scopeOptions?: ScopeOption[];
   /**
@@ -94,10 +101,18 @@ export function WideHoldingPanel({
   requiredCategory?: EmployeeCategory;
   employees: Employee[];
   holdings: WideHolding[];
+  /**
+   * Every wide approver, whatever their scope — the union of the institution,
+   * team, and campus holdings. A person holds only one wide approver role, so
+   * somebody who already holds one anywhere is not offered here: the panel
+   * would create a person who reappears in another wide-approver section.
+   */
+  excludedUserIds?: number[];
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [roleId, setRoleId] = useState("");
   const [scopeValue, setScopeValue] = useState("");
 
   const needsScope = fixedScopeId == null && scopeOptions.length > 0;
@@ -105,18 +120,30 @@ export function WideHoldingPanel({
     (option) => String(option.id) === scopeValue
   );
   const scopeCategory = requiredCategory ?? chosenOption?.category;
+  const selectedRole = roles.find((role) => String(role.id) === roleId);
+  const excluded = new Set(excludedUserIds);
 
   // A holder is somebody with an employee record: the backend refuses to
   // appoint a user who has no record to hold the role with, so the picker does
   // not offer them and then apologise. The same half-of-the-institution rule
   // the write enforces is applied here, so the person offered is one the save
-  // can actually accept.
-  const candidates = employees.filter(
-    (employee) =>
-      employee.is_active &&
-      (!scopeCategory || employee.category === scopeCategory) &&
-      !holdings.some((h) => h.user === employee.user_id)
-  );
+  // can actually accept — and anyone who already holds the chosen role here, or
+  // holds a wide approver role anywhere at all, is a completed decision, not a
+  // candidate for a second holding.
+  const candidates =
+    selectedRole == null
+      ? []
+      : employees.filter(
+          (employee) =>
+            employee.is_active &&
+            !excluded.has(employee.user_id) &&
+            (!scopeCategory || employee.category === scopeCategory) &&
+            !holdings.some(
+              (holding) =>
+                holding.role === selectedRole.id &&
+                holding.user === employee.user_id
+            )
+        );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,9 +151,15 @@ export function WideHoldingPanel({
     setBusy(true);
 
     const formData = new FormData(event.currentTarget);
+    const role = Number(formData.get("role") || 0);
     const user = Number(formData.get("user") || 0);
     const scopeId = Number(formData.get("scope_id") || 0) || fixedScopeId || 0;
 
+    if (!role) {
+      setError("Choose a role to assign.");
+      setBusy(false);
+      return;
+    }
     if (!user) {
       setError("Choose somebody to hold this role.");
       setBusy(false);
@@ -152,17 +185,17 @@ export function WideHoldingPanel({
       if (scope === "team") {
         await createTeamRoleAssignment({
           team: scopeId,
-          role: role.id,
+          role,
           user,
         });
       } else if (scope === "campus") {
         await createCampusRoleAssignment({
           campus: scopeId,
-          role: role.id,
+          role,
           user,
         });
       } else {
-        await createRoleAssignment({ role: role.id, user });
+        await createRoleAssignment({ role, user });
       }
       router.refresh();
     } catch (err) {
@@ -202,7 +235,9 @@ export function WideHoldingPanel({
   return (
     <div className="rounded-lg border border-border-default bg-surface-page p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-sm font-semibold text-text-primary">{role.label}</h4>
+        <h4 className="text-sm font-semibold text-text-primary">
+          Assign a wide approver
+        </h4>
         <span className="text-xs uppercase tracking-wide text-text-muted">
           {wideScopeLabel(scope)}
         </span>
@@ -215,7 +250,11 @@ export function WideHoldingPanel({
               key={holding.id}
               className="flex flex-wrap items-center justify-between gap-2 text-sm"
             >
-              <span className="text-text-primary">{holding.user_name}</span>
+              <span className="text-text-primary">
+                <span className="font-medium">{holding.role_label}</span>
+                {" · "}
+                {holding.user_name}
+              </span>
               <button
                 type="button"
                 disabled={busy}
@@ -231,29 +270,50 @@ export function WideHoldingPanel({
 
       {holdings.length === 0 && (
         <p className="mt-2 text-xs text-text-muted">
-          No holder. A stage whose role is unheld falls back to the next scope,
-          and is refused only when nothing is left to fall back to.
+          No holders here. A stage whose role is unheld falls back to the next
+          scope, and is refused only when nothing is left to fall back to.
         </p>
       )}
 
-      {candidates.length === 0 ? (
+      {roles.length === 0 ? (
         <p className="mt-2 text-xs text-text-muted">
-          {holdings.length > 0
-            ? "Every active employee with an employee record already holds this role."
-            : "No active employees are available to hold this role."}
+          No roles may be held at this scope right now.
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="mt-3 space-y-2">
+          <div>
+            <label
+              htmlFor={`role-${scope}`}
+              className="mb-1 block text-xs font-medium text-text-secondary"
+            >
+              Role
+            </label>
+            <select
+              id={`role-${scope}`}
+              name="role"
+              value={roleId}
+              onChange={(event) => setRoleId(event.target.value)}
+              className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+            >
+              <option value="">Choose a role…</option>
+              {roles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {needsScope && (
             <div>
               <label
-                htmlFor={`scope-${role.id}-${scope}`}
+                htmlFor={`scope-${scope}`}
                 className="mb-1 block text-xs font-medium text-text-secondary"
               >
                 {scope === "team" ? "Team" : "Campus"}
               </label>
               <select
-                id={`scope-${role.id}-${scope}`}
+                id={`scope-${scope}`}
                 name="scope_id"
                 value={scopeValue}
                 onChange={(event) => setScopeValue(event.target.value)}
@@ -272,35 +332,51 @@ export function WideHoldingPanel({
               </select>
             </div>
           )}
+
           <div>
-            <label
-              htmlFor={`holder-${role.id}-${scope}`}
-              className="mb-1 block text-xs font-medium text-text-secondary"
-            >
-              Person
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <select
-                id={`holder-${role.id}-${scope}`}
-                name="user"
-                defaultValue=""
-                className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              >
-                <option value="">Choose a person…</option>
-                {candidates.map((employee) => (
-                  <option key={employee.id} value={employee.user_id}>
-                    {employee.full_name || employee.email}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy ? "Saving..." : "Save holder"}
-              </button>
-            </div>
+            {selectedRole != null && candidates.length === 0 ? (
+              <p className="text-xs text-text-muted">
+                Every active matching employee already holds a wide approver
+                role here or elsewhere. Remove that holding first, or pick
+                another role.
+              </p>
+            ) : (
+              <>
+                <label
+                  htmlFor={`holder-${scope}`}
+                  className="mb-1 block text-xs font-medium text-text-secondary"
+                >
+                  Person
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    id={`holder-${scope}`}
+                    name="user"
+                    defaultValue=""
+                    disabled={selectedRole == null}
+                    className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">
+                      {selectedRole == null
+                        ? "Choose a role first…"
+                        : "Choose a person…"}
+                    </option>
+                    {candidates.map((employee) => (
+                      <option key={employee.id} value={employee.user_id}>
+                        {employee.full_name || employee.email}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy ? "Saving..." : "Save holder"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           {error && <p className="text-xs text-status-rejected">{error}</p>}
         </form>
