@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Lock, X } from "lucide-react";
 
 import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
 import { listRoleAssignments } from "@/lib/approver-roles-client";
@@ -81,13 +81,15 @@ export function WorkflowForm({
   );
 
   /**
-   * The single institution-wide holder of each role, by role id. A role with no
-   * holder — or more than one — maps to nothing, because naming one of several
-   * people as the automatic answer is exactly the ambiguity the backend leaves
-   * unstaffed rather than guess at.
+   * The single institution-wide holder of each role, name and all, by role id.
+   * A role with no holder — or more than one — maps to nothing, because naming
+   * one of several people as the automatic answer is exactly the ambiguity the
+   * backend leaves unstaffed rather than guess at. The name is here because a
+   * locked approver field shows it read-only; it is not a candidate to pick
+   * from.
    */
-  const holderIdByRoleId = useMemo(() => {
-    const lone = new Map<number, number>();
+  const wideHolderByRoleId = useMemo(() => {
+    const lone = new Map<number, { id: number; name: string }>();
     const seen = new Set<number>();
     for (const assignment of wideHolders) {
       if (seen.has(assignment.role)) {
@@ -95,7 +97,10 @@ export function WorkflowForm({
         continue;
       }
       seen.add(assignment.role);
-      lone.set(assignment.role, assignment.user);
+      lone.set(assignment.role, {
+        id: assignment.user,
+        name: assignment.user_name,
+      });
     }
     return lone;
   }, [wideHolders]);
@@ -162,9 +167,10 @@ export function WorkflowForm({
    * The fill when the list arrives mirrors the backend's rule exactly and is
    * deliberately as narrow: only an institution-wide role, only an
    * administration team (an academic team may not use an institution-wide
-   * approver at all), and only when there is exactly one holder. Whatever HR
-   * chooses afterwards is left untouched, and an explicitly emptied approver
-   * field stays empty — this only fills in the gap, it never re-decides.
+   * approver at all), and only when there is exactly one holder. That answer is
+   * the one true approver of the step — the field is locked to it and another
+   * name may not be selected — so the fill also corrects a person appointed
+   * before this rule existed: the wide holder wins.
    */
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +178,7 @@ export function WorkflowForm({
       .then((assignments) => {
         if (cancelled) return;
         setWideHolders(assignments);
-        const lone = new Map<number, number>();
+        const lone = new Map<number, { id: number; name: string }>();
         const seen = new Set<number>();
         for (const assignment of assignments) {
           if (seen.has(assignment.role)) {
@@ -180,12 +186,14 @@ export function WorkflowForm({
             continue;
           }
           seen.add(assignment.role);
-          lone.set(assignment.role, assignment.user);
+          lone.set(assignment.role, {
+            id: assignment.user,
+            name: assignment.user_name,
+          });
         }
         setSteps((current) => {
           let changed = false;
           const next = current.map((step) => {
-            if (step.approver != null) return step;
             const role = step.approver_role
               ? roleByCode.get(step.approver_role)
               : undefined;
@@ -193,8 +201,9 @@ export function WorkflowForm({
             if (team.category !== "administration") return step;
             const holder = lone.get(role.id);
             if (holder === undefined) return step;
+            if (step.approver === holder.id) return step;
             changed = true;
-            return { ...step, approver: holder };
+            return { ...step, approver: holder.id };
           });
           return changed ? next : current;
         });
@@ -308,9 +317,9 @@ function toggleMember(userId: number) {
         };
         const role = roleByCode.get(approverRole);
         if (role?.is_institution_wide && team.category === "administration") {
-          const holder = holderIdByRoleId.get(role.id);
+          const holder = wideHolderByRoleId.get(role.id);
           if (holder !== undefined) {
-            return { ...next, approver: holder };
+            return { ...next, approver: holder.id };
           }
         }
         return next;
@@ -324,7 +333,7 @@ function toggleMember(userId: number) {
       const role = roleByCode.get(approverRole);
       const approver =
         role?.is_institution_wide && team.category === "administration"
-          ? (holderIdByRoleId.get(role.id) ?? null)
+          ? (wideHolderByRoleId.get(role.id)?.id ?? null)
           : null;
       return [...current, { approver_role: approverRole, approver }];
     });
@@ -488,6 +497,15 @@ function toggleMember(userId: number) {
                       },
                     ]
                   : people;
+              // An institution-wide role has one true approver — its single
+              // institution-wide holder — so the field is locked to that name
+              // and another may not be selected. The backend appoints the same
+              // person at save, so the lock is the front half of a rule the
+              // whole chain already keeps.
+              const wideHolder =
+                roleId !== undefined && team.category === "administration"
+                  ? wideHolderByRoleId.get(roleId)
+                  : undefined;
               return (
               <li
                 key={index}
@@ -563,35 +581,50 @@ function toggleMember(userId: number) {
                   >
                     Approver
                   </label>
-                  <select
-                    id={`step-approver-${index}`}
-                    value={step.approver ?? ""}
-                    onChange={(event) =>
-                      update(index, {
-                        approver: event.target.value
-                          ? Number(event.target.value)
-                          : null,
-                      })
-                    }
-                    disabled={roleId === undefined}
-                    className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">
-                      {step.approver != null
-                        ? approverNameById.get(step.approver) ?? "Not appointed yet"
-                        : people.length > 0
-                          ? "Not appointed yet"
-                          : roleId === undefined
-                            ? "Pick a role first"
-                            : "Nobody may be appointed here yet"}
-                    </option>
-                    {optionPeople.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.full_name}
-                        {person.designation ? ` — ${person.designation}` : ""}
+                  {wideHolder ? (
+                    <>
+                      <div
+                        id={`step-approver-${index}`}
+                        className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
+                      >
+                        <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                        <span className="font-medium">{wideHolder.name}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-text-muted">
+                        Locked to the institution-wide holder of this role.
+                      </p>
+                    </>
+                  ) : (
+                    <select
+                      id={`step-approver-${index}`}
+                      value={step.approver ?? ""}
+                      onChange={(event) =>
+                        update(index, {
+                          approver: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        })
+                      }
+                      disabled={roleId === undefined}
+                      className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">
+                        {step.approver != null
+                          ? approverNameById.get(step.approver) ?? "Not appointed yet"
+                          : people.length > 0
+                            ? "Not appointed yet"
+                            : roleId === undefined
+                              ? "Pick a role first"
+                              : "Nobody may be appointed here yet"}
                       </option>
-                    ))}
-                  </select>
+                      {optionPeople.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.full_name}
+                          {person.designation ? ` — ${person.designation}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 pb-1">
                   <button

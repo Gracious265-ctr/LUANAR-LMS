@@ -3830,9 +3830,19 @@ the write rule **exactly** so what the screen promises is what the save accepts:
   approver — `ensure_team_eligibility` refuses it at save, so auto-filling there
   would build a guaranteed 400);
 * only when there is exactly one holder (multiple holders is the ambiguity the
-  backend leaves unstaffed rather than guesses at);
-* an approver HR sets or clears afterwards is never re-decided — the fill only
-  fills the gap once.
+  backend leaves unstaffed rather than guesses at).
+
+**The approver is locked to that holder.** An institution-wide role has one true
+approver — its single institution-wide holder — so once such a role is chosen
+the Approver field is read-only: it shows the holder's name with a lock hint
+("Locked to the institution-wide holder of this role.") and no other name can be
+selected. The submitted section is exactly that holder. The lock applies on
+first draw, in `changeRole`/`addStep`, and covers an *edited* chain too: a step
+whose role is institution-wide and solely held is corrected in the form even if
+a different person was appointed before the rule existed — the wide holder wins.
+Without a single holder the field stays a normal picker, because then there is
+no "approver's name" to show and HR may still staff the step (the backend
+validates, and academic teams remain unstaffed).
 
 **Implementation.** The form reads holdings through a new client-safe reader
 `listRoleAssignments()` in `approver-roles-client.ts` (a
@@ -3841,7 +3851,8 @@ the write rule **exactly** so what the screen promises is what the save accepts:
 have put the server module into the client bundle, which the
 `server-only-imports` guard refuses). The fill happens on first draw (when
 holdings arrive) and in `changeRole`/`addStep` (event handlers) so a role picked
-after load fills inline. The empty-lone-holder map is exactly one-holder-per-role.
+after load fills inline. The empty-lone-holder map is exactly one-holder-per-role
+and carries the holder's name for the locked read-only display.
 
 **Second request in the same pass: a role must not be reused across steps.**
 Already enforced at every layer — the client `repeatedRole()` blocks the save,
@@ -3852,9 +3863,10 @@ errorred at save. The role `<option>` for a role already sitting on another step
 is now `disabled` and labelled "— used in step N", so the chain cannot even be
 described twice with one office. The save-time guard stays as the backstop.
 
-**Tests.** `workflow-form-members.test.tsx`: 4 new tests — auto-fill with one
-holder, stays empty with two holders, stays empty on an academic team, and a
-role used on step 1 is disabled on step 2. Frontend **487 tests / 70 files OK**;
+**Tests.** `workflow-form-members.test.tsx`: 4 new tests — a single holder
+locks the approver to their name (no picker shown) and submits exactly that id,
+stays unstaffed with two holders, stays unstaffed on an academic team, and a
+role used on step 1 is disabled on step 2. Frontend **488 tests / 70 files OK**;
 `tsc --noEmit` and `eslint` clean. No schema change.
 
 ## Defect Fix (2026-10-07) — roles table said "No holder" for a role that has one

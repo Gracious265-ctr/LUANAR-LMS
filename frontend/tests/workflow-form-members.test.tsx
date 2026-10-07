@@ -314,7 +314,7 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
 
   const dingo = { id: 40, full_name: "Dingo Dean", email: "", designation: "" };
 
-  it("fills the approver of an institution-wide step with its single holder", async () => {
+  it("locks the approver of an institution-wide step to its holder and submits that id", async () => {
     vi.mocked(listRoleAssignments).mockResolvedValue([
       {
         id: 9,
@@ -326,6 +326,7 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
       },
     ]);
     vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
+    vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
@@ -334,12 +335,25 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
       { target: { value: "registrar" } }
     );
 
-    await waitFor(() => {
-      expect(
-        (screen.getByRole("combobox", { name: "Approver" }) as HTMLSelectElement)
-          .value
-      ).toBe("40");
-    });
+    await screen.findByText("Dingo Dean");
+    expect(
+      screen.getByText("Locked to the institution-wide holder of this role.")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Approver" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
+
+    await waitFor(() =>
+      expect(createWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sections: expect.arrayContaining([
+            expect.objectContaining({ approver: 40 }),
+          ]),
+        })
+      )
+    );
   });
 
   it("leaves an institution-wide step unstaffed when no single holder exists", async () => {
