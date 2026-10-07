@@ -14,6 +14,44 @@ export {
 } from "./approver-role-scopes";
 export type { HistoryScope } from "./approver-role-scopes";
 
+/**
+ * Who holds each role institution-wide, today.
+ *
+ * Client-safe twin of the server-side reader in ``approver-roles.ts``: a
+ * workflow form running in the browser needs to show an institution-wide
+ * step's holder the moment the role is chosen, and ``approver-roles.ts`` reads
+ * through ``next/headers``, which puts the server module (and its cookies
+ * dependency) into the client bundle. Reads go through the ``/api/hr`` proxy,
+ * so the browser only ever sees the paginated rows, never Django.
+ */
+export async function listRoleAssignments(
+  roleId?: number | string
+): Promise<RoleAssignment[]> {
+  const rows: RoleAssignment[] = [];
+  let page = 1;
+  for (;;) {
+    const params = new URLSearchParams();
+    if (roleId !== undefined) {
+      params.set("role", String(roleId));
+    }
+    params.set("page", String(page));
+    const response = await fetch(`/api/hr/role-assignments/?${params}`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(apiErrorMessage(data));
+    }
+    const data = (await response.json()) as {
+      results?: RoleAssignment[];
+      next?: string | null;
+    };
+    const batch = data.results ?? [];
+    rows.push(...batch);
+    if (!data.next || batch.length === 0) break;
+    page += 1;
+  }
+  return rows;
+}
+
 export async function createApproverRole(
   input: ApproverRoleInput
 ): Promise<ApproverRole> {

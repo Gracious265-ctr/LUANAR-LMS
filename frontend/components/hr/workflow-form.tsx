@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowLeft, ArrowUp, X } from "lucide-react";
 
-import type { ApproverRole } from "@/lib/approver-roles";
+import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import { listRoleAssignments } from "@/lib/approver-roles-client";
 import { getWorkflowMemberPool } from "@/lib/team-members-client";
 import type { WorkflowMemberPool } from "@/lib/team-members";
 import type { EligibleApprover } from "@/lib/teams";
@@ -42,7 +43,7 @@ export function WorkflowForm({
   rolesError = "",
 }: {
   workflow?: Workflow;
-  team: { id: number; name: string };
+  team: { id: number; name: string; category?: string };
   roles: ApproverRole[];
   rolesError?: string;
 }) {
@@ -68,12 +69,36 @@ export function WorkflowForm({
     {}
   );
   const [candidateError, setCandidateError] = useState("");
+  const [wideHolders, setWideHolders] = useState<RoleAssignment[]>([]);
 
-  const roleByCode = new Map(roles.map((role) => [role.code, role]));
+  const roleByCode = useMemo(
+    () => new Map(roles.map((role) => [role.code, role])),
+    [roles]
+  );
   const roleIdByCode = useMemo(
     () => new Map(roles.map((role) => [role.code, role.id])),
     [roles]
   );
+
+  /**
+   * The single institution-wide holder of each role, by role id. A role with no
+   * holder — or more than one — maps to nothing, because naming one of several
+   * people as the automatic answer is exactly the ambiguity the backend leaves
+   * unstaffed rather than guess at.
+   */
+  const holderIdByRoleId = useMemo(() => {
+    const lone = new Map<number, number>();
+    const seen = new Set<number>();
+    for (const assignment of wideHolders) {
+      if (seen.has(assignment.role)) {
+        lone.delete(assignment.role);
+        continue;
+      }
+      seen.add(assignment.role);
+      lone.set(assignment.role, assignment.user);
+    }
+    return lone;
+  }, [wideHolders]);
 
   /**
    * The chain this form is shaping, as the eligible-approver question needs it:
@@ -127,6 +152,62 @@ export function WorkflowForm({
       cancelled = true;
     };
   }, [candidateKeys, workflowScope]);
+
+  /**
+   * Read who already holds each role institution-wide. The backend appoints
+   * that holder at save, so the form needs the same answer on first draw.
+   * Unreadable holdings are treated as "none": the field is then left to HR,
+   * which is precisely what the save path does when it cannot appoint either.
+   *
+   * The fill when the list arrives mirrors the backend's rule exactly and is
+   * deliberately as narrow: only an institution-wide role, only an
+   * administration team (an academic team may not use an institution-wide
+   * approver at all), and only when there is exactly one holder. Whatever HR
+   * chooses afterwards is left untouched, and an explicitly emptied approver
+   * field stays empty — this only fills in the gap, it never re-decides.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    listRoleAssignments()
+      .then((assignments) => {
+        if (cancelled) return;
+        setWideHolders(assignments);
+        const lone = new Map<number, number>();
+        const seen = new Set<number>();
+        for (const assignment of assignments) {
+          if (seen.has(assignment.role)) {
+            lone.delete(assignment.role);
+            continue;
+          }
+          seen.add(assignment.role);
+          lone.set(assignment.role, assignment.user);
+        }
+        setSteps((current) => {
+          let changed = false;
+          const next = current.map((step) => {
+            if (step.approver != null) return step;
+            const role = step.approver_role
+              ? roleByCode.get(step.approver_role)
+              : undefined;
+            if (role === undefined || !role.is_institution_wide) return step;
+            if (team.category !== "administration") return step;
+            const holder = lone.get(role.id);
+            if (holder === undefined) return step;
+            changed = true;
+            return { ...step, approver: holder };
+          });
+          return changed ? next : current;
+        });
+      })
+      .catch(() => {
+        // No visible holders means no auto-appointment; HR still picks by hand.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Roles and the team's category are constant for the form's life, so the
+    // effect runs only once; they are listed for the linter, not to re-run it.
+  }, [roleByCode, team.category]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,16 +292,42 @@ function toggleMember(userId: number) {
    * chosen for the previous role is very likely not eligible for the new one —
    * and sending an ineligible id would earn a refusal on save. The picker
    * refetches through the role-based candidate keys above.
+   *
+   * An institution-wide role also staffs its own step the moment it is
+   * chosen: it is the single holder who will be appointed at save, so the
+   * field shows that answer now rather than a step that looks undecided.
    */
   function changeRole(index: number, approverRole: string) {
-    update(index, { approver_role: approverRole, approver: null });
+    setSteps((current) =>
+      current.map((step, position) => {
+        if (position !== index) return step;
+        const next = {
+          ...step,
+          approver_role: approverRole,
+          approver: null,
+        };
+        const role = roleByCode.get(approverRole);
+        if (role?.is_institution_wide && team.category === "administration") {
+          const holder = holderIdByRoleId.get(role.id);
+          if (holder !== undefined) {
+            return { ...next, approver: holder };
+          }
+        }
+        return next;
+      })
+    );
   }
 
   function addStep() {
-    setSteps((current) => [
-      ...current,
-      { approver_role: roles[0]?.code ?? "", approver: null },
-    ]);
+    setSteps((current) => {
+      const approverRole = roles[0]?.code ?? "";
+      const role = roleByCode.get(approverRole);
+      const approver =
+        role?.is_institution_wide && team.category === "administration"
+          ? (holderIdByRoleId.get(role.id) ?? null)
+          : null;
+      return [...current, { approver_role: approverRole, approver }];
+    });
   }
 
   /** One role may sit at only one point in a chain. */
@@ -404,12 +511,28 @@ function toggleMember(userId: number) {
                     }
                     className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
                   >
-                    {roles.map((role) => (
-                      <option key={role.id} value={role.code}>
-                        {role.label}
-                        {role.is_institution_wide ? " (institution-wide)" : ""}
-                      </option>
-                    ))}
+                    {roles.map((role) => {
+                      const usedIndex = steps.findIndex(
+                        (step) => step.approver_role === role.code
+                      );
+                      const usedElsewhere =
+                        usedIndex !== -1 && usedIndex !== index;
+                      return (
+                        <option
+                          key={role.id}
+                          value={role.code}
+                          disabled={usedElsewhere}
+                        >
+                          {role.label}
+                          {role.is_institution_wide
+                            ? " (institution-wide)"
+                            : ""}
+                          {usedElsewhere
+                            ? ` — used in step ${usedIndex + 1}`
+                            : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div className="min-w-40 flex-1">

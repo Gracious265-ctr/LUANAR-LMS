@@ -5,6 +5,7 @@ import { WorkflowForm } from "@/components/hr/workflow-form";
 import { makeTeam } from "@/lib/teams/__fixtures__";
 import type { WorkflowMemberPool } from "@/lib/team-members";
 import { getWorkflowMemberPool } from "@/lib/team-members-client";
+import { listRoleAssignments } from "@/lib/approver-roles-client";
 import { listEligibleApprovers } from "@/lib/teams-client";
 import type { EligibleApprover } from "@/lib/teams";
 import type { Workflow } from "@/lib/workflows";
@@ -31,6 +32,10 @@ vi.mock("@/lib/workflows-client", () => ({
 
 vi.mock("@/lib/teams-client", () => ({
   listEligibleApprovers: vi.fn(),
+}));
+
+vi.mock("@/lib/approver-roles-client", () => ({
+  listRoleAssignments: vi.fn(),
 }));
 
 const roles = [
@@ -108,6 +113,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listEligibleApprovers).mockResolvedValue([]);
+  vi.mocked(listRoleAssignments).mockResolvedValue([]);
 });
 
 describe("WorkflowForm members section", () => {
@@ -278,5 +284,146 @@ describe("WorkflowForm approver picker", () => {
     expect(
       screen.getByRole("option", { name: "Ruth Member" })
     ).toBeInTheDocument();
+  });
+});
+
+describe("WorkflowForm institution-wide auto-appointment", () => {
+  const adminTeam = makeTeam({
+    id: 4,
+    name: "ICT Team",
+    category: "administration",
+  });
+
+  const wideRoles = [
+    ...roles,
+    {
+      id: 2,
+      code: "registrar",
+      label: "Registrar",
+      description: "",
+      is_active: true,
+      history_scope: "section" as const,
+      handles_cancellation: false,
+      is_institution_wide: true,
+      is_in_use: false,
+      usage: [],
+      created_at: "",
+      updated_at: "",
+    },
+  ];
+
+  const dingo = { id: 40, full_name: "Dingo Dean", email: "", designation: "" };
+
+  it("fills the approver of an institution-wide step with its single holder", async () => {
+    vi.mocked(listRoleAssignments).mockResolvedValue([
+      {
+        id: 9,
+        user: 40,
+        user_name: "Dingo Dean",
+        role: 2,
+        role_label: "Registrar",
+        created_at: "",
+      },
+    ]);
+    vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
+
+    render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Role" }),
+      { target: { value: "registrar" } }
+    );
+
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("combobox", { name: "Approver" }) as HTMLSelectElement)
+          .value
+      ).toBe("40");
+    });
+  });
+
+  it("leaves an institution-wide step unstaffed when no single holder exists", async () => {
+    vi.mocked(listRoleAssignments).mockResolvedValue([
+      {
+        id: 9,
+        user: 40,
+        user_name: "Dingo Dean",
+        role: 2,
+        role_label: "Registrar",
+        created_at: "",
+      },
+      {
+        id: 10,
+        user: 41,
+        user_name: "Pat Principal",
+        role: 2,
+        role_label: "Registrar",
+        created_at: "",
+      },
+    ]);
+    vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
+
+    render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Role" }),
+      { target: { value: "registrar" } }
+    );
+
+    const select = await screen.findByRole("combobox", {
+      name: "Approver",
+    });
+    expect((select as HTMLSelectElement).value).toBe("");
+  });
+
+  it("does not fill an institution-wide step on an academic team", async () => {
+    vi.mocked(listRoleAssignments).mockResolvedValue([
+      {
+        id: 9,
+        user: 40,
+        user_name: "Dingo Dean",
+        role: 2,
+        role_label: "Registrar",
+        created_at: "",
+      },
+    ]);
+    vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
+
+    render(
+      <WorkflowForm
+        team={makeTeam({ id: 4, category: "academic" })}
+        roles={wideRoles}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Role" }),
+      { target: { value: "registrar" } }
+    );
+
+    const select = await screen.findByRole("combobox", {
+      name: "Approver",
+    });
+    expect((select as HTMLSelectElement).value).toBe("");
+  });
+});
+
+describe("WorkflowForm repeated roles", () => {
+  it("disables a role already used on another step", async () => {
+    render(<WorkflowForm team={team} roles={roles} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+
+    const secondRoleSelect = screen.getAllByRole("combobox", {
+      name: "Role",
+    })[1];
+    const supervisorOption = screen.getByRole("option", {
+      name: "Supervisor — used in step 1",
+    });
+    expect(supervisorOption).toBeDisabled();
+    expect(
+      (supervisorOption as HTMLOptionElement).value
+    ).toBe("supervisor");
+    expect(secondRoleSelect).toBeInTheDocument();
   });
 });
