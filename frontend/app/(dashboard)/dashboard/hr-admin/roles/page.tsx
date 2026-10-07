@@ -3,11 +3,12 @@ import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import { ApproverRoleTable } from "@/components/hr/approver-role-table";
-import type { ApproverRole } from "@/lib/approver-roles";
-import { listApproverRoles } from "@/lib/approver-roles";
+import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import { listApproverRoles, listRoleAssignments } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
 
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
+const HOLDERS_ERROR = "Unable to load who currently holds each role.";
 
 async function RolesPage() {
   const user = await getCurrentUser();
@@ -22,17 +23,35 @@ async function RolesPage() {
   // One read, and only about the roles themselves. Who *holds* a role — at
   // any of the three scopes — is answered on the Approvers page, which is
   // where a holding is written; keeping a second copy of that list here would
-  // be a second place to look and a second place to change it.
+  // be a second place to look and a second place to change it. The
+  // *institution-wide* holders still travel with this page's rows, because
+  // "an active institution-wide role with nobody holding it" is a stalled
+  // application, and that is an alarm a roles screen must not be silent about.
   //
   // Retired roles stay on the page: HR needs to see that a role exists and why
   // it cannot be used, and a workflow may still name it.
-  const rolesResult = await listApproverRoles(true).then(
-    (value) => ({ value, error: "" }),
-    () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
-  );
+  const [rolesResult, holdersResult] = await Promise.all([
+    listApproverRoles(true).then(
+      (value) => ({ value, error: "" }),
+      () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
+    ),
+    listRoleAssignments().then(
+      (assignments) => {
+        const byRole = new Map<number, RoleAssignment[]>();
+        for (const assignment of assignments) {
+          const list = byRole.get(assignment.role) ?? [];
+          list.push(assignment);
+          byRole.set(assignment.role, list);
+        }
+        return { value: Object.fromEntries(byRole), error: "" };
+      },
+      () => ({ value: undefined, error: HOLDERS_ERROR })
+    ),
+  ]);
 
   const roles = rolesResult.value;
   const rolesError = rolesResult.error;
+  const assignments = holdersResult.value;
 
   return (
     <div className="space-y-6">
@@ -67,12 +86,19 @@ async function RolesPage() {
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           All roles
         </h3>
-        {rolesError ? (
+        {rolesError && (
           <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {rolesError}
           </div>
-        ) : (
-          <ApproverRoleTable roles={roles} assignments={{}} />
+        )}
+        {holdersResult.error && (
+          <div className="mb-4 rounded-md bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected">
+            {holdersResult.error} The holders column is hidden until the data
+            loads again.
+          </div>
+        )}
+        {!rolesError && (
+          <ApproverRoleTable roles={roles} assignments={assignments} />
         )}
       </div>
     </div>

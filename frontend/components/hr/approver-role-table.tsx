@@ -108,8 +108,12 @@ export function ApproverRoleTable({
   assignments,
 }: {
   roles: ApproverRole[];
-  /** Institution-wide holdings, keyed by role id. */
-  assignments: Record<number, RoleAssignment[]>;
+  /**
+   * Institution-wide holdings, keyed by role id. `undefined` means the page
+   * could not load them — the column then says so rather than claiming a role
+   * has no holder, which for a live role would be a costly lie.
+   */
+  assignments?: Record<number, RoleAssignment[]>;
 }) {
   if (roles.length === 0) {
     return (
@@ -138,7 +142,7 @@ export function ApproverRoleTable({
         </thead>
         <tbody>
           {roles.map((role) => {
-            const holders = assignments[role.id] ?? [];
+            const holders = assignments?.[role.id] ?? [];
             return (
               <tr
                 key={role.id}
@@ -172,7 +176,11 @@ export function ApproverRoleTable({
                 </td>
                 <td className="py-3 pr-4 text-text-secondary">
                   {role.is_institution_wide ? (
-                    !role.is_active ? (
+                    assignments === undefined ? (
+                      <span className="text-text-muted">
+                        Could not load the holders
+                      </span>
+                    ) : !role.is_active ? (
                       <span className="text-text-muted">
                         Retired — no longer routes applications
                       </span>

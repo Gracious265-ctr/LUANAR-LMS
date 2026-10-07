@@ -179,6 +179,18 @@ describe("ApproverRoleTable", () => {
     expect(screen.queryByText(/nobody to approve/)).not.toBeInTheDocument();
   });
 
+  it("says it could not load the holders instead of claiming there is none", () => {
+    render(
+      <ApproverRoleTable
+        roles={[makeRole({ is_institution_wide: true })]}
+        assignments={undefined}
+      />
+    );
+
+    expect(screen.getByText("Could not load the holders")).toBeInTheDocument();
+    expect(screen.queryByText(/nobody to approve/)).not.toBeInTheDocument();
+  });
+
   it("links each row to the role editor", () => {
     render(
       <ApproverRoleTable
