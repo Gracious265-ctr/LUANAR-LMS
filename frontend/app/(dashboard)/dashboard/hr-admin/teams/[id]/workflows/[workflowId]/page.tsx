@@ -5,7 +5,7 @@ import { ArrowLeft, Pencil } from "lucide-react";
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
-import { getTeam, listTeamWorkflows, sectionResolutionLabel } from "@/lib/teams";
+import { getTeam, listTeamWorkflows } from "@/lib/teams";
 
 /**
  * One chain: its steps, in order, and how each one finds the person who acts.
@@ -128,7 +128,10 @@ export default async function WorkflowDetailPage({
                     </p>
                   </div>
                   <span className="inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary">
-                    {sectionResolutionLabel(section.resolution)}
+                    {section.resolution.label}
+                    {section.resolution.user_name
+                      ? ` — ${section.resolution.user_name}`
+                      : ""}
                   </span>
                 </div>
                 <div className="mt-2 text-xs text-text-muted">

@@ -13,6 +13,23 @@ import type { WorkflowMember } from "./team-members";
  */
 
 /**
+ * Where a step's approver comes from, as the backend resolved it.
+ *
+ * The read contract is the answer the resolver already gave — ``source`` is
+ * who provides the person (the step itself, or a team-, campus- or
+ * institution-wide holding), ``label`` is that in words, and ``user_name`` is
+ * the person, when there is one. A screen shows this without re-deriving the
+ * rule.
+ */
+export interface WorkflowSectionResolution {
+  source: "section" | "team" | "campus" | "institution" | "unresolved";
+  automatic: boolean;
+  user: number | null;
+  user_name: string | null;
+  label: string;
+}
+
+/**
  * One step of a chain. `members` are the people who may act for it: the step is
  * decided by whichever of them acts first, so a step is not a single approver
  * but a roster with one seat taken per decision.
@@ -39,7 +56,7 @@ export interface WorkflowSection {
    * resolver already gave, so a screen can show the fallback chain without
    * being a second place the rule is written.
    */
-  resolution: string;
+  resolution: WorkflowSectionResolution;
   description: string;
   is_active: boolean;
   members: SectionMember[];

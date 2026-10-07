@@ -658,6 +658,20 @@ class Section(models.Model):
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True)
 
+    @property
+    def memberships(self):
+        """All member periods for this step, open and closed.
+
+        Served from ``all_objects`` so the record is the point: a closed period
+        is how "who held this step in March" stays answerable after the answer
+        changed. The reverse relation (:attr:`SectionMember.section`) defaults to
+        the open-periods manager, which is what "who may act today" answers but
+        not what this property is for.
+        """
+        return SectionMember.all_objects.filter(section=self).order_by(
+            "effective_from", "id"
+        )
+
     class Meta:
         ordering = ["order"]
         constraints = [

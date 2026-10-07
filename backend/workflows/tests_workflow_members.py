@@ -894,3 +894,310 @@ class WideHolderCategoryTests(MemberAPIBase):
                 campus=academic_team.campus, role=self.role, user=academic
             ).exists()
         )
+
+
+class WideHolderSingleRoleTests(MemberAPIBase):
+    """A person holds one wide approver role, at one of the three scopes.
+
+    Once somebody is a wide approver they disappear from the *other* wide
+    approver sections — the same person re-appearing in a second picker would
+    mean two sections claiming them. The write is the hard rule behind that:
+    it refuses the second holding wherever the first one lives, so the picker's
+    removal of an already-wide person is a promise the backend keeps.
+    """
+
+    def setUp(self):
+        super().setUp()
+        roles = ensure_roles("supervisor", "dean", "registrar")
+        self.supervisor = roles["supervisor"]
+        self.dean = roles["dean"]
+        self.registrar = roles["registrar"]
+        self.registrar.is_institution_wide = True
+        self.registrar.save(update_fields=["is_institution_wide"])
+
+    def team_wide_url(self):
+        return "/api/v1/team-role-assignments/"
+
+    def campus_wide_url(self):
+        return "/api/v1/campus-role-assignments/"
+
+    def institution_url(self):
+        return "/api/v1/role-assignments/"
+
+    def test_institution_holder_cannot_also_be_team_wide(self):
+        holder = make_employee("inst-team@members.test")
+        grant_approver_role(holder, "registrar")
+        response = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("only one wide approver role", message)
+        self.assertIn("institution-wide", message)
+        self.assertFalse(TeamRoleAssignment.objects.exists())
+
+    def test_team_wide_holder_cannot_also_be_institution_wide(self):
+        holder = make_employee("team-inst@members.test")
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        response = self.client.post(
+            self.institution_url(),
+            {"role": self.registrar.pk, "user": holder.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("only one wide approver role", message)
+        self.assertIn("team-wide approver on Members Team", message)
+        self.assertFalse(RoleAssignment.objects.exists())
+
+    def test_team_wide_holder_cannot_hold_a_second_role_on_the_same_team(self):
+        holder = make_employee("team-team@members.test")
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        response = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.dean.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(
+            "only one wide approver role", response.json()["user"][0]
+        )
+
+    def test_institution_holder_cannot_hold_a_second_institution_role(self):
+        holder = make_employee("inst-inst@members.test")
+        grant_approver_role(holder, "registrar")
+        self.dean.is_institution_wide = True
+        self.dean.save(update_fields=["is_institution_wide"])
+        response = self.client.post(
+            self.institution_url(),
+            {"role": self.dean.pk, "user": holder.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("only one wide approver role", message)
+        self.assertIn("Registrar institution-wide", message)
+        self.assertEqual(RoleAssignment.objects.count(), 1)
+
+    def test_team_wide_holder_cannot_also_be_campus_wide(self):
+        academic_team = make_team(
+            "Single Role Campus Team", ["supervisor"], campus="Single Role Campus"
+        )
+        academic = make_employee(
+            "team-campus@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": academic_team.pk,
+                "role": self.supervisor.pk,
+                "user": academic.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        response = self.client.post(
+            self.campus_wide_url(),
+            {
+                "campus": academic_team.campus.pk,
+                "role": self.supervisor.pk,
+                "user": academic.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("only one wide approver role", message)
+        self.assertIn("team-wide approver on Single Role Campus Team", message)
+        self.assertFalse(CampusRoleAssignment.objects.exists())
+
+    def test_campus_holder_cannot_also_be_team_wide_elsewhere(self):
+        first_campus = make_team(
+            "First Campus Team", ["supervisor"], campus="First Site Campus"
+        )
+        campus_holder = make_employee(
+            "campus-team@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        first = self.client.post(
+            self.campus_wide_url(),
+            {
+                "campus": first_campus.campus.pk,
+                "role": self.supervisor.pk,
+                "user": campus_holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        other_team = make_team(
+            "Second Campus Team", ["supervisor"], campus="Second Site Campus"
+        )
+        response = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": other_team.pk,
+                "role": self.supervisor.pk,
+                "user": campus_holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("only one wide approver role", message)
+        self.assertIn("campus-wide approver at First Site Campus", message)
+
+    def test_resaving_the_same_team_holding_is_not_a_second_holding(self):
+        holder = make_employee("re-save-single@members.test")
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        response = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        message = response.json()["user"][0]
+        self.assertIn("already holds the Supervisor role on Members Team", message)
+        self.assertNotIn("only one wide approver role", message)
+
+    def test_replacing_a_team_holder_with_someone_new_is_allowed(self):
+        jane = make_employee("old-single@members.test")
+        bob = make_employee("new-single@members.test")
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": jane.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        second = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": bob.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        holding = TeamRoleAssignment.objects.get(team=self.team, role=self.supervisor)
+        self.assertEqual(holding.user, bob)
+
+    def test_replacing_a_holder_with_an_institution_wide_person_is_refused(self):
+        jane = make_employee("old-another@members.test")
+        registrar_holder = make_employee("registrar-another@members.test")
+        grant_approver_role(registrar_holder, "registrar")
+        first = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": jane.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        response = self.client.post(
+            self.team_wide_url(),
+            {
+                "team": self.team.pk,
+                "role": self.supervisor.pk,
+                "user": registrar_holder.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(
+            "only one wide approver role", response.json()["user"][0]
+        )
+        holding = TeamRoleAssignment.objects.get(team=self.team, role=self.supervisor)
+        self.assertEqual(holding.user, jane)
+
+
+class WorkflowDetailMembershipSerializationTests(TestCase):
+    """The workflow detail payload carries each step's membership record.
+
+    The chain screen reads ``section.memberships`` to show who holds each step
+    today, so the key must be present on every section — including an unstaffed
+    one — or the client crashes on ``undefined.filter`` at render time.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.hr = User.objects.create_user(
+            username="hr-workflow-detail@members.test",
+            email="hr-workflow-detail@members.test",
+            password=DEV_PASSWORD,
+            role=User.Role.HR,
+        )
+        self.client.force_authenticate(self.hr)
+        self.team = make_team("Detail Team", ["supervisor", "hod"])
+        self.workflow = self.team.workflow
+
+    def test_every_section_emits_memberships(self):
+        response = self.client.get(f"{WORKFLOWS_URL}{self.workflow.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sections = response.json()["sections"]
+        self.assertGreater(len(sections), 0)
+        for section in sections:
+            self.assertIn("memberships", section)
+
+    def test_a_staffed_step_lists_the_effective_holder(self):
+        holder = make_employee("hod-detail@members.test", team=self.team)
+        section = self.workflow.sections.get(approver_role__code="hod")
+        appoint_approver_to_section(section, "hod", user=holder)
+        response = self.client.get(f"{WORKFLOWS_URL}{self.workflow.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        section_data = next(
+            s for s in response.json()["sections"] if s["id"] == section.pk
+        )
+        self.assertTrue(
+            any(
+                m["user"] == holder.pk and m["is_effective"]
+                for m in section_data["memberships"]
+            )
+        )
