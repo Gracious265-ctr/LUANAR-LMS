@@ -957,9 +957,12 @@ class WorkflowWriteSerializer(serializers.Serializer):
 
     ``team`` is required on create — a workflow exists *for* a team, and stage
     rules (an approver must be a member of the team) have nothing to check
-    against otherwise. It is not accepted on update: a workflow's owner is not
-    something an edit changes, and moving one would orphan every stage rule
-    written against the old team.
+    against otherwise. On update, naming the team that already owns it is
+    confirmation rather than a move — the edit form restates the team it is
+    editing under — and is accepted and discarded. Naming any other team, or
+    sending null, is refused: re-pointing a workflow would re-route one team's
+    applications into another team's steps, stranding every application inside
+    it at a step nobody staffs for them.
 
     ``sections`` replaces the stage list when supplied, through the same
     sequence rules the team form uses. It may be omitted on create, so HR can
@@ -1033,14 +1036,23 @@ class WorkflowWriteSerializer(serializers.Serializer):
                     {"team": ["A workflow has to be created for a team."]}
                 )
         elif "team" in attrs:
-            raise serializers.ValidationError(
-                {
-                    "team": [
-                        "A workflow cannot be moved between teams. Create it "
-                        "under the team it belongs to."
-                    ]
-                }
-            )
+            # Naming the workflow's own team is confirmation, not a move: the
+            # edit form restates the team it is editing under. Any other team —
+            # or null — is a move that would re-route this workflow's
+            # applications into another team's steps.
+            if (
+                attrs["team"] is None
+                or attrs["team"].pk != self.instance.team_id
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "team": [
+                            "A workflow cannot be moved between teams. Create it "
+                            "under the team it belongs to."
+                        ]
+                    }
+                )
+            attrs.pop("team")
         return attrs
 
     def create(self, validated_data: dict) -> Workflow:

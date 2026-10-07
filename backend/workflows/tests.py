@@ -338,6 +338,25 @@ class WorkflowEndpointTests(TestCase):
         workflow.refresh_from_db()
         self.assertEqual(workflow.team_id, owner.pk)
 
+    def test_an_edit_may_restate_its_own_team(self):
+        """The workflow form repeats the team it edits under, which is fine.
+
+        Sending the owning team alongside an edit names the workflow's owner
+        rather than trying to move it; the refusal exists for a *different*
+        team, and the edit form would otherwise be refused on every save.
+        """
+        owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        workflow = owner.workflow
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(
+            f"/api/v1/workflows/{workflow.pk}/",
+            {"team": owner.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        workflow.refresh_from_db()
+        self.assertEqual(workflow.team_id, owner.pk)
+
     def test_the_list_can_be_filtered_to_one_teams_workflows(self):
         """How the team screen finds every chain a team owns."""
         owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
