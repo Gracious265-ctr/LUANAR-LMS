@@ -3640,3 +3640,246 @@ once a campus is chosen).
 **Verified.** Backend workflows suite green (members module 50 tests, including
 the 4 new). Frontend **479 tests OK (70 files)**, `tsc --noEmit` clean,
 `eslint` clean. Still uncommitted with the batch above.
+
+## Completed — Wide Approvers Choose Their Role From a Drop Down (2026-10-07)
+
+**Requested:** "when assigning wide approvers, the role name should be selected
+from the drop down" — i.e. assigning a wide approver names the role first, in a
+select, instead of the Approvers page repeating the whole form once per role.
+
+**Change.** `WideHoldingPanel` is now one form per scope (institution, team,
+campus), not one form per role:
+- Props became `{ scope, roles, scopeOptions?, scopeId?, requiredCategory?,
+  employees, holdings }` — the single `role` prop is gone. The Role drop down
+  offers the roles valid at that scope: the institution panel shows every
+  active role, the team/campus panels only scoped roles
+  (`activeRoles.filter(r => !r.is_institution_wide)`), which also stops a role
+  that would be refused (an institution-wide role can't be held at a team or
+  campus) from appearing in a team/campus picker.
+- The person select is disabled until a role is chosen; candidates are the
+  scope's category (fixed `requiredCategory` or the chosen `ScopeOption.category`)
+  minus the people who already hold the chosen role at that scope. Empty
+  candidates reads "Every active matching employee already holds {role} here."
+- Holdings list shows `role_label · user_name` with a Remove per row; a save
+  replaces that role's holder at the chosen scope, with a footnote on the
+  Approvers page saying so.
+- Approvers page: flattened `institutionByRole`/`teamByRole`/`campusByRole`
+  into `institutionHoldings`/`teamHoldings`/`campusHoldings`, dropped
+  `groupByRole`, and renders one grid of three panels with the scope filters.
+  Team/campus pages each render a single panel with fixed `scopeId`.
+- Form `id`s per scope (`role-${scope}`, `scope-${scope}`, `holder-${scope}`) so
+  the three panels' selects never collide.
+
+**Tests.** `wide-holding-panel.test.tsx` rewritten for the new API — 22 tests:
+role drop-down contents, per-scope remove collections (institution/team/campus),
+institution write with no scope picker, team picker requires the team,
+campus write with chosen campus, fixed `scopeId` writes with no picker (the
+pk-0-guard regression), missing-scope guard, no-role / no-person refusals,
+holder-of-the-role excluded live, empty-candidates message, inactive excluded,
+fixed team category / campus academic, person list follows chosen team's
+category, campus academic once chosen, no-roles placeholder, server refusal
+stays usable.
+
+**Verified.** Full frontend suite **481 tests OK (70 files)**, `tsc --noEmit`
+clean, `eslint` clean. Backend untouched. Uncommitted (see the batch below).
+
+## Completed — A Person Holds Only One Wide Approver Role (2026-10-07)
+
+**Requested:** "ensure that when a person is assigned a wide approver, that
+person must not appear again in other wide approver sections" — i.e. once
+somebody is a wide approver anywhere, they must not be offered (or appointed)
+again anywhere else.
+
+**Rule.** One wide approver per person, across all three scopes. Once Jane is
+the Dean team-wide on one team, she is gone from every other wide-approver
+picker — institution, any other team, any campus — and the writes refuse a
+second holding, naming the existing one. The same role at the same scope stays
+writable in place (that is the holding, not a second one), so re-pointing a
+holder still works.
+
+**Backend (the hard rule).** `_ensure_single_wide_holding` added to all three
+creates:
+- `create_role_assignment` — refuses a user who holds any team- or campus-wide
+  holding, or a *different* institution-wide role (same-role re-save still hits
+  the existing "already holds X role" path).
+- `create_team_role_assignment` — refuses a user with any wide holding except
+  the (team, role) pair this write is replacing.
+- `create_campus_role_assignment` — same, excluding the (campus, role) pair.
+
+Message: "A person may hold only one wide approver role, and {name} already
+holds {role} institution-wide / as a team-wide approver on {team} / as a
+campus-wide approver at {campus}. Remove that holding before assigning another
+one." Surfaces as a 400 `{"user": [...]}` through the existing
+`RoleActionError` → `Response` handling.
+
+**Frontend (offer only what the write accepts).** `WideHoldingPanel` gains
+`excludedUserIds?: number[]` and filters candidates by it (in addition to the
+same-role-here and category rules); the empty-person message now reads "Every
+active matching employee already holds a wide approver role here or elsewhere."
+Each page feeds the union of every holder's user id:
+- Approvers page: `[...institution, ...team, ...campus]` (read unfiltered, so a
+  holder is excluded even when the scope chips filter a panel down).
+- Team page: reads `listRoleAssignments()`, `listTeamRoleAssignments()`,
+  `listCampusRoleAssignments()` and unions them (its own holdings are filtered
+  out of the list, not the pool).
+- Campus page: same, with `listCampusRoleAssignments()` read unfiltered.
+
+**Tests.** Backend: `WideHolderSingleRoleTests` — 9 new (institution holder
+refused team-wide; team-wide refused institution-wide; team-wide refused a
+second role on the same team; institution holder refused a second institution
+role; team-wide refused campus-wide; campus holder refused team-wide elsewhere;
+re-saving the same (team, role) still says "already holds", not the single-role
+message; replacement with a fresh person allowed; replacement with an
+institution-wide person refused). Frontend: 2 new — a person who holds a wide
+role elsewhere is not offered; the person list hides when every candidate is
+already wide.
+
+**Verified.** Backend non-migration workflows suite **555 tests OK** (546 +
+9), `makemigrations --check` clean. Frontend **483 tests OK (70 files)**,
+`tsc --noEmit` clean, `eslint` clean. Uncommitted with the role-dropdown batch.
+
+## Defect Fix (2026-10-07) — workflow detail crashed reading `section.memberships`
+
+**Reported:** "Cannot read properties of undefined (reading 'filter')" on
+`teams/[id]/workflows/[workflowId]`, at `section.memberships.filter(...)`.
+
+**Root cause.** `SectionSerializer.memberships` (`SectionMemberSerializer`,
+`many=True`) declared no `source`, but the reverse relation on `SectionMember`
+is named `members`, not `memberships`. DRF resolves a read-only field that
+cannot be read from the instance as "skipped", so the API payload never
+contained the key and the chain screen crashed on `undefined.filter`.
+
+**Fix.** `Section.memberships` property added to the model, serving the full
+period record from `SectionMember.all_objects` (open *and* closed rows, in
+`effective_from` order) so the existing field serializes as designed — the
+explained contract: closed periods are how "who held this step in March" stays
+answerable. Unstaffed steps now emit `memberships: []`, never miss the key.
+
+**Tests.** `WorkflowDetailMembershipSerializationTests` — 2 new: every section
+of the workflow detail emits a `memberships` key (regression for the crash),
+and a staffed step lists its effective holder. Backend non-migration workflows
+suite now **557 tests OK**, `makemigrations --check` clean (property only, no
+schema change).
+
+## Defect Fix (2026-10-07) — workflow detail rendered the resolution object
+
+**Reported:** "Objects are not valid as a React child (found: object with keys
+{source, automatic, user, user_name, label})" on
+`teams/[id]/workflows/[workflowId]`. Surfaced once the previous `memberships`
+fix let the chain render further.
+
+**Root cause.** `SectionSerializer.get_resolution` returns that object (the
+backend's decided answer: where the approver comes from, the label, and the
+person), but the frontend typed `WorkflowSection.resolution` as `string` and
+passed it through `sectionResolutionLabel`, which treated it as an unknown
+string code and fell back to returning the object itself as a React child.
+
+**Fix.** Frontend only. `WorkflowSectionResolution` type added to
+`lib/workflows.ts` matching the read contract (`source`, `automatic`, `user`,
+`user_name`, `label`); `WorkflowSection.resolution` retyped to it; the chain
+page renders `section.resolution.label` plus the resolved person's name when
+there is one, instead of `sectionResolutionLabel(section.resolution)`. That
+helper's vocabulary ("staffed" / "team_wide") never matched the workflow
+endpoint's; it remains only for the unrelated `TeamSection` summary, which the
+backend does not populate with a resolution.
+
+**Verified.** Frontend `tsc --noEmit` clean, `eslint` clean, **483 tests OK
+(70 files)**. No backend change.
+
+## Defect Fix (2026-10-07) — every Edit Steps save refused (`PATCH /api/v1/workflows/1/` → 400)
+
+**Reported:** `"PATCH /api/v1/workflows/1/ HTTP/1.1" 400 94` — the Edit Steps
+screen could not save anything.
+
+**Root cause.** The workflow edit form restates the team it is editing under
+(`workflow-form.tsx` sends `team: team.id` on every PATCH, a deliberate part of
+the frontend contract: "the field is sent so the refusal, when it comes, is the
+one that names the rule rather than a missing field"). But
+`WorkflowWriteSerializer.validate` refused **any** `team` on update — even the
+workflow's own team — so every save returned
+`{"team":["A workflow cannot be moved between teams. ..."]}` (exactly the
+94-byte body).
+
+**Fix.** Backend only. On update the serializer now accepts `team` when it names
+the workflow's current owner (confirmation — discarded, never rewritten) and
+still refuses any other team, or null, with the same "cannot be moved" message.
+The refusal rule is unchanged; only the false positive is gone. Docstring
+updated to state the accepted-confirmation behaviour.
+
+**Tests.** `test_an_edit_may_restate_its_own_team` added (PATCH with the owning
+team → 200, owner unchanged); the existing
+`test_a_chain_cannot_be_moved_to_another_team` still passes (other team → 400).
+Reproduced the reported request against the live workflow: **200** after fix
+(previously 400). Backend `tests.py` + `tests_team_configuration` +
+`tests_workflow_members` = **298 tests OK**. No frontend change.
+
+## Completed (2026-10-07) — Institution-wide steps staff themselves in the Edit Steps picker
+
+The Edit Steps form now mirrors the backend's appointment rule the moment an
+institution-wide role is chosen, instead of showing "Not appointed yet" for a
+step the save path has already decided.
+
+**Why it matters.** `_appoint_institution_wide_holder` already appoints the
+role's single holder at save, but only on administration teams. The gap was
+pre-view: HR saw an empty Approver field, picked a person (or left it), and the
+answer arrived later. The form now shows the answer on first draw, and matches
+the write rule **exactly** so what the screen promises is what the save accepts:
+
+* only an institution-wide role fills anything;
+* only an administration team (an academic team may not use an institution-wide
+  approver — `ensure_team_eligibility` refuses it at save, so auto-filling there
+  would build a guaranteed 400);
+* only when there is exactly one holder (multiple holders is the ambiguity the
+  backend leaves unstaffed rather than guesses at);
+* an approver HR sets or clears afterwards is never re-decided — the fill only
+  fills the gap once.
+
+**Implementation.** The form reads holdings through a new client-safe reader
+`listRoleAssignments()` in `approver-roles-client.ts` (a
+`/api/hr/role-assignments/` GET proxy was required — the server-only reader in
+`approver-roles.ts` goes through `next/headers`, and value-importing it would
+have put the server module into the client bundle, which the
+`server-only-imports` guard refuses). The fill happens on first draw (when
+holdings arrive) and in `changeRole`/`addStep` (event handlers) so a role picked
+after load fills inline. The empty-lone-holder map is exactly one-holder-per-role.
+
+**Second request in the same pass: a role must not be reused across steps.**
+Already enforced at every layer — the client `repeatedRole()` blocks the save,
+`normalize_section_sequence` refuses server-side, and the
+`section_workflow_role_unique` constraint holds at the database. The only
+remaining gap was UX: the dropdown still *offered* an already-used role and only
+errorred at save. The role `<option>` for a role already sitting on another step
+is now `disabled` and labelled "— used in step N", so the chain cannot even be
+described twice with one office. The save-time guard stays as the backstop.
+
+**Tests.** `workflow-form-members.test.tsx`: 4 new tests — auto-fill with one
+holder, stays empty with two holders, stays empty on an academic team, and a
+role used on step 1 is disabled on step 2. Frontend **487 tests / 70 files OK**;
+`tsc --noEmit` and `eslint` clean. No schema change.
+
+## Defect Fix (2026-10-07) — roles table said "No holder" for a role that has one
+
+**Reported.** On the Approver Roles page, the Registrar row showed its usage
+("Nama Dingo, who holds it institution-wide", "the 'netwoks workflow' workflow
+(1 section and 1 member)") while the Institution-wide holders column read
+"No holder — applications reaching this role have nobody to approve".
+
+**Root cause.** `WorkflowRoleTable`'s holders column is fed a
+`assignments: Record<roleId, RoleAssignment[]>` map, but the roles page passed
+a hard-coded `assignments={{}}`. The column therefore always answered "No
+holder", contradicting the backend usage lines and, for a live role held
+institution-wide, loudly claiming applications would stall.
+
+**Fix.** The roles page now loads the institution-wide assignments
+(`listRoleAssignments()`) alongside the roles and passes them keyed by role id,
+so the column shows the actual holder (with its Remove control) or a genuine
+"No holder" warning only for an active role with nobody holding it. If that
+fetch fails the page says so, and the column renders "Could not load the
+holders" rather than repeating the hold-less lie. The Approvers page remains
+the placeholder edit surface; this is the roles screen's safety signal, not a
+second editor — team- and campus-wide holders are still shown only there.
+
+**Tests.** `approver-role-table.test.tsx`: new case — `assignments={undefined}`
+shows "Could not load the holders" and not "nobody to approve". Existing
+holder/no-holder/retired cases unchanged and green. Frontend eslint + `tsc`
+clean.
