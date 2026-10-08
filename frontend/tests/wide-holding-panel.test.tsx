@@ -399,20 +399,26 @@ describe("WideHoldingPanel", () => {
   });
 
   it("offers only people who do not already hold the chosen role here", () => {
-    renderPanel("institution", { holdings: [institutionHolding] });
+    // Team scope, where a held role is still offered — saving replaces this
+    // team's own holder — so the person picked must not already hold it here.
+    renderPanel("team", {
+      scopeOptions: teams,
+      holdings: [supervisorHolding],
+    });
 
-    // Jane holds Registrar here, so she is not a candidate for it.
-    choose("Role", "9");
+    // Jane holds Supervisor here, so she is not a candidate for it.
+    choose("Role", "1");
     expect(personOptions()).not.toContain("Jane Dean");
     expect(personOptions()).toContain("Bob Lead");
 
     // A role with nobody holding it here offers Jane again.
-    choose("Role", "1");
+    choose("Role", "9");
     expect(personOptions()).toContain("Jane Dean");
   });
 
   it("hides the people list when nobody is left for the chosen role", () => {
-    renderPanel("institution", {
+    renderPanel("team", {
+      scopeOptions: teams,
       roles: [supervisor],
       employees: [jane],
       holdings: [supervisorHolding],
@@ -423,6 +429,42 @@ describe("WideHoldingPanel", () => {
     expect(
       screen.getByText(/Every active matching employee already holds/i)
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
+  });
+
+  it("does not offer an institution role that already has its one holder", () => {
+    renderPanel("institution", {
+      roles: ALL_ROLES,
+      holdings: [institutionHolding],
+    });
+
+    const roleOptions = Array.from(
+      screen.getByLabelText("Role").querySelectorAll("option")
+    ).map((option) => option.textContent);
+    // Registrar is held institution-wide, so it is not offered again...
+    expect(roleOptions).not.toContain("Registrar");
+    expect(roleOptions).toContain("Supervisor");
+    // ...and the holder stays listed, with the Remove that changes it.
+    expect(
+      screen.getByText(
+        (_, node) => node?.textContent === "Registrar · Jane Dean"
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Remove" })
+    ).toBeInTheDocument();
+  });
+
+  it("says to remove the holder when every institution role already has one", () => {
+    renderPanel("institution", {
+      roles: [registrar],
+      holdings: [institutionHolding],
+    });
+
+    expect(
+      screen.getByText(/Remove a holder first/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Role")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
   });
 

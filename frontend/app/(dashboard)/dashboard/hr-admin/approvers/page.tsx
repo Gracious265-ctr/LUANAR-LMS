@@ -312,11 +312,13 @@ export default async function ApproversPage({
             )}
           </div>
           <p className="mt-3 text-xs text-text-muted">
-            Saving a holder replaces that role&apos;s current holder at the
-            chosen scope — and a person holds only one wide approver role, so a
-            saved holder disappears from the other sections. Assigning a role
-            its first institution-wide holder is also what makes the role
-            institution-wide.
+            A person holds one wide approver role, so a saved holder disappears
+            from the other sections. A team or campus role replaces its holder at
+            the same team or campus, and stays available at other teams. An
+            institution-wide role has exactly one approver — it is not offered
+            again once it has a holder, so change the holder by removing the
+            current one first. Assigning a role its first institution-wide
+            holder is also what makes the role institution-wide.
           </p>
         </section>
       )}

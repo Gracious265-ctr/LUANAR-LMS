@@ -391,6 +391,14 @@ class RoleAssignment(models.Model):
     Only roles with ``is_institution_wide = True`` can be assigned this way;
     every other role is held through a :class:`TeamMember`, which is what makes
     "who approves what" a property of the team rather than of the person.
+
+    A role has exactly **one** institution-wide approver going forward: the
+    service writing a holding refuses to assign a role that already has one,
+    naming the current holder, and the Approvers picker does not offer a role
+    that has a holder — changing the holder is remove the current one first,
+    then assign. Legacy rows that predate the rule (a role with several
+    institution holders) are still read as the ambiguity they are, and left
+    unstaffed rather than auto-decided.
     """
 
     user = models.ForeignKey(

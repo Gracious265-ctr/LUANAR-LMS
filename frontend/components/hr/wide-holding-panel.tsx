@@ -56,12 +56,16 @@ export interface ScopeOption {
 /**
  * One scope's holders, and the form that changes them.
  *
- * The write is a pick-a-role, pick-a-person decision: saving a holder replaces
- * the existing one for that role at that scope rather than failing, so the form
- * is "choose the role, choose the person — and the scope where it is not the
- * page's own" rather than a list to append to. HR is never asked to delete
- * before they may change their mind, which is why the role is chosen from a
- * drop down instead of each role owning its own save button.
+ * The write is a pick-a-role, pick-a-person decision. At the team and campus
+ * scopes saving a holder replaces the existing one for that role *at that
+ * place* rather than failing — the form is "choose the role, choose the person
+ * (and the scope where it is not the page's own)" rather than a list to append
+ * to. HR is never asked to delete before they may change their mind, which is
+ * why the role is chosen from a drop down instead of each role owning its own
+ * save button. The institution scope is the exception this panel draws: a role
+ * has exactly one institution-wide approver, so a role that already has an
+ * institution holder is not offered to pick again — changing the holder there
+ * is remove first, then assign, wherever the panel draws one.
  *
  * A wide approver is the same half of the institution they cover — the team's
  * category for a team holding, academic for a campus holding — so the person
@@ -120,7 +124,21 @@ export function WideHoldingPanel({
     (option) => String(option.id) === scopeValue
   );
   const scopeCategory = requiredCategory ?? chosenOption?.category;
-  const selectedRole = roles.find((role) => String(role.id) === roleId);
+  // An institution-wide role has exactly one approver, so a role that already
+  // has an institution holder is not offered to pick again: assigning it to a
+  // different person is refused by the write, so the choice would be a save
+  // that can only fail. Changing the holder there is remove first, then assign.
+  // At a team or a campus the role stays offered — saving replaces that place's
+  // own holder, and the other places keep theirs.
+  const offerableRoles =
+    scope === "institution"
+      ? roles.filter(
+          (role) => !holdings.some((holding) => holding.role === role.id)
+        )
+      : roles;
+  const selectedRole = offerableRoles.find(
+    (role) => String(role.id) === roleId
+  );
   const excluded = new Set(excludedUserIds);
 
   // A holder is somebody with an employee record: the backend refuses to
@@ -279,6 +297,11 @@ export function WideHoldingPanel({
         <p className="mt-2 text-xs text-text-muted">
           No roles may be held at this scope right now.
         </p>
+      ) : offerableRoles.length === 0 ? (
+        <p className="mt-2 text-xs text-text-muted">
+          Every active role already has its institution-wide holder. Remove a
+          holder first to change it.
+        </p>
       ) : (
         <form onSubmit={handleSubmit} className="mt-3 space-y-2">
           <div>
@@ -296,7 +319,7 @@ export function WideHoldingPanel({
               className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
             >
               <option value="">Choose a role…</option>
-              {roles.map((role) => (
+              {offerableRoles.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.label}
                 </option>

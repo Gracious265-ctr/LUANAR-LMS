@@ -3944,3 +3944,49 @@ update payload never carries `is_institution_wide`; `approver-role-table.test.ts
 — Team-wide and Campus-wide scope reads with their holder names, and scoped
 Remove calls the right endpoint. Full suites: backend **1256 OK**, frontend
 **490 OK**; eslint + `tsc --noEmit` clean.
+
+## Completed (2026-10-08) — An institution-wide role is assigned to one approver, never a second
+
+**What changed.** Once a role has an institution-wide holder, assigning that
+role to a different person is refused, naming the current holder:
+`create_role_assignment` raises `"<role>" is already held institution-wide by
+<name>. A role has one institution-wide approver; remove that holder under
+Approvers first, then assign another.` The Approvers institution panel also
+stops offering a role that already has a holder — the rule is enforced on the
+one real write path (the service the API calls), and the picker hides the
+guaranteed-400 choice before HR can make it. Changing a holder is therefore
+remove first, then assign.
+
+**Where the rule stops.** Institution-wide only. A team or campus role keeps one
+holder per team/campus and stays offered at other teams and campuses, so the
+same role may still be held by different people at different places — that is
+what the per-place rule (`(team, role)` / `(campus, role)` uniqueness) covers,
+and it is unchanged. The panel's footer copy now says exactly this instead of
+the old blanket "saving replaces that role's current holder at the chosen
+scope", which stopped being true for the institution scope.
+
+**A DB constraint was deliberately not added.** The write path is a single
+service — the same place the promotion guard and the one-wide-role-per-person
+rule already live — while a `unique(role)` constraint would (a) refuse migration
+on any deployment already carrying two institution holders, and (b) rule out a
+state the product still supports: several approvers of one role through section
+members, and the legacy rows the resolver still reads as an ambiguity to leave
+unstaffed rather than auto-decide. In production the service is the only code
+that creates a holding.
+
+**Auto-appointment became deterministic.** With at most one institution holder
+creatable, a held role's step always staffs its single holder; a never-held role
+still reads unstaffed. The old "two holders leave the step for HR to choose"
+test is replaced by the refusal itself — the ambiguity it pinned can no longer
+be created.
+
+**Tests.** Backend `tests_teams.py`: the service refuses a second holder and the
+chain still auto-appoints the first; API-level, the second grant is a 400
+carrying "already held institution-wide by", with one holding left and the
+refused person still not an approver. Frontend `wide-holding-panel.test.tsx`: the
+institution role drop down omits a role that has a holder (and still lists that
+holder with Remove), and all-held says "Remove a holder first" with no form; the
+person-exclusion tests that used a held institution role moved to team scope,
+where a held role is still offerable. Full suites: backend **1257 OK**,
+frontend **492 OK**; eslint + `tsc --noEmit` clean; `makemigrations --check`
+clean.

@@ -34,6 +34,7 @@ from .models import (
     Workflow,
 )
 from .services import (
+    RoleActionError,
     TeamActionError,
     add_section_member,
     approver_role_codes_for,
@@ -47,6 +48,7 @@ from .testing import (
     DEV_PASSWORD,
     ensure_roles,
     make_approver,
+    make_employee,
     make_team,
     make_workflow,
     team_for,
@@ -1218,13 +1220,18 @@ class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
         section = self.workflow.sections.get(approver_role__code="registrar")
         self.assertIsNone(section.approver_id)
 
-    def test_two_holders_leave_the_step_for_hr_to_choose(self):
-        """Picking one of several would decide an ambiguity HR must resolve."""
-        self.registrar_holder("first-registrar@teams.test")
-        self.registrar_holder("second-registrar@teams.test")
+    def test_a_second_holder_is_refused_so_a_held_role_is_always_staffed(self):
+        """A role has one institution-wide approver, so a held role can never
+        arrive at its step ambiguous: a second assignment is refused outright,
+        and the single holder is appointed when the chain is written."""
+        holder = self.registrar_holder()
+        role = ApproverRole.objects.get(code="registrar")
+        second = make_employee("second-registrar@teams.test")
+        with self.assertRaises(RoleActionError):
+            create_role_assignment(user=second, role=role, actor=self.hr)
         self.create_team()
         section = self.workflow.sections.get(approver_role__code="registrar")
-        self.assertIsNone(section.approver_id)
+        self.assertEqual(section.approver_id, holder.pk)
 
     def test_a_team_scoped_role_is_never_auto_appointed(self):
         """Only an institution-wide role carries its holder with it."""
@@ -1302,6 +1309,26 @@ class RoleAssignmentAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already holds", response.data["user"][0])
         self.assertEqual(RoleAssignment.objects.count(), 1)
+
+    def test_a_role_with_an_institution_holder_cannot_be_granted_to_another(self):
+        """Once a role has an institution-wide approver it is not assigned again:
+        the attempt is refused and names the current holder of the role."""
+        role = ApproverRole.objects.get(code="registrar")
+        first = self.client.post(
+            ASSIGNMENTS_URL,
+            {"user": self.employee.pk, "role": role.pk},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            ASSIGNMENTS_URL, {"user": self.hr.pk, "role": role.pk}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already held institution-wide by", response.data["role"][0])
+        self.assertEqual(RoleAssignment.objects.count(), 1)
+        self.assertFalse(is_approver_user(self.hr))
 
     def test_an_inactive_user_cannot_hold_a_role(self):
         self.employee.is_active = False

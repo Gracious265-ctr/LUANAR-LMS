@@ -1882,6 +1882,11 @@ def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssi
     same atomic step as the holding, and the promotion is refused only while the
     role is still held on a team or campus, because a role cannot be held wide
     at a scope *and* institution-wide at once.
+
+    A role has exactly one institution-wide approver: once a holding exists this
+    single write is refused for any other person, naming the current holder. A
+    role is never assigned to a second approver — changing who holds it is a
+    remove first, then a fresh assignment.
     """
     with transaction.atomic():
         role = ApproverRole.objects.select_for_update().get(pk=role.pk)
@@ -1923,6 +1928,17 @@ def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssi
                 "user",
                 f"{user.get_full_name() or user.username} is not an active user. "
                 "Activate the account before assigning a role.",
+            )
+        current_holder = (
+            RoleAssignment.objects.select_for_update().filter(role=role).first()
+        )
+        if current_holder is not None and current_holder.user_id != user.pk:
+            raise RoleActionError(
+                "role",
+                f'"{role.label}" is already held institution-wide by '
+                f"{current_holder.user.get_full_name() or current_holder.user.username}. "
+                "A role has one institution-wide approver; remove that holder under "
+                "Approvers first, then assign another.",
             )
         _ensure_single_wide_holding(user, exclude_role=role)
         assignment, created = RoleAssignment.objects.get_or_create(
