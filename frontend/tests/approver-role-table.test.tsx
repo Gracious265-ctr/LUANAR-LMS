@@ -2,10 +2,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { ApproverRoleTable } from "@/components/hr/approver-role-table";
-import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
 import {
   deactivateApproverRole,
+  removeCampusRoleAssignment,
   removeRoleAssignment,
+  removeTeamRoleAssignment,
 } from "@/lib/approver-roles-client";
 
 const refresh = vi.fn();
@@ -21,6 +28,8 @@ vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
     ...actual,
     deactivateApproverRole: vi.fn(),
     removeRoleAssignment: vi.fn(),
+    removeTeamRoleAssignment: vi.fn(),
+    removeCampusRoleAssignment: vi.fn(),
   };
 });
 
@@ -205,12 +214,82 @@ describe("ApproverRoleTable", () => {
     );
   });
 
-  it("says a team role is staffed through membership, not a holder list", () => {
+  it("says a team role is staffed through membership when nobody holds it wide", () => {
     render(<ApproverRoleTable roles={[makeRole()]} assignments={{}} />);
 
+    expect(screen.getByText("Team role")).toBeInTheDocument();
     expect(
       screen.getByText("Staffed through team membership")
     ).toBeInTheDocument();
+  });
+
+  it("reads a role with a team-wide holder as team-wide by that holder", async () => {
+    const assignment: TeamRoleAssignment = {
+      id: 8,
+      team: 9,
+      role: 1,
+      user: 3,
+      user_name: "Sam Supervisor",
+      role_label: "Supervisor",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(removeTeamRoleAssignment).mockResolvedValue(undefined);
+    render(
+      <ApproverRoleTable
+        roles={[makeRole()]}
+        assignments={{}}
+        teamHoldings={{ 1: [assignment] }}
+        teamNameById={{ 9: "ICT Team" }}
+      />
+    );
+
+    expect(screen.getByText("Team-wide")).toBeInTheDocument();
+    expect(screen.queryByText("Team role")).not.toBeInTheDocument();
+    expect(screen.getByText("Sam Supervisor — ICT Team")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove Sam Supervisor from the ICT Team team",
+      })
+    );
+
+    await waitFor(() => expect(removeTeamRoleAssignment).toHaveBeenCalledWith(8));
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("reads a role with a campus-wide holder as campus-wide by that holder", async () => {
+    const assignment: CampusRoleAssignment = {
+      id: 2,
+      campus: 4,
+      role: 1,
+      user: 3,
+      user_name: "Cas Campus",
+      role_label: "Campus Registrar",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(removeCampusRoleAssignment).mockResolvedValue(undefined);
+    render(
+      <ApproverRoleTable
+        roles={[makeRole()]}
+        assignments={{}}
+        campusHoldings={{ 1: [assignment] }}
+        campusNameById={{ 4: "Bunda Campus" }}
+      />
+    );
+
+    expect(screen.getByText("Campus-wide")).toBeInTheDocument();
+    expect(screen.getByText("Cas Campus — Bunda Campus")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Remove Cas Campus from the Bunda Campus campus",
+      })
+    );
+
+    await waitFor(() =>
+      expect(removeCampusRoleAssignment).toHaveBeenCalledWith(2)
+    );
+    expect(refresh).toHaveBeenCalled();
   });
 
   it("names an institution-wide holder and removes them", async () => {

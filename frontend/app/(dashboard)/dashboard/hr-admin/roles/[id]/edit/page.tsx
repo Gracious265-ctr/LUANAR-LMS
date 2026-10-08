@@ -42,9 +42,10 @@ export default async function EditRolePage({
           Edit {role.label}
         </h2>
         <p className="text-text-secondary">
-          Rename the role, change how much leave history it sees, or move it
-          between team and institution-wide. Retiring is a separate action from
-          the roles list, and only allowed once nothing uses the role.
+          Rename the role or change how much leave history it sees. Whether the
+          role is institution-wide is decided on the Approvers page, where its
+          holder is assigned — not here. Retiring is a separate action from the
+          roles list, and only allowed once nothing uses the role.
         </p>
       </div>
 

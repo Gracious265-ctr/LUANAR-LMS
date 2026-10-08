@@ -3887,11 +3887,60 @@ institution-wide, loudly claiming applications would stall.
 so the column shows the actual holder (with its Remove control) or a genuine
 "No holder" warning only for an active role with nobody holding it. If that
 fetch fails the page says so, and the column renders "Could not load the
-holders" rather than repeating the hold-less lie. The Approvers page remains
-the placeholder edit surface; this is the roles screen's safety signal, not a
-second editor — team- and campus-wide holders are still shown only there.
+holders" rather than repeating the hold-less lie. Later the table grew to show
+team- and campus-wide holders too, at their own scope — see the 2026-10-08
+entry below.
 
 **Tests.** `approver-role-table.test.tsx`: new case — `assignments={undefined}`
 shows "Could not load the holders" and not "nobody to approve". Existing
 holder/no-holder/retired cases unchanged and green. Frontend eslint + `tsc`
 clean.
+
+## Completed (2026-10-08) — A role's scope lives where it is held, and the roles table says so
+
+**What changed.** The "Institution-wide role" checkbox is gone from the role
+editor (`/roles/<id>/edit`). A role's scope is decided by where it is held, on
+the Approvers page: assigning a role its **first institution-wide holder** is
+what makes it institution-wide — the same save promotes the role
+(`create_role_assignment` sets `is_institution_wide=True` atomically with the
+holding). PATCHing scope from the role endpoint is refused
+(`update_approver_role` returns "A role's scope is decided on the Approvers
+page..."), so there is exactly one way to make a wide role and it is the one HR
+already looks in.
+
+**Why the editor had to lose it.** The edit page was the *only* place the flag
+could be set, and it sat beside fields that genuinely belong to the role — so a
+Registrar-type decision looked editable next to "decides cancellations", and a
+campus-held "Campus Registrar" could read as mis-configured. Moving it to the
+Approvers page ties the scope to the holding that gives it meaning.
+
+**Guards.** Promotion is refused while the role is still held team-wide or
+campus-wide (`create_role_assignment` → "already held on a team or campus.
+Remove those holders under Approvers first"). Promotion is one-way: removing an
+institution holder does not silently demote the role, so a deliberately-wide
+role stays wide until HR explicitly re-purposes it (it simply reads "No holder"
+again, never a silent team role). The institution panel on the Approvers page
+now offers only roles that are already institution-wide or not wide at any
+scope, so a guaranteed-400 choice is off the menu.
+
+**The roles table now reports the real scope.** The "Scope" column is derived
+from the holdings, not a stale flag label: an institution-wide role reads
+"Institution-wide", a role with a campus-wide holder reads "Campus-wide", one
+with a team-wide holder reads "Team-wide", and only a role nobody holds wide
+reads "Team role". The holders column lists every wide holder at every scope —
+`user_name — team/campus name` for scoped holdings, with the same Remove
+control the institution holder has — so "Champus Registrar held at a campus"
+reads as exactly that instead of "Team role / Staffed through team
+membership". The roles page now reads all three assignment lists and the team
+and campus name maps to name the scopes.
+
+**Tests.** Backend: `tests_teams.py` — granting a team role its first
+institution holder promotes it (201, role flipped, promotion audited); a role
+held on a team is refused at the institution scope (400, role stays team).
+`tests_roles.py` — PATCHing scope is refused with the Approvers message, and an
+unchanged scope sent alongside a real edit stays harmless. Frontend:
+`approver-role-form.test.tsx` — no scope control on create or edit, and the
+update payload never carries `is_institution_wide`; `approver-role-table.test.tsx`
+— Team-wide and Campus-wide scope reads with their holder names, and scoped
+Remove calls the right endpoint. Full suites: backend **1256 OK**, frontend
+**490 OK**; eslint + `tsc --noEmit` clean.

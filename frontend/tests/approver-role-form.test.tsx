@@ -91,10 +91,12 @@ describe("ApproverRoleForm", () => {
       description: "Approves team leave",
       history_scope: "same_team",
       handles_cancellation: false,
-      is_institution_wide: false,
     });
     expect(input).not.toHaveProperty("label");
     expect(input).not.toHaveProperty("code");
+    // The role's scope is not a field on this form: it is decided by where the
+    // role is held, on the Approvers page.
+    expect(input).not.toHaveProperty("is_institution_wide");
   });
 
   it("offers every history scope the backend defines on an existing role", () => {
@@ -116,18 +118,20 @@ describe("ApproverRoleForm", () => {
     expect(select).toHaveValue("same_team");
   });
 
-  it("marks a role institution-wide when editing it", async () => {
-    render(<ApproverRoleForm role={role} />);
-
-    fireEvent.click(
-      screen.getByLabelText("Institution-wide role", { exact: false })
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => expect(updateApproverRole).toHaveBeenCalled());
+  it("does not offer the institution-wide scope on the editor", () => {
+    /* A role becomes institution-wide when its first institution-wide holder is
+    assigned on the Approvers page, so this screen has no scope control — on
+    create or on edit. */
+    const { unmount } = render(<ApproverRoleForm role={role} />);
     expect(
-      vi.mocked(updateApproverRole).mock.calls[0][1].is_institution_wide
-    ).toBe(true);
+      screen.queryByLabelText("Institution-wide role", { exact: false })
+    ).not.toBeInTheDocument();
+    unmount();
+
+    render(<ApproverRoleForm />);
+    expect(
+      screen.queryByLabelText("Institution-wide role", { exact: false })
+    ).not.toBeInTheDocument();
   });
 
   it("shows the backend's rejection without losing what was typed", async () => {

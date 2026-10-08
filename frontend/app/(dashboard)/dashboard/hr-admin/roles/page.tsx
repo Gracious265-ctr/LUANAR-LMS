@@ -3,9 +3,19 @@ import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import { ApproverRoleTable } from "@/components/hr/approver-role-table";
-import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
-import { listApproverRoles, listRoleAssignments } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
+import {
+  listApproverRoles,
+  listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
+} from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
+import { listCampuses, listTeams } from "@/lib/teams";
 
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
 const HOLDERS_ERROR = "Unable to load who currently holds each role.";
@@ -20,38 +30,74 @@ async function RolesPage() {
     redirect("/dashboard");
   }
 
-  // One read, and only about the roles themselves. Who *holds* a role — at
-  // any of the three scopes — is answered on the Approvers page, which is
-  // where a holding is written; keeping a second copy of that list here would
-  // be a second place to look and a second place to change it. The
-  // *institution-wide* holders still travel with this page's rows, because
-  // "an active institution-wide role with nobody holding it" is a stalled
-  // application, and that is an alarm a roles screen must not be silent about.
+  // One read for the roles, and one for every wide holding at all three
+  // scopes: who holds what decides a role's scope, so the table is fed from
+  // the same list the Approvers page writes, not a second copy of it. A
+  // holding is grouped by its role so a row can name every person that covers
+  // it — "held by this one person at campus scope" is a different answer from
+  // "an active institution-wide role with nobody holding it", and both are
+  // read straight from the same data.
   //
   // Retired roles stay on the page: HR needs to see that a role exists and why
   // it cannot be used, and a workflow may still name it.
-  const [rolesResult, holdersResult] = await Promise.all([
+  const [
+    rolesResult,
+    institutionResult,
+    teamResult,
+    campusResult,
+    teamsResult,
+    campusesResult,
+  ] = await Promise.all([
     listApproverRoles(true).then(
       (value) => ({ value, error: "" }),
       () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
     ),
     listRoleAssignments().then(
-      (assignments) => {
-        const byRole = new Map<number, RoleAssignment[]>();
-        for (const assignment of assignments) {
-          const list = byRole.get(assignment.role) ?? [];
-          list.push(assignment);
-          byRole.set(assignment.role, list);
-        }
-        return { value: Object.fromEntries(byRole), error: "" };
-      },
+      (assignments) => ({
+        value: groupByRole(assignments),
+        error: "",
+      }),
       () => ({ value: undefined, error: HOLDERS_ERROR })
+    ),
+    listTeamRoleAssignments().then(
+      (assignments) => ({
+        value: groupByRole(assignments),
+        error: "",
+      }),
+      () => ({ value: {} as Record<number, TeamRoleAssignment[]>, error: HOLDERS_ERROR })
+    ),
+    listCampusRoleAssignments().then(
+      (assignments) => ({
+        value: groupByRole(assignments),
+        error: "",
+      }),
+      () => ({ value: {} as Record<number, CampusRoleAssignment[]>, error: HOLDERS_ERROR })
+    ),
+    listTeams({ includeInactive: true }).then(
+      (teams) => ({
+        value: Object.fromEntries(teams.map((team) => [team.id, team.name])),
+        error: "",
+      }),
+      () => ({ value: {} as Record<number, string>, error: HOLDERS_ERROR })
+    ),
+    listCampuses(true).then(
+      (campuses) => ({
+        value: Object.fromEntries(
+          campuses.map((campus) => [campus.id, campus.name])
+        ),
+        error: "",
+      }),
+      () => ({ value: {} as Record<number, string>, error: HOLDERS_ERROR })
     ),
   ]);
 
   const roles = rolesResult.value;
   const rolesError = rolesResult.error;
-  const assignments = holdersResult.value;
+  const assignments = institutionResult.value;
+  const teamHoldings = teamResult.value;
+  const campusHoldings = campusResult.value;
+  const holdersError =
+    institutionResult.error || teamResult.error || campusResult.error;
 
   return (
     <div className="space-y-6">
@@ -60,9 +106,10 @@ async function RolesPage() {
           <h2 className="text-2xl font-bold text-text-primary">Approver roles</h2>
           <p className="text-text-secondary">
             The approver positions a workflow step can name. Creating a role
-            here is what makes it selectable on a chain; giving one person that
-            position — at institution, team or campus scope — is done on the
-            Approvers page.
+            here is what makes it selectable on a chain; giving a role a holder
+            — at institution, team or campus scope — is done on the Approvers
+            page, and it is that holding (not an edit here) which decides a
+            role&apos;s scope.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -91,18 +138,35 @@ async function RolesPage() {
             {rolesError}
           </div>
         )}
-        {holdersResult.error && (
+        {holdersError && (
           <div className="mb-4 rounded-md bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected">
-            {holdersResult.error} The holders column is hidden until the data
-            loads again.
+            {holdersError} The holders column is hidden until the data loads
+            again.
           </div>
         )}
         {!rolesError && (
-          <ApproverRoleTable roles={roles} assignments={assignments} />
+          <ApproverRoleTable
+            roles={roles}
+            assignments={assignments}
+            teamHoldings={teamHoldings}
+            campusHoldings={campusHoldings}
+            teamNameById={teamsResult.value}
+            campusNameById={campusesResult.value}
+          />
         )}
       </div>
     </div>
   );
+}
+
+function groupByRole<T extends { role: number }>(assignments: T[]) {
+  const byRole = new Map<number, T[]>();
+  for (const assignment of assignments) {
+    const list = byRole.get(assignment.role) ?? [];
+    list.push(assignment);
+    byRole.set(assignment.role, list);
+  }
+  return Object.fromEntries(byRole);
 }
 
 export default RolesPage;

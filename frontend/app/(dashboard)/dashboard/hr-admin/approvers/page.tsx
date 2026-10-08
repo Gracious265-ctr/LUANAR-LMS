@@ -149,6 +149,17 @@ export default async function ApproversPage({
   // A team or campus holding may only use a scoped role; institution-wide
   // roles are written at the institution scope alone.
   const scopedRoles = activeRoles.filter((role) => !role.is_institution_wide);
+  // A role held wide at a team or a campus cannot be held institution-wide at
+  // the same time, and a saving it at institution scope would be refused — so
+  // the institution panel only offers roles that are *already* institution-wide
+  // or not wide at any scope yet. Saving one of those is what makes it a wide
+  // role.
+  const scopedHeldRoleIds = new Set(
+    [...holders.team, ...holders.campus].map((assignment) => assignment.role)
+  );
+  const institutionRoles = activeRoles.filter(
+    (role) => role.is_institution_wide || !scopedHeldRoleIds.has(role.id)
+  );
   const scopeChips = SCOPE_FILTERS.map((filter) => {
     const query = new URLSearchParams();
     query.set("scope", filter.value);
@@ -271,7 +282,7 @@ export default async function ApproversPage({
               <WideHoldingPanel
                 key="institution"
                 scope="institution"
-                roles={activeRoles}
+                roles={institutionRoles}
                 employees={employees}
                 holdings={institutionHoldings}
                 excludedUserIds={wideHolderUserIds}
@@ -303,7 +314,9 @@ export default async function ApproversPage({
           <p className="mt-3 text-xs text-text-muted">
             Saving a holder replaces that role&apos;s current holder at the
             chosen scope — and a person holds only one wide approver role, so a
-            saved holder disappears from the other sections.
+            saved holder disappears from the other sections. Assigning a role
+            its first institution-wide holder is also what makes the role
+            institution-wide.
           </p>
         </section>
       )}

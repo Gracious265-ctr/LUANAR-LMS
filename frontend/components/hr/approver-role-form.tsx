@@ -17,11 +17,13 @@ import {
  * Creating a role asks for one thing: its name.
  *
  * The code every rule reads is derived from the name, and the behavioural
- * fields are decisions about who the role is for — history scope, cancellation
- * handling, institution-wide holding — which are better answered once the role
- * exists and its place is understood. Editing then exposes them, and nothing but
- * the name is fixed: a role is quoted by the stages and decisions that used it,
- * so renaming it would make those quote something that no longer exists.
+ * fields — history scope, cancellation handling — are decisions about who the
+ * role is for, which are better answered once the role exists and its place is
+ * understood. Editing then exposes them, and nothing but the name is fixed: a
+ * role is quoted by the stages and decisions that used it, so renaming it would
+ * make those quote something that no longer exists. Whether the role is
+ * institution-wide is not asked here at all: a role becomes institution-wide
+ * when its first institution-wide holder is assigned on the Approvers page.
  */
 export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
   const router = useRouter();
@@ -46,7 +48,6 @@ export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
             formData.get("history_scope") || "none"
           ) as HistoryScope,
           handles_cancellation: formData.get("handles_cancellation") === "on",
-          is_institution_wide: formData.get("is_institution_wide") === "on",
         });
       } else {
         await createApproverRole({
@@ -152,25 +153,6 @@ export function ApproverRoleForm({ role }: { role?: ApproverRole }) {
               approver&apos;s own team.
             </p>
           </div>
-
-          <label className="flex items-start gap-2 md:col-span-2">
-            <input
-              type="checkbox"
-              name="is_institution_wide"
-              defaultChecked={role.is_institution_wide}
-              className="mt-0.5 size-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
-            />
-            <span>
-              <span className="block text-sm font-medium text-text-primary">
-                Institution-wide role
-              </span>
-              <span className="block text-xs text-text-muted">
-                One holder covers every application, so this role is not staffed
-                team by team. Use it for a single Registrar, not for a team&apos;s
-                own Supervisor.
-              </span>
-            </span>
-          </label>
 
           <label className="flex items-start gap-2 md:col-span-2">
             <input
