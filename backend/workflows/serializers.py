@@ -823,15 +823,10 @@ class RoleAssignmentSerializer(serializers.ModelSerializer):
         return instance.role.label
 
     def validate(self, attrs: dict) -> dict:
-        role = attrs.get("role")
-        if role is not None and not role.is_institution_wide:
-            raise serializers.ValidationError(
-                {
-                    "role": f'"{role.label}" is a team role, not an '
-                    "institution-wide role. Add this person to the team that "
-                    "uses it instead."
-                }
-            )
+        # No scope guard here: assigning a team role its first institution-wide
+        # holder is exactly how a role *becomes* institution-wide. The service
+        # owns the real refusals (role already held on a team or campus, role
+        # deactivated, user inactive or already a wide approver).
         return attrs
 
     def create(self, validated_data: dict) -> RoleAssignment:

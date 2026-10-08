@@ -353,7 +353,6 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
             {
                 "description": "Faculty appeals",
                 "handles_cancellation": True,
-                "is_institution_wide": True,
             },
             format="json",
         )
@@ -362,7 +361,33 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
         self.assertEqual(self.role.label, "Dean")
         self.assertEqual(self.role.description, "Faculty appeals")
         self.assertTrue(self.role.handles_cancellation)
-        self.assertTrue(self.role.is_institution_wide)
+
+    def test_scope_is_not_edited_from_the_role_itself(self):
+        """A role becomes institution-wide when its first institution-wide
+        holder is assigned on the Approvers page, not from this editor, so a
+        PATCH that tries to change the scope is refused."""
+        self.assertFalse(self.role.is_institution_wide)
+        response = self.client.patch(
+            f"{LIST_URL}{self.role.pk}/",
+            {"is_institution_wide": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn(
+            "decided on the Approvers page", response.data["is_institution_wide"][0]
+        )
+        self.role.refresh_from_db()
+        self.assertFalse(self.role.is_institution_wide)
+        # An unchanged scope sent along with a real edit stays harmless.
+        response = self.client.patch(
+            f"{LIST_URL}{self.role.pk}/",
+            {"is_institution_wide": False, "description": "Faculty appeals"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.role.refresh_from_db()
+        self.assertEqual(self.role.description, "Faculty appeals")
+        self.assertFalse(self.role.is_institution_wide)
 
     def test_an_edit_is_audited_with_before_and_after(self):
         self.client.patch(

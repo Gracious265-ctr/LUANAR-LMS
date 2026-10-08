@@ -1789,8 +1789,11 @@ def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRo
 
     ``code`` is immutable once anything references the role, because workflow
     stages, team members, and historical stage snapshots all key off it; HR
-    edits ``label``, ``description``, ``history_scope``,
-    ``handles_cancellation``, and ``is_institution_wide`` freely.
+    edits ``label``, ``description``, ``history_scope``, and
+    ``handles_cancellation`` here. ``is_institution_wide`` is deliberately not
+    one of them: a role's scope is decided by where it is held, on the Approvers
+    page — it becomes institution-wide the moment its first institution-wide
+    holder is assigned, not from a checkbox on this screen.
 
     ``is_active`` is deliberately *not* handled here: retiring a role runs the
     in-use check, so it has its own action.
@@ -1807,6 +1810,17 @@ def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRo
             )
         data.pop("code", None)
         data.pop("is_active", None)
+        if (
+            data.get("is_institution_wide", before["is_institution_wide"])
+            != before["is_institution_wide"]
+        ):
+            raise RoleActionError(
+                "is_institution_wide",
+                "A role's scope is decided on the Approvers page: the role "
+                "becomes institution-wide when its first institution-wide holder "
+                "is assigned there. It is not toggled from the role itself.",
+            )
+        data.pop("is_institution_wide", None)
         for field, value in data.items():
             setattr(role, field, value)
         role.save()
@@ -1859,8 +1873,18 @@ def _role_snapshot(role: ApproverRole) -> dict:
 
 
 def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssignment:
-    """Assign an institution-wide role to a user and audit it."""
+    """Assign an institution-wide role to a user and audit it.
+
+    The first institution-wide holder is what *makes* a role institution-wide:
+    assigning holder number one to a team role on the Approvers page is the
+    decision that the role covers every application — not a checkbox on the
+    role's own editor (which no longer offers one). The role is promoted in the
+    same atomic step as the holding, and the promotion is refused only while the
+    role is still held on a team or campus, because a role cannot be held wide
+    at a scope *and* institution-wide at once.
+    """
     with transaction.atomic():
+        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
         role.full_clean(exclude=["code", "label"])
         if not role.is_active:
             raise RoleActionError(
@@ -1869,11 +1893,30 @@ def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssi
                 "an active role.",
             )
         if not role.is_institution_wide:
-            raise RoleActionError(
-                "role",
-                f'"{role.label}" is a team role, not an institution-wide role. '
-                "Add this person to the team that uses it instead, or mark the "
-                "role institution-wide first.",
+            if (
+                TeamRoleAssignment.objects.filter(role=role).exists()
+                or CampusRoleAssignment.objects.filter(role=role).exists()
+            ):
+                raise RoleActionError(
+                    "role",
+                    f'"{role.label}" is already held on a team or campus. Remove '
+                    "those holders under Approvers first — a role held wide at a "
+                    "team or campus cannot be held institution-wide too.",
+                )
+            before = _role_snapshot(role)
+            role.is_institution_wide = True
+            role.save(update_fields=["is_institution_wide", "updated_at"])
+            record_audit(
+                actor=actor,
+                action=AuditEntry.Action.UPDATED,
+                target_type=AuditEntry.TargetType.APPROVER_ROLE,
+                target_id=role.pk,
+                target_summary=role.label,
+                detail=changed_fields(before, _role_snapshot(role)),
+                reason=(
+                    f'"{role.label}" named institution-wide by its first '
+                    "institution-wide holder on the Approvers page."
+                ),
             )
         if not user.is_active:
             raise RoleActionError(

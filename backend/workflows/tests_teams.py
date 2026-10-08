@@ -1247,18 +1247,49 @@ class RoleAssignmentAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(is_approver_user(self.employee))
 
-    def test_a_team_role_cannot_be_granted_institution_wide(self):
-        """Team roles are staffed through a team, not a blanket assignment."""
+    def test_the_first_institution_holder_promotes_a_team_role(self):
+        """The Approvers page is where a wide role is born: assigning a team
+        role its first institution-wide holder is the decision that it now
+        covers every application, so the same save promotes the role."""
+        role = ApproverRole.objects.get(code="supervisor")
+        self.assertFalse(role.is_institution_wide)
+
         response = self.client.post(
             ASSIGNMENTS_URL,
-            {
-                "user": self.employee.pk,
-                "role": ApproverRole.objects.get(code="supervisor").pk,
-            },
+            {"user": self.employee.pk, "role": role.pk},
             format="json",
         )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role.refresh_from_db()
+        self.assertTrue(role.is_institution_wide)
+        self.assertTrue(RoleAssignment.objects.filter(role=role).exists())
+        self.assertTrue(is_approver_user(self.employee))
+        # The promotion is a change in its own right, so it is audited.
+        self.assertTrue(
+            AuditEntry.objects.filter(
+                target_type=AuditEntry.TargetType.APPROVER_ROLE,
+                action=AuditEntry.Action.UPDATED,
+            ).exists()
+        )
+
+    def test_a_role_held_on_a_team_cannot_be_granted_institution_wide(self):
+        """A role cannot be held wide at a team and institution-wide at once;
+        promoting it would contradict the holder already on the team."""
+        role = ApproverRole.objects.get(code="supervisor")
+        team = Team.objects.get(pk=self.create_team()["id"])
+        TeamRoleAssignment.objects.create(team=team, role=role, user=self.employee)
+
+        response = self.client.post(
+            ASSIGNMENTS_URL,
+            {"user": self.employee.pk, "role": role.pk},
+            format="json",
+        )
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("team role", response.data["role"][0])
+        self.assertIn("already held on a team or campus", response.data["role"][0])
+        role.refresh_from_db()
+        self.assertFalse(role.is_institution_wide)
         self.assertFalse(RoleAssignment.objects.exists())
 
     def test_granting_twice_is_refused(self):
