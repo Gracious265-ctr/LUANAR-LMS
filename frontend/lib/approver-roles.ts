@@ -84,3 +84,48 @@ export async function listRoleAssignments(
   const query = roleId === undefined ? "" : `?role=${roleId}`;
   return readAllPages<RoleAssignment>(`/api/v1/role-assignments/${query}`);
 }
+
+/**
+ * A role held across a whole team, by one person.
+ *
+ * One holder per role per team is a constraint rather than a default, so the
+ * shape is deliberately the same as the institution-wide holding: the same
+ * person, the same role, and only the scope differs. That is what makes the
+ * three screens one pattern rather than three.
+ */
+export interface TeamRoleAssignment {
+  id: number;
+  team: number;
+  role: number;
+  user: number;
+  user_name: string;
+  role_label: string;
+  created_at: string;
+}
+
+/** A role held across a whole campus, reaching every team at that campus. */
+export interface CampusRoleAssignment {
+  id: number;
+  campus: number;
+  role: number;
+  user: number;
+  user_name: string;
+  role_label: string;
+  created_at: string;
+}
+
+export async function listTeamRoleAssignments(
+  team?: number | string
+): Promise<TeamRoleAssignment[]> {
+  const query = team === undefined ? "" : `?team=${team}`;
+  return readAllPages<TeamRoleAssignment>(`/api/v1/team-role-assignments/${query}`);
+}
+
+export async function listCampusRoleAssignments(
+  campus?: number | string
+): Promise<CampusRoleAssignment[]> {
+  const query = campus === undefined ? "" : `?campus=${campus}`;
+  return readAllPages<CampusRoleAssignment>(
+    `/api/v1/campus-role-assignments/${query}`
+  );
+}

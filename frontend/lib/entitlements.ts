@@ -16,7 +16,6 @@ export interface EntitlementInput {
   grade_end: string;
   days: number;
   effective_from: string;
-  leave_type: number | null;
 }
 
 export interface EntitlementResolution {

@@ -1,12 +1,11 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { CampusForm } from "@/components/hr/campus-form";
+import { CampusQuickAdd } from "@/components/hr/campus-form";
 import { TeamsSection } from "@/components/hr/TeamsSection";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
 import type { Campus, Team } from "@/lib/teams";
-import type { Department } from "@/lib/departments";
-import { listDepartments } from "@/lib/departments";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
 import { FadeIn } from "@/components/motion/FadeIn";
@@ -14,8 +13,6 @@ import { FadeIn } from "@/components/motion/FadeIn";
 const TEAMS_ERROR = "Unable to load teams. Please try again.";
 const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
-const DEPARTMENTS_ERROR =
-  "Unable to load departments, so this team cannot be placed in one.";
 
 /**
  * The teams list, with create in an overlay.
@@ -42,34 +39,22 @@ async function TeamsPage({
   const showRetired = retired === "1";
 
   // The create overlay needs its option set on the page, so it is read here
-  // rather than on open. The people who may hold a step are fetched per step
-  // from the department, which is what makes eligibility answerable.
-  const [
-    teamsResult,
-    campusesResult,
-    rolesResult,
-    departmentsResult,
-  ] = await Promise.all([
-      listTeams({ includeInactive: showRetired }).then(
-        (value) => ({ value, error: "" }),
-        () => ({ value: [] as Team[], error: TEAMS_ERROR })
-      ),
-      listCampuses().then(
-        (value) => ({ value, error: "" }),
-        () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
-      ),
-      listApproverRoles().then(
-        (value) => ({ value, error: "" }),
-        () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
-      ),
-      // A team's department decides which people may be appointed to its steps,
-      // so the create overlay needs the list up front rather than discovering
-      // the empty picker only when a step refuses the write.
-      listDepartments().then(
-        (value) => ({ value, error: "" }),
-        () => ({ value: [] as Department[], error: DEPARTMENTS_ERROR })
-      ),
-    ]);
+  // rather than on open: the campuses an academic team may sit at, and the
+  // approver roles its chain picks one of per step.
+  const [teamsResult, campusesResult, rolesResult] = await Promise.all([
+    listTeams({ includeInactive: showRetired }).then(
+      (value) => ({ value, error: "" }),
+      () => ({ value: [] as Team[], error: TEAMS_ERROR })
+    ),
+    listCampuses().then(
+      (value) => ({ value, error: "" }),
+      () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
+    ),
+    listApproverRoles().then(
+      (value) => ({ value, error: "" }),
+      () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
+    ),
+  ]);
 
   const filters = [
     { label: "In force and draft", href: "/dashboard/hr-admin/teams", current: !showRetired },
@@ -83,8 +68,9 @@ async function TeamsPage({
           <h2 className="text-2xl font-bold text-text-primary">Teams</h2>
           <p className="text-text-secondary">
             The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application. Only a
-            team that is in force routes anything.
+            team&apos;s chain decides who approves their application. A team is
+            either academic — sitting at a campus — or administration-wide, and
+            only a team that is in force routes anything.
           </p>
         </div>
 
@@ -93,22 +79,26 @@ async function TeamsPage({
             teams={teamsResult.value}
             campuses={campusesResult.value}
             roles={rolesResult.value}
-            departments={departmentsResult.value}
-            departmentsError={departmentsResult.error}
-                    rolesError={rolesResult.error}
-                    error={teamsResult.error}
+            rolesError={rolesResult.error}
+            error={teamsResult.error}
             filters={filters}
           />
         </div>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <h3 className="mb-2 text-lg font-semibold text-text-primary">
-            Campuses
-          </h3>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-text-primary">Campuses</h3>
+            <Link
+              href="/dashboard/hr-admin/campuses"
+              className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+            >
+              Manage campuses
+            </Link>
+          </div>
           {campusesResult.error ? (
             <p className="text-sm text-status-rejected">{campusesResult.error}</p>
           ) : (
-            <CampusForm campuses={campusesResult.value} />
+            <CampusQuickAdd campuses={campusesResult.value} />
           )}
         </div>
       </div>

@@ -21,8 +21,6 @@ export function makeEmployee(
     role: "employee" as UserRole,
     approver_roles: [],
     designation: "Lecturer",
-    department: null,
-    department_name: "Bunda College",
     category: "academic" as EmployeeCategory,
     grade: "G",
     appointment_date: "2020-01-01",

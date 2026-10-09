@@ -380,8 +380,15 @@ const NavLinks = memo(function NavLinks({
           />
           <Option
             Icon={Building2}
-            title="Departments"
-            href="/dashboard/hr-admin/departments"
+            title="Campuses"
+            href="/dashboard/hr-admin/campuses"
+            currentPath={currentPath}
+            open={open}
+          />
+          <Option
+            Icon={UserCheck}
+            title="Approvers"
+            href="/dashboard/hr-admin/approvers"
             currentPath={currentPath}
             open={open}
           />

@@ -3,11 +3,8 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus } from "lucide-react";
 
 import type { Employee, UserRole } from "@/lib/employees";
-import type { Department } from "@/lib/departments";
-import { createDepartment } from "@/lib/departments-client";
 import { apiErrorMessage } from "@/lib/utils";
 import {
   Select,
@@ -46,8 +43,6 @@ export function EmployeeForm({
   endpoint,
   method,
   gradeOptions = [],
-  departments = [],
-  departmentsError = "",
   onSuccess,
   onCancel,
 }: {
@@ -55,9 +50,6 @@ export function EmployeeForm({
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
-  departments?: Department[];
-  /** Set when the departments fetch failed; the picker is then shown unusable. */
-  departmentsError?: string;
   /**
    * Called with the saved employee instead of navigating, so a host overlay can
    * close and refresh in place. Omit it and the form navigates to the list
@@ -71,41 +63,6 @@ export function EmployeeForm({
   const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  // The server-loaded options are the starting point, not the final word: HR
-  // can create a department from this form, and the option they just made must
-  // appear in the picker without leaving the page.
-  const [departmentOptions, setDepartmentOptions] = useState<Department[]>(departments);
-  const [newDepartment, setNewDepartment] = useState("");
-  const [showNewDepartment, setShowNewDepartment] = useState(false);
-  const [creatingDepartment, setCreatingDepartment] = useState(false);
-  const [departmentCreateError, setDepartmentCreateError] = useState("");
-  const [selectedDepartment, setSelectedDepartment] = useState(
-    employee?.department === null || employee?.department === undefined
-      ? ""
-      : String(employee.department)
-  );
-
-  async function handleCreateDepartment() {
-    const name = newDepartment.trim();
-    if (name === "") return;
-    setDepartmentCreateError("");
-    setCreatingDepartment(true);
-    try {
-      const created = await createDepartment({ name });
-      setDepartmentOptions((current) =>
-        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
-      );
-      setSelectedDepartment(String(created.id));
-      setNewDepartment("");
-      setShowNewDepartment(false);
-    } catch (err) {
-      setDepartmentCreateError(
-        err instanceof Error ? err.message : "Could not create the department."
-      );
-    } finally {
-      setCreatingDepartment(false);
-    }
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,7 +70,6 @@ export function EmployeeForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const departmentValue = String(formData.get("department") || "");
 
     try {
       const response = await fetch(endpoint, {
@@ -124,7 +80,6 @@ export function EmployeeForm({
           last_name: formData.get("last_name"),
           email: formData.get("email"),
           designation: formData.get("designation"),
-          department: departmentValue ? Number(departmentValue) : null,
           category: formData.get("category"),
           grade: formData.get("grade"),
           appointment_date: formData.get("appointment_date") || null,
@@ -224,79 +179,6 @@ export function EmployeeForm({
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Lecturer"
         />
-      </div>
-
-      <div>
-        <label
-          htmlFor="department"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Department
-        </label>
-        <select
-          id="department"
-          name="department"
-          value={selectedDepartment}
-          onChange={(event) => setSelectedDepartment(event.target.value)}
-          disabled={departmentsError !== ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="">No department</option>
-          {departmentOptions.map((department) => (
-            <option key={department.id} value={department.id}>
-              {department.name}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          {departmentsError ||
-            "A pick from the departments HR maintains. It is what makes somebody eligible to approve for a team in the same department."}
-        </p>
-        {!showNewDepartment ? (
-          <button
-            type="button"
-            onClick={() => setShowNewDepartment(true)}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
-            <Plus className="h-4 w-4" />
-            Create department
-          </button>
-        ) : (
-          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                aria-label="New department name"
-                value={newDepartment}
-                onChange={(event) => setNewDepartment(event.target.value)}
-                placeholder="e.g. ICT"
-                className="min-w-40 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              />
-              <button
-                type="button"
-                onClick={() => void handleCreateDepartment()}
-                disabled={creatingDepartment || newDepartment.trim() === ""}
-                className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {creatingDepartment ? "Saving..." : "Save department"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNewDepartment(false);
-                  setDepartmentCreateError("");
-                }}
-                className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-              >
-                Cancel
-              </button>
-            </div>
-            {departmentCreateError ? (
-              <p className="mt-1 text-xs text-status-rejected">
-                {departmentCreateError}
-              </p>
-            ) : null}
-          </div>
-        )}
       </div>
 
       <Field label="Category" htmlFor="category">

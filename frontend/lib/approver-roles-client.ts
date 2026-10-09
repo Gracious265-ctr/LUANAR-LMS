@@ -1,4 +1,10 @@
-import type { ApproverRole, ApproverRoleInput, RoleAssignment } from "./approver-roles";
+import type {
+  ApproverRole,
+  ApproverRoleInput,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "./approver-roles";
 import { apiErrorMessage } from "./utils";
 
 export {
@@ -7,6 +13,44 @@ export {
   historyScopeLabel,
 } from "./approver-role-scopes";
 export type { HistoryScope } from "./approver-role-scopes";
+
+/**
+ * Who holds each role institution-wide, today.
+ *
+ * Client-safe twin of the server-side reader in ``approver-roles.ts``: a
+ * workflow form running in the browser needs to show an institution-wide
+ * step's holder the moment the role is chosen, and ``approver-roles.ts`` reads
+ * through ``next/headers``, which puts the server module (and its cookies
+ * dependency) into the client bundle. Reads go through the ``/api/hr`` proxy,
+ * so the browser only ever sees the paginated rows, never Django.
+ */
+export async function listRoleAssignments(
+  roleId?: number | string
+): Promise<RoleAssignment[]> {
+  const rows: RoleAssignment[] = [];
+  let page = 1;
+  for (;;) {
+    const params = new URLSearchParams();
+    if (roleId !== undefined) {
+      params.set("role", String(roleId));
+    }
+    params.set("page", String(page));
+    const response = await fetch(`/api/hr/role-assignments/?${params}`);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(apiErrorMessage(data));
+    }
+    const data = (await response.json()) as {
+      results?: RoleAssignment[];
+      next?: string | null;
+    };
+    const batch = data.results ?? [];
+    rows.push(...batch);
+    if (!data.next || batch.length === 0) break;
+    page += 1;
+  }
+  return rows;
+}
 
 export async function createApproverRole(
   input: ApproverRoleInput
@@ -65,4 +109,46 @@ async function send<T>(
     throw new Error(apiErrorMessage(data));
   }
   return response.json();
+}
+
+/**
+ * Give a role one holder across a whole team, replacing any existing one.
+ *
+ * Saving a second holder is the replacement, not an error: the screen is a
+ * pick-a-role, pick-a-person form, and asking HR to delete before they may
+ * change their mind is a step that only exists to satisfy the database.
+ */
+export async function createTeamRoleAssignment(input: {
+  team: number | string;
+  role: number | string;
+  user: number | string;
+}): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    "/api/hr/team-role-assignments",
+    "POST",
+    input
+  );
+}
+
+export async function removeTeamRoleAssignment(id: number | string): Promise<void> {
+  await send<void>(`/api/hr/team-role-assignments/${id}`, "DELETE");
+}
+
+/** The same contract as the team-wide holding, scoped to a campus. */
+export async function createCampusRoleAssignment(input: {
+  campus: number | string;
+  role: number | string;
+  user: number | string;
+}): Promise<CampusRoleAssignment> {
+  return send<CampusRoleAssignment>(
+    "/api/hr/campus-role-assignments",
+    "POST",
+    input
+  );
+}
+
+export async function removeCampusRoleAssignment(
+  id: number | string
+): Promise<void> {
+  await send<void>(`/api/hr/campus-role-assignments/${id}`, "DELETE");
 }

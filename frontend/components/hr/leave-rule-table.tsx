@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { LeaveRule } from "@/lib/leave-rules";
-import { leaveRuleStatus } from "@/lib/leave-rules-client";
+import { leaveRuleStatus } from "@/lib/leave-rules-pure";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink, EditIconButton } from "./edit-action-link";
 import { EmptyState } from "@/components/ui/states";

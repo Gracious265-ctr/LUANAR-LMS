@@ -29,7 +29,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from notifications.models import NotificationOutbox
 from notifications.tasks import deliver_notification
-from users.models import Department, EmployeeProfile, PasswordSetToken
+from users.models import EmployeeProfile, PasswordSetToken
 from users.services import (
     InvalidPasswordSetToken,
     confirm_password_set,
@@ -438,10 +438,6 @@ class EmployeePasswordLinkTests(PasswordSetBase):
         super().setUp()
         self.client = APIClient()  # type: ignore[assignment]
         self.list_url = "/api/v1/employees/"
-        # ``department`` is a reference row now, so the payload carries its pk.
-        # Posting the name returns 400 ("expected pk value, received str"), which
-        # is the right refusal but the wrong thing for these tests to assert.
-        self.department, _ = Department.objects.get_or_create(name="Bunda College")
 
     def payload(self, **overrides):
         body = {
@@ -449,7 +445,6 @@ class EmployeePasswordLinkTests(PasswordSetBase):
             "first_name": "Grace",
             "last_name": "Hopper",
             "designation": "Lecturer",
-            "department": self.department.pk,
             "category": "academic",
             "grade": "C",
             "appointment_date": "2023-05-01",

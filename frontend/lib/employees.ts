@@ -33,9 +33,6 @@ export interface Employee {
   /** Approver positions this person holds, by code. Empty for an employee. */
   approver_roles: string[];
   designation: string;
-  /** A pick from the departments HR maintains, and what makes somebody eligible to approve. */
-  department: number | null;
-  department_name: string;
   category: EmployeeCategory;
   grade: string;
   appointment_date: string | null;
@@ -56,8 +53,6 @@ export interface EmployeeInput {
   password?: string;
   role?: UserRole;
   designation?: string;
-  /** A department id, never a typed name: eligibility compares department ids. */
-  department?: number | null;
   category?: EmployeeCategory;
   grade?: string;
   appointment_date?: string | null;
@@ -83,17 +78,17 @@ export async function listEmployees(search = ""): Promise<EmployeeListResponse> 
  * `listEmployees` answers one page, which is right for a table and wrong for a
  * "choose somebody" list: a page-1-only read would silently offer the first few
  * employees and look to HR like the rest had no accounts.
+ *
+ * `category` scopes the read to one half of the institution, the same way a
+ * team's roster is scoped: a team-wide approver must match the team's category
+ * and a campus-wide approver must be academic, so the picker reads only the
+ * category the write will accept.
  */
-export async function listAllEmployees(): Promise<Employee[]> {
-  const first = await listEmployees();
-  const rows = [...first.results];
-  let next = first.next;
-  while (next) {
-    const page = await apiClientUrl<EmployeeListResponse>(next);
-    rows.push(...page.results);
-    next = page.next;
-  }
-  return rows;
+export function listAllEmployees(
+  category?: EmployeeCategory
+): Promise<Employee[]> {
+  const query = category ? `?category=${category}` : "";
+  return listAllPages(query);
 }
 
 export async function getEmployee(id: number | string): Promise<Employee> {
@@ -121,9 +116,23 @@ export function listEmployeesByTeam(
  * subtracting one client-side list from another: a person on another team is not
  * simply "free", and quietly reassigning them from this screen would hide that
  * decision from the team they are leaving.
+ *
+ * The list is scoped to a team's own half of the institution: `category` keeps
+ * only employees of the team's kind (an academic team takes academic employees,
+ * an administration team takes administration employees), and
+ * `excludedWideForTeam` drops the people who staff that team's steps as wide
+ * approvers — an approver is managed on the Approvers tab, not the roster.
  */
-export function listUnassignedEmployees(): Promise<Employee[]> {
-  return listAllPages("?team=none");
+export function listUnassignedEmployees(
+  category?: EmployeeCategory,
+  excludedWideForTeam?: number | string
+): Promise<Employee[]> {
+  const params = new URLSearchParams({ team: "none" });
+  if (category) params.set("category", category);
+  if (excludedWideForTeam !== undefined) {
+    params.set("not_wide_for_team", String(excludedWideForTeam));
+  }
+  return listAllPages(`?${params.toString()}`);
 }
 
 async function listAllPages(query: string): Promise<Employee[]> {

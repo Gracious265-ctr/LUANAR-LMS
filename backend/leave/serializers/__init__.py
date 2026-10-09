@@ -16,13 +16,15 @@ from ..models import (
     SupportingDocument,
 )
 from ..services import (
+    ANNUAL_LEAVE_CODES,
     find_overlapping_financial_year,
     find_overlapping_rule,
+    is_annual_leave_identity,
+    is_annual_leave_type,
     normalize_grade,
     normalize_leave_code,
+    provision_annual_leave,
     resolve_leave_rule,
-    ensure_annual_leave_rule,
-    get_or_create_annual_leave_type,
     find_annual_leave_type,
     resolve_grade_entitlement,
 )
@@ -30,7 +32,16 @@ from ..services.storage import safe_signed_document_url
 
 
 class GradeEntitlementSerializer(AuditedModelSerializer):
-    """HR-facing serializer for grade/entitlement rules."""
+    """HR-facing serializer for grade/entitlement rules.
+
+    An entitlement is an **annual leave** entitlement, so ``leave_type`` is
+    read-only: saving a band provisions the annual leave type and its first rule
+    (:func:`~leave.services.provision_annual_leave`) rather than naming a type
+    the caller picked. The field is kept because it is what makes the granted
+    type readable — the employee catalog, the entitlement table and the audit
+    trail all resolve through it — and because a row written before the field
+    existed still has to render.
+    """
 
     target_type = AuditEntry.TargetType.ENTITLEMENT
     # ``leave_type`` is audited rather than just ``days``: which type a band
@@ -60,13 +71,18 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
             "leave_type",
             "leave_type_name",
         ]
+        read_only_fields = ["leave_type"]
 
     def validate(self, attrs: dict) -> dict:
         grade_start = normalize_grade(self._value(attrs, "grade_start"))
         grade_end = normalize_grade(self._value(attrs, "grade_end"))
         effective_from = self._value(attrs, "effective_from")
         days = self._value(attrs, "days")
-        leave_type = self._value(attrs, "leave_type")
+        # Overlap is checked against the type this band will grant. On create
+        # that is the annual type provisioning has not yet written, so resolve
+        # the existing one to compare against; on edit it is the band's own.
+        leave_type = self.instance.leave_type if self.instance else None
+        leave_type = leave_type or find_annual_leave_type()
 
         if grade_start is None:
             raise serializers.ValidationError(
@@ -97,9 +113,8 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
         self, grade_start: str, grade_end: str, leave_type
     ) -> None:
         exclude_pk = self.instance.pk if self.instance is not None else None
-        check_type = leave_type or find_annual_leave_type()
         overlapping = find_overlapping_rule(
-            grade_start, grade_end, leave_type=check_type, exclude_pk=exclude_pk
+            grade_start, grade_end, leave_type=leave_type, exclude_pk=exclude_pk
         )
         if overlapping is not None:
             granted = (
@@ -117,51 +132,11 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
 
     def create(self, validated_data):
         with transaction.atomic():
-            if validated_data.get("leave_type") is None:
-                annual, created = get_or_create_annual_leave_type()
-                validated_data["leave_type"] = annual
-                if created:
-                    actor = current_actor(self)
-                    record_audit(
-                        actor=actor,
-                        target_type=AuditEntry.TargetType.LEAVE_TYPE,
-                        target_id=annual.pk,
-                        action=AuditEntry.Action.CREATED,
-                        target_summary=str(annual),
-                        detail={
-                            "summary": f"Created leave type {annual.name} ({annual.code})",
-                            "before": None,
-                            "after": {"name": annual.name, "code": annual.code, "is_active": annual.is_active},
-                        },
-                    )
-                rule = ensure_annual_leave_rule(
-                    annual,
-                    validated_data["effective_from"],
-                    validated_data["days"],
-                )
-                if rule is not None:
-                    actor = current_actor(self)
-                    record_audit(
-                        actor=actor,
-                        target_type=AuditEntry.TargetType.LEAVE_RULE,
-                        target_id=rule.pk,
-                        action=AuditEntry.Action.CREATED,
-                        target_summary=str(rule),
-                        detail={
-                            "summary": f"Created leave rule for {annual.name}",
-                            "before": None,
-                            "after": {
-                                "leave_type": annual.pk,
-                                "max_duration_days": rule.max_duration_days,
-                                "eligibility": rule.eligibility,
-                                "eligibility_rules": rule.eligibility_rules,
-                                "min_notice_days": rule.min_notice_days,
-                                "requires_supporting_document": rule.requires_supporting_document,
-                                "consumes_annual_entitlement": rule.consumes_annual_entitlement,
-                                "effective_from": rule.effective_from.isoformat(),
-                            },
-                        },
-                    )
+            validated_data["leave_type"] = provision_annual_leave(
+                effective_from=validated_data["effective_from"],
+                days=validated_data["days"],
+                actor=current_actor(self),
+            )
             return super().create(validated_data)
 
 
@@ -169,7 +144,7 @@ class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
 
     target_type = AuditEntry.TargetType.LEAVE_TYPE
-    audit_fields = ["name", "code", "is_active", "requires_institutional_approval"]
+    audit_fields = ["name", "code", "is_active"]
 
     class Meta:
         model = LeaveType
@@ -178,7 +153,6 @@ class LeaveTypeSerializer(AuditedModelSerializer):
             "name",
             "code",
             "is_active",
-            "requires_institutional_approval",
         ]
 
     def validate(self, attrs: dict) -> dict:
@@ -197,6 +171,8 @@ class LeaveTypeSerializer(AuditedModelSerializer):
             )
         attrs["code"] = effective_code
 
+        self._reject_annual_leave(name, effective_code)
+
         queryset = LeaveType.objects.all()
         if self.instance is not None:
             queryset = queryset.exclude(pk=self.instance.pk)
@@ -210,6 +186,50 @@ class LeaveTypeSerializer(AuditedModelSerializer):
             )
 
         return attrs
+
+    def _reject_annual_leave(self, name: str, effective_code: str) -> None:
+        """Refuse to create or rename the canonical annual leave type.
+
+        Annual leave is not a registry entry HR curates here: it is provisioned
+        by saving an entitlement (:func:`~leave.services.provision_annual_leave`)
+        and it is edited by editing that entitlement. Two guards are needed and
+        they are different failures.
+
+        *Editing* the existing annual type is refused on **any** field, because
+        a partially-editable type is a trap — ``is_active`` looks like an
+        ordinary flag and retiring annual leave silently empties every
+        employee's leave selection.
+
+        *Creating* something that would become the annual type is refused on the
+        identity of the row, so HR cannot make a second, competing "Annual
+        Leave" and leave :func:`~leave.services.find_annual_leave_type` to pick
+        between them.
+        """
+        if self.instance is not None:
+            if is_annual_leave_type(self.instance):
+                raise serializers.ValidationError(
+                    {
+                        "name": (
+                            "Annual leave is created and maintained from "
+                            "Entitlements, not from Leave Types. Edit the "
+                            "entitlement for the grade range to change the days "
+                            "an employee is granted."
+                        )
+                    }
+                )
+            return
+
+        if is_annual_leave_identity(name, effective_code):
+            field = "code" if effective_code in ANNUAL_LEAVE_CODES else "name"
+            raise serializers.ValidationError(
+                {
+                    field: (
+                        f'"{name}" is reserved for annual leave, which is '
+                        "created automatically when you add an entitlement. Add "
+                        "an entitlement instead, or name a different leave type."
+                    )
+                }
+            )
 
 
 class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):

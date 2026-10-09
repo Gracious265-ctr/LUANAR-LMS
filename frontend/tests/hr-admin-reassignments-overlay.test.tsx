@@ -57,9 +57,19 @@ const delegated: PendingApplication = {
 };
 
 const employees: Employee[] = [
-  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["dean"] }),
-  makeEmployee({ id: 5, full_name: "Bob HOD", approver_roles: ["hod"] }),
-  makeEmployee({ id: 8, full_name: "Sam Staff", approver_roles: [] }),
+  makeEmployee({
+    id: 3,
+    user_id: 3,
+    full_name: "Jane Dean",
+    approver_roles: ["dean"],
+  }),
+  makeEmployee({
+    id: 5,
+    user_id: 5,
+    full_name: "Bob HOD",
+    approver_roles: ["hod"],
+  }),
+  makeEmployee({ id: 8, user_id: 8, full_name: "Sam Staff", approver_roles: [] }),
 ];
 
 function renderSection(overrides: Partial<Parameters<typeof ReassignmentsSection>[0]> = {}) {

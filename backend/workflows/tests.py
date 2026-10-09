@@ -23,7 +23,14 @@ from .admin import (
     WorkflowAdmin,
     WorkflowAdminForm,
 )
-from .testing import create_user_with_role, ensure_roles, make_section, make_stage
+from .testing import (
+    create_user_with_role,
+    ensure_roles,
+    make_section,
+    make_stage,
+    make_team,
+    make_workflow,
+)
 from .models import (
     ApproverRole,
     Delegation,
@@ -61,6 +68,9 @@ VALID_SECTIONS = [
 
 class SectionSequenceTests(TestCase):
     """Service-level workflow section-sequence validation."""
+
+    def setUp(self):
+        ensure_roles("supervisor", "hod", "registrar", "dvc", "dean")
 
     def test_valid_sequence_normalizes_to_one_based_order(self):
         result = normalize_section_sequence(VALID_SECTIONS)
@@ -138,12 +148,13 @@ class SectionSequenceTests(TestCase):
 
 
 class WorkflowEndpointTests(TestCase):
-    """The chain endpoint is read-only, and that is the point.
+    """The chain endpoint: read what a team owns, write only what it owns.
 
-    A chain exists because a team has one, and it is written in the same request
-    as the team. So this endpoint only has to answer "what does this team's chain
-    look like" for the team screens, the roster views, and the audit trail —
-    and refuse every write.
+    A team may own several chains, so each one is configured on its own here —
+    create the replacement steps alongside the live one, then point the team at
+    them. What survives from the old read-only contract is ownership: a chain
+    belongs to the team it was created for, it cannot be adopted by another,
+    and it is never scheduled or switched off on its own.
 
     The refusals are tested rather than assumed. An endpoint that merely went
     unused would look identical from the tests, and the first thing a future
@@ -168,17 +179,10 @@ class WorkflowEndpointTests(TestCase):
             last_name="Employee",
             role=User.Role.EMPLOYEE,
         )
+        ensure_roles("supervisor", "hod", "registrar", "dvc", "dean")
 
-        self.workflow = Workflow.objects.create(
-            name="Academic approval",
-            employee_category="academic",
-            department="",
-        )
-        Workflow.objects.create(
-            name="Administration approval",
-            employee_category="administration",
-            department="",
-        )
+        self.workflow = Workflow.objects.create(name="Academic approval")
+        Workflow.objects.create(name="Administration approval")
         for section in VALID_SECTIONS:
             make_section(
                 self.workflow,
@@ -233,19 +237,18 @@ class WorkflowEndpointTests(TestCase):
         )
         self.assertEqual([section["order"] for section in sections], [1, 2, 3, 4])
 
-    def test_a_chain_cannot_be_created_here(self):
-        """A chain is created with a team, never on its own.
+    def test_a_chain_cannot_be_created_without_a_team(self):
+        """A standalone chain still has no team to belong to.
 
-        A standalone chain has no team, which means no employee's application
-        could ever reach it and nobody could say whose approval steps these are.
+        A chain created on its own would be a set of steps nothing routes
+        through and nobody could say whose approval they are. So the endpoint
+        takes a team on create, and refuses anything else.
         """
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
             {
                 "name": "Dean office approval",
-                "employee_category": "academic",
-                "department": "Faculty of Science",
                 "sections": [
                     {"order": 1, "name": "HOD", "approver_role": "hod"},
                     {"order": 2, "name": "Dean", "approver_role": "dean"},
@@ -253,21 +256,52 @@ class WorkflowEndpointTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("team", response.data)
         self.assertFalse(Workflow.objects.filter(name="Dean office approval").exists())
 
-    def test_a_chains_steps_cannot_be_edited_here(self):
-        """Steps are rewritten by saving the team, which is the only writer.
+    def test_hr_can_create_a_workflow_for_a_team(self):
+        """A team may own several chains, and each is configured separately.
 
-        A PATCH here would change the routing of a team the person editing never
-        named — or, now the relation is one-to-one, change one team's chain
-        without anyone having said the team's configuration had changed.
+        This is the replacement chain case: build the new steps alongside the
+        live one, then point the team at it when it is ready. The chain is owned
+        by the team it is created for, which is what makes it editable here.
         """
+        team = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "name": f"{team.name} replacement",
+                "team": team.pk,
+                "sections": [
+                    {"order": 1, "name": "HOD", "approver_role": "hod"},
+                    {"order": 2, "name": "Dean", "approver_role": "dean"},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        workflow = Workflow.objects.get(pk=response.data["id"])
+        self.assertEqual(workflow.team_id, team.pk)
+        self.assertEqual(
+            [s.approver_role.code for s in workflow.sections.order_by("order")],
+            ["hod", "dean"],
+        )
+
+    def test_hr_can_edit_the_steps_of_a_workflow_the_team_owns(self):
+        """The team's workflow screen writes here, so a write has to work.
+
+        The rule that survives the change is ownership: HR edits the chain the
+        named team owns, not a chain that belongs to somebody else.
+        """
+        team = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        workflow = make_workflow(f"{team.name} workflow", ["hod", "dean"])
+        workflow.team = team
+        workflow.save(update_fields=["team"])
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
-            self.detail_url,
+            f"/api/v1/workflows/{workflow.pk}/",
             {
                 "sections": [
                     {"order": 1, "name": "Dean", "approver_role": "dean"},
@@ -276,24 +310,69 @@ class WorkflowEndpointTests(TestCase):
             },
             format="json",
         )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        workflow.refresh_from_db()
         self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
-        self.assertEqual(
-            [s.approver_role.code for s in self.workflow.sections.order_by("order")],
-            ["supervisor", "hod", "registrar", "dvc"],
+            [s.approver_role.code for s in workflow.sections.order_by("order")],
+            ["dean", "registrar"],
         )
 
-    def test_a_chain_cannot_be_renamed_here(self):
+    def test_a_chain_cannot_be_moved_to_another_team(self):
+        """The team named at create is the team it stays with.
+
+        A chain that could be re-pointed would re-route one team's applications
+        into another team's steps, and every application already inside it would
+        be stranded at a step nobody staffs for them.
+        """
+        owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        other = make_team("Registry office", ["registrar"], campus="Main Campus")
+        workflow = make_workflow(f"{owner.name} workflow", ["hod", "dean"])
+        workflow.team = owner
+        workflow.save(update_fields=["team"])
         self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(self.detail_url, {"name": "Renamed"}, format="json")
-        self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        response = self.client.patch(
+            f"/api/v1/workflows/{workflow.pk}/", {"team": other.pk}, format="json"
         )
-        self.workflow.refresh_from_db()
-        self.assertEqual(self.workflow.name, "Academic approval")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("team", response.data)
+        workflow.refresh_from_db()
+        self.assertEqual(workflow.team_id, owner.pk)
+
+    def test_an_edit_may_restate_its_own_team(self):
+        """The workflow form repeats the team it edits under, which is fine.
+
+        Sending the owning team alongside an edit names the workflow's owner
+        rather than trying to move it; the refusal exists for a *different*
+        team, and the edit form would otherwise be refused on every save.
+        """
+        owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        workflow = owner.workflow
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(
+            f"/api/v1/workflows/{workflow.pk}/",
+            {"team": owner.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        workflow.refresh_from_db()
+        self.assertEqual(workflow.team_id, owner.pk)
+
+    def test_the_list_can_be_filtered_to_one_teams_workflows(self):
+        """How the team screen finds every chain a team owns."""
+        owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
+        make_team("Registry office", ["registrar"], campus="Main Campus")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.list_url, {"team": owner.pk})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = [row["id"] for row in response.data["results"]]  # type: ignore[index]
+        self.assertEqual(ids, [owner.workflow_id])
 
     def test_delete_not_supported(self):
+        """A chain is retired with the team, and never on its own.
+
+        DELETE would leave the team still pointing at a chain that no longer
+        exists, which is the one state this whole design is built to avoid.
+        """
         self.client.force_authenticate(user=self.hr_user)
         self.assertEqual(
             self.client.delete(self.detail_url).status_code, status.HTTP_405_METHOD_NOT_ALLOWED
@@ -436,7 +515,7 @@ class WorkflowActivationServiceTests(TestCase):
     already cover this scope?" — went away with shared chains. It existed
     because two chains could apply to the same people, so which one governed an
     applicant was ambiguous. Now every chain belongs to one team and routing
-    follows the team, so two chains in one department is a reorganisation, not a
+    follows the team, so two chains over the same people is a reorganisation, not a
     conflict. That question is answered by the team activation check, which can
     see both teams and report the overlap as something HR has to confirm.
     """
@@ -487,8 +566,8 @@ class WorkflowActivationEndpointTests(TestCase):
     team's readiness check is what answers them. So the questions these tests
     used to ask of ``POST /workflows/`` — when does this start, does it clash
     with anything, can it be switched off — are asked of the team endpoint in
-    ``tests_team_configuration.py``, and what is left here is that the old
-    answers are not still available anywhere.
+    ``tests_team_configuration.py``, and what is left here is that a write here
+    which tries to answer them on a chain's own behalf is still refused.
     """
 
     def setUp(self):
@@ -509,30 +588,32 @@ class WorkflowActivationEndpointTests(TestCase):
 
         A chain that is not yet applying is a team that has not been activated.
         Letting the two be set independently is how you get a chain that says it
-        starts in June while the team routing through it went live in May.
+        starts in June while the team routing through it went live in May — so
+        the field is named and refused rather than silently dropped.
         """
+        team = make_team("Dean office", ["dean"], campus="Main Campus")
         future = (timezone.localdate() + timedelta(days=30)).isoformat()
         response = self.client.post(
             self.list_url,
             {
                 "name": "Workflow",
+                "team": team.pk,
                 "effective_from": future,
                 "is_active": True,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("effective_from", response.data)
         self.assertFalse(Workflow.objects.filter(name="Workflow").exists())
 
     def test_a_chain_cannot_be_switched_off(self):
         """Retiring is a team decision, and it is audited as one.
 
-        Switching off a chain here would stop every team's routing at once,
-        without any of those teams' statuses changing and so without anything
-        in their history saying why.
+        Switching off a chain here would stop the team's routing at once,
+        without the team's status changing and so without anything in the
+        team's history saying why.
         """
         workflow = Workflow.objects.create(
             name="Live", effective_from=timezone.localdate()
@@ -540,51 +621,52 @@ class WorkflowActivationEndpointTests(TestCase):
         response = self.client.patch(
             f"/api/v1/workflows/{workflow.pk}/", {"is_active": False}, format="json"
         )
-        self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("is_active", response.data)
         workflow.refresh_from_db()
         self.assertTrue(workflow.is_active)
 
-    def test_a_chain_cannot_be_activated_with_a_deactivated_role(self):
-        """The role check is refused at the team boundary instead.
+    def test_a_chain_cannot_be_built_on_a_deactivated_role(self):
+        """The role check is not bypassed by writing a chain of its own.
 
-        Creating a team with a step whose role is switched off is refused by the
-        team endpoint, because that is where a chain is written now. This test
-        pins that the chain endpoint offers no way around it.
+        Creating a step whose role is switched off is refused here just as it is
+        on the team endpoint — a deactivated role is deactivated wherever it is
+        named — so there is no way to produce a chain the team activation check
+        would then have to reject.
         """
+        team = make_team("Dean office", [], campus="Main Campus")
+        # Deactivated *after* the team is built: the fixture helper creates the
+        # six roles and reactivates them, which would undo the very switch this
+        # test is about.
         ensure_roles("dean")
         ApproverRole.objects.filter(code="dean").update(is_active=False)
         response = self.client.post(
             self.list_url,
             {
                 "name": "Dead step",
-                "effective_from": timezone.localdate().isoformat(),
-                "is_active": True,
+                "team": team.pk,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(
-            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("sections", response.data)
         self.assertFalse(Workflow.objects.filter(name="Dead step").exists())
 
-    def test_a_conflicting_scope_cannot_be_created(self):
-        """Two chains covering one scope used to be an error worth blocking.
+    def test_two_teams_may_own_chains_over_the_same_scope(self):
+        """Two chains covering one scope is not an error any more.
 
-        With a chain per team it is not: a department changing its approval
-        route is exactly two teams with the same department, and the team
-        activation check surfaces that for HR to confirm rather than a shared
-        registry refusing to be written.
+        Two teams serving the same people is exactly two chains over one scope,
+        and the team activation check surfaces that for HR to confirm rather
+        than a shared registry refusing to be written.
         """
+        first_team = make_team("Dean office", [], campus="Main Campus")
+        second_team = make_team("Registry office", [], campus="Main Campus")
         first = self.client.post(
             self.list_url,
             {
                 "name": "First",
-                "employee_category": "administration",
-                "effective_from": timezone.localdate().isoformat(),
-                "is_active": True,
+                "team": first_team.pk,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
@@ -593,19 +675,13 @@ class WorkflowActivationEndpointTests(TestCase):
             self.list_url,
             {
                 "name": "Second",
-                "employee_category": "administration",
-                "effective_from": timezone.localdate().isoformat(),
-                "is_active": True,
+                "team": second_team.pk,
                 "sections": [{"order": 1, "name": "Dean", "approver_role": "dean"}],
             },
             format="json",
         )
-        self.assertEqual(
-            first.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
-        self.assertEqual(
-            second.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
-        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED, second.data)
 
 
 class WorkflowActivationAdminTests(TestCase):
@@ -624,8 +700,6 @@ class WorkflowActivationAdminTests(TestCase):
     def _form(self, workflow: Workflow, **overrides) -> WorkflowAdminForm:
         data = {
             "name": workflow.name,
-            "employee_category": workflow.employee_category or "",
-            "department": workflow.department or "",
             "effective_from": "",
             "is_active": False,
         }
@@ -2297,6 +2371,7 @@ class WorkflowSerializerAtomicityTests(TestCase):
         request = APIRequestFactory().post("/")
         request.user = self.hr
         self.context = {"request": request, "actor": self.hr}
+        ensure_roles("supervisor", "hod")
         self.supervisor = make_active_user("supervisor", "sup-atomic@test.luanar")
         self.payload = {
             "name": "Atomic rollback team",

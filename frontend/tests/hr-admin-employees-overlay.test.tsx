@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Employee } from "@/lib/employees";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
 
-
 import { EmployeesSection } from "@/components/hr/EmployeesSection";
 
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
@@ -29,8 +28,6 @@ function renderSection(
       employees={[makeEmployee({ id: 1, full_name: "Jane Dean" })]}
       totalCount={57}
       gradeOptions={["A", "B", "G"]}
-      departments={[]}
-      departmentsError=""
       search=""
       {...props}
     />

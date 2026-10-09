@@ -28,7 +28,7 @@ from .events import (
     register_consumer,
 )
 from .testing import (
-    department_for,
+    team_for,
     grant_approver_role,
     make_approver,
     make_section,
@@ -55,11 +55,7 @@ from .services import (
     assign_workflow,
     decide,
 )
-from .policies import (
-    ViewAccess,
-    get_decision_authority,
-    get_leave_history_scope,
-)
+from .policies import get_decision_authority
 
 User = get_user_model()
 
@@ -100,13 +96,13 @@ class ApprovalBase(StubProviderMixin, APITestCase):
         EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="B",
         )
         EmployeeProfile.objects.create(
             user=self.supervisor,
             designation="Direct Supervisor",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="E",
         )
         for role, user in (
@@ -169,7 +165,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         today = timezone.localdate()
         self.admin_workflow = Workflow.objects.create(
             name="Admin chain",
-            employee_category=EmployeeProfile.Category.ADMINISTRATION,
             effective_from=today,
             is_active=True,
         )
@@ -179,7 +174,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             make_section(self.admin_workflow, index, role)
         self.academic_workflow = Workflow.objects.create(
             name="Academic chain",
-            employee_category=EmployeeProfile.Category.ACADEMIC,
             effective_from=today,
             is_active=True,
         )
@@ -218,7 +212,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             profile = EmployeeProfile.objects.create(
                 user=user,
                 designation="Officer",
-                department=department_for("Administration"),
+                team=team_for("Administration"),
                 grade="B",
             )
         profile.team = team
@@ -242,7 +236,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         EmployeeProfile.objects.create(
             user=deputy,
             designation="Deputy",
-            department=department_for("Administration"),
+            team=team_for("Administration"),
             grade="E",
         )
         supervisor_section.approver = deputy
@@ -378,10 +372,14 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
 
         self.assertEqual(definitions[-1].approver_user_ids, (active.pk,))
 
-    def test_chain_for_academic_without_department_starts_with_hod(self):
+    def test_chain_for_academic_on_the_academic_team_starts_with_hod(self):
+        """Routing follows the applicant's team, whatever the person's category.
+
+        The team carries no academic/administration split of its own: the chain
+        that governs an applicant is the one belonging to the team they are on.
+        """
         profile = self._place_on_team(self.employee, self.academic_team)
         profile.category = EmployeeProfile.Category.ACADEMIC
-        profile.department = department_for("Mathematics")
         profile.save()
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
             LeaveApplication(employee=self.employee)
@@ -787,152 +785,6 @@ class DecisionServiceTests(ApprovalBase):
             decision.save()
 
 
-class LeaveHistoryScopeTests(ApprovalBase):
-    """The scope gate that decides whether an approver sees an applicant's
-    leave history at all.
-
-    ``get_leave_history_scope`` had no test of its own, which is how the
-    ``same_department`` branch survived a schema change unexamined:
-    ``EmployeeProfile.department`` became a foreign key in 8d472b3 (from a
-    ``CharField``) while the comparison still stringified whatever it was
-    handed, so a populated department raised ``AttributeError: 'Department'
-    object has no attribute 'strip'`` and took the whole review payload to
-    500. Four of the cases below are the four that used to crash.
-    """
-
-    def scope_for(self, history_scope, employee_profile, approver_profile):
-        view = None
-        if history_scope is not None:
-            view = ViewAccess(2, "hod", "HOD", None, history_scope)
-        return get_leave_history_scope(view, employee_profile, approver_profile)
-
-    def profile(self, user):
-        return EmployeeProfile.objects.get(user=user)
-
-    def test_same_department_allows_the_applicants_own_department(self):
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            self.profile(self.employee),
-            self.profile(self.supervisor),
-        )
-        self.assertEqual(result, (True, "all"))
-
-    def test_same_department_denies_another_department(self):
-        approver = self.profile(self.supervisor)
-        approver.department = department_for("Finance")
-        approver.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            self.profile(self.employee),
-            approver,
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_same_department_denies_an_unrecorded_applicant_department(self):
-        employee = self.profile(self.employee)
-        employee.department = None
-        employee.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            employee,
-            self.profile(self.supervisor),
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_same_department_denies_an_unrecorded_approver_department(self):
-        approver = self.profile(self.supervisor)
-        approver.department = None
-        approver.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            self.profile(self.employee),
-            approver,
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_same_department_denies_an_approver_with_no_profile(self):
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_DEPARTMENT,
-            self.profile(self.employee),
-            None,
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_same_faculty_matches_on_equal_text(self):
-        employee = self.profile(self.employee)
-        approver = self.profile(self.supervisor)
-        employee.faculty = "Science and Technology"
-        approver.faculty = "  Science And Technology "
-        employee.save()
-        approver.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_FACULTY, employee, approver
-        )
-        self.assertEqual(result, (True, "all"))
-
-    def test_same_faculty_denies_differing_text(self):
-        employee = self.profile(self.employee)
-        approver = self.profile(self.supervisor)
-        employee.faculty = "Social Sciences"
-        approver.faculty = "Engineering"
-        employee.save()
-        approver.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_FACULTY, employee, approver
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_blank_faculty_never_reads_as_a_match(self):
-        """A field nobody filled in is not a field the two people share.
-
-        The two fixtures both default to ``faculty=""``; matching them would
-        widen an approver's history on the strength of an omission.
-        """
-        employee = self.profile(self.employee)
-        approver = self.profile(self.supervisor)
-        employee.faculty = ""
-        approver.faculty = ""
-        employee.save()
-        approver.save()
-        result = self.scope_for(
-            ApproverRole.HistoryScope.SAME_FACULTY, employee, approver
-        )
-        self.assertEqual(result, (False, "all"))
-
-    def test_all_scope_needs_no_profile_at_all(self):
-        self.assertEqual(
-            self.scope_for(
-                ApproverRole.HistoryScope.ALL,
-                self.profile(self.employee),
-                None,
-            ),
-            (True, "all"),
-        )
-
-    def test_none_scope_reports_nothing(self):
-        self.assertEqual(
-            self.scope_for(
-                ApproverRole.HistoryScope.NONE,
-                self.profile(self.employee),
-                self.profile(self.supervisor),
-            ),
-            (False, "none"),
-        )
-
-    def test_a_missing_view_reports_its_own_narrow_scope(self):
-        self.assertEqual(
-            self.scope_for(None, self.profile(self.employee), None),
-            (False, "current_financial_year"),
-        )
-
-    def test_an_unrecognised_scope_falls_back_to_the_narrow_reading(self):
-        """A value HR wrote by hand outside the choices must not widen anyone."""
-        self.assertEqual(
-            self.scope_for("everything", self.profile(self.employee), None),
-            (True, "current_financial_year"),
-        )
-
-
 class ApprovalAPITests(ApprovalBase):
     def setUp(self):
         super().setUp()
@@ -1147,71 +999,6 @@ class ApprovalAPITests(ApprovalBase):
         self.assertTrue(
             any(entry["actor"] for entry in history if entry["action"] == "submitted")
         )
-
-    def test_detail_survives_a_department_scoped_stage(self):
-        """The 500 on the approval page, guarded.
-
-        Stage 2 of this fixture is scoped to ``same_department``, and an
-        approver who has a real department used to take ``GET
-        /approvals/{id}/`` down with ``AttributeError: 'Department' object has
-        no attribute 'strip'`` — the scope comparison stringified a foreign key
-        that 8d472b3 made a reference row. The payload has to come back 200 and
-        say the history is available, because both people sit in Administration.
-        """
-        app = self.make_submitted()
-        decide(
-            application_id=app.pk,
-            actor=self.supervisor,
-            action=ApprovalDecision.Action.APPROVE,
-            expected_version=1,
-        )
-        stage = app.stages.get(stage_order=2)
-        self.assertEqual(stage.role, "hod")
-        self.assertEqual(
-            stage.history_scope, ApproverRole.HistoryScope.SAME_DEPARTMENT
-        )
-        EmployeeProfile.objects.create(
-            user=self.hod,
-            designation="Head of Department",
-            department=department_for("Administration"),
-            grade="E",
-        )
-
-        self.client.force_authenticate(user=self.hod)
-        response = self.client.get(self.url(f"{app.pk}/"))
-
-        self.assertEqual(response.status_code, 200)
-        history = response.data["history"]["leave_history"]
-        self.assertTrue(history["available"])
-
-    def test_detail_denies_department_history_across_departments(self):
-        """The same stage, one row apart, must deny rather than 500.
-
-        Availability is the whole job of ``same_department``: an approver outside
-        the applicant's department sees no history, and the payload still reads
-        as a normal 200 so the page can render the refusal.
-        """
-        app = self.make_submitted()
-        decide(
-            application_id=app.pk,
-            actor=self.supervisor,
-            action=ApprovalDecision.Action.APPROVE,
-            expected_version=1,
-        )
-        EmployeeProfile.objects.create(
-            user=self.hod,
-            designation="Head of Department",
-            department=department_for("Finance"),
-            grade="E",
-        )
-
-        self.client.force_authenticate(user=self.hod)
-        response = self.client.get(self.url(f"{app.pk}/"))
-
-        self.assertEqual(response.status_code, 200)
-        history = response.data["history"]["leave_history"]
-        self.assertFalse(history["available"])
-        self.assertEqual(history["entries"], [])
 
     def test_detail_404_for_unrelated_user(self):
         app = self.make_submitted()

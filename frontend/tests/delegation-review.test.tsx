@@ -26,15 +26,26 @@ import {
 } from "@/lib/delegations-client";
 
 // The approvers here hold their positions as data, and their accounts carry no
-// special role: that is the shape the pickers now have to cope with.
+// special role: that is the shape the pickers now have to cope with. User ids
+// differ from record ids, because the pickers write user ids.
 const employees: Employee[] = [
-  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["dean"] }),
-  makeEmployee({ id: 5, full_name: "Bob HOD", approver_roles: ["hod"] }),
+  makeEmployee({
+    id: 3,
+    user_id: 30,
+    full_name: "Jane Dean",
+    approver_roles: ["dean"],
+  }),
+  makeEmployee({
+    id: 5,
+    user_id: 50,
+    full_name: "Bob HOD",
+    approver_roles: ["hod"],
+  }),
 ];
 
 const base: Delegation = {
   id: 1,
-  approver: 3,
+  approver: 30,
   approver_name: "Jane Dean",
   approver_role: "dean",
   delegate: null,
@@ -117,7 +128,7 @@ describe("DelegationReview", () => {
     );
 
     expect(approveDelegation).toHaveBeenCalledWith(1, {
-      delegate: 5,
+      delegate: 50,
       decision_reason: "Approved",
     });
   });
@@ -155,7 +166,7 @@ describe("DelegationReview", () => {
       <DelegationReview
         delegation={{
           ...base,
-          delegate: 5,
+          delegate: 50,
           delegate_name: "Bob HOD",
           status: "approved",
           state: "active",
@@ -177,7 +188,7 @@ describe("DelegationReview", () => {
       <DelegationReview
         delegation={{
           ...base,
-          delegate: 5,
+          delegate: 50,
           delegate_name: "Bob HOD",
           status: "approved",
           state: "active",
@@ -256,7 +267,7 @@ describe("DelegationReview", () => {
             ...base,
             state: "active",
             status: "approved",
-            delegate: 5,
+            delegate: 50,
             delegate_name: "Bob HOD",
           }}
           employees={employees}

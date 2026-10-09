@@ -41,13 +41,6 @@ The reverse removes the sections, which cascades the members and the eligibility
 rows, and restores ``assigned_approver``'s not-null guarantee is *not* attempted:
 by this point 0015 has not run, so the column is already nullable and the old
 code would simply be re-run against the old tables, which 0013 left intact.
-
-It depends on ``users.0005_employeeprofile_team`` because step 4 reads
-``employee_profile.team``. That dependency was missing and only held by accident:
-the migration graph happened to schedule the users migrations ahead of this one,
-so a new app depending on the workflows leaf could reorder the plan and run this
-before ``EmployeeProfile`` existed, failing the ``select_related`` with an
-unresolvable ``employee_profile``.
 """
 
 from django.db import migrations
@@ -156,6 +149,11 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("workflows", "0013_sections"),
+        # Step 4 reads the applicant's team to trace a stage back to a section,
+        # so this needs EmployeeProfile.team to exist. users.0005 adds that
+        # field and already depends on workflows.0010, which is an ancestor of
+        # 0013 — so this edge cannot form a cycle, it just stops 0014 being free
+        # to run before users.0005.
         ("users", "0005_employeeprofile_team"),
     ]
 

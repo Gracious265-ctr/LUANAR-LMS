@@ -269,7 +269,7 @@ function ApprovalTableRow({
                 {row.employee_name}
               </span>
               <span className="mt-0.5 block text-xs text-text-muted">
-                {row.department || "—"}
+                {row.team || "—"}
               </span>
             </div>
           </div>

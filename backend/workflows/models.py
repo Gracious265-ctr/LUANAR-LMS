@@ -24,7 +24,8 @@ class ApproverRole(models.Model):
         """What leave history an approver in this role may see."""
 
         ALL = "all", "Full history"
-        SAME_DEPARTMENT = "same_department", "Same department only"
+        SAME_TEAM = "same_team", "Same team only"
+        SAME_CAMPUS = "same_campus", "Same campus only"
         SAME_FACULTY = "same_faculty", "Same faculty only"
         CURRENT_FINANCIAL_YEAR = (
             "current_financial_year",
@@ -96,17 +97,21 @@ class Campus(models.Model):
 
 
 class Team(models.Model):
-    """A group of employees sharing one approval workflow, inside a department.
+    """A group of employees sharing one approval workflow.
 
-    A team owns at most one :class:`Workflow` — one-to-one, never shared. At
-    submission time the applicant's team is what selects the workflow — there is
-    no category/department matching — and that workflow's :class:`Section` rows
-    are who may act at each step.
+    A team routes every application its members submit through exactly one
+    :class:`Workflow` — the one :attr:`workflow` points at. A team may *own*
+    several workflows (:attr:`Workflow.team`), so HR can build a replacement
+    chain alongside the one in force, but only one of them ever routes, and it
+    is picked explicitly rather than guessed. At submission time the applicant's
+    team is what selects the workflow — there is no category matching — and that
+    workflow's :class:`Section` rows are who may act at each step.
 
-    A :class:`users.models.Department` holds **one or more** teams. The department
-    is what scopes approvers: only an employee in the same department may be made
-    a team's approver, and one employee keeps one role across every team of that
-    department. It is not a routing key — routing follows the team.
+    There is no department. A team is identified by its name, its
+    :attr:`category`, and — for an academic team — the :class:`Campus` it sits
+    at, which is what lets HR ask "who approves at this campus" without a
+    free-text field that quietly accumulates typos ("Main campus", "main
+    campus", "MAIN").
 
     The chain exists *because* the team does, and is written in the same request
     as the team. There is deliberately no reusable chain a second team can be
@@ -149,20 +154,32 @@ class Team(models.Model):
         ACTIVE = "active", "Active"
         INACTIVE = "inactive", "Inactive"
 
+    class Category(models.TextChoices):
+        """Which half of the institution this team belongs to.
+
+        The two values are the same words as :attr:`EmployeeProfile.category`,
+        and they decide two things and only two things:
+
+        * an **academic** team sits at a :class:`Campus`, which is what makes
+          campus-wide approvers reachable for its stages;
+        * an **administration** team is not campus-based, and is the only kind
+          of team an institution-wide approver may serve.
+        """
+
+        ACADEMIC = "academic", "Academic"
+        ADMINISTRATION = "administration", "Administration"
+
     name = models.CharField(max_length=200, unique=True)
     code = models.SlugField(max_length=50, unique=True)
     description = models.TextField(blank=True, default="")
-    department = models.ForeignKey(
-        "users.Department",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="teams",
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.ADMINISTRATION,
         help_text=(
-            "The department this team belongs to. A department holds one or "
-            "more teams. It is what scopes approvers — only an employee in "
-            "this department may be made this team's approver — but it is not "
-            "a routing key: routing follows the team."
+            "Academic teams sit at a campus and may use campus-wide "
+            "approvers; administration teams are institution-wide and may use "
+            "institution-wide approvers."
         ),
     )
     campus = models.ForeignKey(
@@ -172,8 +189,10 @@ class Team(models.Model):
         blank=True,
         related_name="teams",
         help_text=(
-            "The campus this team belongs to; blank when the team is not "
-            "campus-based. Informational — routing always follows the team."
+            "The campus an academic team sits at; required when the category is "
+            "Academic and not allowed when it is Administration. Routing always "
+            "follows the team — the campus is what scopes campus-wide "
+            "approvers and reporting."
         ),
     )
     workflow = models.OneToOneField(
@@ -181,29 +200,16 @@ class Team(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name="team",
+        related_name="routed_by",
         help_text=(
-            "The approval workflow this team is routed through. One-to-one, not "
-            "a foreign key: a chain belongs to the team it was built for, and a "
-            "shared chain would mean editing one team's steps silently "
-            "re-routing every other team pointing at it. It owns the sections, "
-            "so its steps define who may act for this team. Blank only while "
-            "the team is still a draft being configured."
-        ),
-    )
-    org_unit = models.OneToOneField(
-        "organization.OrgUnit",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="team",
-        help_text=(
-            "The place in the institutional tree this team occupies. Set only "
-            "while the tree is authoritative for this team: with it bound, the "
-            "approval chain is derived by climbing from the employee's home unit "
-            "instead of read off this team's workflow sections. Blank means the "
-            "hand-configured chain still routes, which is what every team "
-            "started as."
+            "The one workflow this team routes applications through. A team may "
+            "own several workflows (Workflow.team) — for example a replacement "
+            "chain being built alongside the live one — but exactly one of them "
+            "is ever in force, it is picked here rather than assumed, and no "
+            "second team may point at it: a chain belongs to the team it was "
+            "built for, and sharing one would mean editing one team's steps "
+            "silently re-routing another. Blank only while the team is still a "
+            "draft being configured."
         ),
     )
     status = models.CharField(
@@ -259,6 +265,25 @@ class Team(models.Model):
         if self.effective_to is not None and self.effective_to < today:
             return False
         return True
+
+    def clean(self) -> None:
+        """An academic team sits at a campus; an administration team does not."""
+        super().clean()
+        errors = {}
+        if self.category == self.Category.ACADEMIC and self.campus_id is None:
+            errors["campus"] = (
+                "An academic team sits at a campus — pick one, or create it "
+                "first. The campus is what makes campus-wide approvers "
+                "reachable for this team's stages."
+            )
+        if self.category == self.Category.ADMINISTRATION and self.campus_id is not None:
+            errors["campus"] = (
+                "An administration team is not campus-based. Clear the campus, "
+                "or switch the category to Academic if this team should sit at "
+                "one."
+            )
+        if errors:
+            raise ValidationError(errors)
 
     def __str__(self) -> str:
         return f"{self.name} ({self.get_status_display()})"
@@ -361,21 +386,19 @@ class SectionMember(models.Model):
 
 
 class RoleAssignment(models.Model):
-    """A holding of an :class:`ApproverRole`, scoped to a unit or the institution.
+    """An institution-wide holding of an :class:`ApproverRole`.
 
-    Two scopes, because "who may approve what" stops being a property of the
-    team once the chain comes from the organizational tree:
+    Only roles with ``is_institution_wide = True`` can be assigned this way;
+    every other role is held through a :class:`TeamMember`, which is what makes
+    "who approves what" a property of the team rather than of the person.
 
-    * ``org_unit`` set — the role is held **at that unit**. A head holds "Head
-      of Department" at their department; the same person may hold a different
-      role at a different unit.
-    * ``org_unit`` null — the role is held **institution-wide** and may be
-      resolved as the fallback for any unit whose designated approver is
-      unavailable. Only roles with ``is_institution_wide = True`` qualify.
-
-    A role with neither scope is refused: a role nobody is recorded as holding
-    cannot be an escalation target, and letting the row exist would let the
-    tree silently fall back to it.
+    A role has exactly **one** institution-wide approver going forward: the
+    service writing a holding refuses to assign a role that already has one,
+    naming the current holder, and the Approvers picker does not offer a role
+    that has a holder — changing the holder is remove the current one first,
+    then assign. Legacy rows that predate the rule (a role with several
+    institution holders) are still read as the ambiguity they are, and left
+    unstaffed rather than auto-decided.
     """
 
     user = models.ForeignKey(
@@ -384,79 +407,190 @@ class RoleAssignment(models.Model):
     role = models.ForeignKey(
         ApproverRole, on_delete=models.PROTECT, related_name="role_assignments"
     )
-    org_unit = models.ForeignKey(
-        "organization.OrgUnit",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="role_holdings",
-        help_text=(
-            "The unit this role is held at. Blank means the role is held "
-            "institution-wide and may be resolved as any unit's fallback — "
-            "which only roles flagged institution-wide are allowed to do."
-        ),
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["role", "user", "org_unit"]
+        ordering = ["role", "user"]
         constraints = [
-            # ``nulls_distinct=False`` is load-bearing, not decoration. An
-            # institution-wide holding has ``org_unit_id IS NULL``, and
-            # PostgreSQL treats NULLs as distinct in a unique index, so without
-            # this two identical institution-wide holdings for one user and
-            # role would both be accepted -- the exact thing the pre-tree
-            # ``(user, role)`` constraint used to forbid. Scoping by unit must
-            # widen holdings, never quietly permit duplicates within a scope.
             models.UniqueConstraint(
-                fields=["user", "role", "org_unit"],
-                nulls_distinct=False,
-                name="roleassignment_user_role_unit_unique",
+                fields=["user", "role"], name="roleassignment_user_role_unique"
             ),
         ]
 
-    @property
-    def is_institution_wide(self) -> bool:
-        """Whether this holding is the institution-wide kind."""
-        return self.org_unit_id is None
-
     def __str__(self) -> str:
-        scope = "institution-wide" if self.org_unit_id is None else self.org_unit.name
-        return f"{self.user.get_full_name()} — {self.role.label} ({scope})"
+        return f"{self.user.get_full_name()} — {self.role.label} (institution-wide)"
 
     def clean(self) -> None:
-        """Reject a holding that has neither a unit nor institution-wide scope."""
+        """Reject a non-institution-wide role; point HR at team membership."""
         super().clean()
         if self.role_id is None:
-            return
-        if self.org_unit_id is not None:
             return
         if not self.role.is_institution_wide:
             raise ValidationError(
                 {
-                    "org_unit": (
-                        f'"{self.role.label}" is neither an institution-wide role '
-                        "nor a team role. Give this holding a unit, or mark the "
-                        "role institution-wide to assign it here."
+                    "role": (
+                        f'"{self.role.label}" is a team role, not an '
+                        "institution-wide role. Mark it institution-wide to assign "
+                        "it here, or add this person to the team that uses it."
                     )
                 }
             )
 
 
+class TeamRoleAssignment(models.Model):
+    """A **team-wide** holding of an :class:`ApproverRole`.
+
+    One holder per role per team: "the Head of Department approves for this
+    team" is a fact about the team, not about a workflow, so every workflow the
+    team owns resolves the role to the same person without HR re-appointing
+    them per chain. This is the *automatic* half of stage staffing — the
+    workflow-specific half is a manual :class:`Section` appointment, which always
+    wins because it is the explicit one.
+
+    A team-wide holder does not have to be a member of the team. Somebody who
+    is, is also covered by a manual appointment; the point of the wide holding
+    is the case where the office outlives the person holding it — registrar,
+    bursar — and HR changes the assignment in one place rather than in every
+    chain that names the role.
+
+    Institution-wide roles are deliberately refused here: they have their own
+    holding (:class:`RoleAssignment`) and their own, narrower, use.
+    """
+
+    team = models.ForeignKey(
+        Team, on_delete=models.CASCADE, related_name="role_assignments"
+    )
+    role = models.ForeignKey(
+        ApproverRole, on_delete=models.PROTECT, related_name="team_role_assignments"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="team_role_assignments"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["team", "role"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["team", "role"], name="teamroleassignment_team_role_unique"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.team.name}: {self.role.label} — {self.user.get_full_name()}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.role_id is None or self.team_id is None:
+            return
+        if self.role.is_institution_wide:
+            raise ValidationError(
+                {
+                    "role": (
+                        f'"{self.role.label}" is an institution-wide role. Assign '
+                        "its holder under Approvers, not on a team."
+                    )
+                }
+            )
+        if not self.role.is_active:
+            raise ValidationError(
+                {"role": f'"{self.role.label}" is retired and cannot be assigned.'}
+            )
+
+
+class CampusRoleAssignment(models.Model):
+    """A **campus-wide** holding of an :class:`ApproverRole`.
+
+    One holder per role per campus, and a campus-wide approver only ever
+    decides for teams at that same campus — :attr:`Team.campus` is what scopes
+    it, so "the Campus Registrar approves for every team at Omu" is written
+    once here and resolves for each of them, and for no team anywhere else.
+
+    Only an academic team has a campus, so this is the wide holding that sits
+    between the team and the institution: team-wide first, then the applicant's
+    own campus, then — for an administration team only — the institution.
+    """
+
+    campus = models.ForeignKey(
+        Campus, on_delete=models.CASCADE, related_name="role_assignments"
+    )
+    role = models.ForeignKey(
+        ApproverRole,
+        on_delete=models.PROTECT,
+        related_name="campus_role_assignments",
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="campus_role_assignments"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["campus", "role"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campus", "role"],
+                name="campusroleassignment_campus_role_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.campus.name}: {self.role.label} — {self.user.get_full_name()}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.role_id is None or self.campus_id is None:
+            return
+        if self.role.is_institution_wide:
+            raise ValidationError(
+                {
+                    "role": (
+                        f'"{self.role.label}" is an institution-wide role. Assign '
+                        "its holder under Approvers, not on a campus."
+                    )
+                }
+            )
+        if not self.role.is_active:
+            raise ValidationError(
+                {"role": f'"{self.role.label}" is retired and cannot be assigned.'}
+            )
+        if not self.campus.is_active:
+            raise ValidationError(
+                {"campus": f'"{self.campus.name}" is retired and cannot hold approvers.'}
+            )
+
+
 class Workflow(models.Model):
-    """A configured approval sequence for a group of employees."""
+    """A configured approval sequence for a group of employees.
+
+    A workflow is *owned* by exactly one :class:`Team` (:attr:`team`), which is
+    what makes "workflow listing for a team" answerable: a team may hold several
+    workflows — a replacement chain built alongside the live one, or one per
+    campus unit — and HR configures each of them independently. Ownership is
+    deliberately separate from :attr:`Team.workflow`, the single workflow that
+    actually routes: a team owns many, routes one, and picks which.
+
+    At submission the applicant's team selects the routing workflow, and that
+    workflow's ordered :class:`Section` rows are who may act at each step.
+
+    There is no employee category filter. It was a free-text scope field that
+    routing never consulted, so two workflows that looked scoped differently
+    could route identically — and HR reading the configuration could not tell
+    which one an employee's application would use. Scoping is the team, and only
+    the team.
+    """
 
     name = models.CharField(max_length=200, unique=True)
-    employee_category = models.CharField(
-        max_length=20,
-        choices=EmployeeProfile.Category.choices,
+    team = models.ForeignKey(
+        "workflows.Team",
+        on_delete=models.SET_NULL,
+        null=True,
         blank=True,
-        help_text="Blank applies the workflow to every employee category.",
-    )
-    department = models.CharField(
-        max_length=200,
-        blank=True,
-        help_text="Blank applies the workflow to every department.",
+        related_name="workflows",
+        help_text=(
+            "The team that owns this workflow. Null only for a workflow built "
+            "outside a team (imported, or being built before its team exists). "
+            "Owning a workflow does not route it — Team.workflow does."
+        ),
     )
     effective_from = models.DateField(
         null=True,
@@ -467,11 +601,6 @@ class Workflow(models.Model):
 
     class Meta:
         ordering = ["name"]
-
-    @property
-    def scope(self) -> tuple[str, str]:
-        """The (category, department) a workflow applies to; blank means any."""
-        return (self.employee_category or "", self.department or "")
 
     @property
     def state(self) -> str:
@@ -485,10 +614,7 @@ class Workflow(models.Model):
         return "active"
 
     def __str__(self) -> str:
-        scope = self.employee_category or "All categories"
-        if self.department:
-            scope = f"{scope} / {self.department}"
-        return f"{self.name} ({scope})"
+        return f"{self.name} ({self.state})"
 
 
 class Section(models.Model):
@@ -511,7 +637,7 @@ class Section(models.Model):
     )
     name = models.CharField(
         max_length=200,
-        help_text="What this step is for, as HR labels it (e.g. 'Departmental review').",
+        help_text="What this step is for, as HR labels it (e.g. 'Supervisor review').",
     )
     order = models.PositiveIntegerField()
     approver_role = models.ForeignKey(
@@ -531,14 +657,28 @@ class Section(models.Model):
         blank=True,
         related_name="approver_sections",
         help_text=(
-            "The single person who approves this step. Must be in the owning "
-            "team's department, and must already hold the role above for that "
-            "department. Blank means the step is not staffed yet, which the "
-            "team's readiness check reports and activation refuses."
+            "The one person who acts at this step. Must be a member of the owning "
+            "team unless the role is institution-wide. Blank means nobody can act "
+            "here yet, which the team's readiness check reports and activation "
+            "refuses."
         ),
     )
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True)
+
+    @property
+    def memberships(self):
+        """All member periods for this step, open and closed.
+
+        Served from ``all_objects`` so the record is the point: a closed period
+        is how "who held this step in March" stays answerable after the answer
+        changed. The reverse relation (:attr:`SectionMember.section`) defaults to
+        the open-periods manager, which is what "who may act today" answers but
+        not what this property is for.
+        """
+        return SectionMember.all_objects.filter(section=self).order_by(
+            "effective_from", "id"
+        )
 
     class Meta:
         ordering = ["order"]
@@ -879,17 +1019,6 @@ class ApplicationStage(models.Model):
         default=1,
         help_text="Optimistic-lock counter, incremented on every decision.",
     )
-    last_reminder_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text=(
-            "When a reminder was last sent for this pending stage. Null until "
-            "the first one goes out. Deduplication lives here rather than in a "
-            "separate reminder table because the question is only ever asked "
-            "about the single stage that is currently open, and a column cannot "
-            "drift out of step with the stage it describes."
-        ),
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1050,32 +1179,6 @@ class ApprovalDecision(models.Model):
         max_length=150,
         help_text="Snapshot of the approver's full name at decision time.",
     )
-    on_behalf_of = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="approval_decisions_on_behalf",
-        help_text=(
-            "The approver this person was covering, snapshotted at decision "
-            "time. Null when the approver acted in their own right. Stored "
-            "rather than derived because 'acting for' is a fact about a moment "
-            "in the past: recomputing it at read time from today's active "
-            "delegations answers what is true now, not who decided then."
-        ),
-    )
-    acting_assignment = models.ForeignKey(
-        "organization.ActingAssignment",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="approval_decisions",
-        help_text=(
-            "The organizational actancy this decision was made under, when it "
-            "was an actancy rather than a delegation. Points at the record so "
-            "an audit reader can see the reason and the dates as HR wrote them."
-        ),
-    )
     role_label = models.CharField(
         max_length=80,
         help_text="Snapshot of the stage's role label.",
@@ -1133,3 +1236,101 @@ class ApprovalDecision(models.Model):
                 "Approval decisions are append-only and cannot be updated."
             )
         super().save(*args, **kwargs)
+
+
+class WorkflowMember(models.Model):
+    """One person who is a normal member of a workflow's team.
+
+    Distinct from :class:`Section.approver`: those are the people who decide
+    each approval step. A workflow member is part of the team's eligibility
+    pool — an employee whose leave routes through the workflow and who may be
+    offered as a normal workflow participant — without being appointed to any
+    step.
+
+    A person is a member of at most one workflow per team
+    (``workflow_member_team_user_unique``). The ``team`` column is denormalised
+    from :attr:`Workflow.team` at write time so that uniqueness is enforceable
+    at the database level rather than only in a service check that two
+    concurrent requests could both pass.
+
+    The exception is a **wide approver** — somebody who holds an
+    institution-wide :class:`RoleAssignment`, a team-wide
+    :class:`TeamRoleAssignment` on this team, or a campus-wide
+    :class:`CampusRoleAssignment` at this team's campus. A wide approver
+    staffs several chain *automatically* from one holding, so they are the one
+    person a team may legitimately place on more than one of its chains —
+    the team's second chain is built by reassigning the same registrar or
+    bursar, not by moving them off the first. To allow that the uniqueness
+    constraint above is conditional on :attr:`is_wide_approver`: a non-wide
+    member is still one workflow per team, a wide one may sit on several.
+
+    :attr:`is_wide_approver` is denormalised from the live holdings at write
+    time purely so the conditional constraint is expressible; eligibility is
+    always judged against the live holdings, never against this flag.
+    """
+
+    workflow = models.ForeignKey(
+        Workflow,
+        on_delete=models.CASCADE,
+        related_name="workflow_members",
+        help_text=(
+            "The workflow whose team this person is a normal member of. "
+            "Removing the workflow removes the membership with it."
+        ),
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="workflow_memberships",
+        help_text=(
+            "The employee who is a normal member of the workflow's team. "
+            "Must already be on that team; the service refuses anyone else."
+        ),
+    )
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.CASCADE,
+        related_name="workflow_member_assignments",
+        help_text=(
+            "The owning team, copied from the workflow when the membership is "
+            "written. Denormalised so one employee cannot be a normal member "
+            "of two workflows of the same team, even under concurrent writes."
+        ),
+    )
+    added_by = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The HR user who recorded this membership.",
+    )
+    is_wide_approver = models.BooleanField(
+        default=False,
+        help_text=(
+            "Denormalised from the wide-approver holdings (institution-wide, "
+            "team-wide on this team, or campus-wide at this team's campus) at "
+            "the time the membership was written, so the database can enforce "
+            "that a primary member sits on one workflow per team while a wide "
+            "approver may sit on several. Eligibility is always re-checked "
+            "against the live holdings; this flag only backs the constraint."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["user__first_name", "user__last_name", "user_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workflow", "user"],
+                name="workflow_member_workflow_user_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["team", "user"],
+                condition=models.Q(is_wide_approver=False),
+                name="workflow_member_team_user_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.get_full_name()} on {self.workflow.name}"

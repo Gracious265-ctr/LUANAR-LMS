@@ -48,7 +48,8 @@ export interface ApprovalListItem {
   id: string;
   reference: string;
   employee_name: string;
-  department: string;
+  /** The employee's team *name*, or "" when they are on no team. */
+  team: string;
   leave_type: LeaveTypeRef;
   start_date: string;
   end_date: string;
@@ -82,7 +83,8 @@ export interface ApplicationBlock {
 export interface EmployeeBlock {
   name: string;
   designation: string;
-  department: string;
+  /** The employee's team name, or "" when they are on no team. */
+  team: string;
   faculty: string;
   staff_id: string | null;
   grade: string;

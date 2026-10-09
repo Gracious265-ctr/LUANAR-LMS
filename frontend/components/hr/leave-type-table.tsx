@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import type { LeaveType } from "@/lib/leave-rules";
+import { isAnnualLeaveType } from "@/lib/leave-rules-pure";
 import { EditActionLink, EditIconButton } from "./edit-action-link";
 import { EmptyState } from "@/components/ui/states";
 import {
@@ -28,7 +29,7 @@ export function LeaveTypeTable({
     return (
       <EmptyState
         title="No leave types found"
-        description="Add a leave type (such as annual, maternity, or paternity) to get started."
+        description="Add a leave type (such as maternity, paternity, or compassionate) to get started. Annual leave is created for you when you add an entitlement."
       />
     );
   }
@@ -44,40 +45,62 @@ export function LeaveTypeTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {leaveTypes.map((leaveType) => (
-          <TableRow
-            key={leaveType.id}
-          >
-            <TableCell>
-              <Link
-                href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`}
-                className="font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                {leaveType.name}
-              </Link>
-            </TableCell>
-            <TableCell className="text-text-secondary">{leaveType.code}</TableCell>
-            <TableCell>
-              <Badge
-                size="sm"
-                tone={leaveType.is_active !== false ? "info" : "muted"}
-                className="font-medium"
-              >
-                {leaveType.is_active !== false ? "Active" : "Inactive"}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-right">
-              {onEdit ? (
-                <EditIconButton
-                  onClick={() => onEdit(leaveType.id)}
-                  label={`Edit ${leaveType.name}`}
-                />
-              ) : (
-                <EditActionLink href={`/dashboard/hr-admin/leave-types/${leaveType.id}/edit`} />
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
+        {leaveTypes.map((leaveType) => {
+          const annual = isAnnualLeaveType(leaveType);
+          const editHref = `/dashboard/hr-admin/leave-types/${leaveType.id}/edit`;
+
+          return (
+            <TableRow key={leaveType.id}>
+              <TableCell>
+                {annual ? (
+                  <span className="font-medium text-text-primary">
+                    {leaveType.name}
+                  </span>
+                ) : (
+                  <Link
+                    href={editHref}
+                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    {leaveType.name}
+                  </Link>
+                )}
+              </TableCell>
+              <TableCell className="text-text-secondary">{leaveType.code}</TableCell>
+              <TableCell>
+                {annual ? (
+                  <Badge size="sm" tone="muted" className="font-medium">
+                    Managed in Entitlements
+                  </Badge>
+                ) : (
+                  <Badge
+                    size="sm"
+                    tone={leaveType.is_active !== false ? "info" : "muted"}
+                    className="font-medium"
+                  >
+                    {leaveType.is_active !== false ? "Active" : "Inactive"}
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                {annual ? (
+                  <Link
+                    href="/dashboard/hr-admin/entitlements"
+                    className="text-xs text-text-muted underline underline-offset-2 hover:text-text-primary"
+                  >
+                    Edit days
+                  </Link>
+                ) : onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(leaveType.id)}
+                    label={`Edit ${leaveType.name}`}
+                  />
+                ) : (
+                  <EditActionLink href={editHref} />
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

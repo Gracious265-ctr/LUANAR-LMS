@@ -62,10 +62,11 @@ from .services import (
 )
 from .testing import (
     DEV_PASSWORD,
-    department_for,
+    campus_for,
     ensure_roles,
     make_approver,
     make_workflow,
+    team_for,
 )
 
 User = get_user_model()
@@ -98,10 +99,10 @@ class TeamConfigurationBase(TestCase):
             role=User.Role.EMPLOYEE,
         )
         self.client.force_authenticate(self.hr)
-        # A team's approvers are its own department's employees, so the team
-        # cannot be given a department until one exists.
-        self.department = department_for("Administration")
-        self.other_department = department_for("Faculty of Agriculture")
+        # Roles are HR data, not migration seed: a bare test database has none.
+        ensure_roles("supervisor", "hod", "dean", "registrar")
+        # A team's approvers are its own members, so these people start on no
+        # team: creating the team is what places them on it.
         # Not institution-wide: these people are on the team's steps, which is
         # the case under test. A global holder would quietly stand in for an
         # unstaffed step and make a broken configuration look whole.
@@ -109,14 +110,13 @@ class TeamConfigurationBase(TestCase):
             "supervisor",
             username="sup@teamflow.test",
             institution_wide=False,
-            department=self.department.name,
         )
         self.hod = make_approver(
             "hod",
             username="hod@teamflow.test",
             institution_wide=False,
-            department=self.department.name,
         )
+
         # One approver per step: a step routes to one person.
         self.chain = [
             {
@@ -131,12 +131,46 @@ class TeamConfigurationBase(TestCase):
             },
         ]
 
-    def create_team(self, name="Administration team", **extra) -> dict:
+    def approvers_for(self, suffix: str):
+        """A fresh, unassigned approver pair for one team.
+
+        An employee belongs to exactly one team, and creating a team is what
+        places its named approvers on it, so a second team cannot reuse the first
+        team's people. Tests that build several teams ask for a pair per team.
+        """
+        return (
+            make_approver(
+                "supervisor",
+                username=f"sup-{suffix}@teamflow.test",
+                institution_wide=False,
+            ),
+            make_approver(
+                "hod", username=f"hod-{suffix}@teamflow.test", institution_wide=False
+            ),
+        )
+
+    def chain_for(self, approvers) -> list:
+        """The standard two-step chain, staffed by ``approvers``."""
+        supervisor, hod = approvers
+        return [
+            {
+                "name": "Supervisor approval",
+                "approver_role": "supervisor",
+                "approver": supervisor.pk,
+            },
+            {
+                "name": "Head of Department approval",
+                "approver_role": "hod",
+                "approver": hod.pk,
+            },
+        ]
+
+    def create_team(self, name="Administration team", approvers=None, **extra) -> dict:
+        chain = self.chain if approvers is None else self.chain_for(approvers)
         payload: dict = {
             "name": name,
             "description": "Administration approval chain",
-            "department": self.department.pk,
-            "new_workflow": {"sections": self.chain},
+            "new_workflow": {"sections": chain},
         }
         payload.update(extra)
         response = self.client.post(TEAMS_URL, payload, format="json")
@@ -156,7 +190,7 @@ class TeamConfigurationBase(TestCase):
     def place_employee(self, team: Team):
         EmployeeProfile.objects.update_or_create(
             user=self.employee,
-            defaults={"department": self.department, "team": team},
+            defaults={"team": team},
         )
         # Writing the profile caches it on the user instance, holding on to the
         # Team object the caller passed — which may be a read taken before the
@@ -249,7 +283,9 @@ class TeamCreationTests(TeamConfigurationBase):
         team pointing at it.
         """
         first = self.create_team(name="First team")
-        second = self.create_team(name="Second team")
+        second = self.create_team(
+            name="Second team", approvers=self.approvers_for("second")
+        )
         self.assertNotEqual(first["workflow"], second["workflow"])
         self.assertEqual(
             Workflow.objects.filter(team__isnull=False).count(),
@@ -257,7 +293,7 @@ class TeamCreationTests(TeamConfigurationBase):
         )
 
     def test_a_team_may_be_saved_before_its_chain_is_known(self):
-        """Page 1 of the team form: identity and department, chain to follow.
+        """Page 1 of the team form: identity, chain to follow.
 
         A team is named before anybody knows which posts it needs to route
         through, so refusing a team with no chain would force HR to know the
@@ -266,7 +302,7 @@ class TeamCreationTests(TeamConfigurationBase):
         """
         response = self.client.post(
             TEAMS_URL,
-            {"name": "Nothing team", "department": self.department.pk},
+            {"name": "Nothing team"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
@@ -275,28 +311,30 @@ class TeamCreationTests(TeamConfigurationBase):
         self.assertEqual(response.data["sections"], [])
         self.assertEqual(response.data["members"], [])
 
-    def test_a_workflow_sent_on_create_is_ignored(self):
-        """``workflow`` is read-only, so an old client cannot attach a chain.
+    def test_a_workflow_sent_on_create_is_refused(self):
+        """A new team cannot adopt a chain that already exists.
 
-        The field stays in the response, which means a client with it cached can
-        still send it. Honouring it would put a new team on somebody else's
-        chain, which is the exact outcome the team-owned chain rules out.
+        ``workflow`` is the pointer a team routes through, and it only ever
+        names a chain the team owns. A chain built for another team is exactly
+        that — somebody else's steps — so the request is refused outright
+        rather than half-honoured, and the team is not created without a chain
+        the caller thought it had attached.
         """
-        other = self.create_team(name="Other team")
+        other = self.create_team(name="Other team", approvers=self.approvers_for("other"))
         response = self.client.post(
             TEAMS_URL,
             {
                 "name": "Copying team",
-                "department": self.department.pk,
                 "workflow": other["workflow"],
-                "new_workflow": {"sections": self.chain},
+                "new_workflow": {
+                    "sections": self.chain_for(self.approvers_for("copying")),
+                },
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertNotEqual(
-            Team.objects.get(pk=response.data["id"]).workflow_id, other["workflow"]
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("workflow", response.data)
+        self.assertFalse(Team.objects.filter(name="Copying team").exists())
 
     def test_a_chain_with_no_steps_is_refused(self):
         response = self.client.post(
@@ -356,7 +394,6 @@ class TeamCreationTests(TeamConfigurationBase):
             TEAMS_URL,
             {
                 "name": "Bad member team",
-                "department": self.department.pk,
                 "new_workflow": {
                     "sections": [
                         {
@@ -385,7 +422,6 @@ class TeamCreationTests(TeamConfigurationBase):
             TEAMS_URL,
             {
                 "name": "Roster team",
-                "department": self.department.pk,
                 "new_workflow": {
                     "sections": [
                         {
@@ -409,14 +445,13 @@ class TeamCreationTests(TeamConfigurationBase):
 
         This was allowed once — "a chain that needs the supervisor to look twice
         has two steps and one person" — and requirement 9 reverses it. Two steps
-        with two different roles, so the per-department role rule does not fire
+        with two different roles, so the per-team role rule does not fire
         first and the refusal is unambiguously the per-workflow one.
         """
         response = self.client.post(
             TEAMS_URL,
             {
                 "name": "Two step team",
-                "department": self.department.pk,
                 "new_workflow": {
                     "sections": [
                         {
@@ -449,7 +484,6 @@ class TeamCreationTests(TeamConfigurationBase):
             TEAMS_URL,
             {
                 "name": "Two step team",
-                "department": self.department.pk,
                 "new_workflow": {
                     "sections": [
                         {
@@ -471,36 +505,41 @@ class TeamCreationTests(TeamConfigurationBase):
         self.assertIn("already assigned to another stage", str(response.data))
         self.assertEqual(Team.objects.filter(name="Two step team").count(), 0)
 
-    def test_the_same_person_may_hold_one_role_on_two_teams(self):
-        """Per workflow, not global (Unit 30 §10).
+    def test_the_one_role_rule_does_not_reach_across_teams(self):
+        """The restriction is scoped to a team, not global.
 
-        One person on two *different* teams' chains is normal — the same office
-        approves for more than one team — so the restriction must not reach
-        across workflows. Reusing the same role there is fine for the same
-        reason.
+        Two teams each need somebody at "Supervisor", and they are different
+        people on different teams. If the rule were global, staffing the second
+        team would be impossible — which is exactly the shape Phase 1 has to get
+        right, because an employee belongs to exactly one team and therefore can
+        only ever be appointed within it.
         """
-        self.create_team(name="Registry team")
+        registry_supervisor, registry_hod = self.approvers_for("registry")
+        self.create_team(
+            name="Registry team", approvers=(registry_supervisor, registry_hod)
+        )
+        records_supervisor, records_hod = self.approvers_for("records")
         second = self.create_team(
-            name="Records team",
-            new_workflow={
-                "sections": [
-                    {
-                        "name": "Supervisor approval",
-                        "approver_role": "supervisor",
-                        "approver": self.supervisor.pk,
-                    }
-                ]
-            },
+            name="Records team", approvers=(records_supervisor, records_hod)
         )
-        self.assertEqual(
-            Section.objects.filter(approver=self.supervisor).count(), 2
-        )
+        # The same role code is held by a different person on each team, and each
+        # appointment is confined to its own team's chain.
         self.assertEqual(
             Section.objects.filter(
-                approver=self.supervisor, workflow_id=second["workflow"]
+                approver_role__code="supervisor",
+                workflow__team__name="Registry team",
             ).count(),
             1,
         )
+        self.assertEqual(
+            Section.objects.filter(
+                approver_role__code="supervisor",
+                approver=records_supervisor,
+                workflow_id=second["workflow"],
+            ).count(),
+            1,
+        )
+        self.assertNotEqual(registry_supervisor.pk, records_supervisor.pk)
 
     def test_creation_is_audited_for_both_the_team_and_its_chain(self):
         team = self.create_team()
@@ -533,7 +572,6 @@ class TeamCreationTests(TeamConfigurationBase):
             TEAMS_URL,
             {
                 "name": "Sneaky team",
-                "department": self.department.pk,
                 "new_workflow": {
                     "sections": [
                         {
@@ -786,6 +824,14 @@ class TeamChainEditingTests(TeamConfigurationBase):
                 ]
             },
         )
+        # Re-pointing a step does not move people between teams: an existing
+        # team's approver has to be one of its members already, so HR puts them
+        # on the team first and only then names them to the step.
+        for person in (self.supervisor, self.hod):
+            profile = person.employee_profile
+            profile.team = Team.objects.get(pk=team["id"])
+            profile.save(update_fields=["team"])
+            person.refresh_from_db()
         response = self.client.patch(
             f"{TEAMS_URL}{team['id']}/",
             {
@@ -955,16 +1001,18 @@ class TeamValidationTests(TeamConfigurationBase):
         self.assertFalse(response.data["ready"])
         self.assertIn("window_ended", [i["code"] for i in response.data["issues"]])
 
-    def test_a_department_may_hold_several_active_teams(self):
-        """One department, several working teams — the documented shape.
+    def test_several_active_teams_may_coexist(self):
+        """Several working teams at once — the documented shape.
 
-        Routing follows the team, so two active teams in one department is not
-        ambiguous to the engine: each employee is on exactly one team and follows
-        its own chain. Nothing needs to say it out loud, and nothing should
-        refuse the second activation.
+        Routing follows the team, so two active teams is not ambiguous to the
+        engine: each employee is on exactly one team and follows its own chain.
+        Nothing needs to say it out loud, and nothing should refuse the second
+        activation.
         """
-        self.create_team(name="Registry team")
-        second = self.create_team(name="Records team")
+        self.create_team(name="Registry team", approvers=self.approvers_for("registry"))
+        second = self.create_team(
+            name="Records team", approvers=self.approvers_for("records")
+        )
         self.activate(Team.objects.get(name="Registry team").pk)
         activated = self.activate(second["id"])
         self.assertEqual(activated["status"], Team.Status.ACTIVE)
@@ -975,13 +1023,12 @@ class TeamValidationTests(TeamConfigurationBase):
             True,
         )
 
-    def test_two_active_teams_in_one_department_keep_their_own_chain(self):
+    def test_two_active_teams_keep_their_own_chain(self):
         """Each team routes through its own workflow, never a shared one.
 
         A chain is a OneToOneField on the team and is written inline with it, so
         this is the shape the model already enforces. Asserting it at the
-        routing layer is the point: two teams sharing a department were
-        previously unreachable, so nothing proved that each employee's
+        routing layer is the point: nothing else proves that each employee's
         application is materialised with their own team's step.
         """
         self.use_real_workflow_provider()
@@ -1009,8 +1056,7 @@ class TeamValidationTests(TeamConfigurationBase):
         records_row = Team.objects.get(pk=records["id"])
         self.activate(registry_row.pk)
         self.activate(records_row.pk)
-        # Same department, two active teams, two distinct chains.
-        self.assertEqual(registry_row.department_id, records_row.department_id)
+        # Two active teams, two distinct chains.
         self.assertNotEqual(registry_row.workflow_id, records_row.workflow_id)
 
         registry_stages = self.stages_for(registry_row)
@@ -1031,18 +1077,21 @@ class TeamValidationTests(TeamConfigurationBase):
             LeaveApplication(employee=self.employee)
         )
 
-    def test_one_person_holds_one_role_across_every_team_of_a_department(self):
-        """The rule spans teams, which one-team-per-department never exercised.
+    def test_one_person_holds_one_role_on_a_team(self):
+        """An employee is appointed once, in one role, on a team's chain.
 
-        ``ensure_role_consistency`` compares against every other section in the
-        department, so appointing the same person as a different role on a
-        second team of the same department is refused. One team per department
-        made this unreachable, so it was untested.
+        A team owns exactly one workflow, so "one stage per workflow" already
+        covers a team completely: there is no second chain on the same team for
+        somebody to also sit on in another role. That is why the per-workflow
+        check is the one that fires here, and it is what keeps skip-forward
+        routing unambiguous — "the applicant's stage" is only well defined
+        because a person cannot hold two.
         """
-        self.create_team(name="Registry team")
-        records = self.create_team(name="Records team")
-        response = self.client.patch(
-            f"{TEAMS_URL}{records['id']}/",
+        registry = self.create_team(name="Registry team")
+        # The same role again on the same chain: already appointed, so it is a
+        # no-op rather than a second appointment.
+        same_role = self.client.patch(
+            f"{TEAMS_URL}{registry['id']}/",
             {
                 "new_workflow": {
                     "sections": [
@@ -1056,52 +1105,55 @@ class TeamValidationTests(TeamConfigurationBase):
             },
             format="json",
         )
-        # self.supervisor already holds "supervisor" on the Registry team, so
-        # the same role again is allowed: the rule is one role per department,
-        # not one appointment per department.
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(same_role.status_code, status.HTTP_200_OK, same_role.data)
+
+        # A second team may hold the same office through a different person: the
+        # scope is the team, so nothing is compared across them.
+        records_supervisor, _ = self.approvers_for("records")
+        elsewhere = self.create_team(
+            name="Records team",
+            new_workflow={
+                "sections": [
+                    {
+                        "name": "Dean approval",
+                        "approver_role": "dean",
+                        "approver": records_supervisor.pk,
+                    }
+                ]
+            },
+        )
+        self.assertEqual(
+            Team.objects.get(pk=elsewhere["id"])
+            .workflow.sections.get(approver_role__code="dean")
+            .approver_id,
+            records_supervisor.pk,
+        )
+
+        # On its own team, though, self.supervisor cannot take a second step in
+        # another role while still holding the first.
         ensure_roles("dean")
         refused = self.client.patch(
-            f"{TEAMS_URL}{records['id']}/",
+            f"{TEAMS_URL}{registry['id']}/",
             {
                 "new_workflow": {
                     "sections": [
                         {
+                            "name": "Supervisor approval",
+                            "approver_role": "supervisor",
+                            "approver": self.supervisor.pk,
+                        },
+                        {
                             "name": "Dean approval",
                             "approver_role": "dean",
                             "approver": self.supervisor.pk,
-                        }
+                        },
                     ]
                 }
             },
             format="json",
         )
-        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("one approver role per department", str(refused.data).lower())
-
-    def test_a_team_with_no_department_is_reported_not_merely_unchecked(self):
-        """A departmentless team cannot be staffed, so it cannot be activated.
-
-        Removing the shared-department conflict (Unit 29 D1) does not touch this
-        one: a team still cannot be staffed without a department, so it still
-        cannot route. Two such teams are not compared with each other, and each
-        is reported for its own missing department.
-        """
-        unstaffed = {
-            "sections": [
-                {"name": "Supervisor approval", "approver_role": "supervisor"}
-            ]
-        }
-        self.create_team(name="No dept one", department=None, new_workflow=unstaffed)
-        second = self.create_team(
-            name="No dept two", department=None, new_workflow=unstaffed
-        )
-        response = self.client.post(
-            f"{TEAMS_URL}{second['id']}/validate/", format="json"
-        )
-        self.assertFalse(response.data["ready"])
-        codes = [issue["code"] for issue in response.data["issues"]]
-        self.assertEqual(codes.count("department_missing"), 1)
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST, refused.data)
+        self.assertIn("one stage per workflow", str(refused.data).lower())
 
     def test_validation_changes_nothing(self):
         team = self.create_team()
@@ -1358,15 +1410,21 @@ class TeamDetailsTests(TeamConfigurationBase):
     """What reading one team back has to answer."""
 
     def test_the_team_row_carries_its_lifecycle_and_window(self):
-        team = self.create_team(
-            department=self.department.pk, effective_from="2026-01-01"
-        )
+        team = self.create_team(effective_from="2026-01-01")
         row = self.read(team["id"])
-        self.assertEqual(row["department"], self.department.pk)
-        self.assertEqual(row["department_name"], "Administration")
+        # A campus is optional and reporting-only: scoping approvals is the
+        # team's own membership, so a team need not name one.
+        self.assertIsNone(row["campus"])
         self.assertEqual(row["status"], Team.Status.DRAFT)
         self.assertEqual(row["effective_from"], "2026-01-01")
         self.assertTrue(row["is_effective"])
+
+    def test_a_team_can_belong_to_a_campus(self):
+        campus = campus_for("Main campus")
+        team = self.create_team(campus=campus.pk)
+        row = self.read(team["id"])
+        self.assertEqual(row["campus"], campus.pk)
+        self.assertEqual(row["campus_name"], "Main campus")
 
     def test_a_team_outside_its_window_says_so(self):
         team = self.create_team(effective_to="2020-12-31")
@@ -1426,30 +1484,30 @@ class TeamDetailsTests(TeamConfigurationBase):
         )
         self.assertEqual([r["code"] for r in person["roles"]], ["hod"])
 
-    def test_a_department_can_be_set_and_changed(self):
-        team = self.create_team(department=self.department.pk)
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {"department": self.other_department.pk},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(
-            Team.objects.get(pk=team["id"]).department, self.other_department
-        )
-
-    def test_a_retired_department_is_refused(self):
-        """Retiring a department must not leave teams pointing at it as live."""
+    def test_a_campus_can_be_set_and_changed(self):
         team = self.create_team()
-        self.other_department.is_active = False
-        self.other_department.save(update_fields=["is_active"])
+        campus = campus_for("Main campus")
         response = self.client.patch(
             f"{TEAMS_URL}{team['id']}/",
-            {"department": self.other_department.pk},
+            {"campus": campus.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("department", response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(Team.objects.get(pk=team["id"]).campus, campus)
+
+    def test_a_retired_campus_is_refused(self):
+        """Retiring a campus must not leave teams pointing at it as live."""
+        team = self.create_team()
+        campus = campus_for("Closed campus")
+        campus.is_active = False
+        campus.save(update_fields=["is_active"])
+        response = self.client.patch(
+            f"{TEAMS_URL}{team['id']}/",
+            {"campus": campus.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("campus", response.data)
 
     def test_effective_dates_are_audited_with_before_and_after(self):
         team = self.create_team()
@@ -1485,6 +1543,13 @@ class MembershipHistoryTests(TeamConfigurationBase):
         self.step_two = self.team.workflow.sections.get(order=2)
 
     def staff_and_get(self, section: Section, user) -> SectionMember:
+        # Appointment is only open to the team's own members, so put them on it
+        # first — as HR would, on the employee record. The add-member action
+        # refusing a non-member is covered by its own test.
+        profile = user.employee_profile
+        profile.team = self.team
+        profile.save(update_fields=["team"])
+        user.refresh_from_db()
         response = self.client.post(
             MEMBERS_URL, {"section": section.pk, "user": user.pk}, format="json"
         )
@@ -1973,6 +2038,12 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         replacement = make_approver(
             "supervisor", username="sup2@teamflow.test", institution_wide=False
         )
+        # Appointment is open to the team's own members, so the replacement is
+        # put on the team before being named to the step.
+        profile = replacement.employee_profile
+        profile.team = self.stored
+        profile.save(update_fields=["team"])
+        replacement.refresh_from_db()
         membership = SectionMember.objects.get(
             section=self.stored.workflow.sections.get(order=1),
             user=self.supervisor,

@@ -69,6 +69,21 @@ Update this file after every meaningful implementation change.
   `LeaveReviewPanel`. Shared primitives: `AdminFormOverlay` + `useOverlayParam`
   (back closes, stale ids handled, edit-from-row on screen).
 
+- **Team Member Management and Workflow Member Eligibility COMPLETE** — backend,
+  frontend, tests, and docs; see "Completed — Team Member Management and Workflow
+  Member Eligibility (2026-10-07)" at the end of this file. A team's roster is
+  managed on the team with removal safeguards, and normal workflow membership is
+  a team-scoped assignment enforced by a `(team, user)` unique constraint with a
+  backend-computed eligibility pool. Follow-up **Second-Workflow Exclusion
+  COMPLETE** (same day): one employee serves exactly one of the team's chains at
+  a time — as step approver *or* normal member — unless they are a wide
+  approver; see "Completed — Second-Workflow Exclusion and Chain-Scoped Approver
+  Picker (2026-10-07)" at the end of this file.
+- **Unit 31 — annual leave is provisioned by entitlements** — see "Unit 31 —
+  Annual leave is owned by the entitlement form" at the end of this file. Saving
+  an entitlement creates annual leave and its starting rule, and annual leave is
+  read-only in Leave Types.
+
 - **Vercel design mechanics on LUANAR identity (2026-10-01)** — the app was
   built on shadcn defaults that did not match the target aesthetic: a 6/8/12/16px
   radius ladder where the design calls for a flat 6px, a slate-tinted shadow
@@ -3958,3 +3973,1134 @@ the comment now lives in the step's accordion.
 `size="sm"`, `showAvatars={false}`, reduced-motion, the detail accordion, and all
 four adapters; `tracking-view`, `approval-detail`, `cancellation-detail-panel`
 and `plan-approvals-workspace` were retargeted to the new markup.
+## Unit 31 — Annual leave is owned by the entitlement form (implemented 2026-10-05)
+
+Spec `context/specs/31-entitlement-linked-leave-type-availability-spec.md`, branch
+`feature/updated-hr-track`. The defect this fixes is one of sequence, not of data:
+Unit 31's own D1 said HR picks a leave type while configuring an entitlement and that
+**no `LeaveType` row is ever created**. So HR configured a band of annual-leave days
+and then had to go to a *different* form to create "Annual Leave" before any employee
+could select it. The two halves of the original request were both implemented and still
+did not connect, because the join depended on a manual step in between.
+
+**Annual leave is now provisioned by saving an entitlement.** `provision_annual_leave`
+is idempotent, shared by the API and the Django admin, and creates the `LeaveType` plus
+a balance-deducting `LeaveRule` capped at the band's days, auditing each row it creates.
+`GradeEntitlementSerializer.leave_type` is now **read-only** and `EntitlementInput` no
+longer carries it, so a client cannot ask for a different type and get one. The admin
+form disables the field and `save_model` provisions inside the save's transaction, so a
+half-provisioned band is never committed.
+
+**Leave Types refuses annual leave on both write paths.** The API refuses to create any
+type that would claim the annual identity and refuses to edit the canonical type on
+**any** field — including `is_active`, which looks like an ordinary flag and retires
+annual leave into an empty dropdown for every employee. `LeaveTypeAdminForm` applies
+the same two guards. Other leave types stay fully editable, and the annual *rule* stays
+editable under Leave Rules, which is where the day cap and balance behaviour belong.
+
+**One thing deliberately not blocked.** `has_add_permission` was first made to return
+`False` for the whole admin, on the reading that Leave Types should not create anything.
+That was over-reach: maternity, paternity and compassionate leave still have to come
+from somewhere, and removing every add left HR no way to create them at all. Reverted to
+a form guard that refuses only the annual identity.
+
+Canonical annual identity is matched through `find_annual_leave_type`, honouring code
+`annual`, code `annual-leave`, and a case-insensitive `Annual Leave` name — a database
+written before the canonical code existed holds annual leave under whichever one it was
+given, and the previous commits on this branch had also drifted between `annual` and
+`annual-leave`, so the guard had to accept both rather than pick one.
+
+**Frontend.** The entitlement form drops its leave-type dropdown and its
+`listLeaveTypes` fetch entirely and now says the band grants Annual Leave, linking to
+Leave Rules. `leave-type-form` renders annual leave as a read-only panel pointing at
+Entitlements. `leave-type-table` shows "Managed in Entitlements" and an "Edit days"
+link on the annual row while other rows keep their edit action. `isAnnualLeaveType` in
+`lib/leave-rules.ts` mirrors the backend's two-code rule.
+
+The **empty-state copy and the entitlement table's fallback label** both said annual
+leave is something HR adds, which is now wrong; the fallback reads "Annual leave"
+rather than "Annual (untyped)".
+
+**Tests.** One backend test, `test_hr_can_patch_leave_type`, patched *annual* leave and
+asserted 200 — it was asserting the exact behaviour being removed, so it was rewritten
+against maternity and the annual cases were added alongside it. A new
+`LeaveTypeAdminFormTests` class covers the admin guards in both directions.
+`tests/entitlement-form.test.tsx` is new and pins that no `leave_type` is sent.
+`test_admin_save_provisions_annual_leave` had to build its own HR user: the admin test
+class has no `hr_user` fixture.
+
+Verified: backend full suite **1192 tests OK** (was 1192, net 0 — 21 added, 4 obsolete
+annual-patch expectations replaced); `leave` alone 174 OK; frontend **67 files / 462
+tests OK** (was 66/451); `tsc --noEmit` and `tsc -p tsconfig.test.json` clean;
+`eslint` clean on every touched file; `manage.py check` and `makemigrations --check`
+clean — no schema change.
+
+## Phase 1 — Department removed; Team is the unit (2026-10-06)
+
+**Database wiped and rebuilt from migrations.** Dropped and recreated `luanar_leave`,
+then `manage.py migrate` from zero. That rebuild is not cosmetic: the previous `flush`
+had removed the rows migration `0011` seeds, so the dev database no longer had the six
+canonical approver roles and could not have built a chain. Migrating from zero also
+proved the migration graph end to end. Final state: one superuser, zero employees,
+campuses, teams, workflows, sections and holdings, the six shipped roles.
+
+**Two real defects found and fixed while verifying.**
+
+*Migration graph inversion.* `users.0009` depends on `workflows.0026`, so nothing
+ordered `workflows.0014` after `users.0005` — and `0014` reads
+`application__employee__employee_profile__team`. On any fresh database the test runner
+died in `select_related` before a single test ran. Fixed by declaring
+`("users", "0005_employeeprofile_team")` in `0014`'s dependencies; `users.0005` already
+depends on `workflows.0010`, an ancestor of `0013`, so the edge cannot cycle.
+
+*`workflow__team_id` is not a valid lookup.* Three call sites inherited it from a
+mechanical rename. `Team.workflow` is a `OneToOneField`, so the reverse accessor is
+`workflow__team__pk`. This was a 500 on any team create with a section approver and on
+the eligible-approvers action — `services.ensure_role_consistency` and two lines in
+`views.eligible_approvers`.
+
+**One design decision the removal forced.** Team membership is now the eligibility rule,
+so `create_team` could no longer succeed: it writes the team, then judges the named
+approvers against membership they cannot have yet. Creating a team now places the people
+it names on it (`_place_new_team_member`, `place_on_team=True`, create-only). Someone
+already on a *different* team is refused and told to be moved first, rather than being
+quietly moved — that would leave their old team staffed by people who can no longer be
+eligible. Re-pointing a step on an *existing* team deliberately does not place anybody:
+that is a separate edit to the employee record.
+
+**A consequence worth recording.** `ensure_role_consistency` (one role per team) is now
+unreachable. A team owns exactly one workflow, so `ensure_single_stage_per_workflow`
+always fires first and subsumes it. Kept as a defensive guard rather than deleted, but
+`test_one_person_holds_one_role_on_a_team` now asserts the rule that actually protects a
+team. Related: because `EmployeeProfile.team` is a single FK, one employee can only ever
+be appointed within one team — "the same office approves for two teams" now needs one
+holder per team.
+
+**Login defect.** `User` is `AbstractUser` with no `USERNAME_FIELD` override, so
+`LoginView` authenticates `username=<email>`. The rebuilt superadmin had
+`username="admin"` and could never log in. Aligned to the product convention
+(`username == email`, as every fixture and the admin add-user form already do).
+
+**Tests.** 32 test functions deleted, 20 added, net −12 (1192 → 1180). Deleted only the
+Department CRUD suite, the `department_missing` readiness case, and tests whose entire
+premise was a per-department rule; every routing, skip-forward, visibility, delegation,
+eligibility, snapshot and history rule was re-expressed in team vocabulary, not weakened.
+A team with no department is no longer a distinct readiness issue — `no_approver` already
+covers it. `workflows/testing.py` exposes `campus_for`/`team_for` and
+`make_approver(..., team=)`; `make_team` takes `campus=` instead of `department=`.
+
+**Verified.** Backend full suite **1180 tests OK** from a freshly created test database
+(after deliberately dropping `test_luanar_leave`, because two earlier subagent runs had
+been reporting green against a stale database). `makemigrations --check` reports no
+changes. Frontend **66 files / 448 tests OK**, `tsc --noEmit` and `eslint` clean.
+Department pages, BFF routes, client, table, form and their test are deleted; the
+eligible-approvers call is `?team=`; the approvals and document-template payloads use
+`team`. Live smoke test against a running server: admin logs in, `/api/v1/departments/`
+404s, and campus → employee → team-with-chain → validate → activate all succeed through
+the API from the empty database, with both approvers landing on the team automatically.
+Smoke-test rows were then removed, returning the database to bare.
+
+**Left for later phases.** Team category, multi-workflow teams and a deliberate
+cross-team approver model are Phase 2+ — an employee currently cannot hold a role on
+more than one team.
+
+---
+
+## Phase 2 — Team category, multi-workflow teams, and the three levels of approver (backend)
+
+**What the schema change says.** `Team.category` (`academic` / `administration`, model
+default `administration`) decides whether a team is campus-based or institution-wide.
+The pair is validated at service and serializer level and *not* by a database check
+constraint — a backfill that sets `category` from an existing `campus` would be rejected
+by the very constraint that is meant to describe the rule. `Workflow.team`
+(`related_name="workflows"`, `SET_NULL`) makes workflow ownership a forward relation;
+`Team.workflow` stays the one-to-one routing pointer, with its reverse renamed
+`team` → `routed_by` so the two never collide. A team therefore owns many chains and
+routes exactly one of them.
+
+**Two new holding tables.** `TeamRoleAssignment(team, role, user)` and
+`CampusRoleAssignment(campus, role, user)`, both unique on the (scope, role) pair and
+both `clean()`-refusing institution-wide roles, retired roles, and inactive campuses.
+Writing a second holder for the same role and scope is the *replacement*, not an error —
+the screen is pick-a-role, pick-a-person, and asking HR to delete before they may change
+their mind is a step that only exists to satisfy the database. Both appointments and both
+replacements are audited as `TEAM`/`CAMPUS` target events.
+
+**Resolution order** (`workflows.providers.resolve_section_approvers`): the section's own
+appointee → team-wide holder → campus-wide holder → institution-wide holder *only* when
+the routing team is an administration team (and a `team=None` lookup may reach it, since
+institution-wide roles have no team). A campus-wide holding on an academic team no longer
+silently serves an administration team, which is the whole reason the gate exists.
+`section_resolution` is the same answer as display data and never raises, so a screen can
+show "who would act here" without the lookup failing first.
+
+**Lifecycle rules that changed with it.** `ensure_team_eligibility` now refuses an
+institution-wide role on a non-administration team; `validate_team` exempts team- and
+campus-wide holders from the `approver_outside_team` rule; `team_for_section` follows
+`workflow.team` (ownership) rather than assuming routing implies ownership; and a team is
+never allowed to adopt a workflow it does not own — the serializer refuses `workflow` on
+create outright and on update unless the team already owns it.
+
+**The chain endpoint is writable again.** It was read-only because a chain was written
+with its team; now that a team may own several, each is configured on its own here.
+`WorkflowWriteSerializer` takes `name`, `team` (create only) and `sections`, and
+*refuses* `effective_from` and `is_active` by name — when a chain begins applying is
+decided when the team that routes through it is activated, and switching a chain off is
+retiring that team. `GET /workflows/?team=` is the team's own listing.
+`TeamSerializer.category` carries **no** DRF default, because a field default is filled
+in before `validate` runs and would make "a campus was sent but no category" look like
+"an administration team was sent"; instead the category is inferred to `academic` when a
+campus is present and no category was given, which is what the campus has always meant.
+
+**Migration `0027`.** Adds both fields and both tables, then backfills: every routed
+workflow adopts the team that points at it (otherwise every live chain would look
+ownerless on the new team screens), and teams with a campus are marked academic. The
+backfill is `RunPython` with a `noop` reverse, because there is nothing to undo that a
+drop of the column would not do better.
+
+**Fixture change.** `make_team` now sets `workflow.team` and derives `category` from the
+presence of `campus`, so a fixture cannot build the one state a real write refuses.
+
+**Tests.** Full backend suite **1182 tests OK** (`workflows` alone: 523). Rewritten:
+`WorkflowEndpointTests` (create requires a team; HR creates and edits a workflow; a
+chain cannot be adopted by another team; `?team=` filter; DELETE still refused) and
+`WorkflowActivationEndpointTests` (scheduling and switching off a chain are named field
+errors rather than 405s; a deactivated role is refused at write; two teams may own
+chains over the same scope). `test_a_team_may_not_point_at_an_existing_chain` and
+`test_a_workflow_sent_on_create_is_ignored` now assert a refusal rather than a silently
+ignored field.
+
+**Left for later phases.** The frontend screens for campuses, the multi-step team
+wizard, the workflow and wide-approver configuration pages, and the guided navigation
+are the next phase; the API surface they need is in place.
+
+## Phase 2 — Team category, multi-workflow teams, and the three levels of approver (frontend)
+
+**What the screens now say.** The API surface from the backend phase is wired end to
+end: a team is created as *academic* (campus required) or *administration* (campus
+cleared, not merely left blank); a team owns several chains and routes exactly one of
+them; a role can be held at institution, team, or campus scope; and the fallback order
+of those three is shown as data, not implied.
+
+**Data layer.** `lib/teams.ts` gained `TeamCategory` with labels/codes, `Team.category`,
+`Team.workflows` (ownership list alongside the routing pointer), `TeamSection.resolution`
+and `SECTION_RESOLUTION_LABELS`; `lib/workflows.ts` was re-read for this work — it now
+talks to Django directly through `apiClientUrl` like the rest of the read layer, and
+carries `WorkflowState`, `listWorkflows({team, routing})`, and the section input shape.
+Writes go through BFF proxy routes (`app/api/hr/**`) as the rest of HR does:
+`lib/workflows-client.ts` (create/update), `lib/approver-roles-client.ts` (team- and
+campus-wide assignment create/remove), `lib/teams-client.ts` gained `routeTeamThrough`.
+`lib/approver-roles.ts` reads the two new assignment collections.
+
+**Screens.** New under `dashboard/hr-admin`: **Campuses** (list, create, read, edit;
+teams at a campus and its campus-wide holdings), **Approvers** (all three scopes
+grouped by role, with `?scope=/&team=/&campus=` filters), and, under **Teams/[id]**,
+tabs for overview / approval steps / approvers / members plus **Workflows** (the team's
+owned chains, which one routes, and a confirm-then-route action). The team wizard
+(`components/hr/team-form.tsx`) now asks the category first — the campus select is the
+visible half of the rule and is disabled until the team is academic — and a new
+`WideHoldingPanel` is the single place a wide holding is added or removed, with the
+scope picker offered only when the role allows more than one scope.
+
+**Navigation.** The HR section of the dashboard shell gained **Campuses** and
+**Approvers** between Teams and Roles, so the guided path (campus → team → chain →
+approvers) is reachable without knowing URLs.
+
+**Roles page narrowed.** It no longer lists institution-wide holders or writes
+assignments — that screen was a second writer for rows the Approvers page now owns. It
+links there instead, and keeps only the role catalogue (including retired roles, which a
+chain may still name).
+
+**Verification.** Frontend `npx tsc --noEmit` clean, `npx eslint .` clean, and the full
+Vitest suite **65 files / 444 tests OK**. Rewritten/added tests: `campus-form.test.tsx`
+for both `CampusForm` and `CampusQuickAdd` (the old collapsible API is gone),
+`team-form.test.tsx` updated for the category rule — the exact create-payload key list
+now includes `category`, the campus select is asserted disabled until Academic is
+chosen, an academic team with no campus is refused before any write, and an
+administration team sends `campus: null`. Dead code removed: `RoleAssignmentForm` and
+its test (superseded by `WideHoldingPanel`), plus the holders block on the roles page.
+
+**Left for later phases.** Employee-side surfaces still predate the category model (an
+employee's team is a single FK, so "the same office approves for two teams" needs one
+holder per team — already noted in Phase 1); the approvals screens read the backend's
+resolver and need no change for the new fallback order, but have not been re-smoked
+against a team that relies on a campus-wide holder.
+
+## Defect Fix (2026-10-06) — `next/headers` reached the browser through client components
+
+**What broke.** Opening `/dashboard/hr-admin/entitlements/new` in `next dev` (Turbopack)
+failed with: *"You're importing a module that depends on `next/headers`. This API is only
+available in Server Components…"*, traced as `api-client.ts ← leave-rules.ts ←
+entitlement-form.tsx`. The entitlements trace itself was a stale `.next` graph — that
+form stopped importing leave-rules when the leave-type picker was removed — but the
+class of bug was real and live in two places.
+
+**The rule that was being broken.** `lib/api-client.ts` reads cookies from
+`next/headers` and is server-only by construction. Several lib modules import it
+(`teams`, `leave-rules`, `workflows`, `approver-roles`, `employees`, `entitlements`,
+…), so a *value* import from any of them, from a `"use client"` component, puts
+`next/headers` into the browser bundle. Type-only imports are erased and are fine.
+Two client components were doing it:
+
+* `components/hr/team-form.tsx` imported `TEAM_CATEGORY_LABELS` from `lib/teams.ts`
+  (introduced with the category radio group).
+* `components/hr/leave-type-form.tsx` imported `isAnnualLeaveType` from
+  `lib/leave-rules.ts` (pre-existing; the earlier `ea9fbec` fix created
+  `leave-types-client.ts` for the fetches but left the pure predicate behind).
+
+**The fix.** Pure vocabulary moved to client-safe siblings, re-exported from the
+server modules so server callers keep one import path:
+
+* `lib/team-category.ts` — `TeamCategory`, labels/codes, `teamCategoryLabel`,
+  `teamCategoryBadgeClass`.
+* `lib/leave-rules-pure.ts` — leave-type/rule interfaces, `ANNUAL_LEAVE_CODES`,
+  `isAnnualLeaveType`, `leaveRuleStatus`.
+
+Client components import from the pure modules; `team-table`, `campus-table`,
+`leave-rule-table` and `leave-type-table` do too, so the rule is one line long —
+a helper never comes out of a module that reads Django.
+
+**Guard rail.** `tests/server-only-imports.test.ts` walks `lib/`, seeds the
+server-only closure with anything importing `next/headers` or `api-client`, grows it
+by value-imports, and fails if any `"use client"` file value-imports from that
+closure. `tsc` cannot see this mistake (the import type-checks); the browser is where
+it explodes, so it is pinned here instead.
+
+**Verified.** `.next` cleared (the stale entitlements graph was the reported error).
+`tsc --noEmit` clean, `eslint .` clean, full Vitest suite **67 files / 459 tests OK**,
+and `next build` compiles successfully with `/dashboard/hr-admin/entitlements/new`,
+the campuses pages and the approvers page all in the route table.
+
+## Operational (2026-10-06, all seed data removed — bare database)
+
+**What was removed.** The dev database `luanar_leave` was dropped and recreated,
+then `manage.py migrate` run from zero. Final state, verified through the ORM:
+**0 users**, 0 employees, 0 campuses, 0 teams, 0 workflows, 0 sections, 0
+team/campus/institution holdings, 0 leave types, 0 grade entitlements — and the
+**six approver roles** migrations ship (`supervisor`, `hod`, `dean`, `registrar`,
+`campus_registrar`, `dvc`), which are product data from `workflows.0011`, not
+seed data. The two leftover users, one team, one workflow and one section from
+the Phase 1 smoke test are gone with the drop.
+
+**What was deleted from the codebase earlier, now reflected in the docs.**
+`users.management.commands.seed_dev_users` and its `management/__init__.py` were
+already removed from the tree (they seeded seven `@test.luanar` accounts with
+`testpass123` plus employee profiles and default entitlements). The root
+`README.md` still told a second developer to run that command and tabulated the
+seeded emails. The setup step is gone, and the "Development Users" section is
+replaced by **First account**: there is no seed command and no fixture users; a
+fresh database has the schema plus the six migration-shipped roles and nothing
+else, and the bootstrap administrator is created with `createsuperuser` (email
+as username, then `role = "hr"` once — the instructions that follow are
+unchanged).
+
+**Deliberately kept.** Test code may still create users with `testpass123` and
+`@test.luanar` addresses — that is what the suite logs in as, and it runs
+against the separate test database, not the dev one. `workflows.0011`'s six
+canonical roles stay: without them no chain can be built on a bare database.
+`leave.providers.fixture_data` / `FixtureRulesProvider` stay as the placeholder
+rules provider still exercised by `leave/tests/test_cancellations.py`; the
+configured provider is `DatabaseRulesProvider`.
+
+**Verified.** Post-drop ORM counts as above; `README.md` contains no
+`seed_dev_users`, `testpass123` or `@test.luanar` reference.
+
+## Operational (2026-10-06, approver roles removed from the clean install)
+
+**Directive.** After the bare-database pass, the developer asked to remove the
+six migration-shipped approver roles as well — a clean install must start with
+zero business records of any kind, including the role vocabulary.
+
+**Migration 0028.** `workflows/0028_remove_seeded_approver_roles.py` deletes
+the seed codes 0011 created (`supervisor`, `hod`, `dean`, `registrar`,
+`campus_registrar`, `dvc`) **only when nothing references them**. On a fresh
+`migrate` the database ends at zero roles; if any section or holding still
+points at a seed code the rows are live configuration and are left alone, so
+this cannot delete a real approval right. Reverse is a no-op (0011 re-seeds if
+the database is rewound). `makemigrations --check` clean.
+
+**Test suite made self-contained.** Roles are HR data, not migration seed, so
+tests create what they use:
+
+* `workflows/testing.py` `ROLE_SPECS` now carries the description text the edit
+  tests quote (mirrors 0011's seed copy).
+* `ConfigurationAPIBase`, `TeamConfigurationBase`, `SectionSequenceTests`,
+  `WorkflowEndpointTests`, `WorkflowSerializerAtomicityTests`, and
+  `AuditWiringTests` call `ensure_roles(...)` in `setUp` for the codes their
+  payloads name.
+* `leave/tests/legacy.py` `CleanDatabaseBootstrapTests` now asserts
+  `ApproverRole` is empty on a fresh test database (was: six shipped roles).
+* `RoleListingTests.test_adding_roles_does_not_add_queries` seeds its own
+  baseline roles before the query-count assertion.
+
+**Docs.** README "First account" no longer claims six roles ship; it states a
+fresh database has the schema and nothing else, and that the superuser creates
+HR through `/dashboard/admin/users`. Architecture already said HR defines role
+codes — unchanged.
+
+**Verified.** Dev DB dropped, recreated, migrated from zero: every model count
+0. Backend suite **1182 OK** (includes the three previously failing audit /
+bootstrap tests). Frontend production paths contain no mock business data —
+pages read API results and show create/empty affordances; document-template
+`sample` labels are system vocabulary for the template editor, not DB records.
+
+**Deliberately kept (classification).**
+
+| Item | Class | Why |
+| --- | --- | --- |
+| `workflows.0011` + `0028` | historical migration pair | 0011 cannot be rewritten; 0028 neutralises it on bare DBs |
+| `workflows/testing.py` `ROLE_SPECS` / `ensure_roles` | test-only | fixtures create roles per test; never written to the dev DB |
+| `leave.providers.fixture_data` / `FixtureRulesProvider` | test-only placeholder | default `LEAVE_RULES_PROVIDER` is `DatabaseRulesProvider` |
+| `provision_annual_leave` / `get_or_create_annual_leave_type` | HR-triggered product write | runs when HR saves a grade entitlement, not on startup |
+| `documents.services.get_template` | essential system config | singleton leave-document template materialised on first render |
+| `FIELD_CATALOG` sample labels | essential system config | template-field vocabulary for the HR preview; not DB rows |
+| Superuser + `POST /api/v1/admin-users/` | essential system access | bootstrap admin outside the product; creates HR only |
+| Test passwords `testpass123` / `@test.luanar` | isolated test data | test DB only; not committed as seed scripts |
+
+## Completed — Team Member Management and Workflow Member Eligibility (2026-10-07)
+
+Specification authority: the feature request behind Unit 32 — like the team
+management and workflow-sections work, this landed from a product request rather
+than a numbered spec file, and the invariants live in `context/architecture.md`
+§12.14–12.15. Not yet committed. Feature: a dedicated Team Members screen per team (search, filtering,
+pagination, empty states, add/remove members, removal safeguards) plus normal
+workflow members as a first-class, team-scoped assignment with a backend-computed
+eligibility pool that can only ever offer people the write will accept.
+
+**Backend — model + migration (`workflows/0029_workflowmember.py`).**
+- `WorkflowMember` (workflow FK `CASCADE`, `user` FK `PROTECT`, denormalised
+  `team` FK `CASCADE`, `added_by` FK `PROTECT` null, `created_at`) with DB-level
+  unique constraints on **both** `(workflow, user)` and `(team, user)`. The
+  second is the one-chained-member-per-employee backstop: even two concurrent
+  assigns cannot put a person on two of a team's chains.
+- Team source of truth stays `EmployeeProfile.team` (`related_name="members"`),
+  so `WorkflowMember` is distinct from `Section.approver` / `SectionMember`.
+
+**Backend — services (`workflows/services.py`).**
+- `add_team_member` / `remove_team_member` with `select_for_update` on the
+  profile row (locked without `select_related`, which the profile's nullable FKs
+  would break on `FOR UPDATE`) and a full `_team_member_blockers` refusal set:
+  active section approver, open approver period, `WorkflowMember` on any of the
+  team's chains, `TeamRoleAssignment` on this team — each named in the 409.
+- `workflow_member_pool` (available / current / assigned_elsewhere),
+  `assign_workflow_member`, `remove_workflow_member`, and `sync_workflow_members`
+  (whole-list replace on the workflow write; `None` = leave alone, `[]` = clear).
+- `team_member_summaries` for the roster rows (workflow footprint + approver
+  stance + team role). Audit: team add/remove → `TargetType.EMPLOYEE` /
+  `UPDATED` via `changed_fields`; workflow member assign → `WORKFLOW/CREATED`,
+  remove → `WORKFLOW/DEACTIVATED`, sync → `WORKFLOW/UPDATED`.
+
+**Backend — API.**
+- `GET/POST /api/v1/teams/{id}/members/`; `DELETE .../members/{user_id}/`;
+  `GET /api/v1/teams/{id}/workflow-member-pool/?workflow=<id>`;
+  `GET/POST /api/v1/workflows/{id}/members/`; `DELETE .../members/{user_id}/`;
+  `members: [user_id]` accepted on the workflow write serializer.
+- Both `TeamViewSet` and `WorkflowViewSet` gained `"delete"` in
+  `http_method_names` solely to serve the member-removal actions; no destroy
+  mixins were added (teams are retired, workflows never deleted by these views).
+
+**Tests — `backend/workflows/tests_workflow_members.py` (35 new, all green).**
+- `TeamMemberManagementTests` — add places an employee, remove clears them, and
+  each refusal path (approver period, section approver, workflow member, team
+  role holder) is a 409 naming the blocker.
+- `WorkflowMemberEligibilityTests` — pool semantics for create (unassigned) and
+  edit (current included as selected, siblings read-only under
+  `assigned_elsewhere`). Uses a bare `team_for()` team because `make_team`'s
+  seeded approver would pollute the pool with a fourth member.
+- `WorkflowMemberAPITests` — endpoint write path and HR-only access (403 for a
+  non-HR token).
+- `WorkflowMemberConcurrencyTests` — `TransactionTestCase` proving the
+  `(team, user)` unique constraint surfaces as an `IntegrityError` under race.
+- `TeamMemberSummaryTests` — roster footprint shaping.
+
+**Frontend.**
+- BFF routes: `teams/[id]/members` (GET/POST), `teams/[id]/members/[userId]`
+  (DELETE), `teams/[id]/workflow-member-pool` (GET), and
+  `workflows/[id]/members/[userId]` (DELETE).
+- `lib/team-members.ts` (client-safe types) + `lib/team-members-client.ts`
+  (BFF calls); `Workflow`/`WorkflowInput` gain `members` / `members?: number[]`.
+- `components/hr/team-members-panel.tsx` replaces the old roster in the team
+  page's Employees tab: server-loaded roster, search, filter (all / staff a
+  step / hold a team role / on a workflow / inactive), pagination, empty states,
+  add-from-unassigned picker, and remove with the backend's refusal message
+  shown inline.
+- `components/hr/workflow-form.tsx` gains a "Normal workflow members" section
+  wired to the eligibility pool: invites load from `available`, current members
+  pre-check via `workflow.members`, assigned-elsewhere rows render read-only with
+  the sibling chain's name, and submit sends `members` as the whole chosen list.
+
+**Verified.** Backend `workflows` suite **558 OK**, whole backend suite
+**1217 OK**, `makemigrations --check` clean. Frontend **468 tests OK** (+6
+panel, +3 form-members), `tsc --noEmit` clean, `eslint .` clean, production
+build succeeds.
+
+**Notes / tricky classes.**
+- `select_for_update().select_related(...)` blew up on nullable FKs
+  (`NOT NULL` side lock only) — the lock now targets just the profile row and
+  names are read separately.
+- Frontend `setState` in an effect is refused by the repo's lint rule, so the
+  panel loads via `.then` in the effect rather than a synchronous `reload()`.
+
+## Completed — Second-Workflow Exclusion and Chain-Scoped Approver Picker (2026-10-07)
+
+Follow-on to the workflow-member feature above (same feature request, Unit 32 +
+the second-workflow rule the user added). Not yet committed. A team's **second**
+chain must be built from people who are not already serving one of its other
+chains, and step approvers are now picked on the workflow form itself, shaped by
+the same exclusion.
+
+**Backend — model + migration (`workflows/0030_...`).**
+- `WorkflowMember.is_wide_approver` boolean; `workflow_member_team_user_unique`
+  is now a **conditional** `UniqueConstraint` on `(team, user)` where
+  `is_wide_approver = False`, so a wide approver may sit on several of the
+  team's chains at once and a concurrent write still cannot route around the
+  one-chain rule. `(workflow, user)` stays unconditional.
+- Migration 0030 removes the old constraint, adds the column, `RunPython`
+  backfills `is_wide_approver=True` from live holdings (RoleAssignment
+  institution-wide, TeamRoleAssignment on the team, CampusRoleAssignment at the
+  team's campus), then re-adds the conditional constraint. Applied to dev.
+
+**Backend — services (`workflows/services.py`).**
+- `_wide_approver_ids_for_team(team)` — active users with an institution-wide
+  RoleAssignment, a TeamRoleAssignment on the team, or a CampusRoleAssignment at
+  the team's campus; team with no campus reads no campus rows.
+- `ensure_not_assigned_elsewhere(section, user)` wired between
+  `ensure_single_stage_per_workflow` and `ensure_role_consistency` in
+  `ensure_membership_allowed`: refuses a non-wide person who is a normal member
+  of another of the team's chains or staffs an active step of one, naming the
+  sibling chain; the section's own workflow is excluded so resaving the same
+  appointment passes.
+- `assign_workflow_member` computes `is_wide_approver` at write time, calls new
+  `_ensure_member_not_assigned_elsewhere(...)` for non-wide people (member
+  elsewhere or step approver elsewhere refused), and creates the row flagged.
+- `workflow_member_pool` now also counts active-section step approvers of other
+  chains in `assigned_elsewhere` (workflow_name named), subtracts wide ids, and
+  keeps wide approvers in `available`.
+
+**Backend — API.**
+- `GET /teams/<id>/eligible-approvers/?workflow=<id>` — drop anyone assigned to a
+  **different** chain of the team (WorkflowMember or active step approver);
+  `?workflow=new` drops anyone on **any** of the team's chains (chain not
+  created yet); the absent parameter keeps its legacy no-exclusion behaviour for
+  the team form. Wide ids are subtracted.
+- `WorkflowMemberSerializer` exposes read-only `is_wide_approver`.
+
+**Backend — tests (9 new, all green).**
+- `tests_workflow_members.py`: step approver elsewhere excluded+named from a
+  sibling pool; step approver elsewhere refused as member; member elsewhere
+  refused as step approver; resaving one's own chain approver is not a conflict;
+  team-wide approver joins both chains, stays eligible, not flagged elsewhere;
+  institution-wide approver exempt.
+- `tests_teams.py` `EligibleApproverEndpointTests`: `?workflow=<id>` drops people
+  on the other chain yet keeps the chain's own holder; `workflow=new` drops
+  people on any chain while the no-param call keeps legacy behaviour; a
+  team-wide approver on another chain stays offered.
+
+**Frontend.**
+- `lib/teams-client.ts listEligibleApprovers(team, role?, workflow?)`; BFF route
+  `app/api/hr/teams/eligible-approvers` accepts `workflow` in FILTERS.
+- `lib/workflows.ts` `WorkflowSection` gains `approver: number | null` and
+  `approver_name: string | null`.
+- `workflow-form.tsx` gains a **per-step approver picker**: candidates load per
+  `(team, role)` scope via `listEligibleApprovers(team, roleId, workflow ?? "new")`
+  (memoised key `${team.id}:${roleId}`); editing pre-fills the step's current
+  approver; changing a step's role clears that step's approver; submit sends
+  `approver` per section. Footer now explains the one-chain-per-employee rule.
+- `team-member-list.tsx` (approval steps screen) scopes its picker to the team's
+  routing workflow (`team.workflow`); its test expectations updated.
+- **UI naming pass (same day):** the team page tab that holds the roster is
+  renamed from "Employees" to **"Members"** and its heading now says "Team
+  members" with a line that add/remove happens here and that membership alone
+  never places anyone on a workflow. The workflow form's normal-members note
+  now links to that Members tab and states the pool is drawn only from the
+  team's members. No new page — both surfaces live on the existing Team
+  Details and Workflow Configuration pages.
+
+**Verified.** Backend whole suite **1226 OK**, `makemigrations --check` clean.
+Frontend **470 tests OK** (+2 picker), `tsc --noEmit` clean, `eslint .` clean.
+
+**Notes / tricky classes.**
+- Two sources of "assigned to a chain" must agree everywhere: `Section.approver`
+  on active sections and `WorkflowMember` rows. `workflow_member_pool`,
+  `eligible-approvers`, `ensure_not_assigned_elsewhere`, and
+  `_ensure_member_not_assigned_elsewhere` all compute the same union minus wide
+  ids.
+- Frontend lint refuses `setState` synchronously inside an effect, so the
+  candidate effect returns early for an empty key pair instead of resetting
+  state there; new keys replace the whole `candidates` record in `.then`.
+- `roleIdByCode` is built in its own `useMemo` because it feeds another memo's
+  dependency array.
+
+## Completed — Creating a Team Lands on Its Members, Then Workflow Configuration (2026-10-07)
+
+User directive: "after creating a team the process should not go direct to
+approval steps but the process should go to adding team members first then it
+can go to configuring workflow." This matches the §9 required sequence (Team
+Details → Members → Add Team Member → Workflow Configuration). Not yet
+committed.
+
+**Frontend (`components/hr/team-form.tsx`).** Creating a team is now
+**details-only**:
+- The create wizard's page two (approval-steps/chain) is gone for a new team —
+  exactly one page asks what the team *is*, and the submit button reads
+  **"Create team"** instead of "Continue to approval steps". The team is
+  written as a **chainless draft** (no `new_workflow` in the payload), reusing
+  the draft-save branch the backend already supported.
+- After save the form redirects to the **new team's Members tab**
+  (`/dashboard/hr-admin/teams/<id>?tab=members`), not the teams list, so
+  employees are added before anyone is appointed. The approval chain is
+  configured afterwards from Overview → New workflow.
+- A hint under the create button states the Members-tab-first flow.
+- Editing is unchanged: the edit form keeps the two-page shape (details, then
+  the per-step chain that rewrites the team's routing workflow).
+- Dead create-only copy removed from page two (steps can no longer be reached
+  without a team), and the page-two render is now gated on `!team`.
+- `team-form.test.tsx`: create-path tests rewritten for the details-only flow
+  (payload has no `new_workflow`; exact key list excludes it; push expects
+  `/dashboard/hr-admin/teams/4?tab=members`); the no-longer-possible
+  create-wizard tests (step-description, draft-save-from-create) removed; two
+  chain tests that were exercising the create form now exercise the edit form,
+  which is where chain work happens.
+
+**Verified.** Frontend **468 tests OK** (net −2 create-wizard tests),
+`tsc --noEmit` clean, `eslint .` clean. Backend untouched.
+
+## Completed — Team Member Picker Is Category-Scoped and Never a Wide Approver (2026-10-07)
+
+User directive: the team-member picker must only show employees whose category
+matches the team (academic team → academic employees, administration team →
+administration employees), and the only people available to add are normal
+employees — wide approvers are excluded. When asked "what about a wide approver
+who is not yet listed?", the user chose **"Exclude wide approvers (no list, no
+add)"**: a wide approver is never offered in the add-member list, and the
+backend refuses adding one as a normal member. Not yet committed.
+
+**Backend — read (`users/views.py` `EmployeeViewSet.get_queryset`).** The
+employees endpoint now scopes its team=none answer for the roster picker:
+- `?category=<academic|administration>` keeps only employees of the team's kind.
+  An unknown value is ignored, not fatal.
+- `?not_wide_for_team=<id>` excludes `wide_approver_ids_for_team(team)` — the
+  institution-wide holders, this team's `TeamRoleAssignment` holders, and the
+  `CampusRoleAssignment` holders at the team's campus (when the team has one). A
+  missing team or a non-numeric id ignores the filter. The fallback is to offer
+  nothing the write will refuse.
+
+**Backend — write (`workflows/services.py` `add_team_member`).** The same two
+rules on the write path, so a stale or hand-typed request is refused rather than
+kept in sync by the UI alone:
+- category mismatch → `WorkflowMemberError` naming both kinds ("…is an
+  Academic employee, but "X" is an Administration team…");
+- wide approver for the team (any of the three holdings) → refused with "… is a
+  wide approver for this team, so they serve its steps from the Approvers tab
+  rather than as a normal member."
+- `_wide_approver_ids_for_team` was made **public** (`wide_approver_ids_for_team`)
+  so `users.views` can reuse the one canonical helper; call sites updated
+  (services.py, views.py-approved paths unchanged in behaviour).
+
+**Frontend.** `lib/employees.listUnassignedEmployees(category?, teamId?)` sends
+`category` + `not_wide_for_team`; the team page passes `team.category`/`team.id`.
+`TeamMembersPanel` copy now says the picker is scoped ("Only employees without a
+team who match this team's category are offered here, and never a wide
+approver") and the empty option reads "No employees to add to this team" instead
+of "No employees without a team".
+
+**Tests.** Backend `users/tests.py` (`EmployeeRosterFilterTests`: category
+keeps/excludes by kind, unknown category ignored, institution-/team-/campus-wide
+holders excluded per team and only per team, garbage/nonexistent id ignored) and
+`workflows/tests_workflow_members.py` (`TeamMemberManagementTests`: category
+mismatch refused, academic-on-academic accepted, institution-wide and campus-wide
+approvers refused, roster untouched after every refusal). Frontend
+`tests/employees-lib.test.ts` (new — query params + paging) and
+`tests/team-members-panel.test.tsx` (now asserts the scoped picker copy).
+
+**Verified.** Backend **1238 tests OK** (11 new), `makemigrations --check`
+clean. Frontend **472 tests OK** (70 files), `tsc --noEmit` clean, `eslint .`
+clean.
+
+---
+
+## Completed — User-id vs Record-id Mixup Fixed in HR Pickers (2026-10-07)
+
+**Reported:** "when i try to add a member to a team i experience this error: user:
+admin@luanar.mw has no employee record, so there is nothing to place on a team.
+Complete their employee record first." and "i'm unable to add a team wide
+holder/approver".
+
+**Root cause (two defects, one shared contract).** An `Employee` row from
+`EmployeeSerializer` carries its **record pk** as `id` and the linked **account**
+as `user_id`; every write that places a person into a `User`-keyed field
+(`/teams/<id>/members/` `user`, delegation `approver`/`delegate`,
+reassignment `to_approver`, and the holder picker) resolves against `User`.
+
+1. **Member add picker sent the record pk as a user pk.** `TeamMembersPanel`'s
+   add `<option>` used `value={person.id}` and POSTed it as `user`. When a
+   candidate's record pk coincided with another account's user pk (candidate
+   record pk 2, `admin@luanar.mw` user pk 2, no employee record), the backend
+   resolved to admin and refused with the reported "has no employee record"
+   message. Live check: sending `user_id` for the same person resolves correctly.
+2. **The Approvers-tab holder feed reused the roster's scoped candidates.**
+   The team page built `employees = [...members, ...candidates]`, and after the
+   category/wide-approver scoping work `candidates` excluded wide approvers and
+   category-mismatched employees. A team-wide holder **need not be a team
+   member** (`create_team_role_assignment` accepts any active employee with a
+   record), so genuine holder candidates silently vanished from the picker —
+   "unable to add a team wide holder". The feed is now the whole directory.
+
+**Fixed.**
+- `TeamMembersPanel` add picker options now carry `person.user_id`
+  (`frontend/components/hr/team-members-panel.tsx`).
+- Team Approvers tab feed `[...members, ...candidates]` → `listAllEmployees()`
+  (`frontend/app/(dashboard)/dashboard/hr-admin/teams/[id]/page.tsx`); the
+  category/wide filters remain scoped to the *members* picker only.
+- Same `user_id` correction in the delegation create/review (approver/delegate)
+  and reassignment (`to_approver`) pickers plus their candidate filters
+  (`delegation-form.tsx`, `delegation-review.tsx`, `reassignment-form.tsx`).
+
+**Tests.** All four tests' employee fixtures now use **distinct** `id`/`user_id`
+(together they coincided and masked the bug); `team-members-panel.test.tsx`
+adds the candidate with `user_id 99`/`id 30` and asserts `addTeamMember` is sent
+`99`. **Frontend 472 tests OK (70 files), `tsc --noEmit` clean, `eslint` clean.**
+Backend unchanged (the mismatch was client-side; the write refusals — "no
+employee record", category, insufficient scope — are correct behaviour).
+
+**Worth knowing.** Live DB still has three profile-less users
+(`root@luanar.ac.mw` pk 1, `admin@luanar.mw` pk 2, `hr@luanar.ac.mw` pk 3). They
+remain unoffered by every picker and refused by every write; appointing any of
+them requires completing their employee records first — by design.
+
+---
+
+## Completed — Team-wide Holder Save Sent `team: 0` (2026-10-07)
+
+**Reported:** "when i want to add the team wide approver by selecting approver
+button inside a team, it shows this error: team: Invalid pk \"0\" - object does
+not exist. but if i add team wide approver using approvers item in the sidebar i'm
+able to add the approver without the problem."
+
+**Root cause.** `WideHoldingPanel` only draws a scope picker when `scopeOptions`
+is non-empty, and only then validates. The team page (and the campus page)
+passed **neither** `scopeOptions` nor any fixed id — so no picker rendered,
+`scopeId` fell back to `Number(null || 0) = 0`, the `needsScope` guard never
+ran, and `POST /team-role-assignments/` received `team: 0` → the backend's
+`Invalid pk "0"`. The sidebar Approvers page worked because it passes
+`scopeOptions` (all teams / campuses), which turns both the picker and the guard
+on.
+
+**Fixed.**
+- `WideHoldingPanel` takes an optional fixed `scopeId` (the team or campus whose
+  page renders it): no picker is drawn — there is nothing to choose — and the id
+  travels with the write. `needsScope` now means "no fixed scope **and** there
+  are options to choose between".
+- Team page passes `scopeId={team.id}`; campus page passes `scopeId={campus.id}`.
+  The sidebar Approvers page is unchanged (`scopeOptions` = all teams/campuses).
+- The guard was widened from `needsScope && !scopeId` to
+  `scope !== "institution" && !scopeId`, so a scoped save with no id is refused
+  with "Choose the team/campus this holding applies to." in *any* state — pk 0
+  can no longer reach the backend from this panel.
+
+**Tests.** 3 new in `tests/wide-holding-panel.test.tsx`: fixed team scope saves
+with the page's team and draws no picker; fixed campus scope likewise; a scoped
+panel with neither fixed id nor options names the missing scope instead of
+sending pk 0.
+
+**Verified.** Frontend **475 tests OK (70 files)**, `tsc --noEmit` clean, `eslint`
+clean. Backend untouched. Still uncommitted, together with the earlier
+user-id/record-id picker fix.
+
+## Completed — Wide Approvers Are the Same Category as the Teams They Cover (2026-10-07)
+
+**Requested:** "campus wide and team wide approvers under Academic should be
+employees under Academic wide category" — i.e. a wide approver must belong to
+the same half of the institution they hold a role for.
+
+**Rule.** A **team-wide** holder must match the team's category (an academic
+team takes an Academic holder, an administration team an Administration
+holder). A **campus-wide** holder must be an Academic employee, because every
+team at a campus is academic (the model refuses an administration team with a
+campus — architecture §12.x), so a campus holding is always an academic-team
+holding. Institution-wide holdings are unchanged: they already serve only
+administration teams and carry no category restriction.
+
+**Backend (the hard rule).** `create_team_role_assignment` refuses with
+`RoleActionError("user", … " is an Academic employee, but "X" is an
+Administration team.")` when `user.employee_profile.category != team.category`; `create_campus_role_assignment`
+refuses non-Academic holders the same way. Raised *after* `_ensure_wide_role`,
+so the profile-existence check still runs first. Both surface as a 400
+`{"user": [...]}` through the existing `RoleActionError` → `Response` handling
+in the team/campus role-assignment viewsets.
+
+**Frontend (offer only what the write accepts).** `listAllEmployees(category?)`
+gains the `?category=` filter (server-side, same pattern as the roster read);
+`ScopeOption` carries `category`; `WideHoldingPanel` takes `requiredCategory`
+and filters `candidates` by the fixed scope's category *or* the chosen scope
+option's, using a controlled scope select.
+- Team page: Approvers feed becomes `listAllEmployees(team.category)` and the
+  panel gets `requiredCategory={team.category}`.
+- Campus page: feed becomes `listAllEmployees("academic")` and the panel
+  `requiredCategory="academic"`.
+- Sidebar Approvers page: `teamOptions`/`campusOptions` carry each option's
+  category (teams from `team.category`, campuses `"academic"`), institution
+  panels keep the full directory. The team/campus panels filter per-option
+  (the one place a client-side per-option filter is unavoidable: one shared
+  select serves teams of both categories).
+
+**Tests.** Backend: `tests_workflow_members.py::WideHolderCategoryTests` — 4 new
+(academic holder refused on an administration team, matching-category holder
+accepted, administration holder refused on a campus, academic holder accepted).
+Frontend: 4 new in `wide-holding-panel.test.tsx` (fixed team category, fixed
+campus academic, person list follows chosen team's category, campus academic
+once a campus is chosen).
+
+**Verified.** Backend workflows suite green (members module 50 tests, including
+the 4 new). Frontend **479 tests OK (70 files)**, `tsc --noEmit` clean,
+`eslint` clean. Still uncommitted with the batch above.
+
+## Completed — Wide Approvers Choose Their Role From a Drop Down (2026-10-07)
+
+**Requested:** "when assigning wide approvers, the role name should be selected
+from the drop down" — i.e. assigning a wide approver names the role first, in a
+select, instead of the Approvers page repeating the whole form once per role.
+
+**Change.** `WideHoldingPanel` is now one form per scope (institution, team,
+campus), not one form per role:
+- Props became `{ scope, roles, scopeOptions?, scopeId?, requiredCategory?,
+  employees, holdings }` — the single `role` prop is gone. The Role drop down
+  offers the roles valid at that scope: the institution panel shows every
+  active role, the team/campus panels only scoped roles
+  (`activeRoles.filter(r => !r.is_institution_wide)`), which also stops a role
+  that would be refused (an institution-wide role can't be held at a team or
+  campus) from appearing in a team/campus picker.
+- The person select is disabled until a role is chosen; candidates are the
+  scope's category (fixed `requiredCategory` or the chosen `ScopeOption.category`)
+  minus the people who already hold the chosen role at that scope. Empty
+  candidates reads "Every active matching employee already holds {role} here."
+- Holdings list shows `role_label · user_name` with a Remove per row; a save
+  replaces that role's holder at the chosen scope, with a footnote on the
+  Approvers page saying so.
+- Approvers page: flattened `institutionByRole`/`teamByRole`/`campusByRole`
+  into `institutionHoldings`/`teamHoldings`/`campusHoldings`, dropped
+  `groupByRole`, and renders one grid of three panels with the scope filters.
+  Team/campus pages each render a single panel with fixed `scopeId`.
+- Form `id`s per scope (`role-${scope}`, `scope-${scope}`, `holder-${scope}`) so
+  the three panels' selects never collide.
+
+**Tests.** `wide-holding-panel.test.tsx` rewritten for the new API — 22 tests:
+role drop-down contents, per-scope remove collections (institution/team/campus),
+institution write with no scope picker, team picker requires the team,
+campus write with chosen campus, fixed `scopeId` writes with no picker (the
+pk-0-guard regression), missing-scope guard, no-role / no-person refusals,
+holder-of-the-role excluded live, empty-candidates message, inactive excluded,
+fixed team category / campus academic, person list follows chosen team's
+category, campus academic once chosen, no-roles placeholder, server refusal
+stays usable.
+
+**Verified.** Full frontend suite **481 tests OK (70 files)**, `tsc --noEmit`
+clean, `eslint` clean. Backend untouched. Uncommitted (see the batch below).
+
+## Completed — A Person Holds Only One Wide Approver Role (2026-10-07)
+
+**Requested:** "ensure that when a person is assigned a wide approver, that
+person must not appear again in other wide approver sections" — i.e. once
+somebody is a wide approver anywhere, they must not be offered (or appointed)
+again anywhere else.
+
+**Rule.** One wide approver per person, across all three scopes. Once Jane is
+the Dean team-wide on one team, she is gone from every other wide-approver
+picker — institution, any other team, any campus — and the writes refuse a
+second holding, naming the existing one. The same role at the same scope stays
+writable in place (that is the holding, not a second one), so re-pointing a
+holder still works.
+
+**Backend (the hard rule).** `_ensure_single_wide_holding` added to all three
+creates:
+- `create_role_assignment` — refuses a user who holds any team- or campus-wide
+  holding, or a *different* institution-wide role (same-role re-save still hits
+  the existing "already holds X role" path).
+- `create_team_role_assignment` — refuses a user with any wide holding except
+  the (team, role) pair this write is replacing.
+- `create_campus_role_assignment` — same, excluding the (campus, role) pair.
+
+Message: "A person may hold only one wide approver role, and {name} already
+holds {role} institution-wide / as a team-wide approver on {team} / as a
+campus-wide approver at {campus}. Remove that holding before assigning another
+one." Surfaces as a 400 `{"user": [...]}` through the existing
+`RoleActionError` → `Response` handling.
+
+**Frontend (offer only what the write accepts).** `WideHoldingPanel` gains
+`excludedUserIds?: number[]` and filters candidates by it (in addition to the
+same-role-here and category rules); the empty-person message now reads "Every
+active matching employee already holds a wide approver role here or elsewhere."
+Each page feeds the union of every holder's user id:
+- Approvers page: `[...institution, ...team, ...campus]` (read unfiltered, so a
+  holder is excluded even when the scope chips filter a panel down).
+- Team page: reads `listRoleAssignments()`, `listTeamRoleAssignments()`,
+  `listCampusRoleAssignments()` and unions them (its own holdings are filtered
+  out of the list, not the pool).
+- Campus page: same, with `listCampusRoleAssignments()` read unfiltered.
+
+**Tests.** Backend: `WideHolderSingleRoleTests` — 9 new (institution holder
+refused team-wide; team-wide refused institution-wide; team-wide refused a
+second role on the same team; institution holder refused a second institution
+role; team-wide refused campus-wide; campus holder refused team-wide elsewhere;
+re-saving the same (team, role) still says "already holds", not the single-role
+message; replacement with a fresh person allowed; replacement with an
+institution-wide person refused). Frontend: 2 new — a person who holds a wide
+role elsewhere is not offered; the person list hides when every candidate is
+already wide.
+
+**Verified.** Backend non-migration workflows suite **555 tests OK** (546 +
+9), `makemigrations --check` clean. Frontend **483 tests OK (70 files)**,
+`tsc --noEmit` clean, `eslint` clean. Uncommitted with the role-dropdown batch.
+
+## Defect Fix (2026-10-07) — workflow detail crashed reading `section.memberships`
+
+**Reported:** "Cannot read properties of undefined (reading 'filter')" on
+`teams/[id]/workflows/[workflowId]`, at `section.memberships.filter(...)`.
+
+**Root cause.** `SectionSerializer.memberships` (`SectionMemberSerializer`,
+`many=True`) declared no `source`, but the reverse relation on `SectionMember`
+is named `members`, not `memberships`. DRF resolves a read-only field that
+cannot be read from the instance as "skipped", so the API payload never
+contained the key and the chain screen crashed on `undefined.filter`.
+
+**Fix.** `Section.memberships` property added to the model, serving the full
+period record from `SectionMember.all_objects` (open *and* closed rows, in
+`effective_from` order) so the existing field serializes as designed — the
+explained contract: closed periods are how "who held this step in March" stays
+answerable. Unstaffed steps now emit `memberships: []`, never miss the key.
+
+**Tests.** `WorkflowDetailMembershipSerializationTests` — 2 new: every section
+of the workflow detail emits a `memberships` key (regression for the crash),
+and a staffed step lists its effective holder. Backend non-migration workflows
+suite now **557 tests OK**, `makemigrations --check` clean (property only, no
+schema change).
+
+## Defect Fix (2026-10-07) — workflow detail rendered the resolution object
+
+**Reported:** "Objects are not valid as a React child (found: object with keys
+{source, automatic, user, user_name, label})" on
+`teams/[id]/workflows/[workflowId]`. Surfaced once the previous `memberships`
+fix let the chain render further.
+
+**Root cause.** `SectionSerializer.get_resolution` returns that object (the
+backend's decided answer: where the approver comes from, the label, and the
+person), but the frontend typed `WorkflowSection.resolution` as `string` and
+passed it through `sectionResolutionLabel`, which treated it as an unknown
+string code and fell back to returning the object itself as a React child.
+
+**Fix.** Frontend only. `WorkflowSectionResolution` type added to
+`lib/workflows.ts` matching the read contract (`source`, `automatic`, `user`,
+`user_name`, `label`); `WorkflowSection.resolution` retyped to it; the chain
+page renders `section.resolution.label` plus the resolved person's name when
+there is one, instead of `sectionResolutionLabel(section.resolution)`. That
+helper's vocabulary ("staffed" / "team_wide") never matched the workflow
+endpoint's; it remains only for the unrelated `TeamSection` summary, which the
+backend does not populate with a resolution.
+
+**Verified.** Frontend `tsc --noEmit` clean, `eslint` clean, **483 tests OK
+(70 files)**. No backend change.
+
+## Defect Fix (2026-10-07) — every Edit Steps save refused (`PATCH /api/v1/workflows/1/` → 400)
+
+**Reported:** `"PATCH /api/v1/workflows/1/ HTTP/1.1" 400 94` — the Edit Steps
+screen could not save anything.
+
+**Root cause.** The workflow edit form restates the team it is editing under
+(`workflow-form.tsx` sends `team: team.id` on every PATCH, a deliberate part of
+the frontend contract: "the field is sent so the refusal, when it comes, is the
+one that names the rule rather than a missing field"). But
+`WorkflowWriteSerializer.validate` refused **any** `team` on update — even the
+workflow's own team — so every save returned
+`{"team":["A workflow cannot be moved between teams. ..."]}` (exactly the
+94-byte body).
+
+**Fix.** Backend only. On update the serializer now accepts `team` when it names
+the workflow's current owner (confirmation — discarded, never rewritten) and
+still refuses any other team, or null, with the same "cannot be moved" message.
+The refusal rule is unchanged; only the false positive is gone. Docstring
+updated to state the accepted-confirmation behaviour.
+
+**Tests.** `test_an_edit_may_restate_its_own_team` added (PATCH with the owning
+team → 200, owner unchanged); the existing
+`test_a_chain_cannot_be_moved_to_another_team` still passes (other team → 400).
+Reproduced the reported request against the live workflow: **200** after fix
+(previously 400). Backend `tests.py` + `tests_team_configuration` +
+`tests_workflow_members` = **298 tests OK**. No frontend change.
+
+## Completed (2026-10-07) — Institution-wide steps staff themselves in the Edit Steps picker
+
+The Edit Steps form now mirrors the backend's appointment rule the moment an
+institution-wide role is chosen, instead of showing "Not appointed yet" for a
+step the save path has already decided.
+
+**Why it matters.** `_appoint_institution_wide_holder` already appoints the
+role's single holder at save, but only on administration teams. The gap was
+pre-view: HR saw an empty Approver field, picked a person (or left it), and the
+answer arrived later. The form now shows the answer on first draw, and matches
+the write rule **exactly** so what the screen promises is what the save accepts:
+
+* only an institution-wide role fills anything;
+* only an administration team (an academic team may not use an institution-wide
+  approver — `ensure_team_eligibility` refuses it at save, so auto-filling there
+  would build a guaranteed 400);
+* only when there is exactly one holder (multiple holders is the ambiguity the
+  backend leaves unstaffed rather than guesses at).
+
+**The approver is locked to that holder.** An institution-wide role has one true
+approver — its single institution-wide holder — so once such a role is chosen
+the Approver field is read-only: it shows the holder's name with a lock hint
+("Locked to the institution-wide holder of this role.") and no other name can be
+selected. The submitted section is exactly that holder. The lock applies on
+first draw, in `changeRole`/`addStep`, and covers an *edited* chain too: a step
+whose role is institution-wide and solely held is corrected in the form even if
+a different person was appointed before the rule existed — the wide holder wins.
+Without a single holder the field stays a normal picker, because then there is
+no "approver's name" to show and HR may still staff the step (the backend
+validates, and academic teams remain unstaffed).
+
+**Implementation.** The form reads holdings through a new client-safe reader
+`listRoleAssignments()` in `approver-roles-client.ts` (a
+`/api/hr/role-assignments/` GET proxy was required — the server-only reader in
+`approver-roles.ts` goes through `next/headers`, and value-importing it would
+have put the server module into the client bundle, which the
+`server-only-imports` guard refuses). The fill happens on first draw (when
+holdings arrive) and in `changeRole`/`addStep` (event handlers) so a role picked
+after load fills inline. The empty-lone-holder map is exactly one-holder-per-role
+and carries the holder's name for the locked read-only display.
+
+**Second request in the same pass: a role must not be reused across steps.**
+Already enforced at every layer — the client `repeatedRole()` blocks the save,
+`normalize_section_sequence` refuses server-side, and the
+`section_workflow_role_unique` constraint holds at the database. The only
+remaining gap was UX: the dropdown still *offered* an already-used role and only
+errorred at save. The role `<option>` for a role already sitting on another step
+is now `disabled` and labelled "— used in step N", so the chain cannot even be
+described twice with one office. The save-time guard stays as the backstop.
+
+**Tests.** `workflow-form-members.test.tsx`: 4 new tests — a single holder
+locks the approver to their name (no picker shown) and submits exactly that id,
+stays unstaffed with two holders, stays unstaffed on an academic team, and a
+role used on step 1 is disabled on step 2. Frontend **488 tests / 70 files OK**;
+`tsc --noEmit` and `eslint` clean. No schema change.
+
+## Defect Fix (2026-10-07) — roles table said "No holder" for a role that has one
+
+**Reported.** On the Approver Roles page, the Registrar row showed its usage
+("Nama Dingo, who holds it institution-wide", "the 'netwoks workflow' workflow
+(1 section and 1 member)") while the Institution-wide holders column read
+"No holder — applications reaching this role have nobody to approve".
+
+**Root cause.** `WorkflowRoleTable`'s holders column is fed a
+`assignments: Record<roleId, RoleAssignment[]>` map, but the roles page passed
+a hard-coded `assignments={{}}`. The column therefore always answered "No
+holder", contradicting the backend usage lines and, for a live role held
+institution-wide, loudly claiming applications would stall.
+
+**Fix.** The roles page now loads the institution-wide assignments
+(`listRoleAssignments()`) alongside the roles and passes them keyed by role id,
+so the column shows the actual holder (with its Remove control) or a genuine
+"No holder" warning only for an active role with nobody holding it. If that
+fetch fails the page says so, and the column renders "Could not load the
+holders" rather than repeating the hold-less lie. Later the table grew to show
+team- and campus-wide holders too, at their own scope — see the 2026-10-08
+entry below.
+
+**Tests.** `approver-role-table.test.tsx`: new case — `assignments={undefined}`
+shows "Could not load the holders" and not "nobody to approve". Existing
+holder/no-holder/retired cases unchanged and green. Frontend eslint + `tsc`
+clean.
+
+## Completed (2026-10-08) — A role's scope lives where it is held, and the roles table says so
+
+**What changed.** The "Institution-wide role" checkbox is gone from the role
+editor (`/roles/<id>/edit`). A role's scope is decided by where it is held, on
+the Approvers page: assigning a role its **first institution-wide holder** is
+what makes it institution-wide — the same save promotes the role
+(`create_role_assignment` sets `is_institution_wide=True` atomically with the
+holding). PATCHing scope from the role endpoint is refused
+(`update_approver_role` returns "A role's scope is decided on the Approvers
+page..."), so there is exactly one way to make a wide role and it is the one HR
+already looks in.
+
+**Why the editor had to lose it.** The edit page was the *only* place the flag
+could be set, and it sat beside fields that genuinely belong to the role — so a
+Registrar-type decision looked editable next to "decides cancellations", and a
+campus-held "Campus Registrar" could read as mis-configured. Moving it to the
+Approvers page ties the scope to the holding that gives it meaning.
+
+**Guards.** Promotion is refused while the role is still held team-wide or
+campus-wide (`create_role_assignment` → "already held on a team or campus.
+Remove those holders under Approvers first"). Promotion is one-way: removing an
+institution holder does not silently demote the role, so a deliberately-wide
+role stays wide until HR explicitly re-purposes it (it simply reads "No holder"
+again, never a silent team role). The institution panel on the Approvers page
+now offers only roles that are already institution-wide or not wide at any
+scope, so a guaranteed-400 choice is off the menu.
+
+**The roles table now reports the real scope.** The "Scope" column is derived
+from the holdings, not a stale flag label: an institution-wide role reads
+"Institution-wide", a role with a campus-wide holder reads "Campus-wide", one
+with a team-wide holder reads "Team-wide", and only a role nobody holds wide
+reads "Team role". The holders column lists every wide holder at every scope —
+`user_name — team/campus name` for scoped holdings, with the same Remove
+control the institution holder has — so "Champus Registrar held at a campus"
+reads as exactly that instead of "Team role / Staffed through team
+membership". The roles page now reads all three assignment lists and the team
+and campus name maps to name the scopes.
+
+**Tests.** Backend: `tests_teams.py` — granting a team role its first
+institution holder promotes it (201, role flipped, promotion audited); a role
+held on a team is refused at the institution scope (400, role stays team).
+`tests_roles.py` — PATCHing scope is refused with the Approvers message, and an
+unchanged scope sent alongside a real edit stays harmless. Frontend:
+`approver-role-form.test.tsx` — no scope control on create or edit, and the
+update payload never carries `is_institution_wide`; `approver-role-table.test.tsx`
+— Team-wide and Campus-wide scope reads with their holder names, and scoped
+Remove calls the right endpoint. Full suites: backend **1256 OK**, frontend
+**490 OK**; eslint + `tsc --noEmit` clean.
+
+## Completed (2026-10-08) — An institution-wide role is assigned to one approver, never a second
+
+**What changed.** Once a role has an institution-wide holder, assigning that
+role to a different person is refused, naming the current holder:
+`create_role_assignment` raises `"<role>" is already held institution-wide by
+<name>. A role has one institution-wide approver; remove that holder under
+Approvers first, then assign another.` The Approvers institution panel also
+stops offering a role that already has a holder — the rule is enforced on the
+one real write path (the service the API calls), and the picker hides the
+guaranteed-400 choice before HR can make it. Changing a holder is therefore
+remove first, then assign.
+
+**Where the rule stops.** Institution-wide only. A team or campus role keeps one
+holder per team/campus and stays offered at other teams and campuses, so the
+same role may still be held by different people at different places — that is
+what the per-place rule (`(team, role)` / `(campus, role)` uniqueness) covers,
+and it is unchanged. The panel's footer copy now says exactly this instead of
+the old blanket "saving replaces that role's current holder at the chosen
+scope", which stopped being true for the institution scope.
+
+**A DB constraint was deliberately not added.** The write path is a single
+service — the same place the promotion guard and the one-wide-role-per-person
+rule already live — while a `unique(role)` constraint would (a) refuse migration
+on any deployment already carrying two institution holders, and (b) rule out a
+state the product still supports: several approvers of one role through section
+members, and the legacy rows the resolver still reads as an ambiguity to leave
+unstaffed rather than auto-decide. In production the service is the only code
+that creates a holding.
+
+**Auto-appointment became deterministic.** With at most one institution holder
+creatable, a held role's step always staffs its single holder; a never-held role
+still reads unstaffed. The old "two holders leave the step for HR to choose"
+test is replaced by the refusal itself — the ambiguity it pinned can no longer
+be created.
+
+**Tests.** Backend `tests_teams.py`: the service refuses a second holder and the
+chain still auto-appoints the first; API-level, the second grant is a 400
+carrying "already held institution-wide by", with one holding left and the
+refused person still not an approver. Frontend `wide-holding-panel.test.tsx`: the
+institution role drop down omits a role that has a holder (and still lists that
+holder with Remove), and all-held says "Remove a holder first" with no form; the
+person-exclusion tests that used a held institution role moved to team scope,
+where a held role is still offerable. Full suites: backend **1257 OK**,
+frontend **492 OK**; eslint + `tsc --noEmit` clean; `makemigrations --check`
+clean.

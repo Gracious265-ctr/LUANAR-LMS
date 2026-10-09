@@ -10,7 +10,7 @@ import { FadeIn } from "@/components/motion/FadeIn";
  *
  * This is the top of the provisioning chain: a deployment is bootstrapped with
  * one superuser (created outside the product), and every HR account that then
- * configures departments, roles, teams, and workflows is created here. Nothing
+ * configures roles, teams, and workflows is created here. Nothing
  * on this page is seeded. Create and edit happen in an overlay on this list;
  * the old `new` and `[id]/edit` routes redirect here.
  */

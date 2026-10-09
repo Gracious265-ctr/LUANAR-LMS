@@ -44,7 +44,6 @@ export function EmployeeTable({
         <TableRow>
           <TableHead>Name</TableHead>
           <TableHead>Email</TableHead>
-          <TableHead>Department</TableHead>
           <TableHead>Designation</TableHead>
           <TableHead>Category</TableHead>
           <TableHead>Grade</TableHead>
@@ -72,9 +71,6 @@ export function EmployeeTable({
               </Link>
             </TableCell>
             <TableCell className="text-text-secondary">{employee.email}</TableCell>
-            <TableCell className="text-text-secondary">
-              {employee.department_name || "—"}
-            </TableCell>
             <TableCell className="text-text-secondary">
               {employee.designation || "—"}
             </TableCell>

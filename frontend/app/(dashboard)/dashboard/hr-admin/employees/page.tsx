@@ -9,15 +9,10 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import type { Department } from "@/lib/departments";
-import { listDepartments } from "@/lib/departments";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion/FadeIn";
-
-const DEPARTMENTS_ERROR =
-  "Departments could not be loaded, so this employee cannot be placed in one. Reload the page, or create a department first.";
 
 export default async function EmployeesPage({
   searchParams,
@@ -45,20 +40,12 @@ export default async function EmployeesPage({
   }
 
   // The create overlay needs its option set on the page. Teams are filled from
-  // the team side, so the only options here are departments and the grade list,
-  // which comes from the entitlements rather than being typed, because a grade
-  // that no entitlement uses is silently ignored downstream.
-  const [departmentsResult, gradeOptions] = await Promise.all([
-    // A department is reference data now, so the create overlay needs the list
-    // up front; a failed fetch is surfaced rather than silently offering none.
-    listDepartments().then(
-      (value) => ({ value, error: "" }),
-      () => ({ value: [] as Department[], error: DEPARTMENTS_ERROR })
-    ),
-    listEntitlements()
-      .then((entitlements) => gradeOptionsFromEntitlements(entitlements.results))
-      .catch(() => [] as string[]),
-  ]);
+  // the team side, so the only option here is the grade list, which comes from
+  // the entitlements rather than being typed, because a grade that no
+  // entitlement uses is silently ignored downstream.
+  const gradeOptions = await listEntitlements()
+    .then((entitlements) => gradeOptionsFromEntitlements(entitlements.results))
+    .catch(() => [] as string[]);
 
   return (
     <FadeIn>
@@ -75,8 +62,6 @@ export default async function EmployeesPage({
             employees={employees?.results ?? []}
             totalCount={employees?.count ?? 0}
             gradeOptions={gradeOptions}
-            departments={departmentsResult.value}
-            departmentsError={departmentsResult.error}
             search={query}
             error={error}
             filter={
@@ -93,7 +78,7 @@ export default async function EmployeesPage({
                   <Input
                     name="search"
                     defaultValue={query}
-                    placeholder="Search name, email, department..."
+                    placeholder="Search name, email, team..."
                     className="pl-9 pr-3"
                   />
                 </div>

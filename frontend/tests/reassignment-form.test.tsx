@@ -20,17 +20,28 @@ vi.mock("@/lib/reassignments-client", async (importOriginal) => {
 import { reassignApplication } from "@/lib/reassignments-client";
 
 // The approvers here hold their positions as data, and their accounts carry no
-// special role: that is the shape the pickers now have to cope with.
+// special role: that is the shape the pickers now have to cope with. User ids
+// differ from record ids, because the form writes user ids.
 const employees: Employee[] = [
-  makeEmployee({ id: 3, full_name: "Jane Dean", approver_roles: ["dean"] }),
-  makeEmployee({ id: 5, full_name: "Bob HOD", approver_roles: ["hod"] }),
-  makeEmployee({ id: 8, full_name: "Sam Staff", approver_roles: [] }),
+  makeEmployee({
+    id: 3,
+    user_id: 30,
+    full_name: "Jane Dean",
+    approver_roles: ["dean"],
+  }),
+  makeEmployee({
+    id: 5,
+    user_id: 50,
+    full_name: "Bob HOD",
+    approver_roles: ["hod"],
+  }),
+  makeEmployee({ id: 8, user_id: 60, full_name: "Sam Staff", approver_roles: [] }),
 ];
 
 const application: PendingApplication = {
   id: "app-1",
   reference_number: "LUANAR-2026-0001",
-  employee: 8,
+  employee: 60,
   employee_name: "Sam Staff",
   leave_type_name: "Annual",
   start_date: "2026-10-01",
@@ -55,7 +66,7 @@ describe("ReassignmentForm", () => {
       employee_name: "Sam Staff",
       from_approver: null,
       from_approver_name: "",
-      to_approver: 3,
+      to_approver: 30,
       to_approver_name: "Jane Dean",
       reason: "Urgent case",
       decided_by: 1,
@@ -106,9 +117,9 @@ describe("ReassignmentForm", () => {
         employees={employees}
         application={{
           ...application,
-          current_approver: 3,
+          current_approver: 30,
           current_approver_name: "Jane Dean",
-          acting_approver: 5,
+          acting_approver: 50,
           acting_approver_name: "Bob HOD",
           is_delegated: true,
         }}
@@ -126,9 +137,9 @@ describe("ReassignmentForm", () => {
         employees={employees}
         application={{
           ...application,
-          current_approver: 3,
+          current_approver: 30,
           current_approver_name: "Jane Dean",
-          acting_approver: 3,
+          acting_approver: 30,
           acting_approver_name: "Jane Dean",
         }}
       />
@@ -141,7 +152,7 @@ describe("ReassignmentForm", () => {
     const user = userEvent.setup();
     render(
       <ReassignmentForm
-        application={{ ...application, current_approver: 3, current_approver_name: "Jane Dean" }}
+        application={{ ...application, current_approver: 30, current_approver_name: "Jane Dean" }}
         employees={employees}
       />
     );
@@ -172,7 +183,7 @@ describe("ReassignmentForm", () => {
 
     expect(reassignApplication).toHaveBeenCalledWith({
       application: "app-1",
-      to_approver: 3,
+      to_approver: 30,
       reason: "Urgent case",
     });
   });

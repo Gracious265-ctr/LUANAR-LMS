@@ -19,7 +19,6 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from documents.models import ApprovedLeaveDocument
 from documents.tasks import render_approved_document
-from workflows.testing import department_for
 from leave.cancellations.models import LeaveBalanceTransaction
 from leave.cancellations.services import decide_cancellation, submit_cancellation
 from leave.models import ApplicationRevision, LeaveApplication
@@ -116,18 +115,13 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.dean = make_user("dean@luanar", role="dean", first_name="Dena")
 
         self.stub.register_employee(self.employee)
-        # The department the team belongs to, which is also what scopes who may
-        # be appointed to its steps. The approvers need employee records in it.
-        self.department = department_for("Administration")
+        # The approvers need employee records; the team they belong to is the
+        # one HR configures next, so their profiles are placed on it afterwards.
         for approver in (self.supervisor, self.hod, self.registrar, self.dvc):
-            EmployeeProfile.objects.update_or_create(
-                user=approver,
-                defaults={"department": self.department},
-            )
+            EmployeeProfile.objects.update_or_create(user=approver, defaults={})
         self.employee_profile = EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
-            department=self.department,
             grade="B",
             category=EmployeeProfile.Category.ADMINISTRATION,
         )
@@ -136,6 +130,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.team = self.hr_creates_team(CHAIN, self.chain_roles)
         self.chain = {"id": self.team["workflow"]}
         self.team_id = self.team["id"]
+        self.place_approvers_on_team()
         self.place_employee_on_team()
 
     def capture_events(self):
@@ -167,9 +162,9 @@ class EndToEndBase(StubProviderMixin, TestCase):
         This is the whole configuration sequence as the product now asks for it:
         one request describes the team *and* the approval steps it follows,
         because a chain is not a thing HR creates apart from a team. Each step
-        names one approver, and the team names the department they are eligible
-        from. The team is then activated \u2014 a validated step, so a configuration
-        still being built cannot affect anyone's application.
+        names one approver, and the team they belong to is what scopes them. The
+        team is then activated — a validated step, so a configuration still being
+        built cannot affect anyone's application.
 
         Going through the real endpoints keeps the journey honest: an
         activation the API refuses fails this test rather than being papered
@@ -181,7 +176,6 @@ class EndToEndBase(StubProviderMixin, TestCase):
             {
                 "name": "Administration team",
                 "description": "Administration approval chain",
-                "department": self.department.id,
                 "new_workflow": {
                     "name": "Administration chain",
                     "sections": [
@@ -204,6 +198,24 @@ class EndToEndBase(StubProviderMixin, TestCase):
         )
         self.assertEqual(activated.status_code, 200, activated.data)
         return response.data
+
+    def place_approvers_on_team(self):
+        """Put the chain's approvers on the team, the way HR does it.
+
+        A step's approver is scoped by the team they sit on — that is what
+        ``same_team`` history breadth and the eligibility question are both read
+        from — so the journey places them there before anything is decided.
+        """
+        self.client.force_authenticate(user=self.hr)
+        for approver in self.chain_approvers:
+            profile = approver.employee_profile
+            response = self.client.patch(
+                f"/api/v1/employees/{profile.id}/",
+                {"team": self.team_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            approver.refresh_from_db()
 
     def place_employee_on_team(self):
         """Put the applicant on the team, the way HR does it."""

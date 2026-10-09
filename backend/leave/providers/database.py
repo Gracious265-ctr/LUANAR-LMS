@@ -123,7 +123,7 @@ class DatabaseRulesProvider:
             grade=grade,
             appointment_date=profile.appointment_date,
             category=profile.category or None,
-            department_id=None,
+            team_id=None,
             gender=(profile.gender or "") or None,
         )
 

@@ -7,16 +7,9 @@ import {
   createPublicHoliday,
   updateFinancialYear,
 } from "@/lib/financial-years-client";
-import type { Department } from "@/lib/departments";
-import {
-  createDepartment,
-  retireDepartment,
-  updateDepartment,
-} from "@/lib/departments-client";
 import type { LeaveType } from "@/lib/leave-rules";
 import { createLeaveType, updateLeaveType } from "@/lib/leave-rules-client";
 
-import { DepartmentsSection } from "@/components/hr/DepartmentsSection";
 import { FinancialYearsSection } from "@/components/hr/FinancialYearsSection";
 import { HolidaysSection } from "@/components/hr/HolidaysSection";
 import { LeaveTypesSection } from "@/components/hr/LeaveTypesSection";
@@ -40,16 +33,6 @@ vi.mock("@/lib/leave-rules-client", async (importOriginal) => {
   return { ...actual, createLeaveType: vi.fn(), updateLeaveType: vi.fn() };
 });
 
-vi.mock("@/lib/departments-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/departments-client")>();
-  return {
-    ...actual,
-    createDepartment: vi.fn(),
-    updateDepartment: vi.fn(),
-    retireDepartment: vi.fn(),
-  };
-});
-
 vi.mock("@/lib/financial-years-client", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/financial-years-client")>();
@@ -64,33 +47,11 @@ vi.mock("@/lib/financial-years-client", async (importOriginal) => {
 const leaveTypes: LeaveType[] = [
   { id: 1, name: "Annual leave", code: "annual" },
   { id: 2, name: "Maternity leave", code: "maternity" },
+  { id: 3, name: "Study leave", code: "study" },
 ];
 
 const holidays: PublicHoliday[] = [
   { id: 4, name: "Independence Day", date: "2026-03-04" },
-];
-
-const departments: Department[] = [
-  {
-    id: 3,
-    name: "ICT",
-    is_active: true,
-    team_count: 2,
-    employee_count: 5,
-    teams: [],
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: 4,
-    name: "Physics",
-    is_active: false,
-    team_count: 0,
-    employee_count: 0,
-    teams: [],
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  },
 ];
 
 const years: FinancialYear[] = [
@@ -108,12 +69,6 @@ describe("HR admin form overlays", () => {
     vi.mocked(createPublicHoliday).mockResolvedValue(holidays[0]);
     vi.mocked(createFinancialYear).mockResolvedValue(years[0]);
     vi.mocked(updateFinancialYear).mockResolvedValue(years[1]);
-    vi.mocked(createDepartment).mockResolvedValue(departments[0]);
-    vi.mocked(updateDepartment).mockResolvedValue(departments[0]);
-    vi.mocked(retireDepartment).mockResolvedValue({
-      ...departments[0],
-      is_active: false,
-    });
   });
 
   describe("LeaveTypesSection", () => {
@@ -189,10 +144,10 @@ describe("HR admin form overlays", () => {
       rerender(<LeaveTypesSection leaveTypes={leaveTypes} />);
       expect(screen.getByLabelText("Name")).toHaveValue("Maternity leave");
 
-      searchParamsRef.current = new URLSearchParams("leaveType=1");
+      searchParamsRef.current = new URLSearchParams("leaveType=3");
       rerender(<LeaveTypesSection leaveTypes={leaveTypes} />);
 
-      expect(screen.getByLabelText("Name")).toHaveValue("Annual leave");
+      expect(screen.getByLabelText("Name")).toHaveValue("Study leave");
     });
 
     it("refetches and closes after a create, without navigating away", async () => {
@@ -235,176 +190,6 @@ describe("HR admin form overlays", () => {
     });
   });
 
-  describe("DepartmentsSection", () => {
-    beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/departments";
-    });
-
-    it("renders the table with no overlay open", () => {
-      render(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByRole("button", { name: "New department" })).toBeInTheDocument();
-      expect(screen.queryByRole("dialog")).toBeNull();
-      expect(screen.getByText("2")).toBeInTheDocument();
-    });
-
-    it("keeps the row name a real link to the old edit route", () => {
-      render(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByRole("link", { name: "ICT" })).toHaveAttribute(
-        "href",
-        "/dashboard/hr-admin/departments/3/edit"
-      );
-    });
-
-    it("turns the pencil into a button that targets the row id", () => {
-      render(<DepartmentsSection departments={departments} />);
-
-      // The point of the change: the pencil stops being a navigation and starts
-      // being a dialog, so it must push the overlay param and not a route.
-      fireEvent.click(screen.getByRole("button", { name: "Edit ICT" }));
-
-      expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/departments?department=3"
-      );
-    });
-
-    it("opens a create form from the trigger", () => {
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.click(screen.getByRole("button", { name: "New department" }));
-
-      expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/departments?department=new"
-      );
-    });
-
-    it("seeds edit mode from the row already on screen, with no fetch", () => {
-      searchParamsRef.current = new URLSearchParams("department=3");
-      render(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(screen.getByLabelText("Name")).toHaveValue("ICT");
-      // The counts come from the same row, so the dialog can say what the
-      // department owns without a second request.
-      expect(screen.getByText(/2 teams · 5 employees/)).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: "Save changes" })
-      ).toBeInTheDocument();
-    });
-
-    it("still edits a retired row, because the list carries retired rows too", () => {
-      searchParamsRef.current = new URLSearchParams("department=4");
-      render(<DepartmentsSection departments={departments} />);
-
-      // Retiring keeps a department on the list, so a link to one must not be
-      // mistaken for a missing row.
-      expect(screen.queryByText(/no longer in the list/)).toBeNull();
-      expect(screen.getByLabelText("Name")).toHaveValue("Physics");
-    });
-
-    it("shows a create form for the new target rather than an edit form", () => {
-      searchParamsRef.current = new URLSearchParams("department=new");
-      render(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByLabelText("Name")).toHaveValue("");
-      expect(
-        screen.getByRole("button", { name: "Create department" })
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: "Save changes" })
-      ).toBeNull();
-    });
-
-    it("reports an id that matches no row instead of rendering a blank edit form", () => {
-      searchParamsRef.current = new URLSearchParams("department=99");
-      render(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByText(/no longer in the list/)).toBeInTheDocument();
-      expect(screen.queryByLabelText("Name")).toBeNull();
-    });
-
-    it("switches target without leaking the previous row's values", () => {
-      searchParamsRef.current = new URLSearchParams("department=3");
-      const { rerender } = render(
-        <DepartmentsSection departments={departments} />
-      );
-
-      searchParamsRef.current = new URLSearchParams("department=4");
-      rerender(<DepartmentsSection departments={departments} />);
-
-      expect(screen.getByLabelText("Name")).toHaveValue("Physics");
-    });
-
-    it("refetches and closes after a create, without navigating away", async () => {
-      searchParamsRef.current = new URLSearchParams("department=new");
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.change(screen.getByLabelText("Name"), {
-        target: { value: "Mathematics" },
-      });
-      fireEvent.click(
-        screen.getByRole("button", { name: "Create department" })
-      );
-
-      await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
-      expect(createDepartment).toHaveBeenCalledWith({ name: "Mathematics" });
-      // The lone JSDOM history entry takes close's replace fallback; either way
-      // the point is that it did not `push` the user off the list.
-      expect(routerMock.replace).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/departments"
-      );
-      expect(routerMock.push).not.toHaveBeenCalled();
-    });
-
-    it("updates the existing row rather than creating a second one", () => {
-      searchParamsRef.current = new URLSearchParams("department=3");
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-      expect(updateDepartment).toHaveBeenCalledWith(3, { name: "ICT" });
-      expect(createDepartment).not.toHaveBeenCalled();
-    });
-
-    it("reports a retirement through the same close-and-refresh path", async () => {
-      searchParamsRef.current = new URLSearchParams("department=3");
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.click(
-        screen.getByRole("button", { name: "Retire department" })
-      );
-
-      await waitFor(() => expect(retireDepartment).toHaveBeenCalledWith(3));
-      await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
-      expect(routerMock.push).not.toHaveBeenCalled();
-    });
-
-    it("closes on cancel without writing anything", () => {
-      searchParamsRef.current = new URLSearchParams("department=3");
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-      // Cancel is a button here, not a link: the overlay owns dismissal.
-      expect(routerMock.replace).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/departments"
-      );
-      expect(updateDepartment).not.toHaveBeenCalled();
-      expect(retireDepartment).not.toHaveBeenCalled();
-    });
-
-    it("keeps the host's own query intact when the overlay opens", () => {
-      searchParamsRef.current = new URLSearchParams("q=ICT");
-      render(<DepartmentsSection departments={departments} />);
-
-      fireEvent.click(screen.getByRole("button", { name: "Edit ICT" }));
-
-      expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/departments?q=ICT&department=3"
-      );
-    });
-  });
 
   describe("HolidaysSection", () => {
     it("opens a create form without disturbing the year filter", () => {

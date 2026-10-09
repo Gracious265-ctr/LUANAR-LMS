@@ -34,7 +34,7 @@ from .payloads import (
     plan_row,
 )
 from .policies import (
-    department_member_ids,
+    campus_member_ids,
     plan_view_access,
     team_member_ids,
     user_is_approver,
@@ -125,7 +125,7 @@ class PlanListCreateAPIView(APIView):
     def get(self, request):
         user = request.user
         scope = (request.query_params.get("scope") or "mine").lower()
-        if scope not in ("mine", "team", "department", "all"):
+        if scope not in ("mine", "team", "campus", "all"):
             scope = "mine"
 
         base = LeaveDayPlan.objects.select_related(
@@ -150,14 +150,14 @@ class PlanListCreateAPIView(APIView):
                 employee_id__in=peers,
                 status=LeaveDayPlan.Status.APPROVED,
             )
-        elif scope == "department":
-            colleagues = department_member_ids(user)
+        elif scope == "campus":
+            colleagues = campus_member_ids(user)
             if not colleagues:
                 return Response(
                     {
                         "error": (
-                            "Your team has no department, so there is no "
-                            "department view."
+                            "Your team has no campus, so there is no "
+                            "campus view."
                         )
                     },
                     status=status.HTTP_403_FORBIDDEN,

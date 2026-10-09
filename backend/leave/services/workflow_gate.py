@@ -1,11 +1,11 @@
 """Workflow readiness gate (Unit 21).
 
 Invariant 12.7 requires that a valid, configured workflow exists before an
-application is submitted. ``check_workflow_ready`` resolves the applicable HR
-workflow for the employee's category/department and verifies every stage can
-resolve an active approver, raising :class:`WorkflowUnavailableError` with the
-reasons otherwise. Submission maps that error to the ``workflow_unavailable``
-validation code before any draft leaves the employee's hands.
+application is submitted. ``check_workflow_ready`` resolves the workflow the
+applicant's team routes through and verifies every stage can resolve an active
+approver, raising :class:`WorkflowUnavailableError` with the reasons otherwise.
+Submission maps that error to the ``workflow_unavailable`` validation code before
+any draft leaves the employee's hands.
 """
 
 
@@ -21,8 +21,8 @@ def check_workflow_ready(application) -> bool:
     """Return True when workflow routing is available for submission.
 
     Raises :class:`WorkflowUnavailableError` (with human-readable messages)
-    when no workflow applies to the employee's category/department or a stage
-    has no active approver.
+    when the employee's team routes through no workflow, or a stage has no active
+    approver.
     """
     from workflows.providers import WorkflowConfigError, get_workflow_provider
 

@@ -224,8 +224,10 @@ def get_leave_history_scope(
     the role the stage was materialised with — not from a role name:
 
     ``all``                    every application.
-    ``same_department``        only employees in the applicant's department, and
-                               only when the approver is in that department.
+    ``same_team``              only employees on the applicant's team, and only
+                               when the approver is on it.
+    ``same_campus``            only employees at the applicant's campus, and only
+                               when the approver is at that campus.
     ``same_faculty``           likewise, on faculty.
     ``current_financial_year`` only the current financial year.
     ``none``                   nothing.
@@ -241,8 +243,11 @@ def get_leave_history_scope(
         return (False, "none")
     if scope == ApproverRole.HistoryScope.ALL:
         return (True, "all")
-    if scope == ApproverRole.HistoryScope.SAME_DEPARTMENT:
-        same = _same_profile_field(employee_profile, approver_profile, "department")
+    if scope == ApproverRole.HistoryScope.SAME_TEAM:
+        same = _same_team(employee_profile, approver_profile)
+        return (same, "all")
+    if scope == ApproverRole.HistoryScope.SAME_CAMPUS:
+        same = _same_campus(employee_profile, approver_profile)
         return (same, "all")
     if scope == ApproverRole.HistoryScope.SAME_FACULTY:
         same = _same_profile_field(employee_profile, approver_profile, "faculty")
@@ -251,32 +256,47 @@ def get_leave_history_scope(
 
 
 
-def _same_profile_field(employee, approver, field: str) -> bool:
-    """Whether two profiles carry the same value for one field.
+def _same_team(employee, approver) -> bool:
+    """Whether both profiles sit on the same team.
 
-    Comparison has to be type-aware because ``department`` and ``faculty`` are
-    not the same kind of thing. ``department`` became a reference row in
-    8d472b3 (from ``CharField`` to ``ForeignKey``) while this comparison still
-    stringified whatever it was handed, so a non-empty department raised
-    ``AttributeError: 'Department' object has no attribute 'strip'`` and took
-    the whole review payload down with it — a 500 on the approval page. Two
-    departments are the same when they are the same row.
-
-    ``faculty`` is still free text and keeps its normalisation. Blank and
-    absent values stay unequal, so two people who have recorded nothing do not
-    thereby match: a comparison that widens an approver's history because a
-    field was left empty is the wrong direction to fail in.
+    Compared by id, not by name: a team rename moves every reference with it, and
+    an id comparison cannot be defeated by two teams that read identically.
     """
     if employee is None or approver is None:
         return False
-    employee_value = getattr(employee, field, None)
-    approver_value = getattr(approver, field, None)
-    if not employee_value or not approver_value:
+    employee_team_id = getattr(employee, "team_id", None)
+    return employee_team_id is not None and employee_team_id == approver.team_id
+
+
+def _same_campus(employee, approver) -> bool:
+    """Whether both profiles are at the same campus, read through their team.
+
+    A campus is a property of the *team*, not of the employee: an employee is on
+    a campus because their team is. An employee on no team is on no campus, and two
+    unteamed employees are not "at the same campus" — an absent campus is not a
+    shared one.
+    """
+    if employee is None or approver is None:
         return False
-    if hasattr(employee_value, "pk") and hasattr(approver_value, "pk"):
-        return employee_value.pk == approver_value.pk
-    return (str(employee_value).strip().lower()
-            == str(approver_value).strip().lower())
+    employee_campus_id = getattr(getattr(employee, "team", None), "campus_id", None)
+    approver_campus_id = getattr(getattr(approver, "team", None), "campus_id", None)
+    return (
+        employee_campus_id is not None
+        and employee_campus_id == approver_campus_id
+    )
+
+
+def _same_profile_field(employee, approver, field: str) -> bool:
+    if employee is None or approver is None:
+        return False
+    employee_value = _profile_value(employee, field)
+    approver_value = _profile_value(approver, field)
+    return employee_value and employee_value == approver_value
+
+
+def _profile_value(profile, field: str) -> str:
+    value = getattr(profile, field, "")
+    return (value or "").strip().lower()
 
 
 def _decided_this_cycle(user, application) -> bool:

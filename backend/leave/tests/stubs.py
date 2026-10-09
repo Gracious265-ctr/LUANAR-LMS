@@ -139,7 +139,7 @@ class StubRulesProvider:
             grade=grade,
             appointment_date=appointment_date,
             category=category,
-            department_id=None,
+            team_id=None,
             gender=gender,
         )
         self.employees[user.id] = info
@@ -450,10 +450,18 @@ class StubProviderMixin:
     """TestCase mixin that installs a stub provider + fixed ``today``.
 
     Call ``use_stub()`` at the start of a test (or in ``setUp``); it patches the
-    two ``get_provider`` import sites, the validation clock and Unit 18's own
-    cancellation clock for the duration of the test and returns the
-    :class:`StubRulesProvider`. A stub workflow provider is attached as
-    ``stub.workflow`` and installed for ``assign_workflow``.
+    ``get_provider`` import sites and every ``get_today`` seam for the duration
+    of the test and returns the :class:`StubRulesProvider`. A stub workflow
+    provider is attached as ``stub.workflow`` and installed for
+    ``assign_workflow``.
+
+    The cancellations package has its own ``get_today``, reached through two
+    import sites. It is frozen here too, so a test that drives a cancellation
+    through the API reads the same reference day as the service-level tests
+    beside it. Without this the suite silently depends on the wall clock: a
+    fixture that puts leave "15 days after the stub's today" eventually starts
+    in the past, and an approved application's eligibility flips to
+    ``leave_already_started`` without anything under test changing.
     """
 
     def use_stub(self, stub=None, today=TODAY) -> StubRulesProvider:
@@ -471,6 +479,8 @@ class StubProviderMixin:
                 "workflows.providers.get_workflow_provider",
                 return_value=stub.workflow,
             ),
+            mock.patch("leave.cancellations.providers.get_today", return_value=today),
+            mock.patch("leave.cancellations.services.get_today", return_value=today),
         ]
         for patcher in patchers:
             patcher.start()

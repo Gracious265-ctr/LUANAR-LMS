@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import serializers as drf_serializers
 from rest_framework import viewsets
 
-from users.models import Department, EmployeeProfile, User
+from users.models import EmployeeProfile, User
 from users.permissions import IsHRRole
 
 from audit.validation import positive_int, uuid_value
@@ -17,18 +17,22 @@ from leave.models import LeaveApplication, LeaveType
 from .models import (
     ApproverRole,
     Campus,
+    CampusRoleAssignment,
     Delegation,
     Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
     Team,
+    TeamRoleAssignment,
     Workflow,
+    WorkflowMember,
 )
 from .permissions import IsApproverRoleOrHR
 from .serializers import (
     ApproverRoleSerializer,
     ApproverRoleWriteSerializer,
+    CampusRoleAssignmentSerializer,
     CampusSerializer,
     DelegationActionSerializer,
     DelegationSerializer,
@@ -37,15 +41,25 @@ from .serializers import (
     RoleAssignmentSerializer,
     SectionMemberSerializer,
     SectionMemberWriteSerializer,
+    TeamMemberAddSerializer,
+    TeamMemberSummarySerializer,
     TeamReadinessSerializer,
+    TeamRoleAssignmentSerializer,
     TeamSerializer,
+    WorkflowMemberPoolSerializer,
+    WorkflowMemberSerializer,
+    WorkflowMemberWriteSerializer,
     WorkflowSerializer,
+    WorkflowWriteSerializer,
 )
 from .services import (
     DelegationActionError,
     CampusActionError,
     RoleActionError,
+    StageSequenceError,
     TeamActionError,
+    WorkflowActionError,
+    WorkflowMemberError,
     create_campus,
     acting_approver_map,
     approve_delegation,
@@ -55,35 +69,173 @@ from .services import (
     deactivate_team,
     is_approver_user,
     reject_delegation,
+    remove_campus_role_assignment,
     remove_role_assignment,
     remove_section_member,
+    remove_team_member,
+    remove_team_role_assignment,
+    remove_workflow_member,
+    team_member_summaries,
     validate_team,
+    workflow_member_pool,
 )
 
 
 class WorkflowViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Read-only. A chain is written through its team, never on its own.
+    """HR-only workflow configuration: read, create, and edit.
 
-    Listing and fetching stay, because the team screens and the audit trail
-    both need to read a chain — a step's roster and the reason a chain changed
-    are things people look up, not just an implementation detail. But
-    ``POST``/``PATCH`` are gone: a chain is created with its team and edited
-    with it, so the only writer is the one that knows which team's
-    applications those steps govern. A write here would change routing for a
-    team the person editing never named.
+    A workflow is written on its own here because a team may own several of
+    them and HR configures each separately — create the replacement chain, name
+    its stages, and point the team at it when it is ready. Ownership is checked
+    by the serializer and the service: a workflow belongs to the team it was
+    created for, and a write that would adopt somebody else's chain is refused
+    rather than silently re-routing a team.
+
+    ``GET /workflows/?team=<id>`` is the team's workflow listing, which is how
+    the team screen finds every chain it owns without reading them all.
     """
 
     serializer_class = WorkflowSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "head", "options"]
+    # ``delete`` serves the member-removal action only; a workflow itself is
+    # removed with its team and is never deleted through this view.
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_serializer_class(self):
+        if self.action in ("create", "partial_update", "update"):
+            return WorkflowWriteSerializer
+        return WorkflowSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["actor"] = self.request.user
+        return context
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, *args, **kwargs):
+        """List this workflow's normal members, or add one team member to it.
+
+        Membership is written through the eligibility service, so a person who
+        is not on the workflow's team is refused here with the same message the
+        pool screen would show — the picker and the write agree because they
+        read the same rule.
+        """
+        workflow = self.get_object()
+        if request.method == "POST":
+            serializer = WorkflowMemberWriteSerializer(
+                data=request.data,
+                context={**self.get_serializer_context(), "workflow": workflow},
+            )
+            serializer.is_valid(raise_exception=True)
+            try:
+                member = serializer.save()
+            except WorkflowMemberError as exc:
+                return Response(
+                    {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+                )
+            except IntegrityError as exc:
+                # Concurrent assign of the same person: the unique constraints
+                # on (workflow, user) and (team, user) are the backstop behind
+                # the service-level eligibility check.
+                return Response(
+                    {"user": [str(exc)]}, status=status.HTTP_400_BAD_REQUEST
+                )
+            return Response(
+                WorkflowMemberSerializer(member).data,
+                status=status.HTTP_201_CREATED,
+            )
+        members = workflow.workflow_members.select_related(
+            "user", "team", "added_by"
+        ).order_by("user__first_name", "user__last_name", "user_id")
+        return Response(WorkflowMemberSerializer(members, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path="members/(?P<user_id>[^/.]+)",
+    )
+    def remove_member(self, request, *args, **kwargs):
+        """Remove one normal member from this workflow's pool."""
+        workflow = self.get_object()
+        user_id = positive_int(kwargs["user_id"], "user_id")
+        member = WorkflowMember.objects.filter(
+            workflow=workflow, user_id=user_id
+        ).first()
+        if member is None:
+            return Response(
+                {"user": ["That person is not a normal member of this workflow."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            remove_workflow_member(member=member, actor=request.user)
+        except WorkflowMemberError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_409_CONFLICT
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_queryset(self):
-        return Workflow.objects.prefetch_related(
+        queryset = Workflow.objects.select_related("team").prefetch_related(
             "sections__approver_role", "sections__members__user"
+        )
+        if self.action != "list":
+            return queryset.order_by("name")
+        team = self.request.query_params.get("team")
+        if team:
+            queryset = queryset.filter(team_id=positive_int(team, "team"))
+        routing = self.request.query_params.get("routing")
+        if routing == "1":
+            queryset = queryset.filter(routed_by__isnull=False)
+        elif routing == "0":
+            queryset = queryset.filter(routed_by__isnull=True)
+        return queryset.order_by("name")
+
+    def _write_response(self, workflow):
+        return Response(
+            WorkflowSerializer(
+                workflow, context=self.get_serializer_context()
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            workflow = serializer.save()
+        except (WorkflowActionError, StageSequenceError, WorkflowMemberError) as exc:
+            field = getattr(exc, "field", "detail")
+            message = getattr(exc, "message", str(exc))
+            return Response(
+                {field: [message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return self._write_response(workflow)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", True)
+        instance = self.get_object()
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        try:
+            workflow = serializer.save()
+        except (WorkflowActionError, StageSequenceError, WorkflowMemberError) as exc:
+            field = getattr(exc, "field", "detail")
+            message = getattr(exc, "message", str(exc))
+            return Response(
+                {field: [message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            WorkflowSerializer(
+                workflow, context=self.get_serializer_context()
+            ).data
         )
 
 
@@ -407,6 +559,123 @@ class RoleAssignmentViewSet(
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class TeamRoleAssignmentViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Team-wide role holdings (HR only).
+
+    One holder per role per team, and writing a second one replaces the first:
+    the screen is a pick-a-role, pick-a-person form, and asking HR to delete
+    before they can change their mind is a step that only exists to satisfy the
+    database. The service audits both the appointment and the replacement.
+    """
+
+    serializer_class = TeamRoleAssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        queryset = TeamRoleAssignment.objects.select_related(
+            "user", "role", "team"
+        )
+        team = self.request.query_params.get("team")
+        if team:
+            queryset = queryset.filter(team_id=positive_int(team, "team"))
+        role = self.request.query_params.get("role")
+        if role:
+            queryset = queryset.filter(role_id=positive_int(role, "role"))
+        user = self.request.query_params.get("user")
+        if user:
+            queryset = queryset.filter(user_id=positive_int(user, "user"))
+        return queryset.order_by("role__label")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["actor"] = self.request.user
+        return context
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            assignment = serializer.save()
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            self.get_serializer(assignment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        remove_team_role_assignment(
+            assignment=self.get_object(), actor=request.user
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CampusRoleAssignmentViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Campus-wide role holdings (HR only).
+
+    Scoped to a campus, so the same holding resolves for every team *at* that
+    campus and for no team anywhere else. Same one-holder, replace-on-save
+    contract as the team-wide holding.
+    """
+
+    serializer_class = CampusRoleAssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        queryset = CampusRoleAssignment.objects.select_related(
+            "user", "role", "campus"
+        )
+        campus = self.request.query_params.get("campus")
+        if campus:
+            queryset = queryset.filter(campus_id=positive_int(campus, "campus"))
+        role = self.request.query_params.get("role")
+        if role:
+            queryset = queryset.filter(role_id=positive_int(role, "role"))
+        user = self.request.query_params.get("user")
+        if user:
+            queryset = queryset.filter(user_id=positive_int(user, "user"))
+        return queryset.order_by("role__label")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["actor"] = self.request.user
+        return context
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            assignment = serializer.save()
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            self.get_serializer(assignment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        remove_campus_role_assignment(
+            assignment=self.get_object(), actor=request.user
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class TeamViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
@@ -418,9 +687,10 @@ class TeamViewSet(
 
     A team is created in one pass, optionally with its whole approval chain, and
     put into force by a separate validated action. Members are edited through
-    :class:`SectionMemberViewSet` rather than as a nested write, so adding or
-    removing one person is its own atomic, audited action instead of a
-    whole-team overwrite.
+    :class:`SectionMemberViewSet` (approver periods), the members actions on
+    this viewset (normal team membership), and the workflow member actions —
+    each add/remove is its own atomic, audited action instead of a whole-team
+    overwrite.
 
     ``status`` is a three-state lifecycle, not a flag, so the list defaults to
     the teams that are actually in force plus the drafts HR is still working on
@@ -430,14 +700,18 @@ class TeamViewSet(
 
     serializer_class = TeamSerializer
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
+    # ``delete`` is only routed to the member-removal action; the viewset has
+    # no ``destroy`` mixin, so deleting a team itself is still refused. Teams
+    # are retired, never deleted, and that stays true.
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         base = Team.objects.select_related(
-            "workflow", "campus", "department"
+            "workflow", "campus"
         ).prefetch_related(
             "workflow__sections__approver_role",
             "workflow__sections__approver",
+            "workflows",
         )
         # Filters are for the *list*. A detail or action route must be able to
         # reach a team whatever its status: a retired team is exactly the one HR
@@ -469,49 +743,101 @@ class TeamViewSet(
         campus = params.get("campus")
         if campus:
             base = base.filter(campus_id=positive_int(campus, "campus"))
-        department = params.get("department")
-        if department:
-            base = base.filter(
-                department_id=positive_int(department, "department")
-            )
+        category = params.get("category")
+        if category:
+            if category not in Team.Category.values:
+                raise drf_serializers.ValidationError(
+                    {
+                        "category": (
+                            f"'{category}' is not a team category. Use "
+                            f"{', '.join(Team.Category.values)}."
+                        )
+                    }
+                )
+            base = base.filter(category=category)
         return base.order_by("name")
 
     @action(detail=False, methods=["get"], url_path="eligible-approvers")
     def eligible_approvers(self, request):
         """The employees who may be appointed to a team's approval steps.
 
-        Scoped by the department named on the query, because eligibility *is* the
-        department: an approver is one of the team's own employees. Scoping it here
-        means the team form's approver picker can only offer people who will pass
-        the same rule on write, instead of offering the whole staff and then
-        refusing half of them.
+        Scoped by the team named on the query, because eligibility *is* the team:
+        an approver is one of the team's own employees. Scoping it here means the
+        team form's approver picker can only offer people who will pass the same
+        rule on write, instead of offering the whole staff and then refusing half
+        of them.
 
         ``?role=<id>`` narrows further to the people already holding that role in
-        the department, which is what "one employee holds one role per department"
-        makes selectable.
+        the team, which is what "one employee holds one role per team" makes
+        selectable.
+
+        ``?workflow=<id>`` shapes the pool for one of the team's chains: people
+        already placed on a *different* chain of the team (as a step approver or
+        as a normal member) are dropped, because one employee serves one chain of
+        a team at a time. ``?workflow=new`` does the same while configuring a
+        chain that does not exist yet, so it drops anyone on *any* of the team's
+        chains. A wide approver — institution-wide, team-wide on this team, or
+        campus-wide at this team's campus — is the exception and stays offered,
+        matching the rule the write path enforces.
         """
         params = request.query_params
-        department_id = params.get("department")
-        if not department_id:
+        team_id = params.get("team")
+        if not team_id:
             raise drf_serializers.ValidationError(
                 {
-                    "department": (
-                        "Name the department whose employees are eligible. Without "
-                        "it there is nothing to scope approvers to."
+                    "team": (
+                        "Name the team whose employees are eligible. Without it "
+                        "there is nothing to scope approvers to."
                     )
                 }
             )
-        department = Department.objects.filter(
-            pk=positive_int(department_id, "department"), is_active=True
-        ).first()
-        if department is None:
+        team = Team.objects.filter(pk=positive_int(team_id, "team")).first()
+        if team is None:
             raise drf_serializers.ValidationError(
-                {"department": "That department is missing or is not active."}
+                {"team": "That team is missing."}
             )
 
         queryset = EmployeeProfile.objects.filter(
-            department=department, user__is_active=True
+            team=team, user__is_active=True
         ).select_related("user", "team")
+
+        workflow_filter = params.get("workflow")
+        if workflow_filter:
+            if workflow_filter == "new":
+                excluded_workflow_ids: set[int] = set()
+            else:
+                excluded_workflow_ids = {positive_int(workflow_filter, "workflow")}
+            assigned_ids = set(
+                WorkflowMember.objects.filter(team=team)
+                .exclude(workflow_id__in=excluded_workflow_ids)
+                .values_list("user_id", flat=True)
+            )
+            assigned_ids.update(
+                Section.objects.filter(
+                    is_active=True,
+                    approver__isnull=False,
+                    workflow__team=team,
+                )
+                .exclude(workflow_id__in=excluded_workflow_ids)
+                .values_list("approver_id", flat=True)
+            )
+            wide_ids = set(
+                RoleAssignment.objects.filter(
+                    role__is_institution_wide=True, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            wide_ids.update(
+                TeamRoleAssignment.objects.filter(
+                    team=team, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            if team.campus_id is not None:
+                wide_ids.update(
+                    CampusRoleAssignment.objects.filter(
+                        campus_id=team.campus_id, user__is_active=True
+                    ).values_list("user_id", flat=True)
+                )
+            queryset = queryset.exclude(user_id__in=assigned_ids - wide_ids)
 
         role = None
         role_id = params.get("role")
@@ -523,14 +849,14 @@ class TeamViewSet(
                 raise drf_serializers.ValidationError(
                     {"role": "That approver role is missing."}
                 )
-            # One employee, one role per department: offer only the people who
-            # already hold this role here, plus whoever holds no role yet. Anyone
-            # already appointed in a different role in this department is
-            # deliberately absent — the write would refuse them.
+            # One employee, one role per team: offer only the people who already
+            # hold this role here, plus whoever holds no role yet. Anyone already
+            # appointed in a different role on this team is deliberately absent —
+            # the write would refuse them.
             conflicting_ids = set(
                 Section.objects.filter(
                     is_active=True,
-                    workflow__team__department_id=department.pk,
+                    workflow__team__pk=team.pk,
                 )
                 .exclude(approver_role_id=role.pk)
                 .exclude(approver=None)
@@ -540,7 +866,7 @@ class TeamViewSet(
                 Section.objects.filter(
                     is_active=True,
                     approver_role=role,
-                    workflow__team__department_id=department.pk,
+                    workflow__team__pk=team.pk,
                 )
                 .exclude(approver=None)
                 .values_list("approver_id", flat=True)
@@ -553,14 +879,14 @@ class TeamViewSet(
             queryset.order_by("user__first_name", "user__last_name")
         )
         if role is not None and role.is_institution_wide:
-            # An institution-wide role is held outside any one department, so the
-            # holder is absent from the department-scoped queryset above. Offer
-            # them anyway: selecting this role *is* how the holder is put on the
-            # step, and a picker that could not show them would leave HR with a
-            # step no department employee is allowed to fill.
+            # An institution-wide role is held outside any one team, so the holder
+            # is absent from the team-scoped queryset above. Offer them anyway:
+            # selecting this role *is* how the holder is put on the step, and a
+            # picker that could not show them would leave HR with a step no team
+            # member is allowed to fill.
             already_offered = {profile.user_id for profile in candidates}
             holder_ids = RoleAssignment.objects.filter(
-                role=role, user__is_active=True, org_unit__isnull=True
+                role=role, user__is_active=True
             ).values_list("user_id", flat=True)
             candidates.extend(
                 EmployeeProfile.objects.filter(
@@ -572,7 +898,7 @@ class TeamViewSet(
 
         return response.Response(
             {
-                "department": {"id": department.pk, "name": department.name},
+                "team": {"id": team.pk, "name": team.name},
                 "candidates": [
                     {
                         "id": profile.user_id,
@@ -590,6 +916,98 @@ class TeamViewSet(
         context = super().get_serializer_context()
         context["actor"] = self.request.user
         return context
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, *args, **kwargs):
+        """List this team's normal members, or place one employee on it.
+
+        GET is the team members screen's roster: every employee whose
+        :attr:`EmployeeProfile.team` is this team, with the workflow they are a
+        normal member of and whether they also staff a step or hold a team-wide
+        role. POST places one employee through the same guards the service
+        applies, so a picker that offers a candidate from another team gets a
+        refusal naming that team rather than a silent move.
+        """
+        team = self.get_object()
+        if request.method == "POST":
+            serializer = TeamMemberAddSerializer(
+                data=request.data, context={**self.get_serializer_context(), "team": team}
+            )
+            serializer.is_valid(raise_exception=True)
+            try:
+                serializer.save()
+            except WorkflowMemberError as exc:
+                return Response(
+                    {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+                )
+            except IntegrityError as exc:
+                return Response(
+                    {"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                )
+            return Response(
+                TeamMemberSummarySerializer(team_member_summaries(team), many=True).data,
+                status=status.HTTP_201_CREATED,
+            )
+        return Response(
+            TeamMemberSummarySerializer(team_member_summaries(team), many=True).data
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path="members/(?P<user_id>[^/.]+)",
+    )
+    def remove_member(self, request, *args, **kwargs):
+        """Take one employee off this team, refusing while they hold a role.
+
+        A refusal names every responsibility that still ties them to the team
+        (step appointment, open approver period, normal workflow membership,
+        team-wide holding) so HR can release them one by one rather than being
+        sent back with a single "cannot remove".
+        """
+        team = self.get_object()
+        user_id = positive_int(kwargs["user_id"], "user_id")
+        user = User.objects.filter(pk=user_id).first()
+        if user is None:
+            return Response(
+                {"user": ["That employee account is missing."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            remove_team_member(team=team, user=user, actor=request.user)
+        except WorkflowMemberError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_409_CONFLICT
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"], url_path="workflow-member-pool")
+    def workflow_members_pool(self, request, *args, **kwargs):
+        """Who may be assigned to a workflow as a normal member of this team.
+
+        ``?workflow=<id>`` scopes the answer to one of the team's own chains so
+        its current members are listed as already-selected and people on other
+        chains are listed as assigned elsewhere. Without it the pool is
+        "everybody on the team who is not already on one of our chains", which
+        is what the create-workflow screen needs.
+        """
+        team = self.get_object()
+        workflow = None
+        workflow_id = request.query_params.get("workflow")
+        if workflow_id:
+            workflow = Workflow.objects.filter(
+                pk=positive_int(workflow_id, "workflow"), team=team
+            ).first()
+            if workflow is None:
+                return Response(
+                    {"workflow": ["That workflow is missing or is not this team's."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        return Response(
+            WorkflowMemberPoolSerializer(
+                workflow_member_pool(team=team, workflow=workflow)
+            ).data
+        )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

@@ -5,8 +5,6 @@ import { ArrowLeft } from "lucide-react";
 import { TeamForm } from "@/components/hr/team-form";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
-import type { Department } from "@/lib/departments";
-import { listDepartments } from "@/lib/departments";
 import type { Campus } from "@/lib/teams";
 import { getTeam, listCampuses } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
@@ -15,8 +13,6 @@ import { FadeIn } from "@/components/motion/FadeIn";
 const CAMPUSES_ERROR = "Unable to load campuses, so this team cannot be scoped to one.";
 const ROLES_ERROR =
   "Unable to load approver roles, so the approval steps cannot be described.";
-const DEPARTMENTS_ERROR =
-  "Unable to load departments, so this team cannot be placed in one.";
 
 export default async function EditTeamPage({
   params,
@@ -40,7 +36,7 @@ export default async function EditTeamPage({
     notFound();
   }
 
-  const [campusesResult, rolesResult, departmentsResult] = await Promise.all([
+  const [campusesResult, rolesResult] = await Promise.all([
       listCampuses().then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
@@ -48,10 +44,6 @@ export default async function EditTeamPage({
       listApproverRoles().then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
-      ),
-      listDepartments().then(
-        (value) => ({ value, error: "" }),
-        () => ({ value: [] as Department[], error: DEPARTMENTS_ERROR })
       ),
     ]);
 
@@ -81,9 +73,7 @@ export default async function EditTeamPage({
           <TeamForm
             team={team}
             campuses={campusesResult.value}
-            departments={departmentsResult.value}
             roles={rolesResult.value}
-            departmentsError={departmentsResult.error}
             rolesError={rolesResult.error}
           />
         </div>

@@ -47,7 +47,7 @@ export function DelegationForm({
   const [approverId, setApproverId] = useState("");
   const approvers = approverRolePeople(employees);
   const delegates = approvers.filter(
-    (employee) => String(employee.id) !== approverId
+    (employee) => String(employee.user_id) !== approverId
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -110,7 +110,7 @@ export function DelegationForm({
           <SelectContent>
             <SelectItem value="">Select the approver</SelectItem>
             {approvers.map((employee) => (
-              <SelectItem key={employee.id} value={String(employee.id)}>
+              <SelectItem key={employee.id} value={String(employee.user_id)}>
                 {employee.full_name}
               </SelectItem>
             ))}
@@ -130,7 +130,7 @@ export function DelegationForm({
           <SelectContent>
             <SelectItem value="">No nomination</SelectItem>
             {delegates.map((employee) => (
-              <SelectItem key={employee.id} value={String(employee.id)}>
+              <SelectItem key={employee.id} value={String(employee.user_id)}>
                 {employee.full_name}
               </SelectItem>
             ))}

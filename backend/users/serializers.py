@@ -8,14 +8,8 @@ from audit.services import changed_fields, current_actor, record_audit
 from workflows.models import Team
 from workflows.services import approver_role_codes_for
 
-from .models import Department, EmployeeProfile
-from .services import (
-    create_department,
-    department_member_count,
-    request_password_set,
-    retire_department,
-    update_department,
-)
+from .models import EmployeeProfile
+from .services import request_password_set
 
 User = get_user_model()
 
@@ -246,17 +240,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         ),
     )
     is_active = OptionalBooleanField(source="user.is_active", required=False)
-    department = serializers.PrimaryKeyRelatedField(
-        queryset=Department.objects.filter(is_active=True),
-        required=False,
-        allow_null=True,
-        help_text=(
-            "The department this employee belongs to. It is what makes them "
-            "eligible to be a team's approver, so it is a pick from the "
-            "existing departments rather than free text."
-        ),
-    )
-    department_name = serializers.CharField(source="department.name", read_only=True)
     team = serializers.PrimaryKeyRelatedField(
         queryset=Team.objects.all(),
         required=False,
@@ -278,8 +261,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "role",
             "approver_roles",
             "designation",
-            "department",
-            "department_name",
             "faculty",
             "category",
             "gender",
@@ -443,7 +424,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "role": user.role,
             "is_active": user.is_active,
             "designation": instance.designation,
-            "department_id": instance.department_id,
             "faculty": instance.faculty,
             "category": instance.category,
             "gender": instance.gender,
@@ -473,68 +453,4 @@ class EmployeeSerializer(serializers.ModelSerializer):
             target_id=instance.pk,
             target_summary=instance.user.get_full_name(),
             detail=detail,
-        )
-
-
-class DepartmentSerializer(serializers.ModelSerializer):
-    """A department, with the teams inside it.
-
-    The team list is nested rather than left to a second request because the
-    question a department screen answers is "what is in ICT?", and a count beside
-    a name does not answer it. Teams are flattened to id/name/status so the
-    browser never has to know a team's shape to render a list.
-    """
-
-    team_count = serializers.SerializerMethodField()
-    employee_count = serializers.SerializerMethodField()
-    teams = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Department
-        fields = [
-            "id",
-            "name",
-            "is_active",
-            "team_count",
-            "employee_count",
-            "teams",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["is_active", "created_at", "updated_at"]
-
-    def get_team_count(self, instance: Department) -> int:
-        return instance.teams.count()
-
-    def get_employee_count(self, instance: Department) -> int:
-        return department_member_count(instance)
-
-    def get_teams(self, instance: Department) -> list[dict]:
-        return [
-            {"id": team.pk, "name": team.name, "status": team.status}
-            for team in instance.teams.order_by("name")
-        ]
-
-
-class DepartmentWriteSerializer(serializers.Serializer):
-    """Create/rename payload for a department: its name, and nothing else.
-
-    A department carries no team, employee, or role data — those are
-    relationships held by the rows that own them. Keeping the write surface to a
-    name is what stops "the ICT department" from becoming a second, denormalised
-    copy of answers the team and employee tables already give.
-    """
-
-    name = serializers.CharField(max_length=200)
-
-    def create(self, validated_data: dict) -> Department:
-        return create_department(
-            actor=self.context["actor"], name=validated_data["name"]
-        )
-
-    def update(self, instance: Department, validated_data: dict) -> Department:
-        return update_department(
-            department=instance,
-            actor=self.context["actor"],
-            name=validated_data["name"],
         )

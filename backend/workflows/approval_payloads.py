@@ -34,7 +34,7 @@ def list_item(application: LeaveApplication, user) -> dict:
         "reference": application.reference_number,
         "employee_name": application.employee.get_full_name()
         or application.employee.username,
-        "department": _department(application),
+        "team": _team(application),
         "leave_type": leave_type_block(application),
         "start_date": _iso_date(application.start_date),
         "end_date": _iso_date(application.end_date),
@@ -139,16 +139,17 @@ def latest_user_decision(application: LeaveApplication, user) -> ApprovalDecisio
     )
 
 
-def _department(application: LeaveApplication) -> str:
-    """The employee's department *name*, or "".
+def _team(application: LeaveApplication) -> str:
+    """The employee's team *name*, or "".
 
-    ``EmployeeProfile.department`` is a reference row now, and this payload is
-    rendered to an approver as JSON \u2014 so the name is what belongs here.
+    The team is the reference row an employee's identity is read against, and
+    this payload is rendered to an approver as JSON \u2014 so the name is what
+    belongs here.
     """
     profile = _profile(application.employee)
-    if profile is None or profile.department_id is None:
+    if profile is None or profile.team_id is None:
         return ""
-    return profile.department.name
+    return profile.team.name
 
 
 def _application_block(application: LeaveApplication) -> dict:
@@ -173,11 +174,8 @@ def _employee_info(application: LeaveApplication) -> dict:
         "name": user.get_full_name() or user.username,
         "designation": (profile.designation if profile else "") or "",
         # The name, not the row: this payload is rendered to an approver, and a
-        # Department instance is not something JSON can carry.
-        "department": (
-            (profile.department.name if profile and profile.department_id else "")
-            or ""
-        ),
+        # Team instance is not something JSON can carry.
+        "team": ((profile.team.name if profile and profile.team_id else "") or ""),
         "faculty": (profile.faculty if profile else "") or "",
         "staff_id": None,
         "grade": (profile.grade if profile else "") or "",

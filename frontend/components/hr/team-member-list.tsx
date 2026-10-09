@@ -41,9 +41,6 @@ export function TeamMemberList({ team }: { team: Team }) {
   );
 
   useEffect(() => {
-    if (team.department === null) {
-      return;
-    }
     let cancelled = false;
     Promise.all(
       team.sections.map(async (section) => {
@@ -51,7 +48,7 @@ export function TeamMemberList({ team }: { team: Team }) {
         const [people, periods] = await Promise.all([
           roleId === undefined
             ? Promise.resolve([] as EligibleApprover[])
-            : listEligibleApprovers(team.department as number, roleId),
+            : listEligibleApprovers(team.id, roleId, team.workflow ?? undefined),
           listSectionMembers(section.id),
         ]);
         return [section.id, { people, open: periods[0] ?? null }] as const;
@@ -80,7 +77,7 @@ export function TeamMemberList({ team }: { team: Team }) {
     };
     // Re-run when the server props change after an appointment, so the current
     // holder and the eligible list stay in step with the team.
-  }, [team.id, team.sections, team.department, roleIdByCode]);
+  }, [team.id, team.sections, team.workflow, roleIdByCode]);
 
   async function appoint(section: TeamSection, userId: number) {
     setError("");
@@ -140,16 +137,6 @@ export function TeamMemberList({ team }: { team: Team }) {
       <p className="mt-3 text-sm text-text-muted">
         This team has no approval steps, so there is nobody to appoint. Add a
         step to its chain first.
-      </p>
-    );
-  }
-
-  if (team.department === null) {
-    return (
-      <p className="mt-3 text-sm text-text-muted">
-        This team is not in a department yet, and an approver is one of the
-        team&apos;s own employees. Choose a department in the team&apos;s details
-        first.
       </p>
     );
   }
@@ -247,8 +234,8 @@ export function TeamMemberList({ team }: { team: Team }) {
 
               {options.length === 0 ? (
                 <p className="mt-1 text-xs text-text-muted">
-                  Nobody in this department holds this role yet, so this step has
-                  nobody to appoint.
+                  Nobody on this team holds this role yet, so this step has nobody
+                  to appoint.
                 </p>
               ) : null}
 

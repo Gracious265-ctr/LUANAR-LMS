@@ -160,7 +160,7 @@ def _plan_meta(plan: LeaveDayPlan) -> dict:
 
 
 def plan_row(plan: LeaveDayPlan, user, *, scope: str) -> dict:
-    """One row for mine/team/department/admin lists under ``scope``."""
+    """One row for mine/team/campus/admin lists under ``scope``."""
     row = _plan_meta(plan)
     row["employee_id"] = plan.employee_id
     row["employee_name"] = plan.employee.get_full_name() or plan.employee.username
@@ -197,7 +197,7 @@ def plan_detail_payload(plan: LeaveDayPlan, user, access) -> dict:
         "employee": {
             "id": plan.employee_id,
             "name": plan.employee.get_full_name() or plan.employee.username,
-            "department": _department(plan),
+            "campus": _campus(plan),
             "team_id": _team_id(plan),
             "team_name": _team_name(plan),
         },
@@ -259,7 +259,7 @@ def approver_list_row(plan: LeaveDayPlan, user) -> dict:
     return {
         **_plan_meta(plan),
         "employee_name": plan.employee.get_full_name() or plan.employee.username,
-        "department": _department(plan),
+        "campus": _campus(plan),
         "team_name": _team_name(plan),
         "submitted_at": _iso(plan.submitted_at),
         "stage_role_label": (stage.role_label if stage else ""),
@@ -303,7 +303,7 @@ def approver_detail_payload(plan: LeaveDayPlan, user) -> dict:
         "employee": {
             "id": plan.employee_id,
             "name": plan.employee.get_full_name() or plan.employee.username,
-            "department": _department(plan),
+            "campus": _campus(plan),
             "team_id": _team_id(plan),
             "team_name": _team_name(plan),
         },
@@ -337,18 +337,19 @@ def _team_name(plan: LeaveDayPlan) -> str:
     return team.name if team else ""
 
 
-def _department(plan: LeaveDayPlan) -> str:
-    """The employee's department *name*, or "".
+def _campus(plan: LeaveDayPlan) -> str:
+    """The name of the campus of the employee's team, or "".
 
-    ``EmployeeProfile.department`` is a reference row now, and this payload is
-    rendered as JSON -- so the name is what belongs here. Returning the row
-    itself fails at serialisation time with "Object of type Department is not
-    JSON serializable", which is a confusing place to learn about the change.
+    The team is the unit of organisation and its campus is the grouping above
+    it. Returning the row itself would fail at serialisation time with "Object
+    of type Campus is not JSON serializable", so the name is what belongs here.
+    A team that is not campus-based yields the empty string.
     """
     try:
         profile = plan.employee.employee_profile
     except Exception:
         return ""
-    if profile is None or profile.department_id is None:
+    team = profile.team if profile is not None else None
+    if team is None or team.campus_id is None:
         return ""
-    return profile.department.name
+    return team.campus.name

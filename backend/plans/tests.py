@@ -16,16 +16,15 @@ date so confirm/lapse windows are deterministic.
 from datetime import date, timedelta
 from dataclasses import replace
 from decimal import Decimal
-from io import StringIO
 from unittest import mock
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
-from leave.models import FinancialYear, LeaveType
+from leave.models import LeaveType
 from leave.tests.stubs import TODAY, _leave_types, make_user
 from notifications.models import NotificationOutbox
 from users.models import EmployeeProfile, User
@@ -34,7 +33,6 @@ from workflows.providers import DatabaseWorkflowProvider
 from workflows.testing import (
     appoint_approver_to_section,
     build_routing,
-    department_for,
     ensure_roles,
     make_approver,
     make_team,
@@ -98,10 +96,6 @@ def _patch_plan_clock(test):
 def _profile(user, **kwargs):
     defaults = dict(
         designation="Officer",
-        # Resolved through the shared helper because ``department`` is a
-        # reference to a Department row now, not free text: passing the name
-        # straight through raises "must be a Department instance".
-        department=department_for("Administration"),
         grade="B",
         appointment_date=date(2022, 3, 15),
         category="administration",
@@ -461,11 +455,11 @@ class PeerConflictWarningsTests(PlanServiceBase):
         self.assertEqual(peer_conflicts(plan_b), [])
 
     def test_another_teams_block_does_not_conflict(self):
-        """Same department, different team: still not a peer."""
+        """Same campus, different team: still not a peer."""
         elsewhere = make_user("peer-elsewhere@test.luanar", role=User.Role.EMPLOYEE)
         _profile(elsewhere, team=self.team)
         profile = EmployeeProfile.objects.get(user=elsewhere)
-        profile.team = make_team("Second Team", CHAIN, department="Administration")
+        profile.team = make_team("Second Team", CHAIN, campus="Administration")
         profile.save(update_fields=["team"])
         self.stub.register_employee(elsewhere)
 
@@ -686,8 +680,8 @@ class StageRoutingTests(PlanServiceBase):
         self.assertEqual(
             [s.history_scope for s in stages],
             [
-                "same_department",
-                "same_department",
+                "all",
+                "same_team",
                 "current_financial_year",
                 "current_financial_year",
             ],
@@ -825,86 +819,6 @@ class ConfirmReleaseLapseTests(PlanServiceBase):
         )
 
 
-class SeedPlansDevCommandTests(TestCase):
-    """The dev seed routes real plans through the real services.
-
-    Worth a test of its own: the seed is how anybody actually sees this feature,
-    and it drives the whole chain — configure the teams, place the employees,
-    then approve each plan with whoever the live stage is open to.
-    """
-
-    def setUp(self):
-        from django.utils import timezone
-
-        today = timezone.localdate()
-        FinancialYear.objects.create(
-            start_date=today - timedelta(days=90),
-            end_date=today + timedelta(days=275),
-            is_active=True,
-        )
-
-    def seed(self):
-        from django.core.management import call_command
-
-        with override_settings(DEBUG=True):
-            call_command("seed_plans_dev", stdout=StringIO())
-
-    def test_seed_builds_every_lifecycle_state_through_the_team_chain(self):
-        self.seed()
-        # Idempotent: a second run keeps what it found.
-        self.seed()
-
-        statuses = dict(
-            LeaveDayPlan.objects.values_list("employee__username", "status")
-        )
-        self.assertEqual(statuses["draft-employee@test.luanar"], LeaveDayPlan.Status.DRAFT)
-        self.assertEqual(statuses["submit-employee@test.luanar"], LeaveDayPlan.Status.SUBMITTED)
-        self.assertEqual(statuses["plan-employee@test.luanar"], LeaveDayPlan.Status.APPROVED)
-        self.assertEqual(statuses["reject-employee@test.luanar"], LeaveDayPlan.Status.REJECTED)
-
-        # Every seeded plan routed through one team's sections, so each has a
-        # stage chain and an approval decision per step that was decided.
-        from workflows.models import Team
-
-        team = Team.objects.get(code="administration")
-        section_count = team.workflow.sections.filter(is_active=True).count()
-        approved = LeaveDayPlan.objects.get(employee__username="plan-employee@test.luanar")
-        stages = list(approved.approval_stages.order_by("stage_order"))
-        self.assertEqual([s.stage_order for s in stages], list(range(1, section_count + 1)))
-        self.assertTrue(all(s.section_ref_id for s in stages))
-        self.assertEqual(approved.approval_decisions.count(), section_count)
-        self.assertTrue(all(s.assigned_approver_id for s in stages))
-        self.assertEqual(
-            approved.plan_blocks.filter(status=LeavePlanBlock.Status.RESERVED).count(), 2
-        )
-        self.assertEqual(
-            approved.plan_blocks.filter(status=LeavePlanBlock.Status.CONFIRMED).count(), 1
-        )
-
-        # The peer-conflict pair really are team-mates, which is what makes their
-        # overlapping block a warning rather than a coincidence.
-        peer = LeaveDayPlan.objects.get(employee__username="peer-employee@test.luanar")
-        self.assertEqual(peer.employee.employee_profile.team_id, approved.employee.employee_profile.team_id)
-        self.assertTrue(peer_conflicts(peer))
-
-        # The rejected plan records why, and stops there. Decisions are ordered
-        # newest-first, so pick the rejection out by action rather than position.
-        rejected = LeaveDayPlan.objects.get(employee__username="reject-employee@test.luanar")
-        self.assertEqual(rejected.approval_decisions.count(), 2)
-        self.assertEqual(rejected.status, LeaveDayPlan.Status.REJECTED)
-        actions = sorted(rejected.approval_decisions.values_list("action", flat=True))
-        self.assertEqual(actions, ["approve", "reject"])
-        rejection = rejected.approval_decisions.get(action="reject")
-        self.assertIn("stock take", rejection.comment)
-
-    def test_seed_refuses_without_debug(self):
-        from django.core.management import call_command
-        from django.core.management.base import CommandError
-
-        with self.assertRaises(CommandError):
-            call_command("seed_plans_dev", stdout=StringIO())
-
-
 class PlanAPITests(PlanServiceBase):
     def setUp(self):
         super().setUp()
@@ -1013,7 +927,7 @@ class PlanAPITests(PlanServiceBase):
         self.assertIsNotNone(stages[0]["section_ref_id"])
         self.assertIsNotNone(stages[0]["role_ref_id"])
         self.assertEqual(stages[0]["role"], "supervisor")
-        self.assertEqual(stages[0]["history_scope"], "same_department")
+        self.assertEqual(stages[0]["history_scope"], "all")
 
     def test_approval_queue_requires_an_approver(self):
         self.force(self.employee)
@@ -1171,29 +1085,38 @@ class PlanAPITests(PlanServiceBase):
         self.assertEqual(team.data["results"][0]["blocks"][0]["status"], "reserved")
         self.assertEqual(team.data["results"][0]["employee_id"], self.employee.id)
 
-    def test_department_scope_follows_the_teams_department(self):
-        """Department membership is a property of the team, not the profile."""
-        self.team.department = department_for("Administration")
-        self.team.save(update_fields=["department"])
-        colleague = make_user("dept-colleague@test.luanar", role=User.Role.EMPLOYEE)
-        _profile(colleague, team=self.team)
-        other = make_user("dept-outsider@test.luanar", role=User.Role.EMPLOYEE)
-        outsider_colleague = make_user(
-            "dept-outsider-2@test.luanar", role=User.Role.EMPLOYEE
+    def test_campus_scope_follows_the_teams_campus(self):
+        """Campus membership is a property of the team, not the profile."""
+        # Campus teams are academic, and an academic team's chain is deliberately
+        # simple: the institution-wide registrar only sits on an administration
+        # team's chain, so a campus team cannot borrow the base chain.
+        admin_team = make_team(
+            "Administration Team",
+            ("supervisor", "hod"),
+            campus="Administration",
+            approvers={"supervisor": self.supervisor, "hod": self.hod},
         )
-        # One section is enough: what is under test is the department split, and
-        # a full second chain would make the institution-wide registrar ambiguous.
-        elsewhere = make_team("Finance Team", ("supervisor",), department="Finance")
-        _profile(other, team=elsewhere)
-        _profile(outsider_colleague, team=elsewhere)
-        for user in (colleague, other, outsider_colleague):
+        finance_team = make_team("Finance Team", ("supervisor",), campus="Finance")
+
+        # The base employee moves to the campus team so their campus scope is
+        # the Administration campus.
+        profile = EmployeeProfile.objects.get(user=self.employee)
+        profile.team = admin_team
+        profile.save(update_fields=["team"])
+        self.employee = User.objects.get(pk=self.employee.pk)
+
+        colleague = make_user("dept-colleague@test.luanar", role=User.Role.EMPLOYEE)
+        _profile(colleague, team=admin_team)
+        other = make_user("dept-outsider@test.luanar", role=User.Role.EMPLOYEE)
+        _profile(other, team=finance_team)
+        for user in (colleague, other):
             self.stub.register_employee(user)
 
         # Finance sees nothing of Administration's plans.
         self.force(other)
-        department = self.client.get("/api/v1/plans/?scope=department")
-        self.assertEqual(department.status_code, status.HTTP_200_OK, department.data)
-        self.assertEqual(department.data["count"], 0)
+        campus = self.client.get("/api/v1/plans/?scope=campus")
+        self.assertEqual(campus.status_code, status.HTTP_200_OK, campus.data)
+        self.assertEqual(campus.data["count"], 0)
 
         self.force(colleague)
         self.client.post(
@@ -1212,19 +1135,21 @@ class PlanAPITests(PlanServiceBase):
             format="json",
         )
         plan = LeaveDayPlan.objects.filter(employee=colleague).first()
-        self.approve_fully(plan)
+        plan = submit_plan(user=colleague, plan_id=plan.id)
+        self.approve_with(plan, (self.supervisor, self.hod))
 
-        # Colleague's team is Administration, so the outsider's Finance team sees
-        # nothing even though both people could share a profile department.
+        # Colleague's team is at Administration campus, so the outsider's
+        # Finance team sees nothing even though both people could share a
+        # profile grouping.
         self.force(other)
-        department = self.client.get("/api/v1/plans/?scope=department")
-        self.assertEqual(department.status_code, status.HTTP_200_OK, department.data)
-        self.assertEqual(department.data["count"], 0)
+        campus = self.client.get("/api/v1/plans/?scope=campus")
+        self.assertEqual(campus.status_code, status.HTTP_200_OK, campus.data)
+        self.assertEqual(campus.data["count"], 0)
 
         self.force(self.employee)
-        department = self.client.get("/api/v1/plans/?scope=department")
-        self.assertEqual(department.data["count"], 1)
-        self.assertEqual(department.data["results"][0]["employee_id"], colleague.id)
+        campus = self.client.get("/api/v1/plans/?scope=campus")
+        self.assertEqual(campus.data["count"], 1)
+        self.assertEqual(campus.data["results"][0]["employee_id"], colleague.id)
 
     def test_all_scope_is_hr_only(self):
         self.force(self.employee)

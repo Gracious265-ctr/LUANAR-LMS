@@ -5,15 +5,17 @@ for a submitted leave application. It is the single point of swappability:
 :func:`get_workflow_provider` reads ``settings.WORKFLOW_PROVIDER``.
 
 The default is :class:`DatabaseWorkflowProvider`, which resolves the applicant's
-**team** to the one workflow that team uses, and maps its ``Section`` rows into
-``StageDefinition`` objects. Each section's approver is found by
-:func:`resolve_section_approvers`: the section's appointed approver unless that
-person is the applicant, or — when the section has no approver and its role is
-institution-wide — the role's single institution-wide holder. A section names one
-person, so a step always has exactly one person entitled to act on it. The
-provider is pure data (no writes): it returns planned stages only. The
-assignment service (``workflows.services.assign_workflow``) validates them and
-materialises them as ``ApplicationStage`` rows.
+**team** to the one workflow that team routes through, and maps its
+``Section`` rows into ``StageDefinition`` objects. Each section's approver is
+found by :func:`resolve_section_approvers`: the section's appointed approver
+unless that person is the applicant, or — when the section has no approver —
+the narrowest wide holding that applies, being the team's holder for the role,
+then the holder at the team's campus, then, for an administration team, the
+role's single institution-wide holder. A section names one person, so a step
+always has exactly one person entitled to act on it. The provider is pure data
+(no writes): it returns planned stages only. The assignment service
+(``workflows.services.assign_workflow``) validates them and materialises them
+as ``ApplicationStage`` rows.
 """
 
 from __future__ import annotations
@@ -27,7 +29,14 @@ from django.utils.module_loading import import_string
 
 from users.models import User
 
-from .models import ApproverRole, RoleAssignment, SectionMember, Team
+from .models import (
+    ApproverRole,
+    CampusRoleAssignment,
+    RoleAssignment,
+    SectionMember,
+    Team,
+    TeamRoleAssignment,
+)
 
 
 class WorkflowConfigError(ValueError):
@@ -107,20 +116,88 @@ def _employee_team(application: Any):
 
 
 def _institution_wide_holder_ids(role: ApproverRole) -> list[int]:
-    """Active users holding ``role`` institution-wide, lowest id first.
-
-    ``org_unit__isnull=True`` is load-bearing, not decoration: a role may now
-    also be held *at a unit*, and a unit-scoped holder is not a fallback for
-    everybody. Resolving a section through them would route another team's
-    application to somebody whose authority stops at one department.
-    """
+    """Active users holding ``role`` institution-wide, lowest id first."""
     return list(
-        RoleAssignment.objects.filter(
-            role=role, user__is_active=True, org_unit__isnull=True
+        RoleAssignment.objects.filter(role=role, user__is_active=True)
+        .order_by("user_id")
+        .values_list("user_id", flat=True)
+    )
+
+
+def _team_wide_holder_ids(team: Team, role: ApproverRole) -> list[int]:
+    """Active users holding ``role`` team-wide on ``team``, lowest id first."""
+    if team is None:
+        return []
+    return list(
+        TeamRoleAssignment.objects.filter(
+            team=team, role=role, user__is_active=True
         )
         .order_by("user_id")
         .values_list("user_id", flat=True)
     )
+
+
+def _campus_wide_holder_ids(campus, role: ApproverRole) -> list[int]:
+    """Active users holding ``role`` campus-wide at ``campus``."""
+    if campus is None:
+        return []
+    return list(
+        CampusRoleAssignment.objects.filter(
+            campus=campus, role=role, user__is_active=True
+        )
+        .order_by("user_id")
+        .values_list("user_id", flat=True)
+    )
+
+
+def _routing_team(section) -> Team | None:
+    """The team that owns the section's workflow, if any.
+
+    :attr:`Workflow.team` is the ownership link; :attr:`Team.workflow` is the
+    routing one. A section is always owned, so this answers "which team's
+    configuration staffs this step" — which is what every wide holding is
+    scoped by.
+    """
+    workflow = section.workflow_id
+    if workflow is None:
+        return None
+    return section.workflow.team
+
+
+def _wide_holder_ids(section) -> tuple[str, list[int]]:
+    """Who can staff ``section`` without being appointed to it directly.
+
+    Returns ``(source, holder_ids)`` where ``source`` is ``"team"``,
+    ``"campus"``, ``"institution"`` or ``"none"`` — the *narrowest* wide
+    holding that applies, in the order a step is staffed: the team's own
+    holder first, then the applicant's campus, then — for an administration
+    team only — the institution.
+
+    Empty holder lists are returned rather than raised: "no holder" and
+    "several holders" are two different sentences for HR, and
+    :func:`resolve_section_approvers` is the one that writes them.
+    """
+    role = section.approver_role
+    team = _routing_team(section)
+
+    if team is not None:
+        holders = _team_wide_holder_ids(team, role)
+        if holders:
+            return ("team", holders)
+        if team.campus_id is not None:
+            holders = _campus_wide_holder_ids(team.campus, role)
+            if holders:
+                return ("campus", holders)
+
+    if not role.is_institution_wide:
+        return ("none", [])
+    if team is not None and team.category != Team.Category.ADMINISTRATION:
+        # An institution-wide approver is an administration office. An academic
+        # team routes through its own members and its campus, and saying so is
+        # more useful than letting the stage fall through to an office the
+        # requirement says it may not use.
+        return ("none", [])
+    return ("institution", _institution_wide_holder_ids(role))
 
 
 def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple[int, ...]:
@@ -139,22 +216,25 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
        everything below it skipped rather than resolving it at all (Unit 30). The
        refusal below is what catches a caller that asks this function directly,
        which is why it stays rather than becoming a branch nothing can reach.
-    2. Only when the section has no approver at all and its role is
-       institution-wide does the global holder decide — and then there must be
-       exactly one, because a global fallback is not a race anyone can see.
+    2. Only when the section has no approver at all does a **wide holding**
+       decide — and the narrowest one wins: the team's holder for the role, then
+       the holder at the team's campus, then, for an administration team, the
+       institution-wide holder. A wide holding must name exactly one active
+       person, because a fallback nobody can see cannot arbitrate a tie.
     3. Otherwise the configuration is incomplete and the submission is refused.
 
-    The fallback exists for a real case, not as a convenience. A department
-    cannot appoint a vice-chancellor, so an institution-wide step may reach its
-    office without a team staffing it — but only when the team has genuinely
-    left the step unstaffed. A section that *has* an approver never falls
-    through, so HR's explicit configuration always wins over the global holder.
+    The fallback exists for a real case, not as a convenience. A team cannot
+    appoint a vice-chancellor, so an institution-wide step may reach its office
+    without a team staffing it — and the same is true of a registrar's office
+    that serves a whole campus. But only when the team has genuinely left the
+    step unstaffed. A section that *has* an approver never falls through, so
+    HR's explicit configuration always wins over any wide holding.
 
     Only a **configured, active** approver routes. :attr:`Section.approver` is
     the configuration; the effective-dated record is the roster. A step whose
-    approver has been deactivated falls through to the global fallback for an
-    institution-wide role and is refused otherwise, because routing to an inactive
-    account would hand an approval to somebody who cannot act.
+    approver has been deactivated falls through to the wide holdings for an
+    institution-wide role and is refused otherwise, because routing to an
+    inactive account would hand an approval to somebody who cannot act.
 
     Every error names the role, names the section, and says what HR has to do
     about it.
@@ -181,8 +261,28 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
                 "is no longer an active user. Appoint somebody else to this step."
             )
 
-    if role.is_institution_wide:
-        holders = _institution_wide_holder_ids(role)
+    source, holders = _wide_holder_ids(section)
+    if source in ("team", "campus"):
+        if len(holders) == 1:
+            holder = holders[0]
+            if applicant_id is not None and holder == applicant_id:
+                raise WorkflowConfigError(
+                    f'The "{section.name}" section routes to the '
+                    f"{role.label} role, whose only holder is the applicant "
+                    "themself, and an approver cannot approve their own leave."
+                )
+            return (holder,)
+        # A team-wide and a campus-wide holding are one row each by unique
+        # constraint, so this cannot be reached today. It is kept because the
+        # alternative — silently picking one — is exactly the ambiguity the
+        # institution-wide branch refuses below.
+        raise WorkflowConfigError(
+            f'The "{section.name}" section has no approver, and the '
+            f"{role.label} role has multiple holders. Appoint somebody to the "
+            "step, or leave a single holder in place."
+        )
+
+    if source == "institution":
         if len(holders) == 1:
             holder = holders[0]
             if applicant_id is not None and holder == applicant_id:
@@ -204,10 +304,51 @@ def resolve_section_approvers(section, applicant_id: int | None = None) -> tuple
             "the step, or ask HR to designate exactly one."
         )
 
+    team = _routing_team(section)
+    if role.is_institution_wide and team is not None:
+        raise WorkflowConfigError(
+            f'The "{section.name}" section has no approver, and "{role.label}" '
+            "is an institution-wide role, which an academic team may not use. "
+            f"Appoint one of the {team.name} team's members to the step, or give "
+            "the role a team-wide or campus-wide holder."
+        )
+
     raise WorkflowConfigError(
         f'The "{section.name}" section has no approver. Appoint one of the '
-        f"{role.label} from the team's department."
+        f"{role.label} from the team, or give the role a team-wide holder."
     )
+
+
+def section_resolution(section) -> tuple[str, int | None]:
+    """Where ``section``'s approver comes from, for configuration screens.
+
+    Returns ``(source, user_id)`` with ``source`` one of:
+
+    ``section``
+        A person was appointed to this step by hand — the workflow-specific
+        approver, and always the winner because it is the explicit one.
+    ``team`` / ``campus`` / ``institution``
+        The step is unstaffed and a wide holding resolves it automatically.
+    ``unresolved``
+        Nothing can staff the step yet.
+
+    Display only: it never raises, so a screen can show an ambiguous
+    institution-wide role as "unresolved" while
+    :func:`resolve_section_approvers` still refuses it at submission.
+    """
+    if section.approver_id is not None and section.approver_id and section.approver.is_active:
+        role = section.approver_role
+        if role.is_institution_wide:
+            # Institution-wide is the one wide holding that writes itself onto
+            # the section when the role is chosen, so an approver who *is* the
+            # role's sole holder was resolved, not picked.
+            if _institution_wide_holder_ids(role) == [section.approver_id]:
+                return ("institution", section.approver_id)
+        return ("section", section.approver_id)
+    source, holders = _wide_holder_ids(section)
+    if source in ("team", "campus", "institution") and len(holders) == 1:
+        return (source, holders[0])
+    return ("unresolved", None)
 
 
 class SnapshotStagesMixin:
@@ -412,12 +553,16 @@ def _section_candidate_ids(section) -> set[int]:
     The pre-exclusion view of a stage. Used only to recognise the applicant's own
     stage; a stage that resolves to nobody is not the applicant's to skip, and
     still fails the ordinary configuration check naming the section.
+
+    Resolved through :func:`resolve_section_approvers` itself rather than
+    alongside it, so the skip-forward decision and the routing decision can
+    never disagree about who holds a step — a wide holding that resolves a stage
+    is exactly the case where two implementations would have drifted.
     """
-    if section.approver_id is not None:
-        return {section.approver_id} if section.approver.is_active else set()
-    if section.approver_role.is_institution_wide:
-        return set(_institution_wide_holder_ids(section.approver_role))
-    return set()
+    try:
+        return set(resolve_section_approvers(section))
+    except WorkflowConfigError:
+        return set()
 
 
 def _skip_reason_for(section, applicant_order: int | None) -> str:
@@ -470,7 +615,7 @@ def _hr_review_stage(order: int, applicant_id: int | None) -> StageDefinition:
         role_label="Human Resources",
         approver_user_ids=tuple(eligible),
         role_id=None,
-        # HR is the oversight role: it reviews across departments, so its stage
+        # HR is the oversight role: it reviews across teams, so its stage
         # carries the broadest scope rather than the narrowest default.
         history_scope=ApproverRole.HistoryScope.ALL,
         handles_cancellation=False,

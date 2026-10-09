@@ -30,9 +30,11 @@ from .models import (
     Section,
     SectionMember,
     Team,
+    TeamRoleAssignment,
     Workflow,
 )
 from .services import (
+    RoleActionError,
     TeamActionError,
     add_section_member,
     approver_role_codes_for,
@@ -44,16 +46,18 @@ from .services import (
 )
 from .testing import (
     DEV_PASSWORD,
-    department_for,
     ensure_roles,
     make_approver,
+    make_employee,
     make_team,
     make_workflow,
+    team_for,
 )
 
 User = get_user_model()
 
 TEAMS_URL = "/api/v1/teams/"
+WORKFLOWS_URL = "/api/v1/workflows/"
 MEMBERS_URL = "/api/v1/section-members/"
 CAMPUSES_URL = "/api/v1/campuses/"
 ASSIGNMENTS_URL = "/api/v1/role-assignments/"
@@ -79,10 +83,18 @@ class ConfigurationAPIBase(TestCase):
         )
         self.client.force_authenticate(self.hr)
         self.chain_roles = ("supervisor", "hod")
-        # A team's approvers are its own department's employees, so almost every
-        # test here needs a department to exist before it can appoint anybody.
-        self.department = department_for("Administration")
-        self.other_department = department_for("Faculty of Agriculture")
+        # Roles are HR data, not migration seed: a bare test database has none,
+        # so every chain this base writes staffs itself first.
+        ensure_roles(*self.chain_roles)
+
+    def other_team(self) -> Team:
+        """A second, unrelated team: the outsider a refusal is proved against.
+
+        Built on demand rather than in ``setUp``, because a team created for
+        every test would be counted by the tests that count teams and listed by
+        the tests that list them.
+        """
+        return team_for("Faculty of Agriculture Team")
 
     def chain_payload(self, name="Administration chain", roles=None) -> dict:
         """The chain as the team form writes it, since that is the only writer."""
@@ -97,7 +109,6 @@ class ConfigurationAPIBase(TestCase):
     def create_team(self, name="Administration team", **extra) -> dict:
         payload = {
             "name": name,
-            "department": self.department.pk,
             "new_workflow": self.chain_payload(),
         }
         payload.update(extra)
@@ -227,8 +238,6 @@ class TeamAPITests(ConfigurationAPIBase):
         """The chain arrives with the team, and is the team's own."""
         team = self.create_team(description="Administration staff")
         self.assertEqual(team["name"], "Administration team")
-        self.assertEqual(team["department"], self.department.pk)
-        self.assertEqual(team["department_name"], "Administration")
         self.assertEqual(team["workflow"], self.workflow.pk)
         self.assertEqual(team["workflow_name"], "Administration chain")
         self.assertEqual(
@@ -236,19 +245,11 @@ class TeamAPITests(ConfigurationAPIBase):
             ["supervisor", "hod"],
         )
 
-    def test_a_team_may_have_no_department_while_it_is_a_draft(self):
-        """A department is required before it can route, not before it exists.
-
-        HR may be naming teams before the department structure is settled. The
-        team is a real draft either way; activation is where the missing
-        department is refused, because that is where it starts to matter.
-        """
-        team = self.create_team("Unscoped team", department=None)
-        self.assertIsNone(team["department"])
-        response = self.client.post(f"{TEAMS_URL}{team['id']}/activate/")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        codes = [issue["code"] for issue in response.data["issues"]]
-        self.assertIn("department_missing", codes)
+    # ``department_missing`` is gone: a team is scoped by itself, and the campus
+    # it optionally sits at is reference data that scopes no approver. There is
+    # therefore no "a team must be placed somewhere before it can route" rule
+    # left to prove. The two-page draft rule it used to be paired with is proved
+    # by ``test_a_chainless_draft_team_cannot_be_activated`` instead.
 
     def test_a_code_is_derived_from_the_name(self):
         team = self.create_team("Human Resources")
@@ -283,23 +284,27 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertIn("name", response.data)
 
     def test_a_team_may_not_point_at_an_existing_chain(self):
-        """``workflow`` is read-only: a chain is never picked from a list.
+        """A chain is never picked from a list to be routed through.
 
-        The field is still in the response, so a client that has it cached — or
-        an old one that still sends it — has to see that posting it does
-        nothing. Silently honouring it would put a team on somebody else's
-        chain, which is the one outcome the team-owned rule exists to stop.
+        ``workflow`` is writable now — a team points at the chain it owns, so
+        that switching a team to its replacement chain is a real, recorded
+        decision — but only at a chain the team already owns. Naming somebody
+        else's chain would strand every application inside it at a step nobody
+        staffs for them, so it is refused rather than quietly ignored, and the
+        team is not half-created on the way.
         """
         other = self.create_team(name="Other team")
-        self.create_team(
-            name="Copying team",
-            **{"workflow": other["workflow"]},
+        response = self.client.post(
+            TEAMS_URL,
+            {"name": "Copying team", "workflow": other["workflow"]},
+            format="json",
         )
-        team = Team.objects.get(name="Copying team")
-        self.assertNotEqual(team.workflow_id, other["workflow"])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("workflow", response.data)
+        self.assertFalse(Team.objects.filter(name="Copying team").exists())
 
     def test_a_team_may_be_created_before_its_chain(self):
-        """Page 1 of the team form: identity and department, no chain yet.
+        """Page 1 of the team form: the team's identity, no chain yet.
 
         The team's identity is the first thing HR knows and the second page is
         where the approval steps get described, so refusing to save the identity
@@ -309,7 +314,7 @@ class TeamAPITests(ConfigurationAPIBase):
         """
         response = self.client.post(
             TEAMS_URL,
-            {"name": "Chainless team", "department": self.department.pk},
+            {"name": "Chainless team"},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
@@ -326,7 +331,7 @@ class TeamAPITests(ConfigurationAPIBase):
         """
         created = self.client.post(
             TEAMS_URL,
-            {"name": "Chainless team", "department": self.department.pk},
+            {"name": "Chainless team"},
             format="json",
         ).data
         response = self.client.post(f"{TEAMS_URL}{created['id']}/activate/")
@@ -347,7 +352,6 @@ class TeamAPITests(ConfigurationAPIBase):
             TEAMS_URL,
             {
                 "name": "Empty chain",
-                "department": self.department.pk,
                 "new_workflow": {"sections": []},
             },
             format="json",
@@ -360,7 +364,7 @@ class TeamAPITests(ConfigurationAPIBase):
         """Page 2 of the team form: the chain, written by saving the team again."""
         created = self.client.post(
             TEAMS_URL,
-            {"name": "Second page team", "department": self.department.pk},
+            {"name": "Second page team"},
             format="json",
         ).data
         response = self.client.patch(
@@ -434,7 +438,10 @@ class TeamAPITests(ConfigurationAPIBase):
         """
         team = self.create_team()
         approver = make_approver(
-            "supervisor", username="sup@teams.test", institution_wide=False
+            "supervisor",
+            username="sup@teams.test",
+            institution_wide=False,
+            team=Team.objects.get(pk=team["id"]),
         )
         self.add_member_to_section(
             self.workflow.sections.get(approver_role__code="supervisor"), approver
@@ -542,23 +549,24 @@ class TeamAPITests(ConfigurationAPIBase):
 
 
 class SectionApproverTests(ConfigurationAPIBase):
-    """Who approves a section: one person, from the team's own department.
+    """Who approves a section: one person, from the team's own employees.
 
     A section is the unit here, not the team: an appointment belongs to a step of
     the chain. A step has exactly one approver, so appointing somebody replaces
-    whoever was there, and the eligibility rules are the department the team
-    belongs to and the one-role-per-department rule.
+    whoever was there, and the eligibility rules are team membership and the
+    one-role-per-team rule.
     """
 
     def setUp(self):
         super().setUp()
         self.team = self.create_team()
+        self.owning_team = Team.objects.get(pk=self.team["id"])
         self.section = Section.objects.get(workflow=self.workflow, order=1)
         self.supervisor = make_approver(
             "supervisor",
             username="sup@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.owning_team,
         )
 
     def add_approver(self, user, section=None) -> dict:
@@ -589,7 +597,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             "supervisor",
             username="sup2@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.owning_team,
         )
         self.add_approver(self.supervisor)
         self.add_approver(second)
@@ -617,14 +625,14 @@ class SectionApproverTests(ConfigurationAPIBase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         # The second step needs the Head of Department role, and one employee
-        # holds one role per department — so this is refused, and that is the
+        # holds one role per team — so this is refused, and that is the
         # rule doing its job rather than an accident of ordering.
         self.assertIn("approver", response.data)
 
     def test_one_person_may_not_hold_two_stages_of_one_chain(self):
         """Unit 30: an employee is on one stage per workflow.
 
-        Two steps with two *different* roles, so the per-department role rule
+        Two steps with two *different* roles, so the per-team role rule
         does not fire first and the refusal is unambiguously the per-workflow
         one. Reusing the same role for both steps is a different refusal — the
         role itself may only appear once per workflow — covered in
@@ -644,7 +652,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             "supervisor",
             username="twosup@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=Team.objects.get(pk=team["id"]),
         )
         steps = list(
             Workflow.objects.get(pk=team["workflow"]).sections.order_by("order")
@@ -662,18 +670,18 @@ class SectionApproverTests(ConfigurationAPIBase):
         self.assertIn("already assigned to step 1", str(refused.data))
         self.assertIsNone(Section.objects.get(pk=steps[1].pk).approver_id)
 
-    def test_an_approver_from_another_department_is_refused(self):
-        """A team's approvers are its own department's employees.
+    def test_an_approver_from_another_team_is_refused(self):
+        """A team's approvers are its own employees.
 
-        Somebody from another department approving here would be deciding on a
-        budget and a procedure they do not hold, so the refusal names both
-        departments rather than just saying "not eligible".
+        Somebody from another team approving here would be deciding on a budget
+        and a procedure they do not hold, so the refusal names both teams rather
+        than just saying "not eligible".
         """
         outsider = make_approver(
             "supervisor",
             username="outsider@teams.test",
             institution_wide=False,
-            department=self.other_department.name,
+            team=self.other_team(),
         )
         response = self.client.post(
             MEMBERS_URL,
@@ -681,16 +689,17 @@ class SectionApproverTests(ConfigurationAPIBase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Faculty of Agriculture", response.data["approver"][0])
-        self.assertIn("Administration", response.data["approver"][0])
+        self.assertIn("Faculty of Agriculture Team", response.data["approver"][0])
+        self.assertIn("Administration team", response.data["approver"][0])
 
-    def test_an_institution_wide_role_ignores_the_department_rule(self):
-        """Some posts are not a department's to fill.
+    def test_an_institution_wide_role_ignores_the_team_membership_rule(self):
+        """Some posts are not a team's to fill.
 
-        A vice-chancellor's office approves from outside any department, so an
-        institution-wide role is appointed without the department check — which
+        A vice-chancellor's office approves from outside any team, so an
+        institution-wide role is appointed without the membership check — which
         is what makes that flag worth having.
         """
+        ensure_roles("registrar")
         role = ApproverRole.objects.get(code="registrar")
         role.is_institution_wide = True
         role.save(update_fields=["is_institution_wide"])
@@ -698,7 +707,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             "registrar",
             username="vc@teams.test",
             institution_wide=False,
-            department=self.other_department.name,
+            team=self.other_team(),
         )
         section = self.workflow.sections.get(order=2)
         section.approver_role = role
@@ -708,19 +717,20 @@ class SectionApproverTests(ConfigurationAPIBase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
-    def test_one_person_may_not_hold_two_roles_in_one_department(self):
-        """One employee, one approver role, per department.
+    def test_one_person_may_not_hold_two_roles_on_one_team(self):
+        """One employee, one approver role, per team.
 
-        Two roles in one department would make what they can see depend on which
-        team's application arrived — each role carries its own history scope — so
-        the second appointment is refused and the message names the first.
+        Two roles on one team would make what they can see depend on which of
+        that team's applications arrived — each role carries its own history
+        scope — so the second appointment is refused and the message names the
+        first.
         """
         hod = self.workflow.sections.get(order=2)
         head = make_approver(
             "hod",
             username="head@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.owning_team,
         )
         response = self.client.post(
             MEMBERS_URL, {"section": hod.pk, "user": head.pk}, format="json"
@@ -732,27 +742,29 @@ class SectionApproverTests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Head of Department", response.data["approver"][0])
 
-    def test_one_person_may_hold_a_role_again_in_another_department(self):
-        """The one-role rule is per department, not per person.
+    def test_the_one_role_rule_is_per_team_not_per_person(self):
+        """The one-role rule does not follow a person between teams.
 
-        Somebody who heads one department and supervises another is not a
-        contradiction: the two roles are about two different bodies of work.
+        Somebody who supervises one team and heads another is not a
+        contradiction: the two roles are about two different bodies of work, and
+        the rule is scoped to the team it is enforced on.
         """
+        self.add_approver(self.supervisor)
         team = self.create_team(
             "Agriculture team",
-            department=self.other_department.pk,
             new_workflow={
                 "name": "Agriculture chain",
                 "sections": [
-                    {"name": "Supervisor", "approver_role": "supervisor"}
+                    {"name": "Head", "approver_role": "hod"}
                 ],
             },
         )
         step = Workflow.objects.get(pk=team["workflow"]).sections.get(order=1)
-        # The person's employee record moves department, as an internal transfer
-        # would, and they are appointed on the new department's team.
-        self.supervisor.employee_profile.department = self.other_department
-        self.supervisor.employee_profile.save(update_fields=["department"])
+        # The person's employee record moves team, as an internal transfer would,
+        # and they are appointed on the team they moved to.
+        profile = self.supervisor.employee_profile
+        profile.team = Team.objects.get(pk=team["id"])
+        profile.save(update_fields=["team"])
         response = self.client.post(
             MEMBERS_URL, {"section": step.pk, "user": self.supervisor.pk}, format="json"
         )
@@ -766,7 +778,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             "supervisor",
             username="no-profile@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.owning_team,
         )
         EmployeeProfile.objects.filter(user=personless).delete()
         response = self.client.post(
@@ -776,21 +788,22 @@ class SectionApproverTests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("employee record", response.data["approver"][0])
 
-    def test_a_teamless_chain_cannot_be_staffed(self):
-        """A team with no department cannot scope an approver, so nobody fits.
+    def test_a_chain_with_no_team_cannot_be_staffed(self):
+        """A chain that is not attached to a team has nobody to appoint.
 
-        Treating the blank as "anybody may approve" would make the department
-        rule opt-out, reached by leaving a field empty.
+        Eligibility is team membership, so a chain nobody owns cannot scope an
+        approver. Treating "no team" as "anybody may approve" would make the rule
+        opt-out rather than opt-in.
         """
-        unscoped = Team.objects.get(pk=self.team["id"])
-        unscoped.department = None
-        unscoped.save(update_fields=["department"])
+        ensure_roles("dean")
+        orphan = make_workflow("Orphan chain", ("dean",))
+        section = orphan.sections.get(order=1)
         response = self.client.post(
-            MEMBERS_URL, {"section": self.section.pk, "user": self.supervisor.pk},
+            MEMBERS_URL, {"section": section.pk, "user": self.supervisor.pk},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("department", response.data["approver"][0])
+        self.assertIn("not attached to a team", response.data["approver"][0])
 
     def test_an_appointment_is_audited(self):
         self.add_approver(self.supervisor)
@@ -806,7 +819,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             "supervisor",
             username="sup2@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.owning_team,
         )
         self.add_approver(self.supervisor)
         self.add_approver(second)
@@ -971,101 +984,95 @@ class SectionApproverTests(ConfigurationAPIBase):
 
 
 class EligibleApproverEndpointTests(ConfigurationAPIBase):
-    """The approver picker is scoped by the department, so it cannot offer a
+    """The approver picker is scoped by the team, so it cannot offer a
     person the write would refuse."""
 
     def setUp(self):
         super().setUp()
+        self.team = Team.objects.get(pk=self.create_team()["id"])
         self.inside = make_approver(
             "supervisor",
             username="inside@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.team,
         )
         self.outside = make_approver(
             "supervisor",
             username="outside@teams.test",
             institution_wide=False,
-            department=self.other_department.name,
+            team=self.other_team(),
         )
 
     def url(self, **params) -> str:
         query = "&".join(f"{key}={value}" for key, value in params.items())
         return f"{TEAMS_URL}eligible-approvers/?{query}"
 
-    def test_a_department_is_required(self):
+    def test_a_team_is_required(self):
         response = self.client.get(f"{TEAMS_URL}eligible-approvers/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("department", response.data)
+        self.assertIn("team", response.data)
 
-    def test_it_offers_only_the_departments_own_employees(self):
-        response = self.client.get(self.url(department=self.department.pk))
+    def test_it_offers_only_the_teams_own_employees(self):
+        response = self.client.get(self.url(team=self.team.pk))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = [row["id"] for row in response.data["candidates"]]
         self.assertIn(self.inside.pk, ids)
         self.assertNotIn(self.outside.pk, ids)
-        self.assertEqual(response.data["department"]["name"], "Administration")
+        self.assertEqual(response.data["team"]["name"], "Administration team")
 
     def test_naming_a_role_excludes_somebody_holding_another_one_here(self):
         """The list agrees with the rule, so a refused pick is not offered.
 
-        Somebody already appointed in a different role inside this department
-        cannot be appointed in this one, so leaving them in the list would offer
-        a choice the save rejects.
+        Somebody already appointed in a different role on this team cannot be
+        appointed in this one, so leaving them in the list would offer a choice
+        the save rejects.
         """
-        self.create_team("First team")
         hod = make_approver(
             "hod",
             username="head@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=self.team,
         )
         self.add_member_to_section(
             self.workflow.sections.get(approver_role__code="hod"), hod
         )
         role = ApproverRole.objects.get(code="supervisor")
-        response = self.client.get(
-            self.url(department=self.department.pk, role=role.pk)
-        )
+        response = self.client.get(self.url(team=self.team.pk, role=role.pk))
         ids = [row["id"] for row in response.data["candidates"]]
         self.assertNotIn(hod.pk, ids)
         self.assertIn(self.inside.pk, ids)
 
     def test_naming_a_role_keeps_somebody_already_holding_it(self):
-        self.create_team("Second team")
         supervisor_role = ApproverRole.objects.get(code="supervisor")
         self.add_member_to_section(
             self.workflow.sections.get(approver_role__code="supervisor"),
             self.inside,
         )
         response = self.client.get(
-            self.url(department=self.department.pk, role=supervisor_role.pk)
+            self.url(team=self.team.pk, role=supervisor_role.pk)
         )
         ids = [row["id"] for row in response.data["candidates"]]
         self.assertIn(self.inside.pk, ids)
 
-    def test_an_unknown_department_is_a_client_error(self):
-        response = self.client.get(self.url(department=999_999))
+    def test_an_unknown_team_is_a_client_error(self):
+        response = self.client.get(self.url(team=999_999))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_non_hr_cannot_list_eligible_approvers(self):
         self.client.force_authenticate(self.employee)
-        response = self.client.get(self.url(department=self.department.pk))
+        response = self.client.get(self.url(team=self.team.pk))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_an_institution_wide_role_offers_its_holder_from_outside(self):
-        """The holder is not a department employee, but selecting the role is
+        """The holder is not a team employee, but selecting the role is
         how HR names them, so the picker has to be able to show them."""
         registrar = make_approver(
             "registrar",
             username="registrar@teams.test",
             institution_wide=True,
-            department=self.other_department.name,
         )
         role = ApproverRole.objects.get(code="registrar")
-        response = self.client.get(
-            self.url(department=self.department.pk, role=role.pk)
-        )
+        response = self.client.get(self.url(team=self.team.pk, role=role.pk))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = [row["id"] for row in response.data["candidates"]]
         self.assertIn(registrar.pk, ids)
@@ -1075,24 +1082,92 @@ class EligibleApproverEndpointTests(ConfigurationAPIBase):
             "registrar",
             username="retired-registrar@teams.test",
             institution_wide=True,
-            department=self.other_department.name,
         )
         registrar.is_active = False
         registrar.save(update_fields=["is_active"])
         role = ApproverRole.objects.get(code="registrar")
-        response = self.client.get(
-            self.url(department=self.department.pk, role=role.pk)
-        )
+        response = self.client.get(self.url(team=self.team.pk, role=role.pk))
         ids = [row["id"] for row in response.data["candidates"]]
         self.assertNotIn(registrar.pk, ids)
+
+    def second_chain(self):
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Second chain",
+                "team": self.team.pk,
+                "sections": [
+                    {"name": "Check", "approver_role": "supervisor", "approver": None}
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return Workflow.objects.get(pk=response.data["id"])
+
+    def test_naming_a_workflow_drops_people_on_the_other_chain(self):
+        other_chain = self.second_chain()
+        self.add_member_to_section(other_chain.sections.get(), self.inside)
+        role = ApproverRole.objects.get(code="supervisor")
+        # Scoped to the team's original chain, inside is "on another chain" and
+        # may not be offered for configuring this one.
+        response = self.client.get(
+            self.url(team=self.team.pk, role=role.pk, workflow=self.workflow.pk)
+        )
+        ids = [row["id"] for row in response.data["candidates"]]
+        self.assertNotIn(self.inside.pk, ids)
+        # Scoped to the chain inside actually staffs, they are its current
+        # holder and stay offered.
+        response = self.client.get(
+            self.url(team=self.team.pk, role=role.pk, workflow=other_chain.pk)
+        )
+        ids = [row["id"] for row in response.data["candidates"]]
+        self.assertIn(self.inside.pk, ids)
+
+    def test_workflow_new_drops_people_on_any_chain(self):
+        self.add_member_to_section(self.second_chain().sections.get(), self.inside)
+        role = ApproverRole.objects.get(code="supervisor")
+        # "new" means the chain does not exist yet, so anyone already placed on
+        # any of the team's chains is excluded.
+        response = self.client.get(
+            self.url(team=self.team.pk, role=role.pk, workflow="new")
+        )
+        ids = [row["id"] for row in response.data["candidates"]]
+        self.assertNotIn(self.inside.pk, ids)
+        # Without the workflow scope the picker keeps its legacy behaviour and
+        # still offers them.
+        response = self.client.get(self.url(team=self.team.pk, role=role.pk))
+        ids = [row["id"] for row in response.data["candidates"]]
+        self.assertIn(self.inside.pk, ids)
+
+    def test_a_wide_approver_on_another_chain_stays_offered(self):
+        other_chain = self.second_chain()
+        self.add_member_to_section(other_chain.sections.get(), self.inside)
+        supervisor = ApproverRole.objects.get(code="supervisor")
+        TeamRoleAssignment.objects.create(
+            user=self.inside, team=self.team, role=supervisor
+        )
+        # A team-wide holder may also sit on the first chain as a normal member,
+        # and must remain offered to every chain of the team.
+        response = self.client.post(
+            f"{WORKFLOWS_URL}{self.workflow.pk}/members/",
+            {"user": self.inside.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        response = self.client.get(
+            self.url(team=self.team.pk, role=supervisor.pk, workflow="new")
+        )
+        ids = [row["id"] for row in response.data["candidates"]]
+        self.assertIn(self.inside.pk, ids)
 
 
 class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
     """Selecting an institution-wide role staffs the step with its single holder.
 
-    Such a role is held outside the team's department, so the department-scoped
-    picker cannot be used to name the holder by hand. Choosing the role is the
-    whole instruction, and the one active holder is written when the chain is.
+    Such a role is held outside any one team, so the team-scoped picker cannot be
+    used to name the holder by hand. Choosing the role is the whole instruction,
+    and the one active holder is written when the chain is.
     """
 
     def setUp(self):
@@ -1105,7 +1180,6 @@ class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
             "registrar",
             username=username,
             institution_wide=True,
-            department=self.other_department.name,
         )
 
     def test_creating_a_chain_appoints_the_single_holder(self):
@@ -1127,7 +1201,7 @@ class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
         holder = self.registrar_holder("late-registrar@teams.test")
         created = self.client.post(
             TEAMS_URL,
-            {"name": "Late chain", "department": self.department.pk},
+            {"name": "Late chain"},
             format="json",
         ).data
         response = self.client.patch(
@@ -1146,13 +1220,18 @@ class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
         section = self.workflow.sections.get(approver_role__code="registrar")
         self.assertIsNone(section.approver_id)
 
-    def test_two_holders_leave_the_step_for_hr_to_choose(self):
-        """Picking one of several would decide an ambiguity HR must resolve."""
-        self.registrar_holder("first-registrar@teams.test")
-        self.registrar_holder("second-registrar@teams.test")
+    def test_a_second_holder_is_refused_so_a_held_role_is_always_staffed(self):
+        """A role has one institution-wide approver, so a held role can never
+        arrive at its step ambiguous: a second assignment is refused outright,
+        and the single holder is appointed when the chain is written."""
+        holder = self.registrar_holder()
+        role = ApproverRole.objects.get(code="registrar")
+        second = make_employee("second-registrar@teams.test")
+        with self.assertRaises(RoleActionError):
+            create_role_assignment(user=second, role=role, actor=self.hr)
         self.create_team()
         section = self.workflow.sections.get(approver_role__code="registrar")
-        self.assertIsNone(section.approver_id)
+        self.assertEqual(section.approver_id, holder.pk)
 
     def test_a_team_scoped_role_is_never_auto_appointed(self):
         """Only an institution-wide role carries its holder with it."""
@@ -1175,18 +1254,49 @@ class RoleAssignmentAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(is_approver_user(self.employee))
 
-    def test_a_team_role_cannot_be_granted_institution_wide(self):
-        """Team roles are staffed through a team, not a blanket assignment."""
+    def test_the_first_institution_holder_promotes_a_team_role(self):
+        """The Approvers page is where a wide role is born: assigning a team
+        role its first institution-wide holder is the decision that it now
+        covers every application, so the same save promotes the role."""
+        role = ApproverRole.objects.get(code="supervisor")
+        self.assertFalse(role.is_institution_wide)
+
         response = self.client.post(
             ASSIGNMENTS_URL,
-            {
-                "user": self.employee.pk,
-                "role": ApproverRole.objects.get(code="supervisor").pk,
-            },
+            {"user": self.employee.pk, "role": role.pk},
             format="json",
         )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role.refresh_from_db()
+        self.assertTrue(role.is_institution_wide)
+        self.assertTrue(RoleAssignment.objects.filter(role=role).exists())
+        self.assertTrue(is_approver_user(self.employee))
+        # The promotion is a change in its own right, so it is audited.
+        self.assertTrue(
+            AuditEntry.objects.filter(
+                target_type=AuditEntry.TargetType.APPROVER_ROLE,
+                action=AuditEntry.Action.UPDATED,
+            ).exists()
+        )
+
+    def test_a_role_held_on_a_team_cannot_be_granted_institution_wide(self):
+        """A role cannot be held wide at a team and institution-wide at once;
+        promoting it would contradict the holder already on the team."""
+        role = ApproverRole.objects.get(code="supervisor")
+        team = Team.objects.get(pk=self.create_team()["id"])
+        TeamRoleAssignment.objects.create(team=team, role=role, user=self.employee)
+
+        response = self.client.post(
+            ASSIGNMENTS_URL,
+            {"user": self.employee.pk, "role": role.pk},
+            format="json",
+        )
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("team role", response.data["role"][0])
+        self.assertIn("already held on a team or campus", response.data["role"][0])
+        role.refresh_from_db()
+        self.assertFalse(role.is_institution_wide)
         self.assertFalse(RoleAssignment.objects.exists())
 
     def test_granting_twice_is_refused(self):
@@ -1199,6 +1309,26 @@ class RoleAssignmentAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already holds", response.data["user"][0])
         self.assertEqual(RoleAssignment.objects.count(), 1)
+
+    def test_a_role_with_an_institution_holder_cannot_be_granted_to_another(self):
+        """Once a role has an institution-wide approver it is not assigned again:
+        the attempt is refused and names the current holder of the role."""
+        role = ApproverRole.objects.get(code="registrar")
+        first = self.client.post(
+            ASSIGNMENTS_URL,
+            {"user": self.employee.pk, "role": role.pk},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.post(
+            ASSIGNMENTS_URL, {"user": self.hr.pk, "role": role.pk}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already held institution-wide by", response.data["role"][0])
+        self.assertEqual(RoleAssignment.objects.count(), 1)
+        self.assertFalse(is_approver_user(self.hr))
 
     def test_an_inactive_user_cannot_hold_a_role(self):
         self.employee.is_active = False
@@ -1283,7 +1413,6 @@ class EmployeeTeamPlacementTests(ConfigurationAPIBase):
 
         self.profile = EmployeeProfile.objects.create(
             user=self.employee,
-            department=department_for("Administration"),
             faculty="Faculty of Science",
             category=EmployeeProfile.Category.ADMINISTRATION,
             grade="B",
@@ -1338,7 +1467,7 @@ class EmployeeTeamPlacementTests(ConfigurationAPIBase):
             "supervisor",
             username="sup@teams.test",
             institution_wide=False,
-            department=self.department.name,
+            team=Team.objects.get(pk=self.team["id"]),
         )
         self.add_member_to_section(
             self.workflow.sections.get(approver_role__code="supervisor"), approver
@@ -1360,17 +1489,20 @@ class RoutingConfigurationTests(TestCase):
             password=DEV_PASSWORD,
             role=User.Role.HR,
         )
-        self.department = department_for("Administration")
         ensure_roles("supervisor", "hod", "registrar")
 
     def test_a_section_approver_holds_the_role(self):
+        # The person is placed on the team first: eligibility is team membership,
+        # so a fixture must not build an appointment the product would refuse.
         person = make_approver(
-            "supervisor", username="sup@routing.test", institution_wide=False
+            "supervisor",
+            username="sup@routing.test",
+            institution_wide=False,
+            team=team_for("Science"),
         )
         team = make_team(
             "Science",
             ("supervisor", "hod"),
-            department=self.department.name,
             approvers={"supervisor": person},
         )
         section = team.workflow.sections.get(approver_role__code="supervisor")
@@ -1378,21 +1510,20 @@ class RoutingConfigurationTests(TestCase):
         self.assertTrue(is_approver_user(person))
 
     def test_a_person_can_hold_the_same_role_on_several_teams(self):
+        """The one-role rule is per team, so one capacity may span two of them."""
         person = make_approver(
-            "supervisor", username="multi@routing.test", institution_wide=False
+            "supervisor",
+            username="multi@routing.test",
+            institution_wide=False,
+            team=team_for("Science"),
         )
-        make_team(
-            "Science",
-            ("supervisor",),
-            department=self.department.name,
-            approvers={"supervisor": person},
-        )
-        make_team(
-            "Arts",
-            ("supervisor",),
-            department=self.department.name,
-            approvers={"supervisor": person},
-        )
+        make_team("Science", ("supervisor",), approvers={"supervisor": person})
+        # The employee record moves to the second team, as an internal transfer
+        # would, so each appointment is made for somebody who is a member of it.
+        profile = person.employee_profile
+        profile.team = team_for("Arts")
+        profile.save(update_fields=["team"])
+        make_team("Arts", ("supervisor",), approvers={"supervisor": person})
         self.assertEqual(approver_role_codes_for(person), ["supervisor"])
 
     def test_removing_an_appointment_leaves_the_step_unstaffed(self):
@@ -1402,12 +1533,14 @@ class RoutingConfigurationTests(TestCase):
         answerable, but nothing points at them as the current approver.
         """
         person = make_approver(
-            "supervisor", username="reuse@routing.test", institution_wide=False
+            "supervisor",
+            username="reuse@routing.test",
+            institution_wide=False,
+            team=team_for("Science"),
         )
         team = make_team(
             "Science",
             ("supervisor",),
-            department=self.department.name,
             approvers={"supervisor": person},
         )
         section = team.workflow.sections.get(approver_role__code="supervisor")
@@ -1451,14 +1584,15 @@ class RoutingConfigurationTests(TestCase):
         )
         profile = EmployeeProfile.objects.create(
             user=employee,
-            department=department_for("Administration"),
             faculty="Faculty of Science",
             category=EmployeeProfile.Category.ADMINISTRATION,
             grade="B",
             team=team,
         )
         self.assertEqual(profile.team, team)
-        self.assertEqual(list(team.members.all()), [profile])
+        # The team's own approver is a member too, so this is "placed on it",
+        # not "the only person on it".
+        self.assertIn(profile, list(team.members.all()))
 
     def test_a_workflow_keeps_its_sections_in_order(self):
         workflow = make_workflow("Ordered", ("supervisor", "hod", "registrar"))

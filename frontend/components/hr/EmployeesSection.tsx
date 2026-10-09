@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { Plus, SearchX } from "lucide-react";
 
 import type { Employee } from "@/lib/employees";
-import type { Department } from "@/lib/departments";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { EmployeeForm } from "@/components/hr/employee-form";
@@ -25,9 +24,6 @@ export interface EmployeesSectionProps {
   /** Total across every page, so the message can say what it is hiding. */
   totalCount: number;
   gradeOptions: string[];
-  departments: Department[];
-  /** Set when the departments fetch failed; the picker is then shown unusable. */
-  departmentsError: string;
   /** The page's active `?search`, so the message can name it and offer to clear it. */
   search: string;
   /** The search form, passed in as a slot because the page owns the GET URLs. */
@@ -51,8 +47,6 @@ export function EmployeesSection({
   employees,
   totalCount,
   gradeOptions,
-  departments,
-  departmentsError,
   search,
   filter,
   error,
@@ -150,8 +144,6 @@ export function EmployeesSection({
           endpoint="/api/hr/employees"
           method="POST"
           gradeOptions={gradeOptions}
-          departments={departments}
-          departmentsError={departmentsError}
           onSuccess={(saved) => {
             setCreatedId(saved.id);
             overlay.close();

@@ -1,3 +1,13 @@
+"""HR-facing account, employee-record, and bootstrap endpoint tests.
+
+The department suite that used to live here — ``DepartmentViewSet``, the
+``/api/v1/departments/`` endpoints, create/rename/retire, the team and employee
+counts each department reported, and department search/ordering — was removed
+along with the model. There is no department feature left to test, so those
+tests are gone rather than rewritten; where an employee test only needed *some*
+organisational placement it now uses a :class:`~workflows.models.Team`.
+"""
+
 from datetime import date
 
 from django.test import TestCase
@@ -5,12 +15,15 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
-from .models import Department, EmployeeProfile, User
+from .models import EmployeeProfile, User
+from workflows.models import CampusRoleAssignment, TeamRoleAssignment
 from workflows.testing import (
     create_user_with_role,
-    department_for,
     grant_approver_role,
+    make_approver,
+    make_employee,
     make_team,
+    team_for,
 )
 
 SEED_PASSWORD = "testpass123"
@@ -114,17 +127,17 @@ class EmployeeEndpointTests(TestCase):
             last_name="Employee",
             role=User.Role.EMPLOYEE,
         )
+        self.administration = team_for("Administration Team")
         self.employee_profile = EmployeeProfile.objects.create(
             user=self.employee_user,
             designation="Administrative Officer",
-            department=department_for("Administration"),
+            team=self.administration,
             category=EmployeeProfile.Category.ADMINISTRATION,
             grade="B",
             appointment_date=date(2020, 1, 15),
         )
         self.list_url = "/api/v1/employees/"
         self.detail_url = f"/api/v1/employees/{self.employee_profile.id}/"
-        self.administration = department_for("Administration")
 
     def test_list_requires_authentication(self):
         response = self.client.get(self.list_url)
@@ -172,10 +185,10 @@ class EmployeeEndpointTests(TestCase):
         response = self.client.get(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(  # type: ignore[index]
-            response.data["department"], self.administration.pk
+            response.data["team"], self.administration.pk
         )
         self.assertEqual(  # type: ignore[index]
-            response.data["department_name"], "Administration"
+            response.data["team_name"], "Administration Team"
         )
         self.assertEqual(response.data["grade"], "B")  # type: ignore[index]
         self.assertEqual(  # type: ignore[index]
@@ -191,6 +204,7 @@ class EmployeeEndpointTests(TestCase):
         201 and leaves the account unable to sign in until the link is used.
         """
         self.client.force_authenticate(user=self.hr_user)
+        bunda = team_for("Bunda College Team")
         response = self.client.post(
             self.list_url,
             {
@@ -198,7 +212,7 @@ class EmployeeEndpointTests(TestCase):
                 "first_name": "New",
                 "last_name": "Employee",
                 "designation": "Lecturer",
-                "department": department_for("Bunda College").pk,
+                "team": bunda.pk,
                 "category": "academic",
                 "grade": "C",
                 "appointment_date": "2023-05-01",
@@ -210,7 +224,7 @@ class EmployeeEndpointTests(TestCase):
         self.assertEqual(user.username, "new.employee@test.luanar")
         self.assertEqual(user.role, User.Role.EMPLOYEE)
         profile = EmployeeProfile.objects.get(user=user)
-        self.assertEqual(profile.department, department_for("Bunda College"))
+        self.assertEqual(profile.team, bunda)
         self.assertNotIn("password", response.data)  # type: ignore[operator]
 
     def test_create_ignores_a_supplied_password(self):
@@ -275,11 +289,12 @@ class EmployeeEndpointTests(TestCase):
 
     def test_update_changes_profile_and_user(self):
         self.client.force_authenticate(user=self.hr_user)
+        agriculture = team_for("Agriculture Team")
         response = self.client.patch(
             self.detail_url,
             {
                 "first_name": "Updated",
-                "department": department_for("Faculty of Agriculture").pk,
+                "team": agriculture.pk,
                 "grade": "H",
             },
         )
@@ -287,9 +302,7 @@ class EmployeeEndpointTests(TestCase):
         self.employee_user.refresh_from_db()
         self.employee_profile.refresh_from_db()
         self.assertEqual(self.employee_user.first_name, "Updated")
-        self.assertEqual(
-            self.employee_profile.department, department_for("Faculty of Agriculture")
-        )
+        self.assertEqual(self.employee_profile.team, agriculture)
         self.assertEqual(self.employee_profile.grade, "H")
 
     def test_update_email_renames_user(self):
@@ -339,13 +352,13 @@ class EmployeeEndpointTests(TestCase):
         )
         EmployeeProfile.objects.create(
             user=other,
-            department=department_for("Bunda College"),
+            team=team_for("Bunda College Team"),
             designation="Lecturer",
             grade="E",
         )
         self.client.force_authenticate(user=self.hr_user)
 
-        response = self.client.get(self.list_url, {"search": "Bunda"})
+        response = self.client.get(self.list_url, {"search": "Lecturer"})
         self.assertEqual(response.data["count"], 1)  # type: ignore[index]
         self.assertEqual(  # type: ignore[index]
             response.data["results"][0]["email"], "zoe@test.luanar"  # type: ignore[index]
@@ -671,7 +684,7 @@ class EmployeeSerializerAtomicityTests(TestCase):
         profile = EmployeeProfile.objects.create(
             user=self.hr,
             designation="Lecturer",
-            department=department_for("Computer Science"),
+            team=team_for("Computer Science Team"),
         )
         serializer = self._serializer(
             profile,
@@ -720,7 +733,7 @@ class EmployeeSerializerAtomicityTests(TestCase):
         profile = EmployeeProfile.objects.create(
             user=employee,
             designation="Lecturer",
-            department=department_for("Computer Science"),
+            team=team_for("Computer Science Team"),
         )
         serializer = self._serializer(
             profile,
@@ -762,188 +775,6 @@ class EmployeeSerializerAtomicityTests(TestCase):
                 serializer.save()
         employee.refresh_from_db()
         self.assertTrue(employee.check_password("testpass123"))
-
-    def test_a_retired_department_cannot_be_assigned_to_an_employee(self):
-        """A retired department is not somewhere an employee can sit.
-
-        Retiring a department is refused while it is still on a team or an
-        employee record, so this is belt-and-braces: it stops the moment after
-        retirement from being answered with "just assign them here anyway".
-        """
-        from rest_framework.test import APIRequestFactory
-
-        from .serializers import EmployeeSerializer
-
-        retired = department_for("Retired Unit")
-        retired.is_active = False
-        retired.save(update_fields=["is_active"])
-        request = APIRequestFactory().post("/")
-        request.user = self.hr
-        serializer = EmployeeSerializer(
-            data={
-                "email": "retired-dept@test.luanar",
-                "first_name": "Ret",
-                "last_name": "Ired",
-                "password": "initial-pass-123",
-                "department": retired.pk,
-            },
-            context={"request": request},
-        )
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("department", serializer.errors)
-
-
-class DepartmentEndpointTests(TestCase):
-    """HR-only CRUD for departments, including the teams each one holds."""
-
-    def setUp(self):
-        self.client = APIClient()  # type: ignore[assignment]
-        self.hr_user = User.objects.create_user(
-            username="hr-dept@test.luanar",
-            email="hr-dept@test.luanar",
-            password=SEED_PASSWORD,
-            role=User.Role.HR,
-        )
-        self.employee_user = User.objects.create_user(
-            username="emp-dept@test.luanar",
-            email="emp-dept@test.luanar",
-            password=SEED_PASSWORD,
-            role=User.Role.EMPLOYEE,
-        )
-        self.list_url = "/api/v1/departments/"
-
-    def test_list_requires_authentication(self):
-        response = self.client.get(self.list_url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_non_hr_cannot_read_or_write_departments(self):
-        self.client.force_authenticate(user=self.employee_user)
-        self.assertEqual(
-            self.client.get(self.list_url).status_code, status.HTTP_403_FORBIDDEN
-        )
-        self.assertEqual(
-            self.client.post(self.list_url, {"name": "X"}).status_code,
-            status.HTTP_403_FORBIDDEN,
-        )
-
-    def test_hr_creates_a_department_from_its_name(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(self.list_url, {"name":  "  ICT  "})
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["name"], "ICT")  # type: ignore[index]
-        self.assertEqual(Department.objects.get(name="ICT").name, "ICT")
-
-    def test_a_duplicate_department_is_refused(self):
-        self.client.force_authenticate(user=self.hr_user)
-        department_for("ICT")
-        response = self.client.post(self.list_url, {"name": "ict"})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data)  # type: ignore[arg-type]
-        self.assertEqual(Department.objects.filter(name__iexact="ict").count(), 1)
-
-    def test_a_blank_department_name_is_refused(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(self.list_url, {"name": "   "})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_a_department_lists_the_teams_it_holds(self):
-        self.client.force_authenticate(user=self.hr_user)
-        department = department_for("Estate")
-        make_team("Estate North", ("supervisor",), department=department.name)
-        make_team("Estate South", ("supervisor",), department=department.name)
-
-        response = self.client.get(self.list_url, {"search": "Estate"})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        row = response.data["results"][0]  # type: ignore[index]
-        self.assertEqual(row["name"], "Estate")
-        self.assertEqual(row["team_count"], 2)
-        self.assertEqual(
-            sorted(team["name"] for team in row["teams"]),
-            ["Estate North", "Estate South"],
-        )
-
-    def test_a_department_counts_its_employees(self):
-        department = department_for("Registry")
-        EmployeeProfile.objects.create(
-            user=self.employee_user, department=department, grade="B"
-        )
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.get(self.list_url, {"search": "Registry"})
-        self.assertEqual(response.data["results"][0]["employee_count"], 1)  # type: ignore[index]
-
-    def test_renaming_a_department_keeps_its_teams_and_employees(self):
-        """Teams and employees reference the department by id, so a rename is safe.
-
-        This is the reason a rename is allowed at all where a merge is not: moving
-        the label moves every reference with it, whereas folding two rows together
-        would mean choosing what happens to the references on the loser.
-        """
-        department = department_for("Bunda")
-        team = make_team("Bunda Team", ("supervisor",), department=department.name)
-        EmployeeProfile.objects.create(
-            user=self.employee_user, department=department, grade="B"
-        )
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(
-            f"{self.list_url}{department.pk}/", {"name": "Bunda College"}
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        department.refresh_from_db()
-        team.refresh_from_db()
-        self.employee_user.employee_profile.refresh_from_db()
-        self.assertEqual(department.name, "Bunda College")
-        self.assertEqual(team.department_id, department.pk)
-        self.assertEqual(self.employee_user.employee_profile.department_id, department.pk)
-
-    def test_a_department_in_use_cannot_be_retired(self):
-        """Retirement is refused while a team or an employee record still needs it.
-
-        The row is the answer to "who is in this department", so retiring it while
-        people and teams are still on it would leave those references dangling
-        behind a name HR can no longer select.
-        """
-        department = department_for("Still In Use")
-        make_team("Still In Use Team", ("supervisor",), department=department.name)
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(f"{self.list_url}{department.pk}/retire/")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        department.refresh_from_db()
-        self.assertTrue(department.is_active)
-
-    def test_an_unused_department_can_be_retired_and_then_hidden(self):
-        department = department_for("Defunct Unit")
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(f"{self.list_url}{department.pk}/retire/")
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(response.data["is_active"])  # type: ignore[index]
-        self.assertEqual(
-            self.client.get(self.list_url, {"search": "Defunct"}).data["count"], 0  # type: ignore[index]
-        )
-        self.assertEqual(
-            self.client.get(
-                self.list_url, {"search": "Defunct", "include_retired": "1"}
-            ).data["count"],  # type: ignore[index]
-            1,
-        )
-
-    def test_departments_are_never_hard_deleted(self):
-        self.client.force_authenticate(user=self.hr_user)
-        department = department_for("Permanent")
-        response = self.client.delete(f"{self.list_url}{department.pk}/")
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-        self.assertTrue(Department.objects.filter(pk=department.pk).exists())
-
-    def test_department_writes_are_audited(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(self.list_url, {"name": "Audited Unit"})
-        department = Department.objects.get(name="Audited Unit")
-        entry = AuditEntry.objects.get(
-            target_type=AuditEntry.TargetType.DEPARTMENT,
-            target_id=str(department.pk),
-            action=AuditEntry.Action.CREATED,
-        )
-        self.assertEqual(entry.detail["after"]["name"], "Audited Unit")
-        self.assertEqual(entry.actor, self.hr_user)
 
 
 class AdminUserEndpointTests(TestCase):
@@ -1093,3 +924,128 @@ class AdminUserEndpointTests(TestCase):
         self.client.force_authenticate(user=self.superuser)
         response = self.client.get(f"{self.list_url}{self.employee_user.pk}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class EmployeeRosterFilterTests(TestCase):
+    """The employees endpoint's roster-picker filters.
+
+    The team screen's member picker asks ``?team=none`` and scopes the answer by
+    the team's own category — an academic team takes academic employees, an
+    administration team takes administration employees — and by who already
+    serves it as a wide approver (institution-wide, team-wide on that team, or
+    campus-wide at its campus): an approver is managed on the Approvers tab, not
+    placed on the roster. The write path enforces the same two rules; these are
+    the read half, so a picker offers exactly the people it may add.
+    """
+
+    LIST_URL = "/api/v1/employees/"
+
+    def setUp(self):
+        self.client = APIClient()  # type: ignore[assignment]
+        self.hr_user = User.objects.create_user(
+            username="roster-hr@test.luanar",
+            email="roster-hr@test.luanar",
+            password=SEED_PASSWORD,
+            role=User.Role.HR,
+        )
+        self.client.force_authenticate(self.hr_user)
+        self.academic = make_employee(
+            "academic-candidate@test.luanar",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        self.admin = make_employee(
+            "admin-candidate@test.luanar",
+            category=EmployeeProfile.Category.ADMINISTRATION,
+        )
+
+    def emails(self, response) -> set[str]:
+        return {row["email"] for row in response.data["results"]}  # type: ignore[index]
+
+    def test_academic_category_returns_only_academic_employees(self):
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&category=academic"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.academic.email, self.emails(response))
+        self.assertNotIn(self.admin.email, self.emails(response))
+
+    def test_administration_category_returns_only_administration_employees(self):
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&category=administration"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.admin.email, self.emails(response))
+        self.assertNotIn(self.academic.email, self.emails(response))
+
+    def test_an_unknown_category_is_ignored_not_fatal(self):
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&category=no-such-category"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.academic.email, self.emails(response))
+        self.assertIn(self.admin.email, self.emails(response))
+
+    def test_institution_wide_approver_is_kept_out_but_only_for_that_team(self):
+        registrar = make_approver(
+            "registrar",
+            username="roster-registrar@test.luanar",
+            institution_wide=True,
+        )
+        team = team_for("Roster Team")
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team={team.pk}"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn(registrar.email, self.emails(response))
+        # Without the filter the same person is offered again: the exclusion is
+        # per team, not a hide-an-approver-everywhere rule.
+        plain = self.client.get(f"{self.LIST_URL}?team=none")
+        self.assertIn(registrar.email, self.emails(plain))
+
+    def test_team_wide_approver_is_kept_out_of_that_team_roster(self):
+        role = grant_approver_role(self.academic, "hod", institution_wide=False)
+        team = team_for("Roster Team")
+        TeamRoleAssignment.objects.create(team=team, role=role, user=self.academic)
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team={team.pk}"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn(self.academic.email, self.emails(response))
+        self.assertIn(self.admin.email, self.emails(response))
+
+    def test_campus_wide_approver_is_kept_out_of_an_academic_team_roster(self):
+        academic_team = make_team(
+            "Roster Academic Team", ["supervisor"], campus="Roster Campus"
+        )
+        campus_role = grant_approver_role(
+            self.academic, "campus_registrar", institution_wide=False
+        )
+        CampusRoleAssignment.objects.create(
+            campus=academic_team.campus,
+            role=campus_role,
+            user=self.academic,
+        )
+        self.assertTrue(academic_team.category == EmployeeProfile.Category.ACADEMIC)
+        # A campus-wide holding is invisible anywhere outside the holding campus's
+        # teams: query for a different team and the person is still a candidate.
+        other_team = team_for("Roster Other Team")
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team={other_team.pk}"
+        )
+        self.assertIn(self.academic.email, self.emails(response))
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team={academic_team.pk}"
+        )
+        self.assertNotIn(self.academic.email, self.emails(response))
+
+    def test_a_missing_team_or_garbage_id_ignores_the_wide_filter(self):
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team=999999"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.academic.email, self.emails(response))
+        response = self.client.get(
+            f"{self.LIST_URL}?team=none&not_wide_for_team=not-a-number"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.academic.email, self.emails(response))

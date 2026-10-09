@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import type { ApproverRole } from "@/lib/approver-roles";
-import type { Department } from "@/lib/departments";
 import type { Campus, Team } from "@/lib/teams";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
@@ -29,9 +28,6 @@ export interface TeamsSectionProps {
   campuses: Campus[];
   /** Every approver role: the chain builder picks one per step. */
   roles: ApproverRole[];
-  departments: Department[];
-  /** Set when the departments fetch failed; the picker is then shown unusable. */
-  departmentsError: string;
   rolesError: string;
   /**
    * The retired/in-force toggle.
@@ -64,8 +60,6 @@ export function TeamsSection({
   teams,
   campuses,
   roles,
-  departments,
-  departmentsError,
   rolesError,
   filters = [],
   error,
@@ -136,9 +130,7 @@ export function TeamsSection({
       >
         <TeamForm
           campuses={campuses}
-          departments={departments}
           roles={roles}
-          departmentsError={departmentsError}
           rolesError={rolesError}
           onSuccess={() => {
             overlay.close();

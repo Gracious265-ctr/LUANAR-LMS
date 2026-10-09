@@ -26,7 +26,7 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("users", "0010_department_org_unit"),
+        ("users", "0010_remove_employeeprofile_department_and_more"),
     ]
 
     operations = [

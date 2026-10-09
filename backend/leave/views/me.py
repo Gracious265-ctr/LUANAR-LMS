@@ -89,10 +89,8 @@ class LeaveSummaryView(APIView):
                         "grade": profile.grade,
                         "category": profile.category,
                         # The name, not the row: this is rendered as JSON.
-                        "department": (
-                            profile.department.name
-                            if profile.department_id
-                            else None
+                        "team": (
+                            profile.team.name if profile.team_id else None
                         ),
                         "faculty": profile.faculty,
                         "gender": profile.gender,

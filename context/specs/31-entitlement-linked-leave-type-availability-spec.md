@@ -31,16 +31,33 @@ false and are corrected in this unit.
 
 Three questions were put to the user; the answers are binding.
 
-**D1 — `GradeEntitlement` gains a `leave_type` FK.** Not a seeded system row. HR
-picks the leave type while configuring the entitlement, so the dropdown offers
-exactly what HR has granted. This keeps the repo's standing rule that business data
-is never seeded (`test_seed_creates_no_business_data`, and `8d472b3`, which removed a
-hardcoded annual-leave fallback for exactly this reason).
+**D1 — `GradeEntitlement` gains a `leave_type` FK, and annual leave is provisioned by
+it.** The FK exists so the dropdown offers exactly what HR has granted, but HR does not
+*pick* the type for the annual-leave case. Saving an entitlement creates annual leave
+and its starting `LeaveRule` on demand (`provision_annual_leave`), which keeps the
+standing rule that business data is never seeded (`test_seed_creates_no_business_data`,
+and `8d472b3`, which removed a hardcoded annual-leave fallback) — nothing is invented by
+a migration, it is created by the HR action that needs it.
+
+This was revised after the first implementation. The original D1 had HR choosing the
+leave type in a dropdown, and the "Out of scope" section below said no `LeaveType` row
+is ever created. That put the two halves of the request in tension: HR configured a band
+and had to go and separately create "Annual Leave" in another form before the dropdown
+would show anything. Annual leave is now **owned** by the entitlement form.
 
 The FK is **nullable**. A row with no leave type is the historical meaning — "this
-band is the annual leave entitlement" — and migration backfills existing rows to
-`NULL` rather than inventing a `LeaveType`. Inventing one would put business data in
-a migration and would silently decide what LUANAR calls its annual leave.
+band is the annual leave entitlement" — and migration backfilled existing rows to
+`NULL` rather than inventing a `LeaveType`. That fallback still resolves the balance for
+rows written before this unit, so it is retained rather than backfilled away.
+
+**D1b — Annual leave is not editable in Leave Types.** Because the entitlement form
+creates it, Leave Types would otherwise offer two ways to rename the same thing. The API
+refuses to create any type that would claim the annual identity (code `annual` /
+`annual-leave`, or name `Annual Leave`) and refuses to edit the canonical type on **any**
+field, because a partially-editable type is a trap: `is_active` looks like an ordinary
+flag, and retiring annual leave silently empties every employee's leave selection. Other
+leave types stay fully editable. Its rule stays editable under Leave Rules, which is
+where day caps and balance behaviour are configured.
 
 **D2 — The catalog is filtered by the employee's grade.** A leave type is offered
 iff it is active and an effective `GradeEntitlement` names it for a band containing
@@ -98,15 +115,28 @@ assertion that two users on the same grade see the same list.
 ### Accepted consequence
 
 Until HR links a leave type to a band, that type is offered to nobody. Maternity,
-paternity and compassionate leave are all in this position today. This is the direct
+paternity and compassionate leave are all in this position today, and remain so until
+an entitlement names them — annual leave is the only type the entitlement form creates,
+because it is the only one an entitlement is about by definition. This is the direct
 consequence of D2 and was accepted with it; the empty state says so in words naming
 HR, because a bare empty dropdown reads as a broken page.
 
+### Provisioning annual leave
+
+`provision_annual_leave(effective_from, days, actor)` is idempotent and shared by the
+API and the Django admin, so annual leave and its first rule exist whichever surface HR
+used. It adopts an existing annual type rather than creating a second one, creates the
+`LeaveRule` only when the type has none, and records an audit entry for each row it
+creates. `GradeEntitlementSerializer.leave_type` is read-only, so a client that posts
+one is ignored rather than trusted, and the admin form disables the field.
+
+Canonical annual identity is recognised through `find_annual_leave_type`, which matches
+either code `annual` or `annual-leave` or a case-insensitive name `Annual Leave`. Both
+codes are honoured because a database written before the canonical code existed holds
+annual leave under whichever one it was given.
+
 ## Out of scope
 
-- **No `LeaveType` row is created.** HR creates "Annual Leave" under
-  `/dashboard/hr-admin/leave-types`, then grants it to a band. That is the whole
-  point of D1.
 - `ANNUAL_CODE = "annual"` in `leave/providers/database.py:32` still decides
   working-day vs calendar-day units. Real per-type units are `20-...` D4's deferred
   assumption and stay deferred.
@@ -123,5 +153,17 @@ HR, because a bare empty dropdown reads as a broken page.
   leave types, refused within one; the balance entitlement prefers the annual type,
   falls back to untyped; `resolve?leave_type=` narrowing; untyped row cannot be
   created once a typed row covers the band.
-- Frontend: the select's loading, error and empty states; the entitlement form sends
-  a leave type; the table shows the type and marks an unlinked row.
+- Backend, provisioning: creating an entitlement creates the annual type and one
+  balance-deducting rule capped at the band's days, and the rule is listed under
+  `/api/v1/leave-rules/`; a supplied `leave_type` is ignored because the field is
+  read-only; a second band reuses the same type and rule; the generated rows are
+  audited; the admin save path provisions identically; the admin leave-type form
+  refuses to create or edit annual leave but still allows other types.
+- Backend, annual leave ownership: patching the annual type is refused on any field
+  including `is_active`, posting the annual name or code is refused, a type sitting on
+  code `annual` is guarded too, and patching a non-annual type still succeeds.
+- Frontend: the select's loading, error and empty states; the entitlement form has no
+  leave-type picker and sends no `leave_type`; the leave-type form refuses to render an
+  editable form for annual leave and links to Entitlements; the table shows annual
+  leave as "Managed in Entitlements" with an "Edit days" link while other types keep
+  their edit action; the table shows the type and marks an unlinked row.

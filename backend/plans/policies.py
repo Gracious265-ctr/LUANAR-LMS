@@ -99,8 +99,7 @@ def team_member_ids(user: User) -> list[int]:
     """The other active members of ``user``'s own team.
 
     The plan equivalent of "my peers". An employee with no team has no team view,
-    which the API reports rather than silently falling back to the whole
-    department.
+    which the API reports rather than silently falling back to the whole campus.
     """
     from users.models import EmployeeProfile
 
@@ -117,23 +116,25 @@ def team_member_ids(user: User) -> list[int]:
     )
 
 
-def department_member_ids(user: User) -> list[int]:
-    """Everyone in the *department* of ``user``'s team, other than ``user``.
+def campus_member_ids(user: User) -> list[int]:
+    """Everyone on a team at the *campus* of ``user``'s team, other than ``user``.
 
-    Department is a property of the team now — it is a reference to a
-    ``Department`` row — so a department-wide review spans every team in that
-    department rather than every profile that happens to share a label.
+    The team is the unit of organisation and the campus groups the teams above
+    it, so a campus-wide review spans every team at the user's campus. A team
+    that is not campus-based (an institution-wide administration team) has no
+    campus view, which the API reports rather than silently widening to
+    everybody.
     """
     from users.models import EmployeeProfile
 
     profile = getattr(user, "employee_profile", None)
-    if profile is None or profile.team_id is None or profile.team.department_id is None:
+    if profile is None or profile.team_id is None or profile.team.campus_id is None:
         return []
-    department = profile.team.department
+    campus_id = profile.team.campus_id
     return list(
         EmployeeProfile.objects.filter(
             user__is_active=True,
-            team__department=department,
+            team__campus_id=campus_id,
         )
         .exclude(user_id=user.pk)
         .values_list("user_id", flat=True)

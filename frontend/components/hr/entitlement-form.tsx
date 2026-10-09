@@ -63,7 +63,6 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
-    const leaveTypeValue = formData.get("leave_type");
 
     // The picker is a popover trigger, so the browser can no longer enforce
     // `required` for it; check here instead of dropping the guarantee.
@@ -82,7 +81,10 @@ export function EntitlementForm({
           grade_end: formData.get("grade_end"),
           days: Number(formData.get("days")),
           effective_from: formData.get("effective_from"),
-          leave_type: leaveTypeValue && leaveTypeValue !== "" ? Number(leaveTypeValue) : null,
+          leave_type:
+            leaveTypeValue && leaveTypeValue !== ""
+              ? Number(leaveTypeValue)
+              : null,
         }),
       });
 

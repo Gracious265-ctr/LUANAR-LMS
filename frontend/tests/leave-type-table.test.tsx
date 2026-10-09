@@ -37,4 +37,32 @@ describe("LeaveTypeTable", () => {
 
     expect(screen.getByText("No leave types found")).toBeInTheDocument();
   });
+
+  it("does not let annual leave be edited from here", () => {
+    render(<LeaveTypeTable leaveTypes={[annual, maternity]} />);
+
+    // The name is plain text, not a link to the edit page.
+    expect(screen.getByText("Annual leave").tagName).not.toBe("A");
+    expect(
+      screen.queryByRole("link", { name: "Annual leave" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Managed in Entitlements")).toBeInTheDocument();
+
+    const editDays = screen.getByRole("link", { name: "Edit days" });
+    expect(editDays.getAttribute("href")).toBe(
+      "/dashboard/hr-admin/entitlements"
+    );
+  });
+
+  it("still offers editing for other leave types", () => {
+    render(<LeaveTypeTable leaveTypes={[annual, maternity]} />);
+
+    expect(
+      screen.getByRole("link", { name: "Maternity leave" })
+    ).toHaveAttribute("href", "/dashboard/hr-admin/leave-types/2/edit");
+    expect(
+      screen.getByRole("link", { name: "Edit", description: "Edit record" })
+    ).toHaveAttribute("href", "/dashboard/hr-admin/leave-types/2/edit");
+    expect(screen.getByText("Active")).toBeInTheDocument();
+  });
 });

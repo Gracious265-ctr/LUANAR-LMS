@@ -13,7 +13,7 @@ export function EmployeeInfoCard({ data }: { data: ApprovalReview }) {
         </DetailRow>
         <DetailRow label="Staff ID">{employee.staff_id || "—"}</DetailRow>
         <DetailRow label="Designation">{employee.designation || "—"}</DetailRow>
-        <DetailRow label="Department">{employee.department || "—"}</DetailRow>
+        <DetailRow label="Team">{employee.team || "—"}</DetailRow>
         <DetailRow label="Faculty / School">{employee.faculty || "—"}</DetailRow>
         <DetailRow label="Grade">{employee.grade || "—"}</DetailRow>
         <DetailRow label="Category">{employee.category || "—"}</DetailRow>
