@@ -7,6 +7,9 @@ import Link from "next/link";
 import type { AdminUser } from "@/lib/admin-users";
 import { createAdminUser, updateAdminUser } from "@/lib/admin-users-client";
 
+/** Where the standalone form returns to, and what Cancel links back to. */
+const LIST_ROUTE = "/dashboard/admin/users";
+
 /**
  * The superuser's HR-account form.
  *
@@ -16,10 +19,34 @@ import { createAdminUser, updateAdminUser } from "@/lib/admin-users-client";
  * and HR is the account that then configures the business data. A normal
  * employee is created by HR from the employee directory, never here.
  */
-export function AdminUserForm({ user }: { user?: AdminUser }) {
+export function AdminUserForm({
+  user,
+  onSuccess,
+  onCancel,
+}: {
+  user?: AdminUser;
+  /**
+   * Replaces the default `router.push(listRoute)` + `router.refresh()`. The
+   * overlay passes this so it can close itself and refetch; with it omitted the
+   * form navigates on its own, which is what a standalone page needs.
+   */
+  onSuccess?: (saved: AdminUser) => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  /** Close-and-refresh when hosted, navigate when standalone. */
+  function done(saved: AdminUser) {
+    if (onSuccess) {
+      onSuccess(saved);
+      return;
+    }
+    router.push(LIST_ROUTE);
+    router.refresh();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,24 +57,21 @@ export function AdminUserForm({ user }: { user?: AdminUser }) {
     const password = String(formData.get("password") || "");
 
     try {
-      if (user) {
-        await updateAdminUser(user.id, {
-          email: String(formData.get("email") || ""),
-          first_name: String(formData.get("first_name") || ""),
-          last_name: String(formData.get("last_name") || ""),
-          is_active: formData.get("is_active") === "on",
-          ...(password ? { password } : {}),
-        });
-      } else {
-        await createAdminUser({
-          email: String(formData.get("email") || ""),
-          first_name: String(formData.get("first_name") || ""),
-          last_name: String(formData.get("last_name") || ""),
-          password,
-        });
-      }
-      router.push("/dashboard/admin/users");
-      router.refresh();
+      const saved = user
+        ? await updateAdminUser(user.id, {
+            email: String(formData.get("email") || ""),
+            first_name: String(formData.get("first_name") || ""),
+            last_name: String(formData.get("last_name") || ""),
+            is_active: formData.get("is_active") === "on",
+            ...(password ? { password } : {}),
+          })
+        : await createAdminUser({
+            email: String(formData.get("email") || ""),
+            first_name: String(formData.get("first_name") || ""),
+            last_name: String(formData.get("last_name") || ""),
+            password,
+          });
+      done(saved);
     } catch (err) {
       setError(
         err instanceof Error
@@ -174,12 +198,22 @@ export function AdminUserForm({ user }: { user?: AdminUser }) {
         >
           {loading ? "Saving..." : user ? "Save changes" : "Create HR user"}
         </button>
-        <Link
-          href="/dashboard/admin/users"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </button>
+        ) : (
+          <Link
+            href={LIST_ROUTE}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

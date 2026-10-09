@@ -11,10 +11,12 @@ import {
   outcomeBanner,
 } from "@/lib/cancellations/labels";
 import type { CancellationRequest } from "@/lib/cancellations/types";
+import { STATUS_STYLES } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-import { CancellationStageStepper } from "./cancellation-stage-stepper";
+import { stepsFromCancellation } from "@/lib/chain-steps";
+import { Stepper } from "@/components/ui/Stepper";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -68,8 +70,8 @@ export function CancellationCard({
           className={cn(
             "mt-4 rounded-lg p-3 text-sm",
             latest.status === "approved"
-              ? "bg-status-approved-subtle text-status-approved"
-              : "bg-status-rejected-subtle text-status-rejected"
+              ? STATUS_STYLES.approved
+              : STATUS_STYLES.rejected
           )}
         >
           {banner}
@@ -84,7 +86,7 @@ export function CancellationCard({
       <div className="mt-4 grid gap-6 md:grid-cols-2">
         <div className="min-w-0">
           <h3 className="mb-3 text-sm font-medium text-text-secondary">Approval progress</h3>
-          <CancellationStageStepper stages={latest.stages} />
+          <Stepper steps={stepsFromCancellation(latest.stages)} orientation="vertical" />
         </div>
         <div className="min-w-0">
           <h3 className="text-sm font-medium text-text-secondary">Your reason</h3>

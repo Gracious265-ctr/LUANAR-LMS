@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 
 import type { ApprovalReview } from "@/lib/approvals/types";
+import { STATUS_STYLES } from "@/lib/status-styles";
 
 import { DetailRow, Panel } from "./panel";
 
@@ -34,7 +35,7 @@ export function BalanceCard({ data }: { data: ApprovalReview }) {
       {requestedExceeds && (
         <p
           role="status"
-          className="mt-3 flex items-start gap-2 rounded-lg bg-status-pending-subtle p-3 text-sm text-status-pending"
+          className={`mt-3 flex items-start gap-2 rounded-lg p-3 text-sm ${STATUS_STYLES.pending}`}
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           Requested days exceed the available balance. This is shown for

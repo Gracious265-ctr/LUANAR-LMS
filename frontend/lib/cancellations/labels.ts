@@ -1,13 +1,13 @@
-import { Check, CheckCircle2, Clock, X, XCircle, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, type LucideIcon } from "lucide-react";
 
 import type {
   CancellationAction,
   CancellationKind,
-  CancellationStageState,
   CancellationStatus,
   EmployeeNotificationState,
 } from "./types";
 import type { BadgeTone } from "@/components/ui/badge";
+import { STATUS_SOLID, STATUS_TEXT } from "@/lib/status-styles";
 
 export interface StatusMeta {
   label: string;
@@ -22,60 +22,22 @@ export const REQUEST_STATUS_META: Record<CancellationStatus, StatusMeta> = {
     label: "Pending",
     icon: Clock,
     badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
+    textClass: STATUS_TEXT.pending,
+    dotClass: STATUS_SOLID.pending,
   },
   approved: {
     label: "Cancelled",
     icon: CheckCircle2,
     badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
+    textClass: STATUS_TEXT.approved,
+    dotClass: STATUS_SOLID.approved,
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
     badgeTone: "rejected",
-    textClass: "text-status-rejected",
-    dotClass: "bg-status-rejected",
-  },
-};
-
-export const STAGE_STATE_META: Record<CancellationStageState, StatusMeta> = {
-  waiting: {
-    label: "Waiting",
-    icon: Clock,
-    badgeTone: "neutral",
-    textClass: "text-text-muted",
-    dotClass: "bg-surface-muted",
-  },
-  pending: {
-    label: "Pending",
-    icon: Clock,
-    badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
-  },
-  approved: {
-    label: "Approved",
-    icon: Check,
-    badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
-  },
-  rejected: {
-    label: "Rejected",
-    icon: X,
-    badgeTone: "rejected",
-    textClass: "text-status-rejected",
-    dotClass: "bg-status-rejected",
-  },
-  not_reached: {
-    label: "Not reached",
-    icon: Clock,
-    badgeTone: "neutral",
-    textClass: "text-text-muted",
-    dotClass: "bg-surface-muted",
+    textClass: STATUS_TEXT.rejected,
+    dotClass: STATUS_SOLID.rejected,
   },
 };
 

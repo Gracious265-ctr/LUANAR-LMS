@@ -23,6 +23,12 @@ export interface CancellationDecisionDialogProps {
   onClose: () => void;
   onSubmitted: (data: CancellationDetail) => void;
   onConflict: () => void;
+  /** Fired the moment the request is dispatched so the parent can patch its
+   *  state optimistically, before the server answers. */
+  onOptimistic?: (comment: string) => void;
+  /** Fired on any backend failure so the parent can revert that patch and
+   *  surface an error toast alongside the dialog's own message. */
+  onRollback?: (message: string) => void;
 }
 
 export function CancellationDecisionDialog(props: CancellationDecisionDialogProps) {
@@ -36,6 +42,8 @@ export function CancellationDecisionDialog(props: CancellationDecisionDialogProp
       onClose={props.onClose}
       onSubmitted={props.onSubmitted}
       onConflict={props.onConflict}
+      onOptimistic={props.onOptimistic}
+      onRollback={props.onRollback}
     />
   );
 }
@@ -46,12 +54,16 @@ function CancellationDecisionDialogInner({
   onClose,
   onSubmitted,
   onConflict,
+  onOptimistic,
+  onRollback,
 }: {
   kind: "approve" | "reject";
   data: CancellationDetail;
   onClose: () => void;
   onSubmitted: (data: CancellationDetail) => void;
   onConflict: () => void;
+  onOptimistic?: (comment: string) => void;
+  onRollback?: (message: string) => void;
 }) {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,6 +88,7 @@ function CancellationDecisionDialogInner({
     setBusy(true);
     setError("");
     setFieldError("");
+    onOptimistic?.(comment.trim());
     try {
       const result = await postCancellationDecision(data.request.id, {
         decision: kind,
@@ -85,16 +98,25 @@ function CancellationDecisionDialogInner({
       if (result.ok) {
         onSubmitted(result.data);
       } else if (result.kind === "conflict") {
+        // The panel reverts its own optimistic patch before refetching.
         onConflict();
         onClose();
-      } else if (result.kind === "forbidden") {
-        setError(result.message);
-      } else if (result.kind === "validation") {
-        setFieldError(result.fields?.comment ?? "comment");
-        setError(result.fields?.comment ?? result.message);
       } else {
-        setError(result.message);
+        onRollback?.(result.message);
+        if (result.kind === "forbidden") {
+          setError(result.message);
+        } else if (result.kind === "validation") {
+          setFieldError(result.fields?.comment ?? "comment");
+          setError(result.fields?.comment ?? result.message);
+        } else {
+          setError(result.message);
+        }
       }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "The decision could not be sent.";
+      onRollback?.(message);
+      setError(message);
     } finally {
       setBusy(false);
     }

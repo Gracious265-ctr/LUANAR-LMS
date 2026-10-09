@@ -125,20 +125,15 @@ describe("ApplicationsList", () => {
     expect(await screen.findByRole("link", { name: "Track this application" })).toBeInTheDocument();
   });
 
-  it("refetches the list after a draft is deleted", async () => {
+  it("removes the draft optimistically without refetching", async () => {
     vi.mocked(deleteLeaveApplication).mockResolvedValue(undefined);
-    vi.mocked(getLeaveApplications)
-      .mockResolvedValueOnce({
-        count: 2,
-        results: [
-          makeApplication({ id: "submitted-1", status: "submitted" }),
-          makeApplication({ id: "draft-1", status: "draft" }),
-        ],
-      })
-      .mockResolvedValueOnce({
-        count: 1,
-        results: [makeApplication({ id: "submitted-1", status: "submitted" })],
-      });
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 2,
+      results: [
+        makeApplication({ id: "submitted-1", status: "submitted" }),
+        makeApplication({ id: "draft-1", status: "draft" }),
+      ],
+    });
 
     render(<ApplicationsList />);
 
@@ -146,9 +141,13 @@ describe("ApplicationsList", () => {
     fireEvent.click(deleteButton);
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
-    await vi.waitFor(() =>
-      expect(getLeaveApplications).toHaveBeenCalledTimes(2)
-    );
+    // The row leaves as soon as the delete is dispatched — no skeleton flash
+    // and no extra list round trip (spec 3.5).
+    expect(
+      screen.queryByRole("button", { name: "Delete draft" })
+    ).not.toBeInTheDocument();
+    expect(deleteLeaveApplication).toHaveBeenCalledWith("draft-1");
+    expect(getLeaveApplications).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -82,16 +82,20 @@ describe("PlansWorkspace", () => {
   it("offers the new plan route from every scope", async () => {
     render(<PlansWorkspace />);
 
-    expect(screen.getByRole("link", { name: "New plan" })).toHaveAttribute(
-      "href",
-      "/dashboard/plans/new"
-    );
+    // A button now, not a link: the overlay owns the URL, and its own test
+    // covers the `?plan=new` target. What matters here is that the control
+    // survives a scope change.
+    expect(
+      screen.getByRole("button", { name: "New plan" })
+    ).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole("tab", { name: "To confirm" }));
 
     // The header belongs to the workspace, so a scope change must not take the
     // only route to a new plan away.
-    expect(screen.getByRole("link", { name: "New plan" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "New plan" })
+    ).toBeInTheDocument();
   });
 
   it("hides 'To decide' from a caller the server does not call an approver", async () => {
@@ -272,7 +276,8 @@ describe("PlanApprovalDetailView", () => {
     expect(
       await screen.findByRole("heading", { name: /1 Oct – 18 Dec 2026/ })
     ).toBeInTheDocument();
-    expect(screen.getByTestId("plan-stage-chain")).toBeInTheDocument();
+    // Approval chain renders via Stepper
+    expect(await screen.findByText(/approval chain/i)).toBeInTheDocument();
     expect(screen.getByText(/Chikondi Mbewe · Administration Team/)).toBeInTheDocument();
   });
 

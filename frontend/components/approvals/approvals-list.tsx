@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, ChevronRight, Inbox, RefreshCw, Search, SearchX } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
+import { Avatar } from "@/components/ui/Avatar";
 
 import { ActionBadge, StatusBadge } from "./badges";
 import {
@@ -85,6 +87,12 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
     setPage(1);
   }
 
+  /** The "Clear filters" action on the no-results empty state. */
+  function clearSearch() {
+    setQInput("");
+    setPage(1);
+  }
+
   return (
     <div className={cn("space-y-6", !headerless && "mx-auto max-w-5xl")}>
       {!headerless && (
@@ -144,21 +152,31 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
       ) : loading ? (
         <SkeletonRows count={6} />
       ) : !data || data.results.length === 0 ? (
-        <Card className="text-center">
-          <SlidersHorizontal
-            className="mx-auto h-8 w-8 text-text-muted"
-            aria-hidden="true"
-          />
-          <p className="mt-3 text-sm font-medium text-text-primary">
-            {tab === "pending"
-              ? (q ? "No applications match your search." : "No applications are waiting for your decision.")
-              : (q ? "No applications match your search." : "You have not decided on any applications yet.")}
-          </p>
-          <p className="mt-1 text-sm text-text-secondary">
-            {tab === "pending"
-              ? "New applications will appear here as they are submitted."
-              : "Applications you have decided on will appear here."}
-          </p>
+        <Card>
+          {q ? (
+            <EmptyState
+              icon={<SearchX className="h-10 w-10" />}
+              title={`No results for "${q}"`}
+              description="Check the reference number or employee name and try again."
+              action={
+                <Button type="button" variant="secondary" onClick={clearSearch}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : tab === "pending" ? (
+            <EmptyState
+              icon={<CheckCircle2 className="h-10 w-10" />}
+              title="Nothing pending your review"
+              description="New applications will appear here as they are submitted."
+            />
+          ) : (
+            <EmptyState
+              icon={<Inbox className="h-10 w-10" />}
+              title="You have not decided on any applications yet"
+              description="Applications you have decided on will appear here."
+            />
+          )}
         </Card>
       ) : (
         <>
@@ -240,10 +258,21 @@ function ApprovalTableRow({
           </Link>
         </TableCell>
         <TableCell>
-          <span className="font-medium text-text-primary">{row.employee_name}</span>
-          <span className="mt-0.5 block text-xs text-text-muted">
-            {row.department || "—"}
-          </span>
+          <div className="flex items-center gap-2">
+            <Avatar
+              name={row.employee_name}
+              userId={row.employee_name}
+              size="sm"
+            />
+            <div className="min-w-0">
+              <span className="font-medium text-text-primary">
+                {row.employee_name}
+              </span>
+              <span className="mt-0.5 block text-xs text-text-muted">
+                {row.department || "—"}
+              </span>
+            </div>
+          </div>
         </TableCell>
         <TableCell className="text-text-secondary">
           {row.leave_type.name || "—"}

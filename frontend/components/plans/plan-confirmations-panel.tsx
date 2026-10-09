@@ -11,10 +11,11 @@ import {
   releaseBlock,
 } from "@/lib/plans/service";
 import type { PendingConfirmation } from "@/lib/plans/types";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState } from "@/components/ui/states";
-import { Toast, useToast } from "@/components/ui/toast";
+import { useToast } from "@/components/ui/toast";
 
 /**
  * The blocks an approved plan has reserved that the owner has not confirmed.
@@ -34,7 +35,7 @@ export function PlanConfirmationsPanel({
   const [rows, setRows] = useState<PendingConfirmation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { toast, showToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const [busy, setBusy] = useState("");
   const [localKey, setLocalKey] = useState(0);
 
@@ -96,8 +97,6 @@ export function PlanConfirmationsPanel({
         </div>
       )}
 
-      {toast && <Toast onDismiss={dismissToast}>{toast}</Toast>}
-
       {error ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : loading ? (
@@ -134,7 +133,7 @@ export function PlanConfirmationsPanel({
                       Plan {formatPeriod(block.plan_period_start, block.plan_period_end)}
                     </p>
                     {block.confirmation_window_start && (
-                      <p className="mt-1 text-xs font-medium text-status-pending">
+                      <p className={`mt-1 text-xs font-medium ${STATUS_TEXT.pending}`}>
                         Confirm by {formatDate(block.confirmation_window_start)}
                       </p>
                     )}

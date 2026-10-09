@@ -68,8 +68,24 @@ describe("ApprovalsList", () => {
     mockedFetchApprovals.mockResolvedValue({ ok: true, data: makeListResponse([]) });
     render(<ApprovalsList />);
     expect(
-      await screen.findByText("No applications are waiting for your decision.")
+      await screen.findByText("Nothing pending your review")
     ).toBeInTheDocument();
+  });
+
+  it("offers Clear filters on the search no-results empty state", async () => {
+    mockedFetchApprovals.mockResolvedValue({ ok: true, data: makeListResponse([]) });
+    const user = userEvent.setup();
+    render(<ApprovalsList />);
+    await screen.findByText("Nothing pending your review");
+
+    await user.type(screen.getByLabelText("Search approvals"), "Mbewe");
+    expect(await screen.findByText('No results for "Mbewe"')).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByLabelText("Search approvals")).toHaveValue("");
+    await waitFor(() =>
+      expect(mockedFetchApprovals).toHaveBeenLastCalledWith("pending", "", 1)
+    );
   });
 
   it("renders your decision columns on the decided tab", async () => {

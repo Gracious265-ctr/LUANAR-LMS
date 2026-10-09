@@ -7,6 +7,7 @@ import {
   submitApplication,
   SubmitError,
 } from "@/lib/leave-validation";
+import { pushToast } from "@/components/ui/toast";
 
 export interface SubmitFailure {
   message: string;
@@ -61,23 +62,30 @@ export function useSubmitLeaveApplication({
       setIssues([]);
       try {
         await submitApplication(applicationId);
+        // Fired before the caller so the confirmation is queued even if the
+        // callback navigates away from the screen that triggered it.
+        pushToast("Application submitted.");
         onSubmitted();
       } catch (error) {
         if (error instanceof SubmitError) {
           if (error.status === 422) {
+            // No toast here: every issue lands inline above the form, and a
+            // duplicate would drown the specific field the user must fix.
             setIssues(error.errors);
           } else if (error.status === 409 && error.code === "ALREADY_SUBMITTED") {
+            pushToast("This application was already submitted.");
             onAlreadySubmitted();
           } else {
             setFailure({ message: error.message });
+            pushToast(error.message, "error");
           }
         } else {
-          setFailure({
-            message:
-              error instanceof Error
-                ? error.message
-                : "Failed to submit application",
-          });
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to submit application";
+          setFailure({ message });
+          pushToast(message, "error");
         }
       } finally {
         inFlightRef.current = false;

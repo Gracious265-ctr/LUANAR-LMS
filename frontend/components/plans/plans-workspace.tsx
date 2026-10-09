@@ -1,18 +1,24 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 
 import type { PlanScope } from "@/lib/plans/types";
-import { buttonVariants } from "@/components/ui/button";
+import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
+import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { PlanApprovalsList } from "./plan-approvals-list";
 import { PlanConfirmationsPanel } from "./plan-confirmations-panel";
+import { PlanForm } from "./plan-form";
 import { PlansList } from "./plans-list";
 
 type PlansView = PlanScope | "approvals" | "confirmations";
+
+/** Query key for the plan overlay on the workspace. */
+export const PLAN_PARAM = "plan";
 
 const SCOPE_LABELS: { value: PlansView; label: string }[] = [
   { value: "mine", label: "My plans" },
@@ -41,6 +47,8 @@ export function PlansWorkspace({
   initialView?: PlansView;
 }) {
   const [view, setView] = useState<PlansView>(initialView);
+  const router = useRouter();
+  const overlay = useOverlayParam(PLAN_PARAM);
 
   const tabs = [...SCOPE_LABELS];
   if (isHR) tabs.push({ value: "all", label: "All plans" });
@@ -59,13 +67,10 @@ export function PlansWorkspace({
           </p>
         </div>
         {/* Somebody on any scope tab still needs a way to start a new plan. */}
-        <Link
-          href="/dashboard/plans/new"
-          className={buttonVariants({ variant: "primary", size: "md" })}
-        >
+        <Button variant="primary" onClick={overlay.openCreate}>
           <Plus className="size-4" aria-hidden="true" />
           New plan
-        </Link>
+        </Button>
       </div>
 
       <Tabs
@@ -94,6 +99,31 @@ export function PlansWorkspace({
           initialScope={view}
         />
       )}
+
+      {/*
+        Create only: editing a plan is its detail page's own workspace, not a
+        dialog. Saving swaps this overlay's URL for the new plan's page with
+        `replace`, so Back from the plan returns to the list rather than to an
+        empty create form.
+      */}
+      <AdminFormOverlay
+        open={overlay.isOpen}
+        targetKey={overlay.target}
+        title="New leave day plan"
+        description="A plan groups the leave you intend to take into one approval, then reserves each block once it is approved."
+        size="lg"
+        onOpenChange={(open) => {
+          if (!open) overlay.close();
+        }}
+      >
+        <PlanForm
+          onSuccess={(id) => {
+            router.replace(`/dashboard/plans/${id}`);
+            router.refresh();
+          }}
+          onCancel={overlay.close}
+        />
+      </AdminFormOverlay>
     </div>
   );
 }

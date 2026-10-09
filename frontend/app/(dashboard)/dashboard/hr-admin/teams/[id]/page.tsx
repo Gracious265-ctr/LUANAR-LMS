@@ -13,6 +13,7 @@ import {
   type Employee,
 } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import { FadeIn } from "@/components/motion/FadeIn";
 
 /**
@@ -127,7 +128,7 @@ export default async function TeamPage({
                 {team.effective_to ?? "no end date"}
               </p>
               {team.status === "active" && !team.is_effective && (
-                <p className="text-xs text-status-pending">
+                <p className={`text-xs ${STATUS_TEXT.pending}`}>
                   Not routing today — outside its effective window.
                 </p>
               )}

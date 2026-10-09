@@ -1,5 +1,14 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
+
+import { resetToasts } from "@/components/ui/toast";
+
+// The toast stack lives in a module store, so it would otherwise leak from
+// one test file into the next (and surface stale messages in any test that
+// renders the Toaster).
+afterEach(() => {
+  resetToasts();
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/dashboard",

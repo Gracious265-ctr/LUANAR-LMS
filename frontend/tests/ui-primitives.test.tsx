@@ -3,20 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Button } from "@/components/ui/button";
 import { EmptyPanel, EmptyState, ErrorState } from "@/components/ui/states";
-import { Toast, useToast } from "@/components/ui/toast";
+import { Toast, Toaster, pushToast, useToast } from "@/components/ui/toast";
 
-function ToastHarness({ timeout }: { timeout?: number }) {
-  const { toast, showToast, dismissToast } = useToast(timeout);
+function ToastHarness() {
+  const { showToast } = useToast();
   return (
     <div>
       <button type="button" onClick={() => showToast("Saved")}>
         show
       </button>
-      {toast && (
-        <Toast tone="success" onDismiss={dismissToast}>
-          {toast}
-        </Toast>
-      )}
+      <Toaster />
     </div>
   );
 }
@@ -70,6 +66,13 @@ describe("Toast", () => {
     act(() => {
       vi.advanceTimersByTime(4000);
     });
+    // Kept mounted while the exit animation plays…
+    expect(screen.getByRole("status")).toHaveClass(
+      "motion-safe:animate-toast-out"
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -77,54 +80,82 @@ describe("Toast", () => {
     render(<ToastHarness />);
     fireEvent.click(screen.getByRole("button", { name: "show" }));
     fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-  });
 
-  it("restarts the countdown when a second message replaces the first", () => {
-    function SequenceHarness() {
-      const { toast, showToast } = useToast(1000);
-      return (
-        <div>
-          <button type="button" onClick={() => showToast("First")}>
-            first
-          </button>
-          <button type="button" onClick={() => showToast("Second")}>
-            second
-          </button>
-          {toast && <Toast>{toast}</Toast>}
-        </div>
-      );
-    }
-
-    render(<SequenceHarness />);
-    fireEvent.click(screen.getByRole("button", { name: "first" }));
-    act(() => {
-      vi.advanceTimersByTime(800);
-    });
-    fireEvent.click(screen.getByRole("button", { name: "second" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Second");
-
-    // The first message's timer would have fired by now; the new one holds.
-    act(() => {
-      vi.advanceTimersByTime(800);
-    });
-    expect(screen.getByRole("status")).toHaveTextContent("Second");
+    expect(screen.getByRole("status")).toHaveClass(
+      "motion-safe:animate-toast-out"
+    );
     act(() => {
       vi.advanceTimersByTime(200);
     });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("can render without an icon and without the enter animation", () => {
+  it("stacks messages and runs each one's countdown independently", () => {
+    render(<Toaster />);
+    act(() => pushToast("First"));
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    act(() => pushToast("Second"));
+
+    expect(screen.getAllByRole("status")).toHaveLength(2);
+
+    // First expires 4000ms after it was pushed (plus its 200ms exit)…
+    act(() => {
+      vi.advanceTimersByTime(3200);
+    });
+    expect(screen.queryByText("First")).not.toBeInTheDocument();
+    expect(screen.getByText("Second")).toBeInTheDocument();
+
+    // …and Second, pushed a second later, outlives it by that same second.
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+    expect(screen.getByText("Second")).toHaveClass(
+      "motion-safe:animate-toast-out"
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("replaces an identical message instead of stacking a duplicate", () => {
+    render(<Toaster />);
+    act(() => pushToast("Saved"));
+    act(() => pushToast("Saved"));
+
+    expect(screen.getAllByRole("status")).toHaveLength(1);
+  });
+
+  it("stacks in the bottom-right corner", () => {
+    render(<Toaster />);
+    act(() => pushToast("Saved"));
+
+    const region = screen.getByLabelText("Notifications");
+    expect(region.className).toContain("fixed");
+    expect(region.className).toContain("right-4");
+    expect(region.className).toContain("bottom-4");
+    expect(region.className).toContain("z-toast");
+  });
+
+  it("renders a tone surface with its icon and the enter animation", () => {
+    render(<Toast tone="warning">Refreshed</Toast>);
+    const toast = screen.getByRole("status");
+    expect(toast).toHaveTextContent("Refreshed");
+    expect(toast.querySelector("svg")).not.toBeNull();
+    expect(toast.className).toContain("motion-safe:animate-toast-in");
+  });
+
+  it("can render without an icon and swaps in the exit animation", () => {
     render(
-      <Toast tone="warning" hideIcon>
+      <Toast tone="warning" hideIcon exiting>
         Refreshed
       </Toast>
     );
     const toast = screen.getByRole("status");
-    expect(toast).toHaveTextContent("Refreshed");
     expect(toast.querySelector("svg")).toBeNull();
-    expect(toast.className).not.toContain("animate-toast-in");
+    expect(toast.className).toContain("motion-safe:animate-toast-out");
   });
 });
 
@@ -134,6 +165,20 @@ describe("EmptyState", () => {
     const state = screen.getByText("No employees found").parentElement;
     expect(state?.className).toContain("py-12");
     expect(state?.className).not.toContain("border");
+  });
+
+  it("shrink-wraps its icon so it centres instead of pinning left", () => {
+    // Preflight renders svg as display:block, which ignores text-align; only a
+    // shrink-wrapped wrapper lets mx-auto actually centre the icon.
+    render(
+      <EmptyState
+        icon={<svg data-testid="state-icon" />}
+        title="No employees found"
+      />
+    );
+    const wrapper = screen.getByTestId("state-icon").parentElement;
+    expect(wrapper?.className).toContain("mx-auto");
+    expect(wrapper?.className).toContain("w-fit");
   });
 
   it("keeps the page heading level the caller asked for", () => {
@@ -176,5 +221,17 @@ describe("ErrorState", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Network down");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("shrink-wraps its icon the same way as the empty states", () => {
+    render(
+      <ErrorState
+        message="Network down"
+        icon={<svg data-testid="error-icon" />}
+      />
+    );
+    const wrapper = screen.getByTestId("error-icon").parentElement;
+    expect(wrapper?.className).toContain("mx-auto");
+    expect(wrapper?.className).toContain("w-fit");
   });
 });

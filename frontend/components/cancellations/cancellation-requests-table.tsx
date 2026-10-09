@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { formatDate, formatDateTime } from "@/lib/cancellations/format";
 import { fetchCancellations } from "@/lib/cancellations/service";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import type {
   CancellationListResponse,
   CancellationRow,
@@ -253,14 +254,14 @@ function RowLink({
 
 export function StartsLabel({ row }: { row: CancellationRow }) {
   if (row.leave_started) {
-    return <span className="font-medium text-status-rejected">Started</span>;
+    return <span className={`font-medium ${STATUS_TEXT.rejected}`}>Started</span>;
   }
   if (row.starts_in_days == null) {
     return <span className="text-text-muted">—</span>;
   }
   if (row.starts_in_days <= 3) {
     return (
-      <span className="font-medium text-status-pending">
+      <span className={`font-medium ${STATUS_TEXT.pending}`}>
         Starts in {row.starts_in_days} day{row.starts_in_days === 1 ? "" : "s"}
       </span>
     );

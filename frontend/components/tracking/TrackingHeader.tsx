@@ -4,6 +4,7 @@ import Link from "next/link";
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "./StatusBadge";
@@ -79,7 +80,7 @@ export function TrackingHeader({
           </time>
         </p>
         {data.cancelled_at && (
-          <p className="text-status-cancelled">
+          <p className={STATUS_TEXT.cancelled}>
             Cancelled on{" "}
             <time dateTime={data.cancelled_at}>{formatDateTime(data.cancelled_at)}</time>
           </p>

@@ -41,7 +41,20 @@ function emptyBlock(): DraftBlock {
  * deliberately checks only what it needs to build a valid request. Anything
  * subtler comes back as a 422 and is rendered here rather than guessed at.
  */
-export function PlanForm() {
+export function PlanForm({
+  onSuccess,
+  onCancel,
+}: {
+  /**
+   * Replaces the default `router.push(detail)` + `router.refresh()`. The
+   * overlay passes this so it can swap its own URL for the new plan's page in
+   * place; with it omitted the form navigates on its own, which is what a
+   * standalone page needs.
+   */
+  onSuccess?: (id: string) => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [periodStart, setPeriodStart] = useState("");
@@ -107,7 +120,12 @@ export function PlanForm() {
         setLoading(false);
         return;
       }
-      router.push(`/dashboard/plans/${result.data.meta.id}`);
+      const id = result.data.meta.id;
+      if (onSuccess) {
+        onSuccess(id);
+        return;
+      }
+      router.push(`/dashboard/plans/${id}`);
       router.refresh();
     } catch {
       setError("The plan could not be saved. Try again.");
@@ -215,6 +233,11 @@ export function PlanForm() {
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving…" : "Save draft"}
         </Button>
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <p className="text-xs text-text-muted">
           A draft is not routed anywhere until you submit it.
         </p>

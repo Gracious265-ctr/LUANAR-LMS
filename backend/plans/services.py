@@ -515,52 +515,61 @@ def submit_plan(*, user, plan_id):
 
     Raises ``PlanNotFoundError`` (404), ``PlanNotSubmittableError`` (409) or
     ``PlanValidationFailedError`` (422). Returns the persisted plan on success.
+
+    The whole submission is one transaction: the plan row is locked, and the
+    status flip, the materialised approval chain and the audit entry land
+    together. Without it a failure after the status write would strand a plan
+    that reads ``submitted`` with nothing to approve, and ``select_for_update``
+    would raise ``TransactionManagementError``.
     """
-    plan = (
-        LeaveDayPlan.objects.select_for_update()
-        .filter(id=plan_id, employee=user)
-        .first()
-    )
-    if plan is None:
-        raise PlanNotFoundError()
-    if plan.status != LeaveDayPlan.Status.DRAFT:
-        raise PlanNotSubmittableError()
+    with transaction.atomic():
+        plan = (
+            LeaveDayPlan.objects.select_for_update()
+            .filter(id=plan_id, employee=user)
+            .first()
+        )
+        if plan is None:
+            raise PlanNotFoundError()
+        if plan.status != LeaveDayPlan.Status.DRAFT:
+            raise PlanNotSubmittableError()
 
-    validator = PlanValidator(plan)
-    if not validator.validate():
-        raise PlanValidationFailedError(validator.errors, validator.warnings)
+        validator = PlanValidator(plan)
+        if not validator.validate():
+            raise PlanValidationFailedError(validator.errors, validator.warnings)
 
-    check_plan_workflow_ready(plan)
+        check_plan_workflow_ready(plan)
 
-    plan.status = LeaveDayPlan.Status.SUBMITTED
-    plan.submitted_at = timezone.now()
-    plan.save(update_fields=["status", "submitted_at", "updated_at"])
+        plan.status = LeaveDayPlan.Status.SUBMITTED
+        plan.submitted_at = timezone.now()
+        plan.save(update_fields=["status", "submitted_at", "updated_at"])
 
-    active_stage = assign_plan_workflow(plan)
+        active_stage = assign_plan_workflow(plan)
 
-    record_audit(
-        actor=user,
-        action=AuditEntry.Action.PLAN_SUBMITTED,
-        target_type=AuditEntry.TargetType.PLAN,
-        target_id=plan.pk,
-        target_summary=str(plan),
-        detail=changed_fields(
-            {"status": LeaveDayPlan.Status.DRAFT},
-            {
-                "status": LeaveDayPlan.Status.SUBMITTED,
-                "financial_year": plan.financial_year_label,
-                "current_stage_order": active_stage.stage_order,
-                "current_stage_role": active_stage.role_label,
-                "current_stage_candidates": len(
-                    active_stage.eligible_approver_ids()
-                ),
-            },
-        ),
-    )
+        record_audit(
+            actor=user,
+            action=AuditEntry.Action.PLAN_SUBMITTED,
+            target_type=AuditEntry.TargetType.PLAN,
+            target_id=plan.pk,
+            target_summary=str(plan),
+            detail=changed_fields(
+                {"status": LeaveDayPlan.Status.DRAFT},
+                {
+                    "status": LeaveDayPlan.Status.SUBMITTED,
+                    "financial_year": plan.financial_year_label,
+                    "current_stage_order": active_stage.stage_order,
+                    "current_stage_role": active_stage.role_label,
+                    "current_stage_candidates": len(
+                        active_stage.eligible_approver_ids()
+                    ),
+                },
+            ),
+        )
 
-    from notifications.plans import notify_plan_assigned
+        from notifications.plans import notify_plan_assigned
 
-    notify_plan_assigned(plan.pk)
+        # The approvers must not be emailed until the chain they are being
+        # pointed at is actually committed.
+        transaction.on_commit(lambda p=plan.pk: notify_plan_assigned(p))
 
     return plan
 
@@ -706,6 +715,10 @@ def acting_approver_predicate(user) -> Q:
 
 
 def _lock_plan_and_stage(plan_id, actor):
+    """Lock the plan row and its current stage.
+
+    Must be called inside ``transaction.atomic()``.
+    """
     plan = LeaveDayPlan.objects.select_for_update().filter(id=plan_id).first()
     if plan is None:
         raise PlanNotFoundError()
@@ -894,6 +907,8 @@ def _next_activatable_stage(plan, decided_stage):
     pre-existing malformed chain) and ``PlanValidationFailedError`` when the next
     stage has no eligible approver — which means a section lost its membership
     after the chain was materialised, or holds only the plan owner.
+
+    Must be called inside ``transaction.atomic()``.
     """
     remaining = list(
         PlanApprovalStage.objects.select_for_update()

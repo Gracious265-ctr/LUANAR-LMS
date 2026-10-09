@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, FileX } from "lucide-react";
 import { useState } from "react";
 
 import { formatDateTime, formatSize } from "@/lib/approvals/format";
@@ -8,6 +8,7 @@ import { fetchDocumentDownload } from "@/lib/approvals/service";
 import type { ApprovalReview } from "@/lib/approvals/types";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
 
 import { Panel } from "./panel";
 
@@ -36,9 +37,12 @@ export function DocumentsCard({ data }: { data: ApprovalReview }) {
   return (
     <Panel title="Supporting documents">
       {documents.length === 0 ? (
-        <p className="text-sm text-text-secondary">
-          No supporting documents were attached.
-        </p>
+        <EmptyState
+          className="py-6"
+          icon={<FileX className="h-8 w-8" />}
+          title="No supporting documents attached"
+          description="Files attached to this application will show up here."
+        />
       ) : (
         <ul className="divide-y divide-border-default">
           {documents.map((doc) => (

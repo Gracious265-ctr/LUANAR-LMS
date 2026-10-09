@@ -1,14 +1,17 @@
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { STATUS_STYLES } from "@/lib/status-styles";
 
 /**
- * The one place status colour is defined. Every status pill renders through
- * `tone`, and the label maps in lib/*\/labels.ts carry a `badgeTone` rather
- * than a hand-written class string, so a new status only needs a new entry
- * here. `tone` is the single source of truth: the two icon tiles that need
- * the same colours on a square (rather than a pill) call `badgeVariants`
- * directly instead of restating the classes.
+ * Every status pill renders through `tone`, and the label maps in
+ * lib/*\/labels.ts carry a `badgeTone` rather than a hand-written class
+ * string, so a new status only needs a new entry here. The five status tones
+ * are `STATUS_STYLES` from `lib/status-styles.ts` — the one place status →
+ * colour is defined; the two icon tiles that need the same colours on a
+ * square (rather than a pill) call `badgeVariants` directly instead of
+ * restating the classes. Non-status tones (neutral, brand, info…) stay local:
+ * they are not part of the status palette.
  *
  * `size` carries the four pill densities the app actually uses. Anything
  * denser than `xs` is a deliberate design decision, not an accident.
@@ -28,11 +31,11 @@ const badgeVariants = cva(
         muted: "bg-surface-muted text-text-muted",
         brand: "bg-brand-primary-subtle text-brand-primary",
         info: "bg-brand-secondary-subtle text-brand-secondary",
-        pending: "bg-status-pending-subtle text-status-pending",
-        approved: "bg-status-approved-subtle text-status-approved",
-        rejected: "bg-status-rejected-subtle text-status-rejected",
-        correction: "bg-status-correction-subtle text-status-correction",
-        cancelled: "bg-status-cancelled-subtle text-status-cancelled",
+        pending: STATUS_STYLES.pending,
+        approved: STATUS_STYLES.approved,
+        rejected: STATUS_STYLES.rejected,
+        correction: STATUS_STYLES.correction_required,
+        cancelled: STATUS_STYLES.cancelled,
       },
       size: {
         default: "gap-1.5 px-3 py-1 text-xs font-semibold",

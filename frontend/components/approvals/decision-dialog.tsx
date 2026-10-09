@@ -29,6 +29,12 @@ export interface DecisionDialogProps {
   onClose: () => void;
   onSubmitted: (briefing: DecisionBriefing) => void;
   onReloadRequest: () => void;
+  /** Fired the moment the request is dispatched so the parent can patch its
+   *  state optimistically, before the server answers. */
+  onOptimistic?: (comment: string) => void;
+  /** Fired on any backend failure so the parent can revert that patch and
+   *  surface an error toast alongside the dialog's own message. */
+  onRollback?: (message: string) => void;
 }
 
 export function DecisionDialog(props: DecisionDialogProps) {
@@ -42,6 +48,8 @@ export function DecisionDialog(props: DecisionDialogProps) {
       onClose={props.onClose}
       onSubmitted={props.onSubmitted}
       onReloadRequest={props.onReloadRequest}
+      onOptimistic={props.onOptimistic}
+      onRollback={props.onRollback}
     />
   );
 }
@@ -52,12 +60,16 @@ function DecisionDialogInner({
   onClose,
   onSubmitted,
   onReloadRequest,
+  onOptimistic,
+  onRollback,
 }: {
   kind: ApprovalAction;
   data: ApprovalReview;
   onClose: () => void;
   onSubmitted: (briefing: DecisionBriefing) => void;
   onReloadRequest: () => void;
+  onOptimistic?: (comment: string) => void;
+  onRollback?: (message: string) => void;
 }) {
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,6 +106,7 @@ function DecisionDialogInner({
     setFieldError("");
     setConflict(false);
     setBlocked(false);
+    onOptimistic?.(comment.trim());
     try {
       const result = await postDecision(app.id, {
         action: kind,
@@ -102,26 +115,36 @@ function DecisionDialogInner({
       });
       if (result.ok) {
         onSubmitted(result.data);
-      } else if (result.kind === "conflict") {
-        setConflict(true);
-        setError(result.message);
-      } else if (result.kind === "blocked") {
-        // Permanent: there is no approver left for this application, so the
-        // dialog offers no Refresh and the approver simply cannot decide.
-        setBlocked(true);
-        setError(result.message);
-      } else if (result.kind === "forbidden") {
-        setError(result.message);
-        onReloadRequest();
-        onClose();
-      } else if (result.kind === "validation") {
-        setFieldError(result.fields?.comment ?? "comment");
-        setError(result.fields?.comment ?? result.message);
-      } else if (result.kind === "not_found") {
-        setError(result.message);
       } else {
-        setError(result.message);
+        onRollback?.(result.message);
+        if (result.kind === "conflict") {
+          setConflict(true);
+          setError(result.message);
+        } else if (result.kind === "blocked") {
+          // Permanent: there is no approver left for this application, so the
+          // dialog offers no Refresh and the approver simply cannot decide.
+          setBlocked(true);
+          setError(result.message);
+        } else if (result.kind === "forbidden") {
+          // The error would be discarded by the close below, so the toast is
+          // what the approver actually sees for this failure.
+          setError(result.message);
+          onReloadRequest();
+          onClose();
+        } else if (result.kind === "validation") {
+          setFieldError(result.fields?.comment ?? "comment");
+          setError(result.fields?.comment ?? result.message);
+        } else if (result.kind === "not_found") {
+          setError(result.message);
+        } else {
+          setError(result.message);
+        }
       }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "The decision could not be sent.";
+      onRollback?.(message);
+      setError(message);
     } finally {
       setBusy(false);
     }

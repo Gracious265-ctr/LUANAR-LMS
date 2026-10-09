@@ -33,6 +33,13 @@ export interface CancelApplicationDialogProps {
   onClose: () => void;
   onSubmitted: (result: SubmitCancellationResult & { ok: true }) => void;
   onActionChanged: (eligibility: CancellationEligibility) => void;
+  /** Fired the moment the request is dispatched so the parent can patch its
+   *  state optimistically, before the server answers. */
+  onOptimistic?: () => void;
+  /** Fired when the backend refuses (other than an action conflict, which
+   *  routes through `onActionChanged`) so the parent can revert that patch and
+   *  surface an error toast alongside the dialog's own message. */
+  onRollback?: (message: string) => void;
 }
 
 export function CancelApplicationDialog(props: CancelApplicationDialogProps) {
@@ -46,6 +53,8 @@ export function CancelApplicationDialog(props: CancelApplicationDialogProps) {
       onClose={props.onClose}
       onSubmitted={props.onSubmitted}
       onActionChanged={props.onActionChanged}
+      onOptimistic={props.onOptimistic}
+      onRollback={props.onRollback}
     />
   );
 }
@@ -57,6 +66,8 @@ function CancelApplicationDialogInner({
   onClose,
   onSubmitted,
   onActionChanged,
+  onOptimistic,
+  onRollback,
 }: CancelApplicationDialogProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [reason, setReason] = useState("");
@@ -89,6 +100,7 @@ const fieldId = useId();
     setBusy(true);
     setError("");
     setConflict(false);
+    onOptimistic?.();
     try {
       const result = await submitCancellation(eligibility.application_id, {
         reason: trimmed,
@@ -98,12 +110,21 @@ const fieldId = useId();
       if (result.ok) {
         onSubmitted(result);
       } else if (result.code === "action_changed" && result.eligibility) {
+        // The optimistic patch is deliberately kept: the server says the old
+        // action no longer exists, so restoring its button would show a stale
+        // control. The refresh offer below loads the real one.
         setConflict(true);
         setError(result.message);
         setPendingEligibility(result.eligibility);
       } else {
+        onRollback?.(result.message);
         setError(result.message);
       }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "The request could not be sent.";
+      onRollback?.(message);
+      setError(message);
     } finally {
       setBusy(false);
     }

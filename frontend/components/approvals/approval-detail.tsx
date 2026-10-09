@@ -1,24 +1,29 @@
 "use client";
 
-import { ArrowLeft, Check, CheckCircle2, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Check, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CancellationDetailPanel } from "@/components/cancellations/cancellation-detail-panel";
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { approvalVerb } from "@/lib/approvals/labels";
 import { fetchApproval } from "@/lib/approvals/service";
+import { chainFromWorkflow } from "@/lib/chain-steps";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import type {
   ApprovalAction,
   ApprovalReview,
+  ApprovalStatus,
+  CurrentStageBlock,
   DecisionBriefing,
+  StageStatus,
 } from "@/lib/approvals/types";
 
 import { ApplicationDetailsCard } from "./application-details-card";
-import { ApprovalHistoryTimeline } from "./approval-history-timeline";
 import { BalanceCard } from "./balance-card";
 import { StatusBadge } from "./badges";
+import { Stepper } from "@/components/ui/Stepper";
 import { DecisionDialog } from "./decision-dialog";
 import { DecisionPanel } from "./decision-panel";
 import { DocumentsCard } from "./documents-card";
@@ -39,8 +44,11 @@ export function ApprovalDetail({
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [dialogKind, setDialogKind] = useState<ApprovalAction | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const { showToast } = useToast();
+  // The pre-decision page, kept so a failed request can put the optimistic
+  // update back exactly as it was (spec 3.5).
+  const decisionSnapshotRef = useRef<ApprovalReview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,21 +74,40 @@ export function ApprovalDetail({
     };
   }, [id, reloadKey]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
   function retry() {
     setError("");
     setLoading(true);
     setReloadKey((value) => value + 1);
   }
 
+  // The optimistic patch runs the moment the dialog dispatches the request,
+  // so the stepper and the decision panel move before the round trip finishes.
+  function handleOptimistic(comment: string) {
+    decisionSnapshotRef.current = data;
+    setData((prev) =>
+      prev && dialogKind ? withOptimisticDecision(prev, dialogKind, comment) : prev
+    );
+  }
+
+  function handleRollback(message: string) {
+    if (decisionSnapshotRef.current) {
+      setData(decisionSnapshotRef.current);
+      decisionSnapshotRef.current = null;
+    }
+    showToast(message, "error");
+  }
+
   function handleSubmitted(briefing: DecisionBriefing) {
     setDialogKind(null);
-    setToast(`Application ${approvalVerb(briefing.status)}`);
+    decisionSnapshotRef.current = null;
+    showToast(
+      `Application ${approvalVerb(briefing.status)}`,
+      briefing.status === "rejected"
+        ? "error"
+        : briefing.status === "correction_required"
+          ? "warning"
+          : "success"
+    );
     setReloadKey((value) => value + 1);
   }
 
@@ -129,6 +156,7 @@ export function ApprovalDetail({
   }
 
   const app = data.application;
+  const chainSteps = chainFromWorkflow(data.workflow.stages);
   const resubmission = app.submission_cycle > 1;
 
   return (
@@ -173,7 +201,15 @@ export function ApprovalDetail({
           {data.workflow.state === "approved" && (
             <ApprovedDocumentCard applicationId={id} />
           )}
-          <ApprovalHistoryTimeline data={data} />
+          <Panel title="Approval history">
+            {chainSteps.length > 0 ? (
+              <Stepper steps={chainSteps} />
+            ) : (
+              <p className="text-sm text-text-secondary">
+                No approvals have been recorded yet.
+              </p>
+            )}
+          </Panel>
           <LeaveHistoryCard data={data} />
         </div>
 
@@ -195,18 +231,21 @@ export function ApprovalDetail({
               kind="approve"
               icon={<Check className="h-4 w-4" aria-hidden="true" />}
               label="Approve"
+              disabled={dialogKind !== null}
               onClick={() => setDialogKind("approve")}
             />
             <MobileDecisionButton
               kind="reject"
               icon={<X className="h-4 w-4" aria-hidden="true" />}
               label="Reject"
+              disabled={dialogKind !== null}
               onClick={() => setDialogKind("reject")}
             />
             <MobileDecisionButton
               kind="return_for_correction"
               icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />}
               label="Return"
+              disabled={dialogKind !== null}
               onClick={() => setDialogKind("return_for_correction")}
             />
           </div>
@@ -217,19 +256,11 @@ export function ApprovalDetail({
         kind={dialogKind}
         data={data}
         onClose={() => setDialogKind(null)}
+        onOptimistic={handleOptimistic}
+        onRollback={handleRollback}
         onSubmitted={handleSubmitted}
         onReloadRequest={retry}
       />
-
-      {toast && (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-surface-card px-4 py-2.5 text-sm font-medium text-text-primary shadow-lg"
-        >
-          <CheckCircle2 className="h-4 w-4 text-status-approved" aria-hidden="true" />
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
@@ -238,11 +269,13 @@ function MobileDecisionButton({
   kind,
   icon,
   label,
+  disabled,
   onClick,
 }: {
   kind: ApprovalAction;
   icon: React.ReactNode;
   label: string;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   const className =
@@ -252,9 +285,97 @@ function MobileDecisionButton({
         ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm font-medium text-status-rejected"
         : "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-correction bg-status-correction-subtle px-3 py-2 text-sm font-medium text-status-correction";
   return (
-    <Button type="button" onClick={onClick} className={className}>
+    <Button type="button" onClick={onClick} disabled={disabled} className={className}>
       {icon}
       {label}
     </Button>
   );
+}
+
+/**
+ * The page state the moment a decision is dispatched: the pending stage
+ * records the decision, the workflow advances (or settles when the decision is
+ * terminal), and the panel flips to "already decided". The server response
+ * replaces this on success; the dialog's rollback restores the snapshot on
+ * failure, so this only ever lives between request and response.
+ */
+function withOptimisticDecision(
+  data: ApprovalReview,
+  action: ApprovalAction,
+  comment: string
+): ApprovalReview {
+  const decidedAt = new Date().toISOString();
+  const isFinal = data.workflow.current_stage?.is_final ?? false;
+  const stageStatus: StageStatus =
+    action === "approve"
+      ? "approved"
+      : action === "reject"
+        ? "rejected"
+        : "correction_requested";
+  const terminal =
+    action === "reject" || action === "return_for_correction" || isFinal;
+  const state: ApprovalStatus = terminal
+    ? action === "reject"
+      ? "rejected"
+      : action === "return_for_correction"
+        ? "correction_required"
+        : "approved"
+    : data.workflow.state;
+
+  let stages = data.workflow.stages.map((stage) =>
+    stage.status === "pending"
+      ? {
+          ...stage,
+          status: stageStatus,
+          decided_at: decidedAt,
+          comment: comment || null,
+        }
+      : stage
+  );
+
+  let currentStage: CurrentStageBlock | null = null;
+  if (!terminal) {
+    const waiting = stages
+      .filter((stage) => stage.status === "waiting")
+      .sort((a, b) => a.order - b.order);
+    const [next, ...rest] = waiting;
+    if (next) {
+      stages = stages.map((stage) =>
+        stage.order === next.order
+          ? { ...stage, status: "pending" as StageStatus }
+          : stage
+      );
+      currentStage = {
+        order: next.order,
+        role: next.role,
+        role_label: next.role_label,
+        is_final: rest.length === 0,
+        next_role_label: rest[0]?.role_label ?? null,
+      };
+    }
+  }
+
+  return {
+    ...data,
+    can_decide: false,
+    decision_restriction: "already_decided",
+    my_decision: {
+      action,
+      role_label: data.workflow.current_stage?.role_label ?? "",
+      comment: comment || null,
+      decided_at: decidedAt,
+    },
+    workflow: {
+      ...data.workflow,
+      state,
+      current_stage: currentStage,
+      stages,
+      current_decision: {
+        action,
+        role_label: data.workflow.current_stage?.role_label ?? "",
+        comment: comment || null,
+        decided_at: decidedAt,
+      },
+    },
+  };
 }

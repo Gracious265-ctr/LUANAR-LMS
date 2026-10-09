@@ -7,6 +7,7 @@ import Link from "next/link";
 import { approverRolePeople } from "@/lib/delegations-client";
 import type { Employee } from "@/lib/employees";
 import { reassignApplication } from "@/lib/reassignments-client";
+import { STATUS_STYLES } from "@/lib/status-styles";
 import type { PendingApplication } from "@/lib/reassignments";
 import { Field } from "@/components/ui/input";
 import {
@@ -20,12 +21,25 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
 
+/** Where the standalone form returns to, and what Cancel links back to. */
+const LIST_ROUTE = "/dashboard/hr-admin/reassignments";
+
 export function ReassignmentForm({
   application,
   employees,
+  onSuccess,
+  onCancel,
 }: {
   application: PendingApplication;
   employees: Employee[];
+  /**
+   * Replaces the default `router.push(listRoute)` + `router.refresh()`. The
+   * overlay passes this so it can close itself and refetch; with it omitted the
+   * form navigates on its own, which is what the standalone page needs.
+   */
+  onSuccess?: () => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -36,6 +50,16 @@ export function ReassignmentForm({
       String(employee.id) !== String(application.employee) &&
       String(employee.id) !== String(application.current_approver)
   );
+
+  /** Close-and-refresh when hosted, navigate when standalone. */
+  function done() {
+    if (onSuccess) {
+      onSuccess();
+      return;
+    }
+    router.push(LIST_ROUTE);
+    router.refresh();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,8 +74,7 @@ export function ReassignmentForm({
         to_approver: Number(formData.get("to_approver")),
         reason: String(formData.get("reason") || ""),
       });
-      router.push("/dashboard/hr-admin/reassignments");
-      router.refresh();
+      done();
     } catch (err) {
       setError(
         err instanceof Error
@@ -82,7 +105,9 @@ export function ReassignmentForm({
           /* Stated before the select, not after: cover is a query-time overlay,
              so handing this to the named approver would leave their delegate
              acting and the intervention would appear to do nothing. */
-          <p className="mt-2 rounded-md bg-status-pending-subtle px-3 py-2 text-xs text-status-pending">
+          <p
+            className={`mt-2 rounded-md px-3 py-2 text-xs ${STATUS_STYLES.pending}`}
+          >
             {application.acting_approver_name} is currently acting as delegate
             for {application.current_approver_name}. Reassigning moves the record
             to your chosen approver; if you choose{" "}
@@ -141,12 +166,18 @@ export function ReassignmentForm({
         <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Reassigning..." : "Reassign application"}
         </Button>
-        <Link
-          href="/dashboard/hr-admin/reassignments"
-          className={buttonVariants({ variant: "secondary" })}
-        >
-          Cancel
-        </Link>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href={LIST_ROUTE}
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

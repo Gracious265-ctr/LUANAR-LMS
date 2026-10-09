@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ApprovalDetail } from "@/components/approvals/approval-detail";
@@ -36,13 +36,24 @@ describe("ApprovalDetail", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("shows the timeline including awaiting and not-yet-reached stages", async () => {
+  it("shows the stepper with completed, current and pending stages", async () => {
     mockedFetchApproval.mockResolvedValue({ ok: true, data: makeReview() });
     render(<ApprovalDetail id="app-1" />);
 
-    expect(await screen.findByText("Awaiting your decision")).toBeInTheDocument();
-    expect(screen.getAllByText("Not yet reached")).toHaveLength(2);
-    expect(screen.getByText("Looks good.")).toBeInTheDocument();
+    expect(await screen.findByText("Jane Phiri")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-state="completed"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-state="current"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(2);
+
+    // The decided stage's comment lives in the node's accordion (spec 3.1):
+    // collapsed until the node is clicked, expanding without navigation.
+    const toggle = screen.getByRole("button", { name: /Supervisor details/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(await screen.findByText("Looks good.")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(toggle);
+    expect(screen.queryByText("Looks good.")).not.toBeInTheDocument();
   });
 
   it("shows no skipped stage when the applicant shared a section", async () => {
@@ -55,9 +66,10 @@ describe("ApprovalDetail", () => {
     // The applicant is removed from the section's eligibility at submission and
     // a colleague on the same section decides it, so the chain runs straight
     // through with nothing bypassed.
-    expect(await screen.findByText("Awaiting your decision")).toBeInTheDocument();
-    expect(screen.queryByText(/Skipped/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText("Not yet reached")).toHaveLength(1);
+    expect(await screen.findByText("Peter Banda")).toBeInTheDocument();
+    expect(document.querySelector('[data-state="skipped"]')).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-state="completed"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(1);
   });
 
   it("shows a skipped stage with the reason it was passed over", async () => {
@@ -70,11 +82,11 @@ describe("ApprovalDetail", () => {
     // The applicant held the HOD stage, so it was skipped and the chain opened
     // at the Registrar. The stage stays in the history with its reason: a reader
     // must be able to tell a deliberate skip from a stage that was dropped.
-    expect(await screen.findByText("Skipped")).toBeInTheDocument();
     expect(
-      screen.getByText(/Applicant cannot approve their own application/)
+      await screen.findByText(/Applicant cannot approve their own application/)
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Not yet reached")).toHaveLength(1);
+    expect(document.querySelector('[data-state="skipped"]')).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(1);
   });
 
   it("shows the read-only banner with an already_decided reason", async () => {

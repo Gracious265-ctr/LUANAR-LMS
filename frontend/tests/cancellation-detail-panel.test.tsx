@@ -8,6 +8,7 @@ import {
   fetchCancellationDetail,
   postCancellationDecision,
 } from "@/lib/cancellations/service";
+import { Toaster } from "@/components/ui/toast";
 
 vi.mock("@/lib/cancellations/service", () => ({
   fetchCancellationDetail: vi.fn(),
@@ -31,11 +32,16 @@ const textContent =
     el?.textContent?.replace(/\s+/g, " ").trim() === expected;
 
 function renderPanel(overrides: { onApplicationChanged?: () => void } = {}) {
+  // The panel reports every outcome through the global toast stack (spec 3.5),
+  // so the Toaster has to be mounted for those messages to be findable.
   return render(
-    <CancellationDetailPanel
-      requestId="canc-1"
-      onApplicationChanged={overrides.onApplicationChanged ?? vi.fn()}
-    />
+    <>
+      <CancellationDetailPanel
+        requestId="canc-1"
+        onApplicationChanged={overrides.onApplicationChanged ?? vi.fn()}
+      />
+      <Toaster />
+    </>
   );
 }
 

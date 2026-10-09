@@ -3,12 +3,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { FileText, Plus } from "lucide-react";
+import { Inbox, Plus } from "lucide-react";
 
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/states";
 import { Stagger } from "@/components/motion/Stagger";
 import { StaggerItem } from "@/components/motion/StaggerItem";
 
@@ -34,7 +35,8 @@ interface OverlayTarget {
  * through the redirect shims in those routes.
  */
 export function ApplicationsList() {
-  const { applications, loading, error, refetch } = useLeaveApplications();
+  const { applications, loading, error, refetch, removeLocal, restoreLocal } =
+    useLeaveApplications();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
@@ -134,7 +136,7 @@ export function ApplicationsList() {
       onOpenChange={(open) => {
         if (!open) close();
       }}
-      onSubmitted={refetch}
+      onSubmitted={() => refetch({ silent: true })}
       onStageChange={handleStageChange}
     />
   );
@@ -153,7 +155,7 @@ export function ApplicationsList() {
     return (
       <Card className="text-center">
         <p className="text-status-rejected text-sm">{error}</p>
-        <Button onClick={refetch} variant="link" size="sm" className="mt-2 h-auto text-text-link">
+        <Button onClick={() => refetch()} variant="link" size="sm" className="mt-2 h-auto text-text-link">
           Try again
         </Button>
       </Card>
@@ -177,18 +179,18 @@ export function ApplicationsList() {
       </div>
 
       {applications.length === 0 ? (
-        <Card className="text-center">
-          <FileText className="h-12 w-12 mx-auto text-text-disabled mb-4" />
-          <h3 className="text-lg font-semibold text-text-primary mb-2">
-            No applications yet
-          </h3>
-          <p className="text-text-secondary text-sm mb-4">
-            Start a new leave application to see it here.
-          </p>
-          <Button onClick={openNew} className="px-4 py-2">
-            <Plus className="h-4 w-4" />
-            New Application
-          </Button>
+        <Card>
+          <EmptyState
+            icon={<Inbox className="h-10 w-10" />}
+            title="No applications yet"
+            description="Your submitted leave applications will show up here."
+            action={
+              <Button onClick={openNew} className="px-4 py-2">
+                <Plus className="h-4 w-4" />
+                New Application
+              </Button>
+            }
+          />
         </Card>
       ) : (
         <Stagger className="grid gap-4">
@@ -201,7 +203,8 @@ export function ApplicationsList() {
                     ? leaveTypeNames[app.leave_type_id] || `Type #${app.leave_type_id}`
                     : "Not selected"
                 }
-                onDelete={refetch}
+                onDelete={removeLocal}
+                onRestore={restoreLocal}
                 onEdit={openExisting}
               />
             </StaggerItem>

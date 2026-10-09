@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-picker";
 import { Field } from "@/components/ui/input";
+import { pushToast } from "@/components/ui/toast";
 import {
   Select,
   SelectContent,
@@ -70,17 +71,19 @@ export function CoverRequestForm({
         request_reason: String(formData.get("request_reason") || ""),
       });
       setLoading(false);
+      pushToast("Cover requested.");
       if (onSubmitted) {
         onSubmitted(delegation);
       } else {
         router.refresh();
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred. Please try again."
-      );
+      const message =
+        err instanceof Error ? err.message : "An error occurred. Please try again.";
+      setError(message);
+      // Kept alongside the inline Alert: the overlay may be closing while the
+      // toast is what stays on screen.
+      pushToast(message, "error");
       setLoading(false);
     }
   }

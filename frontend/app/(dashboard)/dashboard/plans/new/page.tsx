@@ -1,21 +1,13 @@
-import { PlanForm } from "@/components/plans/plan-form";
-import { FadeIn } from "@/components/motion/FadeIn";
+import { redirect } from "next/navigation";
 
-export default async function NewPlanPage() {
-  return (
-    <FadeIn>
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
-            New leave day plan
-          </h2>
-          <p className="text-sm text-text-secondary">
-            A plan groups the leave you intend to take into one approval, then
-            reserves each block once it is approved.
-          </p>
-        </div>
-        <PlanForm />
-      </div>
-    </FadeIn>
-  );
+/**
+ * Create now happens in an overlay on the workspace, so this route only exists
+ * to keep the old `plans/new` links working: any bookmarks, and the workspace's
+ * own "New plan" link before it was converted.
+ *
+ * No guard is kept because the original page never had one — the list page
+ * itself is what decides who may plan, and it still does.
+ */
+export default async function ShimPage() {
+  redirect("/dashboard/plans?plan=new");
 }

@@ -20,10 +20,12 @@ import type {
 } from "@/lib/plans/types";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/states";
-import { Toast, useToast } from "@/components/ui/toast";
+import { useToast } from "@/components/ui/toast";
 
 import { BlockStatusBadge, PlanStatusBadge } from "./badges";
-import { DetailRow, StageChain } from "./panels";
+import { DetailRow } from "./panels";
+import { Stepper } from "@/components/ui/Stepper";
+import { chainFromPlanStages } from "@/lib/chain-steps";
 import { PlanDecisionDialog } from "./plan-decision-dialog";
 import { PlanDecisionPanel } from "./plan-decision-panel";
 
@@ -33,7 +35,7 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [dialogKind, setDialogKind] = useState<PlanAction | null>(null);
-  const { toast, showToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const [reloadKey, setReloadKey] = useState(0);
 
   const reload = useCallback(() => {
@@ -106,7 +108,6 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      {toast && <Toast onDismiss={dismissToast}>{toast}</Toast>}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -137,7 +138,7 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
         <h2 className="text-base font-semibold text-text-primary">
           Approval chain
         </h2>
-        <StageChain stages={data.stages} />
+        <Stepper steps={chainFromPlanStages(data.stages)} />
       </section>
 
       {data.decisions.length > 0 && (
@@ -168,7 +169,10 @@ export function PlanApprovalDetailView({ id }: { id: string }) {
           // decision that was actually recorded rather than assuming success.
           const decided = dialogKind === "approve" ? "approved" : "rejected";
           setDialogKind(null);
-          showToast(`Plan ${planVerb(decided)}`);
+          showToast(
+            `Plan ${planVerb(decided)}`,
+            decided === "rejected" ? "error" : "success"
+          );
           reload();
         }}
         onReloadRequest={reload}

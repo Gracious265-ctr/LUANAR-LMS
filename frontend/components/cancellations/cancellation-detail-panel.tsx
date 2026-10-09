@@ -1,7 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check, CheckCircle2, Scale, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, Check, Scale, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Panel } from "@/components/approvals/panel";
 import { formatDateTime } from "@/lib/cancellations/format";
@@ -11,11 +11,15 @@ import {
 } from "@/lib/cancellations/service";
 import type { CancellationDetail } from "@/lib/cancellations/types";
 import { formatDate } from "@/lib/tracking/format";
+import { STATUS_STYLES, STATUS_TEXT } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+
+import { stepsFromCancellation } from "@/lib/chain-steps";
+import { Stepper } from "@/components/ui/Stepper";
 
 import { CancellationDecisionDialog } from "./cancellation-decision-dialog";
-import { CancellationStageStepper } from "./cancellation-stage-stepper";
 
 export interface CancellationDetailPanelProps {
   requestId: string;
@@ -33,8 +37,11 @@ export function CancellationDetailPanel({
 }: CancellationDetailPanelProps) {
   const [data, setData] = useState<CancellationDetail | null>(null);
   const [dialogKind, setDialogKind] = useState<"approve" | "reject" | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const { showToast } = useToast();
+  // The pre-decision detail, kept so a failed request can put the optimistic
+  // update back exactly as it was (spec 3.5).
+  const snapshotRef = useRef<CancellationDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,25 +62,42 @@ export function CancellationDetailPanel({
     };
   }, [requestId, reloadKey]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [toast]);
+  function handleOptimistic(comment: string) {
+    snapshotRef.current = data;
+    setData((prev) =>
+      prev && dialogKind
+        ? withOptimisticDecision(prev, dialogKind, comment)
+        : prev
+    );
+  }
+
+  function handleRollback(message: string) {
+    if (snapshotRef.current) {
+      setData(snapshotRef.current);
+      snapshotRef.current = null;
+    }
+    showToast(message, "error");
+  }
 
   function handleSubmitted(next: CancellationDetail) {
     setDialogKind(null);
+    snapshotRef.current = null;
     setData(next);
-    setToast(
+    showToast(
       next.request.status === "approved"
         ? "Cancellation approved."
-        : "Cancellation rejected."
+        : "Cancellation rejected.",
+      next.request.status === "approved" ? "success" : "error"
     );
     onApplicationChanged?.();
   }
 
   function handleConflict() {
-    setToast("This request changed. Refreshing…");
+    if (snapshotRef.current) {
+      setData(snapshotRef.current);
+      snapshotRef.current = null;
+    }
+    showToast("This request changed. Refreshing…", "info");
     setReloadKey((value) => value + 1);
   }
 
@@ -90,11 +114,7 @@ export function CancellationDetailPanel({
         <span
           className={cn(
             "text-xs font-semibold",
-            data.request.status === "approved"
-              ? "text-status-approved"
-              : data.request.status === "rejected"
-                ? "text-status-rejected"
-                : "text-status-pending"
+            STATUS_TEXT[data.request.status]
           )}
         >
           {data.request.status === "pending" ? "Pending approval" : data.request.status}
@@ -123,7 +143,7 @@ export function CancellationDetailPanel({
         {data.leave_started && (
           <div
             role="note"
-            className="flex items-start gap-2 rounded-lg bg-status-pending-subtle p-3 text-sm text-status-pending"
+            className={`flex items-start gap-2 rounded-lg p-3 text-sm ${STATUS_STYLES.pending}`}
           >
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>Leave has started; this request can only be rejected.</p>
@@ -166,8 +186,11 @@ export function CancellationDetailPanel({
               )}
             </p>
             <h3 className="mt-4 text-sm font-medium text-text-secondary">Approval progress</h3>
-            <div className="mt-2">
-              <CancellationStageStepper stages={data.request.stages} />
+            <div className="mt-2" role="group" aria-label="Cancellation approval progress">
+              <Stepper
+                steps={stepsFromCancellation(data.request.stages)}
+                orientation="vertical"
+              />
             </div>
           </div>
         </div>
@@ -183,21 +206,49 @@ export function CancellationDetailPanel({
         kind={dialogKind}
         data={data}
         onClose={() => setDialogKind(null)}
+        onOptimistic={handleOptimistic}
+        onRollback={handleRollback}
         onSubmitted={handleSubmitted}
         onConflict={handleConflict}
       />
-
-      {toast && (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-surface-card px-4 py-2.5 text-sm font-medium text-text-primary shadow-lg"
-        >
-          <CheckCircle2 className="h-4 w-4 text-status-approved" aria-hidden="true" />
-          {toast}
-        </div>
-      )}
     </Panel>
   );
+}
+
+/**
+ * The panel state the moment the decision is dispatched: the stage records the
+ * decision, the request settles, and the buttons flip to the "you decided"
+ * view. The server response replaces this on success; rollback restores the
+ * snapshot on failure, so this only ever lives between request and response.
+ */
+function withOptimisticDecision(
+  detail: CancellationDetail,
+  decision: "approve" | "reject",
+  comment: string
+): CancellationDetail {
+  const decidedAt = new Date().toISOString();
+  const status = decision === "approve" ? "approved" : "rejected";
+  return {
+    ...detail,
+    can_decide: false,
+    stage_version: detail.stage_version + 1,
+    my_decision: {
+      decision: status,
+      decided_at: decidedAt,
+      comment: comment || null,
+    },
+    request: {
+      ...detail.request,
+      status,
+      decided_at: decidedAt,
+      stage_version: detail.request.stage_version + 1,
+      stages: detail.request.stages.map((stage) =>
+        stage.status === "pending"
+          ? { ...stage, status, decided_at: decidedAt, comment: comment || null }
+          : stage
+      ),
+    },
+  };
 }
 
 function CancellationDecisionSection({
@@ -219,9 +270,7 @@ function CancellationDecisionSection({
               <span
                 className={cn(
                   "font-semibold",
-                  data.my_decision.decision === "approved"
-                    ? "text-status-approved"
-                    : "text-status-rejected"
+                  STATUS_TEXT[data.my_decision.decision]
                 )}
               >
                 {decisionVerb(data.my_decision.decision)}

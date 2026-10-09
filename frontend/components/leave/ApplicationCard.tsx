@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { STATUS_META } from "@/lib/tracking/labels";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 import {
   deleteLeaveApplication,
@@ -25,7 +26,14 @@ import { Card } from "@/components/ui/card";
 interface ApplicationCardProps {
   application: LeaveApplication;
   leaveTypeName: string;
+  /**
+   * Optimistically removes the card from its list. Called the moment the
+   * delete is confirmed, before the request is sent (spec 3.5), so the host
+   * should already own the list state this mutates.
+   */
   onDelete: (id: string) => void;
+  /** Puts the card back when the delete fails, after the optimistic removal. */
+  onRestore?: () => void;
   /**
    * Opens the compose overlay on this draft. Omitted on hosts that still link
    * to the standalone edit page, in which case the links below are rendered.
@@ -64,22 +72,29 @@ export function ApplicationCard({
   application,
   leaveTypeName,
   onDelete,
+  onRestore,
   onEdit,
 }: ApplicationCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const isDraft = application.status === "draft";
 
   const handleDelete = async () => {
     setDeleting(true);
     setError(null);
+    // The row leaves the list before the round trip; in a list host this card
+    // unmounts here, and the toast below is what reports either outcome.
+    onDelete(application.id);
     try {
       await deleteLeaveApplication(application.id);
-      onDelete(application.id);
+      showToast("Draft deleted.");
     } catch {
+      onRestore?.();
       setError("Could not delete this draft. Please try again.");
+      showToast("Could not delete this draft. Please try again.", "error");
       setConfirming(false);
     } finally {
       setDeleting(false);

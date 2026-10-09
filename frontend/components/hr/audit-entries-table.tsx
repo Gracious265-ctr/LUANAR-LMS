@@ -2,6 +2,7 @@ import type { AuditEntry } from "@/lib/audit";
 import { TARGET_TYPE_LABELS } from "@/lib/audit";
 import { AuditActionPill, auditChangesText, auditEditHref } from "./audit-meta";
 import { EditActionLink } from "./edit-action-link";
+import { Avatar } from "@/components/ui/Avatar";
 import {
   Table,
   TableBody,
@@ -44,8 +45,17 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
               key={entry.id}
             >
               <TableCell className="text-text-primary">
-                <div className="font-medium">
-                  {entry.actor_name || (entry.actor ? `#${entry.actor}` : "System")}
+                <div className="flex items-center gap-2">
+                  {entry.actor_name ? (
+                    <Avatar
+                      name={entry.actor_name}
+                      userId={entry.actor ?? entry.actor_name}
+                      size="sm"
+                    />
+                  ) : null}
+                  <div className="font-medium">
+                    {entry.actor_name || (entry.actor ? `#${entry.actor}` : "System")}
+                  </div>
                 </div>
               </TableCell>
               <TableCell>

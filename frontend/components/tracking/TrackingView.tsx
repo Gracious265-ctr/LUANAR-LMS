@@ -9,7 +9,6 @@ import { fetchTracking } from "@/lib/tracking/service";
 import type { TrackingResult } from "@/lib/tracking/types";
 
 import { ActivityTimeline } from "./ActivityTimeline";
-import { ApprovalStepper } from "./ApprovalStepper";
 import { CurrentStatusCard } from "./CurrentStatusCard";
 import { OutcomePanel } from "./OutcomePanel";
 import { ResubmissionNote } from "./ResubmissionNote";
@@ -18,6 +17,8 @@ import { TrackingError } from "./TrackingError";
 import { TrackingHeader } from "./TrackingHeader";
 import { TrackingSkeleton } from "./TrackingSkeleton";
 import { Card } from "@/components/ui/card";
+import { Stepper } from "@/components/ui/Stepper";
+import { chainFromTracking } from "@/lib/chain-steps";
 
 export function TrackingView({ applicationId }: { applicationId: string }) {
   const [result, setResult] = useState<TrackingResult | null>(() => null);
@@ -91,6 +92,7 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   const data = result.data;
   const showAttention =
     Boolean(data.rejection) || Boolean(data.correction);
+  const chainSteps = chainFromTracking(data);
 
   // Only mount the cancellation surface when the tracking payload carries the
   // Unit 18 fields (older fixtures without them must not trigger extra calls).
@@ -145,7 +147,19 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-6">
-          <ApprovalStepper data={data} />
+          <section
+            aria-label="Approval progress"
+            className="rounded-xl border border-border-default bg-surface-card p-5 shadow-subtle"
+          >
+            <h2 className="mb-4 text-base font-semibold text-text-primary">
+              Approval progress
+            </h2>
+            {chainSteps.length > 0 ? (
+              <Stepper steps={chainSteps} />
+            ) : (
+              <p className="text-sm text-text-muted">No workflow stages.</p>
+            )}
+          </section>
           <ActivityTimeline data={data} />
         </div>
       </div>

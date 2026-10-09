@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { getLeaveSummary } from "@/lib/leave-summary";
 import { Card } from "@/components/ui/card";
+import { STATUS_STYLES } from "@/lib/status-styles";
 import { FadeIn } from "@/components/motion/FadeIn";
 import { Stagger } from "@/components/motion/Stagger";
 import { StaggerItem } from "@/components/motion/StaggerItem";
@@ -117,7 +118,7 @@ export default async function DashboardPage() {
 
 const STAT_CARD_VARIANTS = {
   primary: "bg-brand-primary-subtle text-brand-primary",
-  pending: "bg-status-pending-subtle text-status-pending",
+  pending: STATUS_STYLES.pending,
   info: "bg-status-info-subtle text-status-info",
   secondary: "bg-brand-secondary-subtle text-brand-secondary",
 } as const;

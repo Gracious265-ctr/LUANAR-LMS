@@ -22,7 +22,9 @@ function EmptyStateBody({
   return (
     <>
       {icon && (
-        <span className="mx-auto mb-4 block" aria-hidden="true">
+        // `w-fit` shrink-wraps the icon so `mx-auto` can centre it: preflight
+        // renders svg as display:block, which ignores the inherited text-center.
+        <span className="mx-auto mb-4 block w-fit" aria-hidden="true">
           {icon}
         </span>
       )}
@@ -105,7 +107,8 @@ export function ErrorState({
       )}
     >
       {icon && (
-        <span className="mx-auto mb-4 block" aria-hidden="true">
+        // Shrink-wrapped so `mx-auto` centres it — see EmptyStateBody.
+        <span className="mx-auto mb-4 block w-fit" aria-hidden="true">
           {icon}
         </span>
       )}

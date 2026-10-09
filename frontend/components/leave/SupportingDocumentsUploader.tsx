@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { FileText, RefreshCw, Trash2, Upload } from "lucide-react";
+import { FileText, FileX, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import {
   deleteDocument,
@@ -13,6 +13,8 @@ import {
 } from "@/lib/leave-api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
+import { useToast } from "@/components/ui/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +50,7 @@ export function SupportingDocumentsUploader({
   const [pendingRemoval, setPendingRemoval] =
     useState<SupportingDocument | null>(null);
   const replaceInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const { showToast } = useToast();
 
   const refresh = useCallback(
     async (applicationIdToFetch: string) => {
@@ -69,22 +72,54 @@ export function SupportingDocumentsUploader({
       }
       setUploading(true);
       setError(null);
+      // Rows for the chosen files appear immediately, keyed by a client token;
+      // the refresh below replaces them with the server's own records.
+      const snapshot = documents;
+      const placeholders: SupportingDocument[] = acceptedFiles.map(
+        (file, index) => ({
+          id: `pending-${Date.now()}-${index}`,
+          file_url: "",
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type || "application/octet-stream",
+          uploaded_at: new Date().toISOString(),
+          status: "active",
+          retired_at: null,
+          retire_reason: null,
+          retired_by: null,
+          replaced_by: null,
+        })
+      );
+      onDocumentsChange([...documents, ...placeholders]);
       try {
         for (const file of acceptedFiles) {
           await uploadDocument(id, file);
         }
         await refresh(id);
+        showToast(
+          acceptedFiles.length > 1
+            ? `${acceptedFiles.length} documents uploaded.`
+            : "Document uploaded."
+        );
       } catch (err) {
-        setError(
+        // Server truth for whatever landed; fall back to the pre-upload list
+        // if even the refresh fails.
+        try {
+          await refresh(id);
+        } catch {
+          onDocumentsChange(snapshot);
+        }
+        const message =
           err instanceof Error
             ? err.message
-            : "Upload failed. Check the file and try again."
-        );
+            : "Upload failed. Check the file and try again.";
+        setError(message);
+        showToast(message, "error");
       } finally {
         setUploading(false);
       }
     },
-    [applicationId, onEnsureDraft, refresh]
+    [applicationId, documents, onEnsureDraft, onDocumentsChange, refresh, showToast]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -97,20 +132,25 @@ export function SupportingDocumentsUploader({
       if (!applicationId || busyId) return;
       setBusyId(document.id);
       setError(null);
+      // The row leaves the list before the request; failure puts it back.
+      onDocumentsChange(documents.filter((doc) => doc.id !== document.id));
       try {
         await deleteDocument(applicationId, document.id);
         await refresh(applicationId);
+        showToast("Document removed.");
       } catch (err) {
-        setError(
+        onDocumentsChange(documents);
+        const message =
           err instanceof Error
             ? err.message
-            : "Could not remove this document. Please try again."
-        );
+            : "Could not remove this document. Please try again.";
+        setError(message);
+        showToast(message, "error");
       } finally {
         setBusyId(null);
       }
     },
-    [applicationId, busyId, refresh]
+    [applicationId, busyId, documents, onDocumentsChange, refresh, showToast]
   );
 
   const handleReplace = useCallback(
@@ -118,22 +158,35 @@ export function SupportingDocumentsUploader({
       if (!applicationId || busyId) return;
       setBusyId(document.id);
       setError(null);
+      // The row renames to the chosen file immediately; failure restores the
+      // previous name and size.
+      const snapshot = documents;
+      onDocumentsChange(
+        documents.map((doc) =>
+          doc.id === document.id
+            ? { ...doc, file_name: file.name, file_size: file.size }
+            : doc
+        )
+      );
       try {
         await replaceDocument(applicationId, document.id, file);
         await refresh(applicationId);
+        showToast("Document replaced.");
       } catch (err) {
-        setError(
+        onDocumentsChange(snapshot);
+        const message =
           err instanceof Error
             ? err.message
-            : "Could not replace this document. Please try again."
-        );
+            : "Could not replace this document. Please try again.";
+        setError(message);
+        showToast(message, "error");
       } finally {
         setBusyId(null);
         const input = replaceInputs.current[document.id];
         if (input) input.value = "";
       }
     },
-    [applicationId, busyId, refresh]
+    [applicationId, busyId, documents, onDocumentsChange, refresh, showToast]
   );
 
   const formatFileSize = (bytes: number) => {
@@ -216,7 +269,7 @@ export function SupportingDocumentsUploader({
                       <Button
                         type="button"
                         onClick={() => replaceInputs.current[doc.id]?.click()}
-                        disabled={busyId !== null}
+                        disabled={busyId !== null || uploading}
                         variant="secondary"
                         size="sm"
                       >
@@ -229,7 +282,7 @@ export function SupportingDocumentsUploader({
                     type="button"
                     aria-label={`Remove document ${doc.file_name}`}
                     onClick={() => setPendingRemoval(doc)}
-                    disabled={busyId !== null}
+                    disabled={busyId !== null || uploading}
                     variant="ghost"
                     size="icon"
                     className="h-auto w-auto p-1.5 hover:text-status-rejected"
@@ -244,9 +297,12 @@ export function SupportingDocumentsUploader({
       )}
 
       {!editable && documents.length === 0 && (
-        <p className="text-sm text-text-secondary">
-          No supporting documents were attached.
-        </p>
+        <EmptyState
+          className="py-6"
+          icon={<FileX className="h-8 w-8" />}
+          title="No supporting documents attached"
+          description="Files attached to this application will show up here."
+        />
       )}
 
       {error && editable && (

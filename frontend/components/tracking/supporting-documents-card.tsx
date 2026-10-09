@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, FileText, ExternalLink } from "lucide-react";
+import { ChevronDown, FileText, FileX, ExternalLink } from "lucide-react";
 
 import { listDocuments, type SupportingDocument } from "@/lib/leave-api";
 import { formatSize } from "@/lib/approvals/format";
 import { formatDateTime } from "@/lib/tracking/format";
 import type { TrackingDocument } from "@/lib/tracking/types";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
 
 /**
  * Read-only supporting documents card for the tracking detail page.
@@ -63,9 +65,12 @@ export function SupportingDocumentsCard({
       </div>
 
       {documents.length === 0 ? (
-        <p className="mt-2 text-sm text-text-secondary">
-          No supporting documents were attached.
-        </p>
+        <EmptyState
+          className="py-6"
+          icon={<FileX className="h-8 w-8" />}
+          title="No supporting documents attached"
+          description="Files attached to this application will show up here."
+        />
       ) : (
         <ul className="mt-1 divide-y divide-border-default">
           {documents.map((doc) => (
@@ -140,7 +145,7 @@ export function SupportingDocumentsCard({
                         className={cn(
                           "text-xs",
                           doc.retire_reason === "replaced"
-                            ? "text-status-cancelled"
+                            ? STATUS_TEXT.cancelled
                             : "text-text-muted"
                         )}
                       >

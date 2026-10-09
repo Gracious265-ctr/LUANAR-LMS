@@ -1,13 +1,16 @@
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { STATUS_STYLES } from "@/lib/status-styles";
 
 /**
  * Inline status and error messages.
  *
  * These are the same surfaces that were previously hand-written as
  * `rounded-md bg-status-*-subtle p-3 text-sm` divs, so a converted callout is
- * a visual no-op. `FormError` is a thin wrapper over the `rejected` tone.
+ * a visual no-op. The status tones come from `STATUS_STYLES`, the single
+ * status → colour source. `FormError` is a thin wrapper over the `rejected`
+ * tone.
  */
 const alertVariants = cva(
   [
@@ -19,10 +22,10 @@ const alertVariants = cva(
       tone: {
         neutral: "bg-surface-muted text-text-secondary",
         info: "bg-brand-primary-subtle text-brand-primary",
-        pending: "bg-status-pending-subtle text-status-pending",
-        approved: "bg-status-approved-subtle text-status-approved",
-        rejected: "bg-status-rejected-subtle text-status-rejected",
-        correction: "bg-status-correction-subtle text-status-correction",
+        pending: STATUS_STYLES.pending,
+        approved: STATUS_STYLES.approved,
+        rejected: STATUS_STYLES.rejected,
+        correction: STATUS_STYLES.correction_required,
       },
     },
     defaultVariants: {

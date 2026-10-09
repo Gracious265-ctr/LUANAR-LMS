@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { formatDate, formatDateTime, formatPeriod, formatWorkingDays } from "@/lib/plans/format";
 import { candidateSummary, planVerb } from "@/lib/plans/labels";
+import { STATUS_TEXT } from "@/lib/status-styles";
 import {
   confirmBlock,
   fetchPlan,
@@ -23,10 +24,12 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/states";
 import { Alert } from "@/components/ui/alert";
 import { FormError } from "@/components/ui/form-error";
-import { Toast, useToast } from "@/components/ui/toast";
+import { useToast } from "@/components/ui/toast";
 
 import { BlockStatusBadge, PlanStatusBadge } from "./badges";
-import { DetailRow, StageChain } from "./panels";
+import { DetailRow } from "./panels";
+import { Stepper } from "@/components/ui/Stepper";
+import { chainFromPlanStages } from "@/lib/chain-steps";
 
 export function PlanDetailView({ id }: { id: string }) {
   const [data, setData] = useState<PlanDetail | null>(null);
@@ -36,7 +39,7 @@ export function PlanDetailView({ id }: { id: string }) {
   const [actionError, setActionError] = useState("");
   const [issues, setIssues] = useState<PlanValidationIssue[]>([]);
   const [warnings, setWarnings] = useState<PeerConflict[]>([]);
-  const { toast, showToast, dismissToast } = useToast();
+  const { showToast } = useToast();
   const [busyBlock, setBusyBlock] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -79,7 +82,10 @@ export function PlanDetailView({ id }: { id: string }) {
     const result = await submitPlan(id);
     if (result.ok) {
       setData(result.data);
-      showToast(`Plan ${planVerb(result.data.meta.status)}`);
+      showToast(
+        `Plan ${planVerb(result.data.meta.status)}`,
+        result.data.meta.status === "rejected" ? "error" : "success"
+      );
     } else {
       // A refused submission is a normal outcome, not a failure: the issues
       // name the block at fault so the owner can fix them in place.
@@ -173,8 +179,6 @@ export function PlanDetailView({ id }: { id: string }) {
           </Button>
         )}
       </div>
-
-      {toast && <Toast onDismiss={dismissToast}>{toast}</Toast>}
       {actionError && <FormError>{actionError}</FormError>}
 
       {issues.length > 0 && (
@@ -227,7 +231,7 @@ export function PlanDetailView({ id }: { id: string }) {
                     {formatWorkingDays(block.working_days)}
                   </p>
                   {block.confirmation_window_start && (
-                    <p className="mt-0.5 text-xs text-status-pending">
+                    <p className={`mt-0.5 text-xs ${STATUS_TEXT.pending}`}>
                       Confirm by {formatDate(block.confirmation_window_start)}
                     </p>
                   )}
@@ -270,7 +274,7 @@ export function PlanDetailView({ id }: { id: string }) {
           <h2 className="text-base font-semibold text-text-primary">
             Approval chain
           </h2>
-          <StageChain stages={data.stages} />
+          <Stepper steps={chainFromPlanStages(data.stages)} />
         </section>
       )}
 

@@ -1,15 +1,24 @@
 import Link from "next/link";
 
 import type { AdminUser } from "@/lib/admin-users";
+import { STATUS_TEXT } from "@/lib/status-styles";
 
 /**
  * The HR accounts a superuser has created.
  *
- * Read-only except for the edit link: activation, renaming, and password resets
- * are decisions about one account and belong on that account's page, so this
- * list cannot change anything by accident.
+ * Read-only except for the edit action: activation, renaming, and password
+ * resets are decisions about one account and belong on that account's form, so
+ * this list cannot change anything by accident. With `onEdit` the row opens the
+ * overlay instead of navigating, and the action names the account because one
+ * bare "Edit" per row would be indistinguishable to a screen reader.
  */
-export function AdminUserTable({ users }: { users: AdminUser[] }) {
+export function AdminUserTable({
+  users,
+  onEdit,
+}: {
+  users: AdminUser[];
+  onEdit?: (user: AdminUser) => void;
+}) {
   if (users.length === 0) {
     return (
       <p className="text-sm text-text-muted">
@@ -43,9 +52,7 @@ export function AdminUserTable({ users }: { users: AdminUser[] }) {
               <td className="px-3 py-2">
                 <span
                   className={
-                    user.is_active
-                      ? "text-status-approved"
-                      : "text-text-muted"
+                    user.is_active ? STATUS_TEXT.approved : "text-text-muted"
                   }
                 >
                   {user.is_active ? "Active" : "Inactive"}
@@ -55,12 +62,23 @@ export function AdminUserTable({ users }: { users: AdminUser[] }) {
                 Human Resources
               </td>
               <td className="px-3 py-2 text-right">
-                <Link
-                  href={`/dashboard/admin/users/${user.id}/edit`}
-                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                >
-                  Edit
-                </Link>
+                {onEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(user)}
+                    aria-label={`Edit ${user.full_name || user.email}`}
+                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <Link
+                    href={`/dashboard/admin/users/${user.id}/edit`}
+                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    Edit
+                  </Link>
+                )}
               </td>
             </tr>
           ))}

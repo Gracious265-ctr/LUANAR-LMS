@@ -4,6 +4,71 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **UI/UX Premium Polish Pass — IN PROGRESS (started 2026-10-07)** — refinement
+  unit `context/refinement/01-ui-ux-premium-polish.md`, all 18 items across
+  Tiers 1–3 in scope (developer decision). Scope decisions confirmed at planning:
+  the ChainStepper replaces the existing stage lists on the tracking and approver
+  review pages via an adapter over the real payloads plus fixtures for
+  vacant/acting states (spec A3); the Notification model is fed by the approval
+  bus, the cancellation bus, and the previously receiver-less Unit-14 submit
+  signal (so approvers get "awaiting your review" notifications). The status
+  color audit (`STATUS_STYLES`) is the first slice since the stepper, badges,
+  tables and dashboard all import from it. See "Completed — UI/UX Premium
+  Polish Pass" at the end of this file when done.
+
+  **§3.5 (item 5 of 18) shipped 2026-10-07 — toasts + optimistic UI; §§3.6–§3.10
+  partially shipped (A1/A2/A3, B1 done; notification bell, blur validation, table
+  enhancements, animated counters, Tier 3 pending).** A deliberate spec supersession
+  underpins this item: the base specs (`16-approver-review-and-decision.md:327`,
+  `18-leave-cancellation.md:244`, `19-supporting-document-lifecycle.md:153,226`)
+  all say "No optimistic updates", while refinement §3.5 mandates immediate local
+  state updates with rollback for **every** mutating action in Units 13–19. The
+  developer chose the literal refinement: patch local state the moment the
+  request is dispatched, let the server response reconcile on success, and
+  revert plus raise an error toast on failure — the base-spec lines are now
+  stale, not contradictory. One toast primitive serves it all
+  (`components/ui/toast.tsx`): a module-level store read via
+  `useSyncExternalStore`, `pushToast`/`useToast` writers, and a single `Toaster`
+  mounted in `dashboard-shell.tsx` as a bottom-right stack (`fixed right-4
+  bottom-4 z-toast`, newest at the corner, cap 4, identical message replaces
+  itself, 4s default, dismissible). Enter/exit are the CSS motion tokens, and a
+  dismissed toast stays mounted for `EXIT_MS = 200` so `animate-toast-out`
+  actually plays — kept CSS-only (no framer rAF) so it behaves under fake
+  timers. Optimistic sites: approval decision (`withOptimisticDecision` patches
+  my stage, promotes the next waiting stage, terminal states clear
+  `current_stage`), cancellation decision panel, cancellation section
+  eligibility (`cancellation_action → null`, `openAction` split so the dialog
+  survives the patch), cancel dialog (an `action_changed` conflict deliberately
+  *keeps* the patch — restoring a button the server no longer honours would show
+  a stale control — and offers "Refresh and review"), draft delete
+  (`removeLocal`/`restoreLocal` in `useLeaveApplications` plus a new silent
+  refetch so deletes and submits never flash skeletons), and documents
+  (upload placeholders keyed by client token, optimistic rename on replace,
+  optimistic row removal — all rolled back or reconciled against a server
+  refresh). The submit hook fires "Application submitted." *before* navigating
+  so the confirmation survives the route change; cover requests toast
+  "Cover requested." Three deliberate non-toasts, recorded so they are not
+  re-litigated: autosave already reports through its inline `saveStatus`
+  indicator (a toast per keystroke pause would spam), 422 validation issues stay
+  inline-only (the field-level message is the signal; a toast would drown it),
+  and conflicts use the **info** tone ("This request changed. Refreshing…")
+  because they are a recoverable state change, not a failure. Tests: the toast
+  stack resets via `afterEach(resetToasts)` added to `tests/setup.ts` so the
+  module store cannot leak across files; `ui-primitives` now asserts the stack
+  semantics (polite live region, auto-dismiss + exit window, early dismiss,
+  independent per-message countdowns, dedupe, bottom-right position), and the
+  cancellation/application tests render `<Toaster />` to observe outcomes.
+  Verified: 882 frontend tests (101 files) OK, typecheck (both), eslint, production
+  build clean. Backend untouched this item.
+
+  **Form overlays (A1–A3 + B1):** HR admin users moved into `AdminUsersSection`
+  overlay (`?user=new|id`), plans workspace owns a `?plan=new` overlay, HR
+  reassignments queue owns a `?reassign=id` overlay (with employees fetched on
+  demand and `notFound` for stale ids), and the standalone leave review route
+  became a shim to `?edit=<id>&stage=review` with tests retargeted to
+  `LeaveReviewPanel`. Shared primitives: `AdminFormOverlay` + `useOverlayParam`
+  (back closes, stale ids handled, edit-from-row on screen).
+
 - **Vercel design mechanics on LUANAR identity (2026-10-01)** — the app was
   built on shadcn defaults that did not match the target aesthetic: a 6/8/12/16px
   radius ladder where the design calls for a flat 6px, a slate-tinted shadow
@@ -3825,3 +3890,71 @@ endpoint against `config/urls.py`.
 D3 in the spec is the one that addresses how this got here: findings are recorded
 whether or not they are fixed, so a deferred item stays visible. The four defects
 Unit 24 deferred as "out of scope (D10)" were named in prose and never revisited.
+
+## Completed — UI/UX Premium Polish Pass (2026-10-08)
+
+**What shipped (refinement `01-ui-ux-premium-polish.md`).** §3.5 — toasts + optimistic UI
+(tier 1 cross-cutting). Form overlays (approved scope): **A1** HR admin users
+(`AdminUsersSection` + `?user=new|id`, page+shims), **A2** plans workspace
+(`?plan=new`, shim), **A3** HR reassignments queue (`?reassign=id` overlay with
+on-demand employee fetch, `notFound` for stale ids, row actions via button when
+overlay owns it), **B1** leave review moved to shim `?edit=<id>&stage=review` and
+tests retargeted to `LeaveReviewPanel` (ReviewSummaryClient removed). Primitives
+shared: `AdminFormOverlay`, `useOverlayParam` (back closes, edit from row). Keydebug
+script removed from `app/layout.tsx`. §3.6–§3.10 remain.
+
+**Verification.** Frontend: 882 tests passed (101 files), lint clean,
+`tsc --noEmit` and `tsc --noEmit -p tsconfig.test.json` clean, `npm run build`
+clean. Servers smoke-checked: shim routes emit Next redirect (meta refresh) and
+overlay pages render under auth (parity with prior behavior; auth-guarded
+index/shims keep original guards). No backend changes.
+
+## Completed — Chain Stepper Component & Rollout (2026-10-09)
+
+**What shipped (refinement `02-chain-stepper-rollout.md`, supersedes §3.1 of the
+UI/UX polish unit).** One data-driven `components/ui/Stepper.tsx` implementing the
+§2.1 contract exactly (`StepStatus`, `Step`, `StepperProps`) with six visually
+distinct statuses, `orientation="auto"` (one DOM tree: vertical below `md`,
+horizontal at `md`+, connectors switched by breakpoint), `size="sm"|"md"`,
+`showAvatars`, and a per-step expandable `detail` accordion (button with
+`aria-expanded`/`aria-label="<label> details"`). Accessibility: a single
+`aria-current="step"`, `data-state` per node, the pulse is
+`animate-pulse motion-reduce:animate-none`. All colour comes from existing tokens
+— the §2.2 red literals are mapped onto `status-rejected`; no new colours.
+`lib/chain-steps.ts` is the only domain-aware layer and now emits `Step[]` via
+`chainFromTracking`, `chainFromWorkflow`, `chainFromPlanStages` and the new
+`stepsFromCancellation`.
+
+**Status mapping.** approval/tracking: approved→`completed`,
+awaiting/pending→`current`, upcoming/waiting→`pending`, self-approval
+skip→`skipped`, vacant approver→`blocked` ("No approver assigned"),
+rejected→`error` ("Rejected"), returned/correction_requested→`error`
+("Correction required"). Cancellation reuses the approval-chain logic over its
+shorter snapshot. Acting assignments surface as an "Acting" badge plus the
+contextual sublabel rather than the old inline label.
+
+**Rollout.** §3.1 tracking (`TrackingView`), approver review (`approval-detail`)
+and the two plans pages (`plan-detail`, `plan-approval-detail`, which already
+consumed the old component); §3.4 cancellation (`cancellation-card` vertical and
+`cancellation-detail-panel` vertical, replacing `CancellationStageStepper`). The
+old `components/approvals/ChainStepper.tsx` and
+`components/cancellations/cancellation-stage-stepper.tsx` were deleted, along
+with the now-orphaned `STAGE_STATE_META` label map. §3.2 document version-history
+dialog, §3.3 "Changes since your decision" card, §3.5 onboarding and §3.6
+org-unit checklist target surfaces that are **not built** yet, so they are
+recorded as not-applicable rather than invented; §3.7 stays badges. Display-layer
+replacement only — no API/backend changes.
+
+**Deliberate display delta.** The old current-step caption "Awaiting decision ·
+assigned {time}" is replaced by the spec's context (role/designation) with the
+assignment time preserved as `Assigned {time}` in the `sublabel`; the redundant
+"Not yet reached" caption is dropped (position conveys it). Comments/rejection
+reasons, timestamps and actor names all remain reachable, so nothing is lost —
+the comment now lives in the step's accordion.
+
+**Verification.** Frontend: 887 tests passed (101 files), `eslint` clean,
+`tsc --noEmit` clean. `tests/stepper.test.tsx` (renamed from
+`tests/chain-stepper.test.tsx`) covers all six statuses, both orientations,
+`size="sm"`, `showAvatars={false}`, reduced-motion, the detail accordion, and all
+four adapters; `tracking-view`, `approval-detail`, `cancellation-detail-panel`
+and `plan-approvals-workspace` were retargeted to the new markup.

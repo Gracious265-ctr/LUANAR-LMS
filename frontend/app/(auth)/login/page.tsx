@@ -62,7 +62,10 @@ function LoginForm() {
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
-      <Card className="border-0 w-full max-w-md shadow-card">
+      <Card className="border-0 mini-h-screen shadow-card backdrop-blur-sm backdrop-saturate-150 w-full max-w-sm">
+        <div className="relative z-10 flex justify-center mb-6s">
+
+        </div>
         <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           LUANAR Leave Management
         </h1>
@@ -111,7 +114,7 @@ function LoginForm() {
           <div className="text-center text-sm text-text-secondary">
             <Link
               href="/forgot-password"
-              className="text-accent underline-offset-2 hover:underline"
+              className="text-sm underline-offset-2 hover:underline"
             >
               Forgotten your password?
             </Link>

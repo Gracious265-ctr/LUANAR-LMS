@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ReviewSummaryClient } from "@/app/(dashboard)/dashboard/leave/[id]/review/ReviewSummaryClient";
+import { LeaveReviewPanel } from "@/components/leave/LeaveReviewPanel";
 import { LeaveReviewSummary } from "@/components/leave/leave-review-summary";
 import { getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
@@ -10,19 +10,9 @@ import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import type { LeaveApplication } from "@/lib/leave-api";
 import type { ValidationResult } from "@/lib/leave-validation";
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
-
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard",
-  useRouter: () => ({
-    push: pushMock,
-    replace: vi.fn(),
-    refresh: vi.fn(),
-    back: vi.fn(),
-    forward: vi.fn(),
-    prefetch: vi.fn(),
-  }),
-}));
+// The panel reports completion through its callback, not a router: the old
+// standalone page's navigation was the one thing the overlay replaced.
+const { onSubmittedMock } = vi.hoisted(() => ({ onSubmittedMock: vi.fn() }));
 
 vi.mock("@/lib/leave-api", () => ({ getLeaveApplication: vi.fn() }));
 vi.mock("@/lib/services/leaveTypes", () => ({ getLeaveTypes: vi.fn() }));
@@ -81,16 +71,18 @@ function renderReview(validation: Partial<ValidationResult>, app = makeApplicati
     isLoading: false,
     error: null,
   });
-  pushMock.mockClear();
+  onSubmittedMock.mockClear();
   submitApplicationMockClear();
-  return render(<ReviewSummaryClient applicationId="app-1" />);
+  return render(
+    <LeaveReviewPanel applicationId="app-1" onSubmitted={onSubmittedMock} />
+  );
 }
 
 function submitApplicationMockClear() {
   vi.mocked(submitApplication).mockClear();
 }
 
-describe("ReviewSummaryClient", () => {
+describe("LeaveReviewPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useLeaveValidation).mockReturnValue({
@@ -145,7 +137,7 @@ describe("ReviewSummaryClient", () => {
     expect(screen.queryByText("Available balance")).not.toBeInTheDocument();
   });
 
-  it("submits once on double-click and navigates to the submitted screen", async () => {
+  it("submits once on double-click and reports the submitted application", async () => {
     renderReview(makeResult());
     vi.mocked(submitApplication).mockResolvedValue({
       id: "app-1",
@@ -164,7 +156,7 @@ describe("ReviewSummaryClient", () => {
     fireEvent.click(button);
 
     await waitFor(() =>
-      expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/app-1/submitted")
+      expect(onSubmittedMock).toHaveBeenCalledWith("app-1")
     );
     expect(vi.mocked(submitApplication)).toHaveBeenCalledTimes(1);
   });
@@ -194,13 +186,13 @@ describe("ReviewSummaryClient", () => {
     expect(
       await screen.findByText("You already have a leave application in this period.")
     ).toBeInTheDocument();
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(onSubmittedMock).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(document.activeElement?.getAttribute("role")).toBe("alert")
     );
   });
 
-  it("navigates to the submitted screen when the server reports ALREADY_SUBMITTED", async () => {
+  it("reports completion when the server reports ALREADY_SUBMITTED", async () => {
     renderReview(makeResult());
     vi.mocked(submitApplication).mockRejectedValue(
       new SubmitError("Already submitted", 409, {
@@ -213,7 +205,7 @@ describe("ReviewSummaryClient", () => {
     fireEvent.click(button);
 
     await waitFor(() =>
-      expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/app-1/submitted")
+      expect(onSubmittedMock).toHaveBeenCalledWith("app-1")
     );
   });
 

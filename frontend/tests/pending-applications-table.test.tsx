@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
 
 import { PendingApplicationsTable } from "@/components/hr/pending-applications-table";
 import type { PendingApplication } from "@/lib/reassignments";
@@ -96,6 +96,27 @@ describe("PendingApplicationsTable", () => {
     expect(link.getAttribute("href")).toBe(
       "/dashboard/hr-admin/reassignments/new?application=app-1"
     );
+  });
+
+  it("turns the row action into a button that hands over the row record", () => {
+    const onReassign = vi.fn();
+    render(
+      <PendingApplicationsTable
+        applications={[unassigned, delegated]}
+        onReassign={onReassign}
+      />
+    );
+
+    // No link branch when a host owns the action: the overlay replaces the
+    // navigation rather than doubling up with it.
+    expect(screen.queryByRole("link")).toBeNull();
+
+    // Named per row, because one bare "Reassign" per row is indistinguishable.
+    fireEvent.click(screen.getByRole("button", { name: "Reassign LUANAR-2026-0001" }));
+    expect(onReassign).toHaveBeenCalledWith(unassigned);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reassign LUANAR-2026-0002" }));
+    expect(onReassign).toHaveBeenCalledWith(delegated);
   });
 
   it("renders an empty state when there are no pending applications", () => {

@@ -469,6 +469,10 @@ def decide_cancellation(
 def _apply_decision(
     *, request, application, stage, user, decision, comment, now, today
 ) -> CancellationRequest:
+    """Write an approver's decision onto a cancellation stage.
+
+    Must be called inside ``transaction.atomic()``.
+    """
     before_request = _request_state(request)
     before_stage = _stage_state(stage)
 

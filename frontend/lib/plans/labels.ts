@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import type { BadgeTone } from "@/components/ui/badge";
+import { STATUS_SOLID, STATUS_TEXT } from "@/lib/status-styles";
 import type {
   BlockStatus,
   PlanAction,
@@ -40,22 +41,22 @@ export const PLAN_STATUS_META: Record<PlanStatus, StatusMeta> = {
     label: "Awaiting approval",
     icon: Hourglass,
     badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
+    textClass: STATUS_TEXT.pending,
+    dotClass: STATUS_SOLID.pending,
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
     badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
+    textClass: STATUS_TEXT.approved,
+    dotClass: STATUS_SOLID.approved,
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
     badgeTone: "rejected",
-    textClass: "text-status-rejected",
-    dotClass: "bg-status-rejected",
+    textClass: STATUS_TEXT.rejected,
+    dotClass: STATUS_SOLID.rejected,
   },
 };
 
@@ -78,22 +79,22 @@ export const BLOCK_STATUS_META: Record<BlockStatus, StatusMeta> = {
     label: "Reserved",
     icon: CalendarClock,
     badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
+    textClass: STATUS_TEXT.pending,
+    dotClass: STATUS_SOLID.pending,
   },
   confirmed: {
     label: "Confirmed",
     icon: CalendarCheck,
     badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
+    textClass: STATUS_TEXT.approved,
+    dotClass: STATUS_SOLID.approved,
   },
   lapsed: {
     label: "Lapsed",
     icon: CalendarX,
     badgeTone: "cancelled",
-    textClass: "text-status-cancelled",
-    dotClass: "bg-status-cancelled",
+    textClass: STATUS_TEXT.cancelled,
+    dotClass: STATUS_SOLID.cancelled,
   },
   released: {
     label: "Released",
@@ -117,22 +118,22 @@ export const STAGE_STATUS_META: Record<PlanStageStatus, StatusMeta> = {
     label: "Awaiting decision",
     icon: Hourglass,
     badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
+    textClass: STATUS_TEXT.pending,
+    dotClass: STATUS_SOLID.pending,
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
     badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
+    textClass: STATUS_TEXT.approved,
+    dotClass: STATUS_SOLID.approved,
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
     badgeTone: "rejected",
-    textClass: "text-status-rejected",
-    dotClass: "bg-status-rejected",
+    textClass: STATUS_TEXT.rejected,
+    dotClass: STATUS_SOLID.rejected,
   },
 };
 

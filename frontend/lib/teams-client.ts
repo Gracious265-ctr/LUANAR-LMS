@@ -8,6 +8,7 @@ import type {
   TeamStatus,
 } from "./teams";
 import { apiErrorMessage } from "./utils";
+import { STATUS_STYLES } from "./status-styles";
 
 export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
   draft: "Draft",
@@ -26,7 +27,7 @@ export function teamStatusBadgeClass(status: string): string {
     case "inactive":
       return "bg-surface-muted text-text-muted";
     default:
-      return "bg-status-pending-subtle text-status-pending";
+      return STATUS_STYLES.pending;
   }
 }
 

@@ -14,6 +14,7 @@ import {
   fetchEligibility,
   submitCancellation,
 } from "@/lib/cancellations/service";
+import { Toaster } from "@/components/ui/toast";
 
 vi.mock("@/lib/cancellations/service", () => ({
   fetchEligibility: vi.fn(),
@@ -45,12 +46,16 @@ function history(
 }
 
 function renderSection(onApplicationChanged: () => void = vi.fn()) {
+  // Outcomes are reported through the global toast stack (spec 3.5).
   return render(
-    <CancellationSection
-      applicationId="app-1"
-      application={application}
-      onApplicationChanged={onApplicationChanged}
-    />
+    <>
+      <CancellationSection
+        applicationId="app-1"
+        application={application}
+        onApplicationChanged={onApplicationChanged}
+      />
+      <Toaster />
+    </>
   );
 }
 

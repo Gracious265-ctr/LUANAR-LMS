@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils";
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 import { PlansNavItem } from "@/components/plans/plans-nav-item";
 import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/ui/Avatar";
+import { Toaster } from "@/components/ui/toast";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Dialog,
@@ -167,6 +169,10 @@ export function DashboardShell({
           <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
         </div>
       </div>
+
+      {/* One stack for every confirmation in the app; positioned against the
+          viewport, so it sits outside the scroll container. */}
+      <Toaster />
     </div>
   );
 }
@@ -633,14 +639,7 @@ const Header = memo(function Header({
             <p className="text-sm font-medium text-text-primary">{user.full_name}</p>
             <p className="text-xs text-text-muted">{ROLE_LABELS[user.role] || user.role}</p>
           </div>
-          <div className="w-9 h-9 rounded-full bg-brand-primary flex items-center justify-center text-brand-primary-foreground font-medium text-sm">
-            {user.full_name
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2)}
-          </div>
+          <Avatar name={user.full_name} userId={user.id} size="lg" />
         </div>
 
         {/* Sits beside sign-out rather than in the rail: on a phone the rail is

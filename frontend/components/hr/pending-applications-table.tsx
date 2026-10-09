@@ -12,11 +12,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { STATUS_STYLES } from "@/lib/status-styles";
+import { cn } from "@/lib/utils";
 
+/**
+ * The queue of applications with no assigned approver.
+ *
+ * With `onReassign` the row's action opens the overlay instead of navigating,
+ * and it names the application because one bare "Reassign" per row would be
+ * indistinguishable to a screen reader. Without it the row keeps the plain
+ * link to the standalone form.
+ */
 export function PendingApplicationsTable({
   applications,
+  onReassign,
 }: {
   applications: PendingApplication[];
+  onReassign?: (application: PendingApplication) => void;
 }) {
   if (applications.length === 0) {
     return (
@@ -89,7 +101,12 @@ export function PendingApplicationsTable({
                    who is away does not move the work to them, and this is the
                    one place HR can see that before acting. */
                 <span className="inline-flex flex-col gap-0.5">
-                  <span className="inline-block w-fit rounded-sm bg-status-pending-subtle px-2.5 py-0.5 text-xs font-medium text-status-pending">
+                  <span
+                    className={cn(
+                      "inline-block w-fit rounded-sm px-2.5 py-0.5 text-xs font-medium",
+                      STATUS_STYLES.pending
+                    )}
+                  >
                     {app.acting_approver_name}
                   </span>
                   <span className="text-xs text-text-muted">
@@ -103,13 +120,25 @@ export function PendingApplicationsTable({
               )}
             </TableCell>
             <TableCell className="text-right">
-              <Link
-                href={`/dashboard/hr-admin/reassignments/new?application=${app.id}`}
-                className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-                Reassign
-              </Link>
+              {onReassign ? (
+                <button
+                  type="button"
+                  onClick={() => onReassign(app)}
+                  aria-label={`Reassign ${app.reference_number || app.employee_name}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  Reassign
+                </button>
+              ) : (
+                <Link
+                  href={`/dashboard/hr-admin/reassignments/new?application=${app.id}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                  Reassign
+                </Link>
+              )}
             </TableCell>
           </TableRow>
         ))}

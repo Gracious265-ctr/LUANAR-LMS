@@ -3,6 +3,7 @@ import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 import type { ReactNode } from "react";
 import { badgeVariants } from "@/components/ui/badge";
+import { STATUS_STYLES } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 
 /**
@@ -51,12 +52,22 @@ export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
           )}
         </div>
         {rejection && (
-          <p className="sm:ml-auto max-w-md break-words rounded-lg bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected">
+          <p
+            className={cn(
+              "sm:ml-auto max-w-md break-words rounded-lg px-3 py-2 text-sm",
+              STATUS_STYLES.rejected
+            )}
+          >
             {rejection.reason}
           </p>
         )}
         {correction && (
-          <p className="sm:ml-auto max-w-md break-words rounded-lg bg-status-correction-subtle px-3 py-2 text-sm text-status-correction">
+          <p
+            className={cn(
+              "sm:ml-auto max-w-md break-words rounded-lg px-3 py-2 text-sm",
+              STATUS_STYLES.correction_required
+            )}
+          >
             {correction.comment}
           </p>
         )}

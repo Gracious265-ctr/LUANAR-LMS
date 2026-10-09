@@ -8,7 +8,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/states";
 import { Field, Input } from "@/components/ui/input";
 import { FormError } from "@/components/ui/form-error";
-import { Toast, useToast } from "@/components/ui/toast";
+import { useToast } from "@/components/ui/toast";
 
 /**
  * The one HR-editable plan setting: how many days before a reserved block
@@ -38,7 +38,7 @@ export function PlanSettingsForm() {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const { toast, showToast, dismissToast } = useToast();
+  const { showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +96,6 @@ export function PlanSettingsForm() {
 
   return (
     <Card>
-      {toast && <Toast onDismiss={dismissToast}>{toast}</Toast>}
       <CardHeader title="Confirmation window" />
       <form onSubmit={onSubmit} className="space-y-4">
         <Field

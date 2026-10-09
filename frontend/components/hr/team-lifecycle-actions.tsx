@@ -6,6 +6,7 @@ import { CircleCheck, CirclePlay, CircleStop } from "lucide-react";
 
 import type { Team, TeamReadiness } from "@/lib/teams";
 import { activateTeam, deactivateTeam, validateTeam } from "@/lib/teams-client";
+import { STATUS_STYLES } from "@/lib/status-styles";
 
 /**
  * Putting a team into force, and taking it out.
@@ -115,7 +116,7 @@ function ReadinessReport({ readiness }: { readiness: TeamReadiness }) {
     return (
       <div
         role="status"
-        className="rounded-md bg-status-approved-subtle p-3 text-sm text-status-approved"
+        className={`rounded-md p-3 text-sm ${STATUS_STYLES.approved}`}
       >
         <span className="inline-flex items-center gap-1.5 font-medium">
           <CircleCheck className="h-4 w-4" />
@@ -128,7 +129,7 @@ function ReadinessReport({ readiness }: { readiness: TeamReadiness }) {
   return (
     <div
       role="status"
-      className="rounded-md bg-status-pending-subtle p-3 text-sm text-status-pending"
+      className={`rounded-md p-3 text-sm ${STATUS_STYLES.pending}`}
     >
       <p className="font-medium">
         {readiness.team} cannot be put into force yet. Fix {readiness.issues.length}{" "}

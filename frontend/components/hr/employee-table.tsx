@@ -12,19 +12,29 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/Avatar";
 
 const CATEGORY_LABELS: Record<Employee["category"], string> = {
   academic: "Academic",
   administration: "Administration",
 };
 
-export function EmployeeTable({ employees }: { employees: Employee[] }) {
+export function EmployeeTable({
+  employees,
+  empty,
+}: {
+  employees: Employee[];
+  /** Overrides the default empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
+}) {
   if (employees.length === 0) {
     return (
-      <EmptyState
-        title="No employees found"
-        description="Try adjusting your search and try again."
-      />
+      empty ?? (
+        <EmptyState
+          title="No employees found"
+          description="Try adjusting your search and try again."
+        />
+      )
     );
   }
 
@@ -51,8 +61,13 @@ export function EmployeeTable({ employees }: { employees: Employee[] }) {
             <TableCell>
               <Link
                 href={`/dashboard/hr-admin/employees/${employee.id}`}
-                className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                className="flex items-center gap-2 font-medium text-brand-primary hover:text-brand-primary-hover"
               >
+                <Avatar
+                  name={employee.full_name || employee.email}
+                  userId={employee.id}
+                  size="sm"
+                />
                 {employee.full_name || employee.email}
               </Link>
             </TableCell>

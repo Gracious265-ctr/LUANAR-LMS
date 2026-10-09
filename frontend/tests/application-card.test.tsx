@@ -59,25 +59,30 @@ describe("ApplicationCard (draft)", () => {
     );
   });
 
-  it("surfaces an error when deleting a draft fails", async () => {
+  it("rolls back the optimistic removal when deleting a draft fails", async () => {
     vi.mocked(deleteLeaveApplication).mockRejectedValueOnce(new Error("boom"));
     const onDelete = vi.fn();
+    const onRestore = vi.fn();
 
     render(
       <ApplicationCard
         application={makeApplication()}
         leaveTypeName="Annual"
         onDelete={onDelete}
+        onRestore={onRestore}
       />
     );
 
     openDeleteConfirm();
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
+    // The host is asked to drop the row before the request settles (spec 3.5).
+    expect(onDelete).toHaveBeenCalledWith("draft-1");
     expect(
       await screen.findByText(/could not delete this draft/i)
     ).toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
+    // A failure tells the host to put the row back.
+    expect(onRestore).toHaveBeenCalled();
   });
 
   it("removes the card after a successful delete", async () => {

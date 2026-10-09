@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarX2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { actionLabel, blockedReasonLabel } from "@/lib/cancellations/labels";
 import {
@@ -9,12 +9,14 @@ import {
   fetchEligibility,
 } from "@/lib/cancellations/service";
 import type {
+  CancellationAction,
   CancellationEligibility,
   CancellationRequest,
   SubmitCancellationResult,
 } from "@/lib/cancellations/types";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 import { CancelApplicationDialog } from "./cancel-application-dialog";
 import { CancellationCard } from "./cancellation-card";
@@ -27,9 +29,11 @@ export interface CancellationSectionProps {
 
 /**
  * Unit 18 employee surface on the tracking page: a header action button driven
- * by the backend ``cancellation_action`` plus the cancellation card. Eligibility
- * and history are refetched after every mutation so the UI always reflects the
- * server (no optimistic updates, per spec 3.9).
+ * by the backend ``cancellation_action`` plus the cancellation card. The button
+ * disappears the moment the request is dispatched (spec 3.5 optimistic update)
+ * and comes back — with an error toast — if the backend refuses; eligibility
+ * and history are refetched after every mutation so the final state is the
+ * server's.
  */
 export function CancellationSection({
   applicationId,
@@ -39,8 +43,13 @@ export function CancellationSection({
   const [eligibility, setEligibility] = useState<CancellationEligibility | null>(null);
   const [requests, setRequests] = useState<CancellationRequest[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  // The action the dialog was opened with, held separately so the optimistic
+  // eligibility patch below can hide the page button without closing the
+  // dialog that is still mid-flight.
+  const [openAction, setOpenAction] = useState<CancellationAction | null>(null);
   const [loadKey, setLoadKey] = useState(0);
+  const { showToast } = useToast();
+  const eligibilitySnapshotRef = useRef<CancellationEligibility | null>(null);
 
   const reload = useCallback(() => setLoadKey((value) => value + 1), []);
 
@@ -68,15 +77,11 @@ export function CancellationSection({
     };
   }, [applicationId, loadKey]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
   function handleSubmitted(result: SubmitCancellationResult & { ok: true }) {
     setDialogOpen(false);
-    setToast(
+    setOpenAction(null);
+    eligibilitySnapshotRef.current = null;
+    showToast(
       result.kind === "withdrawal"
         ? "Application withdrawn."
         : "Cancellation request submitted."
@@ -88,9 +93,28 @@ export function CancellationSection({
   function handleActionChanged(freshEligibility: CancellationEligibility) {
     setEligibility(freshEligibility);
     setDialogOpen(false);
-    setToast("This request changed. Refreshing…");
+    setOpenAction(null);
+    eligibilitySnapshotRef.current = null;
+    showToast("This request changed. Refreshing…", "info");
     reload();
     onApplicationChanged();
+  }
+
+  // Hides the page's action button while the request is in flight; the dialog
+  // keeps its own `openAction` so it stays mounted over the patched state.
+  function handleOptimistic() {
+    eligibilitySnapshotRef.current = eligibility;
+    setEligibility((prev) =>
+      prev ? { ...prev, cancellation_action: null } : prev
+    );
+  }
+
+  function handleRollback(message: string) {
+    if (eligibilitySnapshotRef.current) {
+      setEligibility(eligibilitySnapshotRef.current);
+      eligibilitySnapshotRef.current = null;
+    }
+    showToast(message, "error");
   }
 
   if (!eligibility && requests.length === 0) {
@@ -105,7 +129,10 @@ export function CancellationSection({
         {action ? (
           <Button
             type="button"
-            onClick={() => setDialogOpen(true)}
+            onClick={() => {
+              setOpenAction(action);
+              setDialogOpen(true);
+            }}
             variant="primary"
             className="min-h-11"
           >
@@ -123,25 +150,20 @@ export function CancellationSection({
 
       {requests.length > 0 && <CancellationCard requests={requests} />}
 
-      {dialogOpen && eligibility && action && (
+      {dialogOpen && eligibility && openAction && (
         <CancelApplicationDialog
-          action={action}
+          action={openAction}
           eligibility={eligibility}
           application={application}
-          onClose={() => setDialogOpen(false)}
+          onClose={() => {
+            setDialogOpen(false);
+            setOpenAction(null);
+          }}
+          onOptimistic={handleOptimistic}
+          onRollback={handleRollback}
           onSubmitted={handleSubmitted}
           onActionChanged={handleActionChanged}
         />
-      )}
-
-      {toast && (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-surface-card px-4 py-2.5 text-sm font-medium text-text-primary shadow-lg"
-        >
-          <CalendarX2 className="h-4 w-4 text-brand-primary" aria-hidden="true" />
-          {toast}
-        </div>
       )}
     </div>
   );

@@ -795,6 +795,8 @@ def _lock_for_decision(delegation: Delegation) -> Delegation:
     alone would not be enough for ``approve``: the overlap check reads the
     approver's *other* approved rows, which an approver-scoped lock is what
     actually serialises.
+
+    Must be called inside ``transaction.atomic()``.
     """
     User.objects.select_for_update().filter(pk=delegation.approver_id).first()
     return Delegation.objects.select_for_update().get(pk=delegation.pk)
@@ -1308,6 +1310,8 @@ def _next_activatable_stage(application, decided_stage):
     skipped stages remain, and :class:`SelfApprovalBlockedError` when the next
     stage has no eligible approver — which can only happen on a chain materialised
     before sections, where the applicant used to be skipped forward over.
+
+    Must be called inside ``transaction.atomic()``.
     """
     remaining = list(
         ApplicationStage.objects.select_for_update()

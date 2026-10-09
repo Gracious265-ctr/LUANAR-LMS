@@ -1,53 +1,32 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { AdminUserForm } from "@/components/admin/admin-user-form";
-import { getAdminUser } from "@/lib/admin-users";
 import { getCurrentUser } from "@/lib/auth";
-import { FadeIn } from "@/components/motion/FadeIn";
 
-export default async function EditAdminUserPage({
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `users/<id>/edit` links working: the table's row links
+ * and any bookmarked URL.
+ *
+ * The superuser guard is kept rather than redirecting blind, so a non-superuser
+ * following one of these still lands on `/dashboard` instead of bouncing through
+ * a list page that would refuse them anyway. The id is passed through as-is; if
+ * it no longer matches an account the overlay says so rather than the list page
+ * refusing the request.
+ */
+export default async function ShimPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
-  if (!user.is_superuser) redirect("/dashboard");
 
-  const { id } = await params;
-
-  let managed;
-  try {
-    managed = await getAdminUser(id);
-  } catch {
-    notFound();
+  if (!user) {
+    redirect("/login");
+  }
+  if (!user.is_superuser) {
+    redirect("/dashboard");
   }
 
-  return (
-    <FadeIn>
-      <div className="space-y-6">
-        <div>
-          <Link
-            href="/dashboard/admin/users"
-            className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to HR users
-          </Link>
-          <h2 className="mt-2 text-2xl font-bold text-text-primary">
-            {managed.full_name || managed.email}
-          </h2>
-          <p className="text-text-secondary">
-            Rename the account, reset its password, or deactivate it.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <AdminUserForm user={managed} />
-        </div>
-      </div>
-    </FadeIn>
-  );
+  const { id } = await params;
+  redirect(`/dashboard/admin/users?user=${encodeURIComponent(id)}`);
 }

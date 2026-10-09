@@ -274,7 +274,7 @@
 
 :root.dark {
   /* Brand and Primary — hue held at 202°, lightness lifted for a dark ground */
-  --brand-primary: #0097F0;
+  --brand-primary: #64DCDE;
   --brand-primary-hover: #33A9F5;
   --brand-primary-active: #66BEF8;
   --brand-primary-subtle: #1A2C36;
@@ -351,7 +351,7 @@
   --input-border-focus: #85C7EE;
   --input-ring-focus: #85C7EE33;
   --input-disabled: #1B202C;
-  --button-primary: #0097F0;
+  --button-primary: #64DCDE;
   --button-primary-hover: #33A9F5;
   --button-secondary: #1F2532;
   --button-secondary-hover: #1E2633;
@@ -567,6 +567,7 @@
   --duration-base: var(--duration-base);
   --duration-slow: var(--duration-slow);
   --animate-toast-in: toast-in var(--duration-base) var(--ease-out);
+  --animate-toast-out: toast-out var(--duration-base) var(--ease-in);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
@@ -631,11 +632,22 @@
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -4px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 

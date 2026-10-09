@@ -153,11 +153,13 @@ describe("TrackingView · statuses", () => {
     const stepper = within(await screen.findByLabelText("Approval progress"));
 
     expect(stepper.getAllByRole("listitem")).toHaveLength(4);
-    expect(stepper.getByText("Stage 1")).toBeInTheDocument();
     expect(stepper.getByText("Supervisor")).toBeInTheDocument();
-    expect(stepper.getByText("Stage 4")).toBeInTheDocument();
-    expect(stepper.getAllByText("Not yet reached")).toHaveLength(3);
-    expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
+    expect(stepper.getByText("HOD")).toBeInTheDocument();
+    expect(stepper.getByText("Registrar")).toBeInTheDocument();
+    expect(stepper.getByText("DVC")).toBeInTheDocument();
+    // The three not-yet-reached stages stay quiet and unlabelled.
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(3);
+    expect(stepper.getByText(/Assigned/)).toBeInTheDocument();
     expect(stepCount()).toBe(1);
   });
 
@@ -170,12 +172,12 @@ describe("TrackingView · statuses", () => {
     // at the Registrar. The stage stays listed, not dropped: a reader has to be
     // able to tell a deliberate skip from a stage that was quietly removed.
     expect(stepper.getAllByRole("listitem")).toHaveLength(4);
-    expect(stepper.getByText("Skipped")).toBeInTheDocument();
+    expect(document.querySelector('[data-state="skipped"]')).toBeInTheDocument();
     expect(
       stepper.getByText(/Applicant cannot approve their own application/)
     ).toBeInTheDocument();
-    expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
-    expect(stepper.getAllByText("Not yet reached")).toHaveLength(1);
+    expect(stepper.getByText(/Assigned/)).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(1);
     expect(stepCount()).toBe(1);
   });
 
@@ -187,10 +189,10 @@ describe("TrackingView · statuses", () => {
     expect(stepper.getAllByRole("listitem")).toHaveLength(4);
     // The applicant is removed from the section's eligibility at submission, so
     // the chain runs through their section with a colleague instead of skipping it.
-    expect(stepper.queryByText(/Skipped/i)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-state="skipped"]')).not.toBeInTheDocument();
     expect(stepper.getByText("Ms. Grace Kanyama")).toBeInTheDocument();
-    expect(stepper.getByText(/Awaiting decision · assigned/)).toBeInTheDocument();
-    expect(stepper.getAllByText("Not yet reached")).toHaveLength(1);
+    expect(stepper.getByText(/Assigned/)).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-state="pending"]')).toHaveLength(1);
     expect(stepCount()).toBe(1);
   });
 
@@ -217,7 +219,7 @@ describe("TrackingView · statuses", () => {
     mockOk(fixtures.pending_with_delegate);
     renderView();
     await screen.findByText("Pending Approval");
-    expect(screen.getByText("Acting for Dr. Grace Mwale")).toBeInTheDocument();
+    expect(screen.getByText(/Acting for Dr. Grace Mwale/)).toBeInTheDocument();
     expect(screen.getByText("Application reassigned")).toBeInTheDocument();
   });
 });
@@ -229,10 +231,10 @@ describe("TrackingView · rejected", () => {
     await screen.findByText("Rejected");
 
     expect(screen.getByText("Workflow stopped.")).toBeInTheDocument();
-    expect(screen.getByText(/Reason:/)).toBeInTheDocument();
-    expect(screen.getAllByText(/Peak teaching period/).length).toBeGreaterThan(0);
 
     const panel = within(await screen.findByLabelText("Rejection details"));
+    expect(panel.getByText("Reason")).toBeInTheDocument();
+    expect(screen.getAllByText(/Peak teaching period/).length).toBeGreaterThan(0);
     expect(panel.getByText("Stage 2 · Dean")).toBeInTheDocument();
     expect(panel.getByText("Dr. Anne Banda")).toBeInTheDocument();
     expect(panel.getByText("16 Oct 2026, 13:40")).toBeInTheDocument();
@@ -266,11 +268,11 @@ describe("TrackingView · correction", () => {
     renderView();
     await screen.findByText("Correction Required");
 
-    expect(screen.getByText(/Correction requested:/)).toBeInTheDocument();
+    const panel = within(await screen.findByLabelText("Correction details"));
+    expect(panel.getByText("Comment")).toBeInTheDocument();
     expect(
       screen.getAllByText(/Supporting documents must be uploaded/).length
     ).toBeGreaterThan(0);
-    const panel = within(await screen.findByLabelText("Correction details"));
     expect(panel.getByText("Stage 3 · Registrar")).toBeInTheDocument();
     expect(panel.getByText("Dr. Joyce Phiri")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
@@ -378,7 +380,7 @@ describe("TrackingView · supporting documents", () => {
 
     const card = within(await screen.findByLabelText("Supporting documents"));
     expect(
-      card.getByText("No supporting documents were attached.")
+      card.getByText("No supporting documents attached")
     ).toBeInTheDocument();
   });
 

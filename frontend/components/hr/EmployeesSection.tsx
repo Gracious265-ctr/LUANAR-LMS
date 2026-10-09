@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Plus } from "lucide-react";
+import { Plus, SearchX } from "lucide-react";
 
 import type { Employee } from "@/lib/employees";
 import type { Department } from "@/lib/departments";
@@ -13,6 +13,7 @@ import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { EmployeeForm } from "@/components/hr/employee-form";
 import { EmployeeTable } from "@/components/hr/employee-table";
 import { Alert } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 
 /** Query key for the employee overlay. Distinct from the `?search` list filter. */
@@ -112,7 +113,27 @@ export function EmployeesSection({
           {error}
         </div>
       ) : (
-        <EmployeeTable employees={employees} />
+        <EmployeeTable
+          employees={employees}
+          empty={
+            search ? (
+              <EmptyState
+                icon={<SearchX className="h-10 w-10" />}
+                title={`No results for "${search}"`}
+                description="Check the spelling, or clear the search to see everyone."
+                action={
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push("/dashboard/hr-admin/employees")}
+                  >
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : undefined
+          }
+        />
       )}
 
       <AdminFormOverlay

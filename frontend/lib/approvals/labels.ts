@@ -11,6 +11,7 @@ import {
 
 import type { ApprovalAction, ApprovalStatus } from "./types";
 import type { BadgeTone } from "@/components/ui/badge";
+import { STATUS_SOLID, STATUS_TEXT } from "@/lib/status-styles";
 
 export interface StatusMeta {
   label: string;
@@ -25,36 +26,36 @@ export const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
     label: "Pending Approval",
     icon: Clock,
     badgeTone: "pending",
-    textClass: "text-status-pending",
-    dotClass: "bg-status-pending",
+    textClass: STATUS_TEXT.pending,
+    dotClass: STATUS_SOLID.pending,
   },
   approved: {
     label: "Approved",
     icon: CheckCircle2,
     badgeTone: "approved",
-    textClass: "text-status-approved",
-    dotClass: "bg-status-approved",
+    textClass: STATUS_TEXT.approved,
+    dotClass: STATUS_SOLID.approved,
   },
   rejected: {
     label: "Rejected",
     icon: XCircle,
     badgeTone: "rejected",
-    textClass: "text-status-rejected",
-    dotClass: "bg-status-rejected",
+    textClass: STATUS_TEXT.rejected,
+    dotClass: STATUS_SOLID.rejected,
   },
   correction_required: {
     label: "Correction Required",
     icon: RotateCcw,
     badgeTone: "correction",
-    textClass: "text-status-correction",
-    dotClass: "bg-status-correction",
+    textClass: STATUS_TEXT.correction_required,
+    dotClass: STATUS_SOLID.correction_required,
   },
   cancelled: {
     label: "Cancelled",
     icon: XCircle,
     badgeTone: "cancelled",
-    textClass: "text-status-cancelled",
-    dotClass: "bg-status-cancelled",
+    textClass: STATUS_TEXT.cancelled,
+    dotClass: STATUS_SOLID.cancelled,
   },
   draft: {
     label: "Draft",
