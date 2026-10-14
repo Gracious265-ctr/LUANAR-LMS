@@ -23,7 +23,7 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 
-from .models import (
+from org.models import (
     ApproverRole,
     Campus,
     RoleAssignment,

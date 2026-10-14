@@ -17,7 +17,7 @@ from rest_framework.test import APIClient
 from users.models import EmployeeProfile, User
 
 from audit.models import AuditEntry
-from workflows.models import (
+from org.models import (
     ApproverRole,
     Campus,
     RoleAssignment,

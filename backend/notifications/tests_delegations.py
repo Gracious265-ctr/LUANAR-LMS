@@ -32,7 +32,7 @@ from notifications.delegations import (
 )
 from notifications.models import NotificationOutbox, NotificationOutboxLockedError
 from notifications.tasks import deliver_notification
-from workflows.models import Delegation
+from org.models import Delegation
 from workflows.services import DelegationActionError
 from workflows.testing import make_approver
 

@@ -17,7 +17,7 @@ from audit.services import changed_fields, record_audit
 from django.db import transaction
 from django.utils import timezone
 
-from workflows.models import ApplicationStage
+from approvals.models import ApplicationStage
 from workflows.policies import is_self_application
 
 from ..models import LeaveApplication

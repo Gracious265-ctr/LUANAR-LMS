@@ -5,7 +5,7 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
-from workflows.models import Team
+from org.models import Team
 from workflows.services import approver_role_codes_for
 
 from .models import EmployeeProfile

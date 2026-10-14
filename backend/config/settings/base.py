@@ -25,7 +25,7 @@ DEBUG = env("DEBUG", default=False)
 ALLOWED_HOSTS = env("ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "system_admin.apps.SystemAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -37,12 +37,15 @@ INSTALLED_APPS = [
     "django_q",
     # Local apps
     "users",
+    "org",
+    "approvals",
     "leave",
     "workflows",
     "notifications",
     "plans",
     "documents",
     "audit",
+    "launcher",
 ]
 
 MIDDLEWARE = [
@@ -61,7 +64,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -223,6 +226,12 @@ EMAIL_DEV_RECIPIENT_OVERRIDE = env.list("EMAIL_DEV_RECIPIENT_OVERRIDE", default=
 # click; ``notifications.accounts`` refuses to put a live secret on a plain-HTTP
 # link when DEBUG is off.
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
+
+# The system-admin dashboard reuses Django's admin site under its own prefix so
+# it never collides with a future staff-facing surface. ADMIN_SITE_HEADER
+# brands the reused admin chrome.
+ADMIN_SITE_HEADER = env("ADMIN_SITE_HEADER", default="LUANAR Leave System — Admin")
+SYSTEM_ADMIN_URL_PREFIX = env("SYSTEM_ADMIN_URL_PREFIX", default="system-admin/")
 
 # How long a set-password link stays usable. Deliberately generous: the mail
 # reaches an inbox that is read at a human pace, and a 72h window still bounds a

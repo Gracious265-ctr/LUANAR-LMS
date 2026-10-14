@@ -39,7 +39,7 @@ from leave.services.submission import (
     ApplicationNotFoundError,
     submit_application,
 )
-from workflows.models import ApplicationStage
+from approvals.models import ApplicationStage
 from workflows.services import decide, ApprovalDecision
 
 from .stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user

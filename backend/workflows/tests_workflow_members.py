@@ -28,15 +28,16 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from users.models import EmployeeProfile
 
-from .models import (
+from org.models import (
     CampusRoleAssignment,
     RoleAssignment,
+    Section,
     Team,
     TeamRoleAssignment,
     Workflow,
-    WorkflowMember,
-    Section,
 )
+
+from .models import WorkflowMember
 from .services import (
     TeamActionError,
     WorkflowMemberError,
@@ -258,7 +259,7 @@ class TeamMemberManagementTests(MemberAPIBase):
     def test_removal_blocked_while_open_approver_period(self):
         workflow = list(Workflow.objects.filter(team=self.team))[0]
         section = workflow.sections.first()
-        from .models import SectionMember
+        from org.models import SectionMember
 
         SectionMember.objects.create(
             section=section,

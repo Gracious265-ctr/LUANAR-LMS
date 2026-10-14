@@ -14,7 +14,7 @@ from audit.services import actor_display_name
 from leave.models import GradeEntitlement, LeaveApplication, LeaveType, SupportingDocument
 from leave.services import active_financial_year, financial_year_label
 
-from .models import ApplicationStage, ApprovalDecision
+from approvals.models import ApplicationStage, ApprovalDecision
 
 _VALID_STATES = ("pending", "approved", "rejected", "correction_required", "cancelled")
 

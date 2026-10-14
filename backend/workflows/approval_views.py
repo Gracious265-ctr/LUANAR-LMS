@@ -41,9 +41,10 @@ from .approval_payloads import (
     list_item,
     review_payload,
 )
-from .models import ApplicationStage, ApprovalDecision
+from approvals.models import ApplicationStage, ApprovalDecision
 from .policies import get_view_access
 from .services import (
+    ApprovalConflictError,
     ApprovalNotFoundError,
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
@@ -229,6 +230,25 @@ class ApprovalDecisionAPIView(APIView):
                 {
                     "error": "This application has already been decided. Refresh to see the latest state.",
                     "reason": "stage_changed",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except ApprovalConflictError as exc:
+            conflict = exc.conflict
+            return Response(
+                {
+                    "error": (
+                        "Approving this application would leave the team "
+                        "over-subscribed on "
+                        f"{conflict.day.isoformat()}."
+                    ),
+                    "reason": "team_conflict",
+                    "conflict": {
+                        "day": conflict.day.isoformat(),
+                        "out_count": conflict.out_count,
+                        "team_size": conflict.team_size,
+                        "threshold": conflict.threshold,
+                    },
                 },
                 status=status.HTTP_409_CONFLICT,
             )

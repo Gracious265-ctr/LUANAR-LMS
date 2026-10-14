@@ -39,9 +39,11 @@ from leave.services.submission import ValidationFailedError, submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
 from users.models import EmployeeProfile
 
-from .models import (
+from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
+)
+from org.models import (
     ApproverRole,
     Section,
     SectionMember,

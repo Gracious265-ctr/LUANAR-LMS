@@ -27,7 +27,7 @@ from django.utils import timezone
 
 from users.models import EmployeeProfile
 
-from .models import (
+from org.models import (
     ApproverRole,
     Campus,
     RoleAssignment,

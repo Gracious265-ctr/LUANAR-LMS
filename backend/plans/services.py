@@ -683,7 +683,7 @@ def acting_approver_predicate(user) -> Q:
     """
     from django.utils import timezone
 
-    from workflows.models import Delegation
+    from org.models import Delegation
 
     today = timezone.localdate()
     delegations = Delegation.objects.filter(

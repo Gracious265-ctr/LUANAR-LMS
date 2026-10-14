@@ -11,8 +11,15 @@ from .views import (
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
-from .views.me import LeaveSummaryView
+from .views.calendar import TeamLeaveCalendarView
+from .views.me import FormDefaultsView, LeaveSummaryView
 from .views.resubmit import LeaveApplicationResubmitView
+from .views.setup import (
+    ApplyDefaultsView,
+    RolloverView,
+    SetupStatusView,
+    SetupTemplatesView,
+)
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
 app_name = "leave"
@@ -49,6 +56,24 @@ urlpatterns = [
         "leave/me/summary/",
         LeaveSummaryView.as_view(),
         name="leave-me-summary",
+    ),
+    path(
+        "leave/me/form-defaults/",
+        FormDefaultsView.as_view(),
+        name="leave-me-form-defaults",
+    ),
+    path("setup/status/", SetupStatusView.as_view(), name="setup-status"),
+    path("setup/templates/", SetupTemplatesView.as_view(), name="setup-templates"),
+    path(
+        "setup/apply-defaults/",
+        ApplyDefaultsView.as_view(),
+        name="setup-apply-defaults",
+    ),
+    path("setup/rollover/", RolloverView.as_view(), name="setup-rollover"),
+    path(
+        "calendar/team/",
+        TeamLeaveCalendarView.as_view(),
+        name="team-leave-calendar",
     ),
     path(
         "leave-applications/<uuid:pk>/submit/",

@@ -19,7 +19,7 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 
-from .models import ApproverRole, RoleAssignment
+from org.models import ApproverRole, RoleAssignment
 from .services import (
     RoleActionError,
     approver_role_codes_for,

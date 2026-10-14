@@ -49,12 +49,13 @@ from leave.tests.stubs import (
 from users.models import EmployeeProfile
 
 from .testing import team_for
-from .models import (
+from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
-    Delegation,
-    Reassignment,
 )
+from org.models import Delegation
+
+from .models import Reassignment
 from .policies import get_decision_authority, is_self_application
 from .services import (
     ApprovalNotAllowedError,

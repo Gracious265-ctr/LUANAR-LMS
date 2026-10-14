@@ -7,14 +7,41 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import LeaveApplication
+from ..models import LeaveApplication, LeaveRule
 from ..providers import get_provider, get_today
-from ..services import active_financial_year, financial_year_label, resolved_annual_entitlement
+from ..services import (
+    active_financial_year,
+    financial_year_label,
+    find_annual_leave_type,
+    resolved_annual_entitlement,
+)
+from ..services.working_days import holidays_in_range
+from ..validation.working_days import is_working_day
 
 #: How far ahead the dashboard's "Upcoming Leave" card looks. A rolling window
 #: rather than the financial year, so the card answers "what is coming up" and
 #: not "what is left of the year" — the balance card already covers the year.
 UPCOMING_WINDOW_DAYS = 30
+
+#: How far ahead the form-defaults endpoint looks for public holidays when it
+#: finds the first working day. Long enough to clear a weekend plus a run of
+#: public holidays, short enough that the holiday lookup never scans a whole year.
+DEFAULT_START_HORIZON_DAYS = 31
+
+
+def _next_working_day(today):
+    """Return the first working day strictly after ``today``.
+
+    Skips weekends and configured public holidays (the same provider the
+    validation pipeline uses), so the date the form pre-fills is a date the
+    submission rules will also accept.
+    """
+    horizon = today + timedelta(days=DEFAULT_START_HORIZON_DAYS)
+    holidays = set(holidays_in_range(today, horizon).keys())
+    candidate = today + timedelta(days=1)
+    while candidate <= horizon and not is_working_day(candidate, holidays):
+        candidate += timedelta(days=1)
+    return candidate
 
 
 class LeaveSummaryView(APIView):
@@ -116,5 +143,61 @@ class LeaveSummaryView(APIView):
                     "days": upcoming["days"] or 0,
                     "applications": upcoming["applications"],
                 },
+            }
+        )
+
+
+class FormDefaultsView(APIView):
+    """Warm-start values for the leave application form.
+
+    ``GET /api/v1/leave/me/form-defaults/`` returns the small set of values the
+    form would otherwise guess at: the leave type the employee most recently
+    applied for (falling back to the canonical annual type), the first working
+    day the form should pre-fill, and the annual entitlement per annual-consuming
+    leave type for the active financial year. Everything degrades to ``None`` or
+    ``{}`` rather than erroring, because the form reads every field directly.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        profile = getattr(user, "employee_profile", None)
+
+        # Most recent live application wins. Cancelled rows are not history the
+        # employee wants repeated, and a null type is not a usable default.
+        last_leave_type_id = (
+            LeaveApplication.objects.filter(employee=user)
+            .exclude(status=LeaveApplication.Status.CANCELLED)
+            .filter(leave_type_id__isnull=False)
+            .order_by("-created_at", "-id")
+            .values_list("leave_type_id", flat=True)
+            .first()
+        )
+        if last_leave_type_id is None:
+            annual = find_annual_leave_type()
+            last_leave_type_id = annual.pk if annual is not None else None
+
+        balance_by_type: dict[str, str] = {}
+        if profile is not None and active_financial_year() is not None:
+            entitlement = resolved_annual_entitlement(profile.grade)
+            if entitlement is not None:
+                annual_type_ids = (
+                    LeaveRule.objects.filter(
+                        consumes_annual_entitlement=True,
+                        leave_type__is_active=True,
+                    )
+                    .values_list("leave_type_id", flat=True)
+                    .distinct()
+                )
+                for type_id in annual_type_ids:
+                    if type_id is not None:
+                        balance_by_type[str(type_id)] = str(entitlement.days)
+
+        return Response(
+            {
+                "last_leave_type_id": last_leave_type_id,
+                "default_start_date": _next_working_day(get_today()),
+                "balance_by_type": balance_by_type,
             }
         )

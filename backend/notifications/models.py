@@ -73,7 +73,7 @@ class NotificationOutbox(models.Model):
         blank=True,
     )
     delegation = models.ForeignKey(
-        "workflows.Delegation",
+        "org.Delegation",
         on_delete=models.PROTECT,
         related_name="notification_outbox_rows",
         null=True,

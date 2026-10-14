@@ -231,7 +231,7 @@ class PlanApprovalStage(models.Model):
     )
     role_label = models.CharField(max_length=80)
     role_ref = models.ForeignKey(
-        "workflows.ApproverRole",
+        "org.ApproverRole",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
@@ -253,7 +253,7 @@ class PlanApprovalStage(models.Model):
         ),
     )
     section_ref = models.ForeignKey(
-        "workflows.Section",
+        "org.Section",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

@@ -41,13 +41,9 @@ from workflows.events import (
     _reset_consumers_for_tests,
     register_consumer,
 )
-from workflows.models import (
-    ApplicationStage,
-    ApprovalDecision,
-    Delegation,
-    Reassignment,
-    Workflow,
-)
+from approvals.models import ApplicationStage, ApprovalDecision
+from org.models import Delegation, Workflow
+from workflows.models import Reassignment
 from workflows.providers import DatabaseWorkflowProvider
 from workflows.services import decide, reassign_application
 

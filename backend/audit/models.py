@@ -73,6 +73,13 @@ class AuditEntry(models.Model):
         PASSWORD_CHANGED = "password_changed", "Password changed"
         PLAN_CONFIRMED = "plan_confirmed", "Plan block confirmed"
         PLAN_RELEASED = "plan_released", "Plan block released"
+        PRESET_APPLIED = "preset_applied", "Default configuration applied"
+        SYSTEM_SUPERUSER_GRANTED = "system.superuser_granted", "Superuser granted"
+        SYSTEM_SUPERUSER_REVOKED = "system.superuser_revoked", "Superuser revoked"
+        SYSTEM_STAFF_ACCESS_GRANTED = (
+            "system.staff_access_granted",
+            "Staff access granted",
+        )
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""

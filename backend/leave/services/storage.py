@@ -61,6 +61,17 @@ def get_supabase_client():
     return create_client(url, settings.SUPABASE_SERVICE_KEY)
 
 
+def ping_storage() -> None:
+    """A lightweight reachability check for the configured storage bucket.
+
+    Raises when Supabase is unconfigured or the bucket cannot be listed, so the
+    system-admin health panel reports storage as ``down`` rather than silently
+    assuming it is up.
+    """
+    client = get_supabase_client()
+    client.storage.from_(settings.SUPABASE_BUCKET).list()
+
+
 def upload_document(
     file, application_id: str, *, prefix: str = SUPPORTING_DOCUMENT_PREFIX
 ) -> dict:

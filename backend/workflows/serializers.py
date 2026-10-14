@@ -9,20 +9,20 @@ from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
-from .models import (
+from org.models import (
     ApproverRole,
     Campus,
     CampusRoleAssignment,
     Delegation,
-    Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
     Team,
     TeamRoleAssignment,
     Workflow,
-    WorkflowMember,
 )
+
+from .models import Reassignment, WorkflowMember
 from .providers import section_resolution
 from .services import (
     ReassignmentError,

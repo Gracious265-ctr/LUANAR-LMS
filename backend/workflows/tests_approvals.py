@@ -34,9 +34,11 @@ from .testing import (
     make_section,
     make_team,
 )
-from .models import (
+from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
+)
+from org.models import (
     ApproverRole,
     Section,
     SectionMember,

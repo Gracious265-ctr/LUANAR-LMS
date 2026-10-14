@@ -5299,3 +5299,46 @@ view access + test-email POST semantics, and the full action lifecycle
 (confirmation required, mismatch refused, exactly-one enforced, self-revoke
 refused, audit rows written, actions hidden from HR). Backend full suite
 **1458 OK**; `manage.py check`, `makemigrations --check` clean.
+
+## Completed — Broken-Merge Recovery, `workflows` → `org`/`approvals` Split, and Leave Feature Gaps (2026-10-14)
+
+Recovery of merge commit `726ee04`, which had merged `feature/plans-teams` into
+`development` with unresolved conflict markers committed (carried on by the
+"commit remaining WIP" commit `9891935`). Resolution adopted `feature/plans-teams`
+as canonical for every conflict and finished the incomplete refactor it began.
+
+**The split.** Approval-chain models moved out of `workflows` into two new apps:
+`org` (`Team`, `Workflow`, `Section`, `ApproverRole`, `Campus`, `SectionMember`,
+and the role-assignment tables) and `approvals` (`ApplicationStage`,
+`ApprovalDecision`, and related). `workflows` now holds only `Reassignment` and
+`WorkflowMember`. String FKs were repointed and every production and test module
+swept for stale imports.
+
+**Non-destructive table move.** Production data lives in the old `workflows_*`
+tables, so the split must not create, drop, or rename tables. Each moved model
+keeps `Meta.db_table = "workflows_<model>"`, the same `db_table` is written into
+the migration `CreateModel` options, and the five affected migrations are wrapped
+in `SeparateDatabaseAndState(state_operations=[...], database_operations=[])`.
+The result: model state follows the new app labels while the database is left
+untouched, so `makemigrations --check` reports "No changes detected" and an
+existing database is never altered. Field-level compatibility was verified
+(the only diffs against history are FK app labels and dropped `help_text`).
+
+**Leave feature gaps completed.** `ApprovalConflictError` in `workflows.services`
+now refuses any `approve` that would leave the applicant's team over-subscribed,
+using the same numbers as the calendar (`leave.conflicts.find_team_conflict`) and
+mapped to `409 {reason: "team_conflict"}` by `ApprovalDecisionAPIView`.
+`workflows.policies.user_can_view_team_calendar` scopes the team calendar to HR,
+superusers, team members, section approvers/members, workflow members, and
+team/campus/institution-wide role holders, returning 404 otherwise.
+`GET /api/v1/leave/me/form-defaults/` returns the last live leave type (falling
+back to the canonical annual type), the next working day (skipping weekends and
+public holidays), and the resolved annual entitlement per annual-consuming type.
+`/api/v1/setup/{status,templates,apply-defaults,rollover}/` and
+`/api/v1/calendar/team/` are wired in `leave/urls.py`.
+
+**Tests.** Backend full suite **1494 OK** (was 1484 with 19 failures + 6 errors
+before this pass; `system_admin` 35/35, leave 476/476, workflows+approvals
+419/419). `manage.py check` and `makemigrations --check` clean. Frontend
+`instrumentation-client.ts` gained `export {}`, fixing
+`TS2306: File is not a module` in `typecheck:test`; its 3 Vitest tests pass.

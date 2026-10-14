@@ -194,7 +194,7 @@ def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | Non
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
-    from workflows.models import ApproverRole, RoleAssignment, SectionMember
+    from org.models import ApproverRole, RoleAssignment, SectionMember
 
     role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
     if role_obj is None:
@@ -370,7 +370,7 @@ class StubWorkflowProvider:
         if self.block_cancellation:
             return []
         from django.db.models import Min
-        from workflows.models import ApplicationStage
+        from approvals.models import ApplicationStage
         from workflows.providers import CancellationStageSpec
 
         cycle = (
@@ -399,7 +399,7 @@ class StubWorkflowProvider:
 
     def get_workflow_member_user_ids(self, application):
         from django.db.models import Min
-        from workflows.models import ApplicationStage, ApplicationStageApprover
+        from approvals.models import ApplicationStage, ApplicationStageApprover
 
         cycle = (
             ApplicationStage.objects.filter(application=application).aggregate(

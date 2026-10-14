@@ -3,12 +3,11 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet
 
-from .models import (
+from org.models import (
     ApproverRole,
     Campus,
     CampusRoleAssignment,
     Delegation,
-    Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
@@ -16,6 +15,8 @@ from .models import (
     TeamRoleAssignment,
     Workflow,
 )
+
+from .models import Reassignment
 from .services import approver_role_codes_for, ensure_role_not_in_use
 
 

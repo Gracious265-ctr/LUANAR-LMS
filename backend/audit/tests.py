@@ -23,7 +23,8 @@ from leave.models import (
 )
 from users.models import User
 
-from workflows.models import Delegation, Reassignment, Workflow
+from org.models import Delegation, Workflow
+from workflows.models import Reassignment
 from workflows.testing import ensure_roles, make_approver, team_for
 
 from leave.tests.stubs import (

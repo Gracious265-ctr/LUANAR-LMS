@@ -31,14 +31,15 @@ from .testing import (
     make_team,
     make_workflow,
 )
-from .models import (
+from org.models import (
     ApproverRole,
     Delegation,
-    Reassignment,
     Section,
     Team,
     Workflow,
 )
+
+from .models import Reassignment
 from .services import (
     DelegationActionError,
     ReassignmentError,

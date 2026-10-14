@@ -15,10 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from approvals.models import ApplicationStage, ApprovalDecision
 from leave.models import LeaveApplication
+from org.models import ApproverRole
 from users.models import EmployeeProfile, User
-
-from .models import ApplicationStage, ApprovalDecision, ApproverRole
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ def _role_for_stage(stage: ApplicationStage):
     null ``role_ref``, so the snapshotted ``role`` code is looked up instead —
     still reading the *stage*, never a live stage of a running application.
     """
-    from .models import ApproverRole
+    from org.models import ApproverRole
 
     if stage.role_ref_id is not None:
         return stage.role_ref
@@ -199,7 +199,7 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         # A cancellation stage carries only the snapshotted role code and label,
         # so the scope has to be looked up by that code. A role HR has since
         # renamed still resolves, because the code is the snapshot's own value.
-        from .models import ApproverRole
+        from org.models import ApproverRole
 
         role = ApproverRole.objects.filter(code=cancellation_stage.role).first()
         return ViewAccess(
@@ -311,3 +311,60 @@ def _current_stage(application: LeaveApplication) -> ApplicationStage | None:
     if application.current_stage_id is None:
         return None
     return ApplicationStage.objects.filter(pk=application.current_stage_id).first()
+
+
+def user_can_view_team_calendar(user: User, team) -> bool:
+    """Whether ``user`` may read ``team``'s leave calendar (UI/UX Phase 2).
+
+    The calendar is scoped exactly as approval reach is: an HR officer or
+    superuser sees any team; a member sees their own team; and anyone who
+    approves for the team — the section approver, a section member, a workflow
+    member, or a team/campus/institution-wide role holder — sees it too. A
+    caller with no such footing is told the calendar does not exist (404), so
+    team existence is never probed.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
+        return True
+
+    profile = getattr(user, "employee_profile", None)
+    if profile is not None and profile.team_id == team.pk:
+        return True
+
+    from .models import WorkflowMember  # noqa: PLC0415
+    from org.models import (  # noqa: PLC0415
+        CampusRoleAssignment,
+        RoleAssignment,
+        Section,
+        SectionMember,
+        TeamRoleAssignment,
+    )
+
+    workflow = getattr(team, "workflow", None)
+    if workflow is not None:
+        if Section.objects.filter(workflow=workflow, approver=user).exists():
+            return True
+        section_ids = Section.objects.filter(workflow=workflow).values_list(
+            "id", flat=True
+        )
+        if SectionMember.objects.filter(
+            section_id__in=section_ids,
+            user=user,
+            effective_to__isnull=True,
+        ).exists():
+            return True
+        if WorkflowMember.objects.filter(workflow=workflow, user=user).exists():
+            return True
+
+    if TeamRoleAssignment.objects.filter(team=team, user=user).exists():
+        return True
+    if team.campus_id is not None and CampusRoleAssignment.objects.filter(
+        campus_id=team.campus_id, user=user
+    ).exists():
+        return True
+    if RoleAssignment.objects.filter(
+        role__is_institution_wide=True, user=user
+    ).exists():
+        return True
+    return False

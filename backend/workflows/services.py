@@ -16,23 +16,25 @@ from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import EmployeeProfile, User
 
-from .models import (
+from approvals.models import (
     ApplicationStage,
     ApplicationStageApprover,
+    ApprovalDecision,
+)
+from org.models import (
+    ApproverRole,
     Campus,
     CampusRoleAssignment,
-    ApprovalDecision,
-    ApproverRole,
     Delegation,
-    Reassignment,
     RoleAssignment,
     Section,
     SectionMember,
     Team,
     TeamRoleAssignment,
     Workflow,
-    WorkflowMember,
 )
+
+from .models import Reassignment, WorkflowMember
 from .policies import is_self_application
 from .providers import WorkflowConfigError, resolve_section_approvers
 
@@ -1327,6 +1329,19 @@ class ApprovalStageChangedError(Exception):
     """The stage was already decided by someone else (stale/conflict, 409)."""
 
 
+class ApprovalConflictError(Exception):
+    """Approving would over-subscribe the applicant's team on some day.
+
+    A hard block enforced at every stage (UI/UX Phase 2, spec 3.2): the same
+    number the team calendar flags is refused here, so a client cannot skip the
+    rule. Carries the :class:`leave.conflicts.TeamConflict` that stopped it.
+    """
+
+    def __init__(self, conflict):
+        self.conflict = conflict
+        super().__init__("approval_conflict")
+
+
 class ApprovalValidationError(ValueError):
     """Invalid action or comment; carries a dict of field errors."""
 
@@ -1462,6 +1477,17 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             raise ApprovalNotAllowedError(authority.reason or "not_current_stage")
         if stage.status != ApplicationStage.Status.PENDING:
             raise ApprovalNotAllowedError("already_decided")
+
+        if action == ApprovalDecision.Action.APPROVE:
+            # UI/UX Phase 2, spec 3.2: an approval that would leave the
+            # applicant's team over-subscribed on any day is refused, at every
+            # stage, from the same number the team calendar shows. Imported here
+            # because ``leave.conflicts`` reaches back into leave models.
+            from leave.conflicts import find_team_conflict  # noqa: PLC0415
+
+            conflict = find_team_conflict(app)
+            if conflict is not None:
+                raise ApprovalConflictError(conflict)
 
         before_status = app.status
         before_order = stage.stage_order

@@ -28,7 +28,7 @@ from audit.models import AuditEntry
 from leave.models import LeaveApplication, SupportingDocument
 from leave.services.resubmission import resubmit_application
 from leave.services.submission import submit_application
-from workflows.models import ApprovalDecision
+from approvals.models import ApprovalDecision
 from workflows.testing import create_user_with_role
 from workflows.services import decide
 
