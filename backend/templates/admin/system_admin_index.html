@@ -1,0 +1,188 @@
+{% extends "admin/index.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .system-panel { margin-block-end: 24px; }
+  .system-panel h2 { margin-bottom: 12px; }
+  .system-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-block-end: 24px;
+  }
+  .system-stat {
+    border: 1px solid var(--hairline-color);
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .system-stat h3 {
+    margin: 0 0 6px;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--body-quiet-color);
+  }
+  .system-stat .stat-value { font-size: 1.75rem; font-weight: 600; line-height: 1.1; }
+  .system-stat dl {
+    margin: 10px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 18px;
+    font-size: 0.8125rem;
+    color: var(--body-quiet-color);
+  }
+  .system-stat dl div { display: flex; gap: 6px; }
+  .system-stat dt { margin: 0; }
+  .system-stat dd { margin: 0; color: var(--body-fg); }
+  .status-dot {
+    display: inline-block;
+    width: 0.7em;
+    height: 0.7em;
+    border-radius: 50%;
+    margin-inline-end: 6px;
+    vertical-align: baseline;
+  }
+  .status-ok { background: #2e7d32; }
+  .status-degraded { background: #f9a825; }
+  .status-down { background: #ba2121; }
+  .status-unknown { background: #999; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="content-main" class="app-list">
+
+  {% if stats %}
+  <section class="system-panel" aria-label="{% translate 'System statistics' %}">
+    <div class="system-stats">
+      <div class="system-stat">
+        <h3>{% translate "Leave applications" %}</h3>
+        {% if stats.applications %}
+          <div class="stat-value">{{ stats.applications.total }}</div>
+          <dl>
+            <div><dt>{% translate "Pending" %}</dt><dd>{{ stats.applications.pending }}</dd></div>
+            <div><dt>{% translate "Approved" %}</dt><dd>{{ stats.applications.approved }}</dd></div>
+            <div><dt>{% translate "Rejected" %}</dt><dd>{{ stats.applications.rejected }}</dd></div>
+            <div><dt>{% translate "Today" %}</dt><dd>{{ stats.applications.submitted_today }}</dd></div>
+            <div><dt>{% translate "This week" %}</dt><dd>{{ stats.applications.submitted_this_week }}</dd></div>
+          </dl>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+
+      <div class="system-stat">
+        <h3>{% translate "Pending approvals" %}</h3>
+        {% if stats.pending_approvals is not None %}
+          <div class="stat-value">{{ stats.pending_approvals }}</div>
+          <p class="quiet">{% translate "Approval stages awaiting action, system-wide" %}</p>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+
+      <div class="system-stat">
+        <h3>{% translate "Users" %}</h3>
+        {% if stats.users_total is not None %}
+          <div class="stat-value">{{ stats.users_total }}</div>
+          <dl>
+            <div><dt>{% translate "Active (30 days)" %}</dt><dd>{{ stats.users_active_30d }}</dd></div>
+          </dl>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+
+      <div class="system-stat">
+        <h3>{% translate "Documents" %}</h3>
+        {% if stats.documents %}
+          <div class="stat-value">{{ stats.documents.active }}</div>
+          <dl>
+            <div><dt>{% translate "Storage" %}</dt><dd>{{ stats.documents.storage_bytes|filesizeformat }}</dd></div>
+          </dl>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+
+      <div class="system-stat">
+        <h3>{% translate "Background tasks" %}</h3>
+        {% if stats.tasks %}
+          <div class="stat-value">{{ stats.tasks.queued }}</div>
+          <dl>
+            <div><dt>{% translate "Failed (24h)" %}</dt><dd>{{ stats.tasks.failed_24h }}</dd></div>
+            <div><dt>{% translate "Succeeded (24h)" %}</dt><dd>{{ stats.tasks.succeeded_24h }}</dd></div>
+          </dl>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+
+      <div class="system-stat">
+        <h3>{% translate "Database" %}</h3>
+        {% if stats.database %}
+          <div class="stat-value">{{ stats.database.size_bytes|filesizeformat }}</div>
+          <dl>
+            <div><dt>{% translate "Connections" %}</dt><dd>{{ stats.database.connections }}</dd></div>
+          </dl>
+        {% else %}<p class="quiet">{% translate "Not yet available" %}</p>{% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if health %}
+  <section class="system-panel module" aria-label="{% translate 'System health' %}">
+    <h2>{% translate "System health" %}</h2>
+    <table>
+      <tbody>
+        <tr>
+          <th scope="row">{% translate "Database" %}</th>
+          <td><span class="status-dot status-{{ health.database.status }}"></span>
+            {{ health.database.status }}{% if health.database.latency_ms %} ({{ health.database.latency_ms }} ms){% endif %}
+            {% if health.database.error %}<span class="quiet">— {{ health.database.error }}</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">{% translate "Task runner" %}</th>
+          <td><span class="status-dot status-{{ health.tasks.status }}"></span>
+            {{ health.tasks.status }}
+            {% if health.tasks.last_run %}<span class="quiet">— last run {{ health.tasks.last_run }}</span>{% endif %}
+            {% if health.tasks.detail %}<span class="quiet">— {{ health.tasks.detail }}</span>{% endif %}
+            {% if health.tasks.error %}<span class="quiet">— {{ health.tasks.error }}</span>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th scope="row">{% translate "Storage" %}</th>
+          <td><span class="status-dot status-{{ health.storage.status }}"></span>
+            {{ health.storage.status }}
+            {% if health.storage.error %}<span class="quiet">— {{ health.storage.error }}</span>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p><a class="button" href="{% url 'admin:system-health' %}">{% translate "Open health details" %}</a></p>
+  </section>
+  {% endif %}
+
+  {% if recent_admin_actions %}
+  <section class="system-panel module" aria-label="{% translate 'Recent admin actions' %}">
+    <h2>{% translate "Recent admin actions" %}</h2>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">{% translate "When" %}</th>
+          <th scope="col">{% translate "Actor" %}</th>
+          <th scope="col">{% translate "Action" %}</th>
+          <th scope="col">{% translate "Target" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in recent_admin_actions %}
+        <tr>
+          <td>{{ entry.created_at }}</td>
+          <td>{% firstof entry.actor.username "system" %}</td>
+          <td>{{ entry.get_action_display }}</td>
+          <td>{{ entry.target_summary }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+{% endblock %}

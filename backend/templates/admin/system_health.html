@@ -1,0 +1,66 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .status-dot {
+    display: inline-block;
+    width: 0.7em;
+    height: 0.7em;
+    border-radius: 50%;
+    margin-inline-end: 6px;
+    vertical-align: baseline;
+  }
+  .status-ok { background: #2e7d32; }
+  .status-degraded { background: #f9a825; }
+  .status-down { background: #ba2121; }
+  .status-unknown { background: #999; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>{% translate "System health" %}</h1>
+
+<div class="module">
+  <table>
+    <tbody>
+      <tr>
+        <th scope="row">{% translate "Database" %}</th>
+        <td><span class="status-dot status-{{ health.database.status }}"></span>
+          {{ health.database.status }}
+          {% if health.database.latency_ms %}<span class="quiet">— {{ health.database.latency_ms }} ms</span>{% endif %}
+          {% if health.database.error %}<span class="quiet">— {{ health.database.error }}</span>{% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th scope="row">{% translate "Task runner" %}</th>
+        <td><span class="status-dot status-{{ health.tasks.status }}"></span>
+          {{ health.tasks.status }}
+          {% if health.tasks.last_run %}<span class="quiet">— last run {{ health.tasks.last_run }}</span>{% endif %}
+          {% if health.tasks.detail %}<span class="quiet">— {{ health.tasks.detail }}</span>{% endif %}
+          {% if health.tasks.error %}<span class="quiet">— {{ health.tasks.error }}</span>{% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th scope="row">{% translate "Storage" %}</th>
+        <td><span class="status-dot status-{{ health.storage.status }}"></span>
+          {{ health.storage.status }}
+          {% if health.storage.error %}<span class="quiet">— {{ health.storage.error }}</span>{% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>{% translate "Email" %}</h2>
+<p>{% translate "Send a test email to your own account address to verify outbound email is configured." %}</p>
+<form method="post" action="{% url 'admin:system-test-email' %}">
+  {% csrf_token %}
+  <div class="submit-row">
+    <input type="submit" value="{% translate 'Send test email' %}">
+  </div>
+</form>
+
+<p><a href="{% url 'admin:index' %}">{% translate "Back to dashboard" %}</a></p>
+{% endblock %}
