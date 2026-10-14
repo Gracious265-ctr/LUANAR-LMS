@@ -1,116 +1,46 @@
-import { apiErrorMessage } from "./utils";
 import type { Workflow, WorkflowInput } from "./workflows";
+import { apiErrorMessage } from "./utils";
 
-export const APPROVER_ROLE_CODES = [
-  "supervisor",
-  "hod",
-  "dean",
-  "registrar",
-  "dvc",
-  "hr",
-] as const;
-
-export type ApproverRoleCode = (typeof APPROVER_ROLE_CODES)[number];
-
-export const APPROVER_ROLE_LABELS: Record<ApproverRoleCode, string> = {
-  supervisor: "Supervisor",
-  hod: "Head of Department",
-  dean: "Dean",
-  registrar: "Registrar",
-  dvc: "Deputy Vice-Chancellor",
-  hr: "Human Resources",
-};
-
-export const WORKFLOW_CATEGORY_CODES = ["academic", "administration"] as const;
-
-export type WorkflowCategoryCode =
-  | (typeof WORKFLOW_CATEGORY_CODES)[number]
-  | "";
-
-export const WORKFLOW_CATEGORY_LABELS: Record<
-  Exclude<WorkflowCategoryCode, "">,
-  string
-> = {
-  academic: "Academic",
-  administration: "Administration",
-};
-
-export const WORKFLOW_STATE_CODES = [
-  "draft",
-  "scheduled",
-  "active",
-  "inactive",
-] as const;
-
-export type WorkflowState = (typeof WORKFLOW_STATE_CODES)[number];
-
-export const WORKFLOW_STATE_LABELS: Record<WorkflowState, string> = {
-  draft: "Draft",
-  scheduled: "Scheduled",
-  active: "Active",
-  inactive: "Inactive",
-};
-
-export function approverRoleLabel(code: ApproverRoleCode): string {
-  return APPROVER_ROLE_LABELS[code];
-}
-
-export function workflowCategoryLabel(
-  code: WorkflowCategoryCode
-): string {
-  return code ? WORKFLOW_CATEGORY_LABELS[code] : "Any category";
-}
-
-export function workflowStateLabel(state: WorkflowState): string {
-  return WORKFLOW_STATE_LABELS[state];
-}
-
-export function workflowStateBadgeClass(state: WorkflowState): string {
-  switch (state) {
-    case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
-    case "scheduled":
-      return "bg-brand-primary-subtle text-brand-primary";
-    case "draft":
-      return "bg-status-pending-subtle text-status-pending";
-    case "inactive":
-      return "bg-surface-muted text-text-muted";
-  }
-}
-
+/**
+ * Build a chain for a team.
+ *
+ * The team is required and must be the team the chain is for: a chain created
+ * here belongs to that team, and only that team may later edit it. Steps are
+ * sent as the whole ordered list, so what is written is exactly what was
+ * described on screen.
+ */
 export async function createWorkflow(input: WorkflowInput): Promise<Workflow> {
-  return proxyPost<Workflow>("/api/hr/workflows", input);
+  return send<Workflow>("/api/hr/workflows", "POST", input);
 }
 
+/**
+ * Edit a chain the team owns.
+ *
+ * `team` is accepted but must name the chain's own team — a chain cannot be
+ * moved to another team, because every application already inside it would be
+ * stranded at steps nobody staffs for them. The field is sent so the refusal,
+ * when it comes, is the one that names the rule rather than a missing field.
+ */
 export async function updateWorkflow(
   id: number | string,
-  input: WorkflowInput
+  input: Partial<WorkflowInput>
 ): Promise<Workflow> {
-  return proxyPatch<Workflow>(`/api/hr/workflows/${id}`, input);
+  return send<Workflow>(`/api/hr/workflows/${id}`, "PATCH", input);
 }
 
-async function proxyPost<T>(endpoint: string, body: unknown): Promise<T> {
+async function send<T>(
+  endpoint: string,
+  method: "POST" | "PATCH",
+  body: unknown
+): Promise<T> {
   const response = await fetch(endpoint, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
     throw new Error(apiErrorMessage(data));
   }
-  return response.json();
-}
-
-async function proxyPatch<T>(endpoint: string, body: unknown): Promise<T> {
-  const response = await fetch(endpoint, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(apiErrorMessage(data));
-  }
-  return response.json();
+  return data as T;
 }

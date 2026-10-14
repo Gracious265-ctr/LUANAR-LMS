@@ -7,8 +7,13 @@ from unittest import mock
 
 from django.test import TestCase, TransactionTestCase
 
-from audit.models import AuditEvent
-from leave.models import LeaveApplication
+from audit.models import AuditEntry
+from leave.models import (
+    ApplicationRevision,
+    ApplicationRevisionLockedError,
+    LeaveApplication,
+    SupportingDocument,
+)
 from leave.services.submission import (
     AlreadySubmittedError,
     ApplicationNotFoundError,
@@ -23,6 +28,7 @@ from .stubs import (
     StubProviderMixin,
     make_approver_chain,
     make_user,
+    register_chain_approvers,
 )
 
 
@@ -31,7 +37,11 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
         self.stub = self.use_stub()
         self.user = make_user()
         self.stub.register_employee(self.user)
+<<<<<<< HEAD
         make_approver_chain()
+=======
+        register_chain_approvers(self.stub)
+>>>>>>> feature/plans-teams
 
     def draft(self, **kwargs):
         defaults = dict(
@@ -96,12 +106,16 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
     def test_audit_event_is_written(self):
         app = self.draft()
         submit_application(user=self.user, application_id=app.id)
-        event = AuditEvent.objects.get(action="leave_application.submitted")
+        event = AuditEntry.objects.get(
+            action=AuditEntry.Action.SUBMITTED,
+            target_type=AuditEntry.TargetType.APPLICATION,
+        )
         self.assertEqual(event.actor, self.user)
-        self.assertEqual(event.prev_state, "draft")
-        self.assertEqual(event.new_state, "submitted")
-        self.assertEqual(event.metadata["reference_number"], "LV-2026-27-000001")
-        self.assertEqual(event.metadata["working_days"], 5)
+        self.assertEqual(event.target_summary, "LV-2026-27-000001")
+        self.assertEqual(
+            event.detail["after"]["reference_number"], "LV-2026-27-000001"
+        )
+        self.assertEqual(event.detail["after"]["working_days"], 5)
 
     def test_unowned_application_raises_not_found(self):
         other = make_user(username="other@test.luanar")
@@ -158,7 +172,123 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
             submit_application(user=self.user, application_id=app.id)
         except ValidationFailedError:
             pass
-        self.assertFalse(AuditEvent.objects.exists())
+        self.assertFalse(AuditEntry.objects.exists())
+
+    def test_submission_freezes_cycle_one_revision(self):
+        app = self.draft()
+        submit_application(user=self.user, application_id=app.id)
+        app.refresh_from_db()
+
+        revision = ApplicationRevision.objects.get(application=app)
+        self.assertEqual(revision.revision_number, 1)
+        self.assertEqual(revision.created_by, self.user)
+        self.assertEqual(revision.start_date, app.start_date)
+        self.assertEqual(revision.end_date, app.end_date)
+        self.assertEqual(revision.working_days, 5)
+        self.assertEqual(revision.reason, "Annual leave")
+        self.assertEqual(revision.leave_type_id, app.leave_type_id)
+        self.assertEqual(
+            revision.leave_type_name, app.rules_snapshot["leave_type"]["name"]
+        )
+        self.assertIsNone(revision.changes)
+        self.assertEqual(revision.documents, [])
+
+    def test_failed_submission_writes_no_revision(self):
+        self.stub.set_balance(self.user.id, "2026-27", Decimal("0"))
+        app = self.draft()
+        with self.assertRaises(ValidationFailedError):
+            submit_application(user=self.user, application_id=app.id)
+        self.assertFalse(ApplicationRevision.objects.exists())
+
+    def test_revision_write_failure_rolls_back_submission(self):
+        app = self.draft()
+        with mock.patch(
+            "leave.models.ApplicationRevision.objects.create",
+            side_effect=RuntimeError("revision store down"),
+        ):
+            with self.assertRaises(RuntimeError):
+                submit_application(user=self.user, application_id=app.id)
+
+        app.refresh_from_db()
+        self.assertEqual(app.status, LeaveApplication.Status.DRAFT)
+        self.assertIsNone(app.reference_number)
+        self.assertIsNone(app.submitted_at)
+        self.assertFalse(ApplicationRevision.objects.exists())
+        self.assertFalse(AuditEntry.objects.exists())
+
+    def test_revision_freezes_only_active_documents(self):
+        app = self.draft()
+        active = SupportingDocument.objects.create(
+            application=app,
+            file_path="active.pdf",
+            file_url="https://example.test/active.pdf",
+            file_name="active.pdf",
+            file_size=100,
+            content_type="application/pdf",
+        )
+        retired = SupportingDocument.objects.create(
+            application=app,
+            file_path="old.pdf",
+            file_url="https://example.test/old.pdf",
+            file_name="old.pdf",
+            file_size=200,
+            content_type="application/pdf",
+        )
+        retired.retire(self.user, SupportingDocument.RetireReason.REMOVED)
+
+        submit_application(user=self.user, application_id=app.id)
+
+        revision = ApplicationRevision.objects.get(application=app)
+        self.assertEqual(
+            [document["file_name"] for document in revision.documents],
+            ["active.pdf"],
+        )
+        self.assertEqual(revision.documents[0]["id"], str(active.id))
+        self.assertEqual(revision.documents[0]["file_size"], 100)
+
+
+class ApplicationRevisionIntegrityTests(StubProviderMixin, TestCase):
+    """A frozen cycle row is write-only history like ``ApprovalDecision``."""
+
+    def setUp(self):
+        self.stub = self.use_stub()
+        self.user = make_user()
+        self.stub.register_employee(self.user)
+        register_chain_approvers(self.stub)
+        app = LeaveApplication.objects.create(
+            employee=self.user,
+            leave_type_id=1,
+            start_date=EARLIEST_ANNUAL_START,
+            end_date=date(2026, 10, 2),
+            reason="Annual leave",
+        )
+        submit_application(user=self.user, application_id=app.id)
+        self.revision = ApplicationRevision.objects.get(application=app)
+
+    def test_instance_update_is_rejected(self):
+        self.revision.reason = "rewritten"
+        with self.assertRaises(ApplicationRevisionLockedError):
+            self.revision.save()
+        self.revision.refresh_from_db()
+        self.assertEqual(self.revision.reason, "Annual leave")
+
+    def test_instance_delete_is_rejected(self):
+        with self.assertRaises(ApplicationRevisionLockedError):
+            self.revision.delete()
+        self.assertTrue(ApplicationRevision.objects.filter(pk=self.revision.pk).exists())
+
+    def test_queryset_update_is_rejected(self):
+        with self.assertRaises(ApplicationRevisionLockedError):
+            ApplicationRevision.objects.filter(pk=self.revision.pk).update(
+                reason="rewritten"
+            )
+        self.revision.refresh_from_db()
+        self.assertEqual(self.revision.reason, "Annual leave")
+
+    def test_queryset_delete_is_rejected(self):
+        with self.assertRaises(ApplicationRevisionLockedError):
+            ApplicationRevision.objects.filter(pk=self.revision.pk).delete()
+        self.assertTrue(ApplicationRevision.objects.filter(pk=self.revision.pk).exists())
 
 
 class SubmissionSignalTests(StubProviderMixin, TransactionTestCase):
@@ -168,7 +298,11 @@ class SubmissionSignalTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
+<<<<<<< HEAD
         make_approver_chain()
+=======
+        register_chain_approvers(self.stub)
+>>>>>>> feature/plans-teams
         app = LeaveApplication.objects.create(
             employee=user,
             leave_type_id=1,
@@ -198,7 +332,11 @@ class ConcurrentSubmissionTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
+<<<<<<< HEAD
         make_approver_chain()
+=======
+        register_chain_approvers(self.stub)
+>>>>>>> feature/plans-teams
 
         app_a = LeaveApplication.objects.create(
             employee=user,

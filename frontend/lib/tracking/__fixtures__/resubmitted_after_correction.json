@@ -36,7 +36,8 @@
       },
       "assigned_at": "2026-10-12T08:32:11Z",
       "decided_at": "2026-10-14T07:15:03Z",
-      "comment": "Verified. Forwarded."
+      "comment": "Verified. Forwarded.",
+      "skip_reason": null
     },
     {
       "order": 2,
@@ -51,7 +52,8 @@
       },
       "assigned_at": "2026-10-14T09:00:00Z",
       "decided_at": "2026-10-15T14:22:19Z",
-      "comment": "Approved."
+      "comment": "Approved.",
+      "skip_reason": null
     },
     {
       "order": 3,
@@ -66,7 +68,8 @@
       },
       "assigned_at": "2026-10-19T09:00:00Z",
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 4,
@@ -76,7 +79,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     }
   ],
   "events": [
@@ -149,6 +153,7 @@
     "can_resubmit": false,
     "returns_to_stage": null
   },
+<<<<<<< HEAD
   "submission_cycle": 2,
   "decisions": [
     {
@@ -183,6 +188,16 @@
     {
       "cycle": 2,
       "resubmitted_at": "2026-10-19T09:00:00Z"
+=======
+  "documents": [
+    {
+      "id": "doc-resubmitted-active",
+      "file_name": "medical-certificate-v2.pdf",
+      "file_size": 51200,
+      "content_type": "application/pdf",
+      "file_url": "https://signed/medical-certificate-v2.pdf",
+      "uploaded_at": "2026-10-18T08:45:00Z"
+>>>>>>> feature/plans-teams
     }
   ]
 }

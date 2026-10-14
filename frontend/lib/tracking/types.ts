@@ -13,11 +13,19 @@ export type TrackingStatus =
   | "correction_required"
   | "cancelled";
 
+/**
+ * `skipped` means the applicant's own position made the stage unnecessary: they
+ * hold the stage, or sit above it, so it was never routed to them (Unit 30). It
+ * is settled rather than outstanding, which is why it is distinct from
+ * `upcoming` -- a step that has not been reached yet. A section with nobody in
+ * it at all is still a configuration error the backend refuses.
+ */
 export type StageState =
   | "approved"
   | "awaiting"
   | "rejected"
   | "returned"
+  | "skipped"
   | "upcoming";
 
 export type EventType =
@@ -44,6 +52,8 @@ export interface TrackingStage {
   assigned_at: string | null;
   decided_at: string | null;
   comment: string | null;
+  /** Why a `skipped` stage was passed over. Null for every other state. */
+  skip_reason: string | null;
 }
 
 export interface TrackingActor {
@@ -77,6 +87,16 @@ export interface ResubmissionInfo {
   returns_to_stage: { order: number; role_label: string } | null;
 }
 
+/** One active supporting document attached to the tracked application. */
+export interface TrackingDocument {
+  id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  file_url: string;
+  uploaded_at: string;
+}
+
 export interface ApplicationSummary {
   id: string;
   reference_number: string;
@@ -97,6 +117,7 @@ export interface CurrentStage {
   assigned_at: string;
 }
 
+<<<<<<< HEAD
 export interface TrackingDecision {
   cycle: number;
   stage_order: number;
@@ -115,6 +136,16 @@ export type DecisionAction =
 export interface TrackingResubmissionEntry {
   cycle: number;
   resubmitted_at: string;
+=======
+export type CancellationAction = "withdraw" | "request";
+
+export interface LatestCancellation {
+  id: string;
+  kind: "withdrawal" | "approved_leave";
+  status: "pending" | "approved" | "rejected";
+  requested_at: string | null;
+  decided_at: string | null;
+>>>>>>> feature/plans-teams
 }
 
 export interface TrackingResponse {
@@ -130,6 +161,7 @@ export interface TrackingResponse {
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
+<<<<<<< HEAD
   cancellation_action: CancellationAction | null;
   cancellation_blocked_reason: CancellationBlockedReason | null;
   has_open_cancellation_request: boolean;
@@ -150,6 +182,16 @@ export interface TrackingCancellationRequest {
   stage_version: number;
   current_stage_role: string | null;
   stages: CancellationStage[];
+=======
+  /** Unit 19 addition: the employee's active supporting documents. */
+  documents: TrackingDocument[];
+  /** Unit 18 additions: cancellation state appended to the same payload. */
+  cancelled_at: string | null;
+  cancellation_action: CancellationAction | null;
+  cancellation_blocked_reason: string | null;
+  has_open_cancellation_request: boolean;
+  latest_cancellation: LatestCancellation | null;
+>>>>>>> feature/plans-teams
 }
 
 export type TrackingResult =

@@ -4,15 +4,23 @@ import { useState } from "react";
 import Link from "next/link";
 import { Check, CheckCircle2, Copy } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import type {
   SubmittedApplication,
   ValidationResult,
 } from "@/lib/leave-validation";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 interface SubmissionConfirmationProps {
   application: SubmittedApplication;
   leaveTypeName?: string;
   validation?: ValidationResult | null;
+  /**
+   * Replaces the link row with a single action. The compose overlay passes this
+   * so dismissing the confirmation does not navigate away from the list.
+   */
+  onDone?: () => void;
 }
 
 function formatDateRange(start: string | null, end: string | null): string {
@@ -33,6 +41,7 @@ function formatTimestamp(iso: string | null): string {
 export function SubmissionConfirmation({
   application,
   leaveTypeName,
+  onDone,
 }: SubmissionConfirmationProps) {
   const [copied, setCopied] = useState(false);
   const reference = application.reference_number ?? "";
@@ -48,9 +57,9 @@ export function SubmissionConfirmation({
   };
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-success shadow-subtle p-8 text-center">
+    <Card className="border-border-success text-center">
       <CheckCircle2 className="h-16 w-16 mx-auto text-brand-secondary mb-4" />
-      <h2 className="text-2xl font-bold text-text-primary mb-2">
+      <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">
         Application submitted
       </h2>
       <p className="text-text-secondary mb-6">
@@ -61,15 +70,17 @@ export function SubmissionConfirmation({
         <span className="text-xs text-text-muted block mb-1">
           Reference Number
         </span>
-        <span className="text-2xl font-mono font-bold text-text-primary tracking-wide">
+        <span className="text-xl font-mono font-semibold tracking-tight text-text-primary">
           {reference}
         </span>
-        <button
+        <Button
           type="button"
           onClick={copyReference}
           disabled={!reference}
-          className="inline-flex items-center gap-1.5 ml-3 align-middle px-2.5 py-1.5 rounded-md border border-input-border bg-input-background text-xs font-medium text-text-primary hover:bg-surface-hover disabled:opacity-50 transition-colors"
           aria-label="Copy reference number"
+          variant="secondary"
+          size="sm"
+          className="ml-3 align-middle"
         >
           {copied ? (
             <>
@@ -82,13 +93,11 @@ export function SubmissionConfirmation({
               Copy
             </>
           )}
-        </button>
+        </Button>
       </div>
 
       <div className="flex items-center justify-center gap-3 mb-8">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
-          Submitted
-        </span>
+        <Badge tone="pending">Submitted</Badge>
         {application.submitted_at && (
           <span className="text-xs text-text-muted">
             {formatTimestamp(application.submitted_at)}
@@ -111,26 +120,32 @@ export function SubmissionConfirmation({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/dashboard/leave/drafts"
-          className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
-        >
-          View my applications
-        </Link>
-        <Link
-          href={`/applications/${application.id}`}
-          className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
-        >
-          Track this application
-        </Link>
-        <Link
-          href="/dashboard"
-          className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
-        >
-          Back to dashboard
-        </Link>
-      </div>
-    </div>
+      {onDone ? (
+        <Button type="button" onClick={onDone} size="lg">
+          Done
+        </Button>
+      ) : (
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/dashboard/leave/drafts"
+            className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
+          >
+            View my applications
+          </Link>
+          <Link
+            href={`/applications/${application.id}`}
+            className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
+          >
+            Track this application
+          </Link>
+          <Link
+            href="/dashboard"
+            className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
+          >
+            Back to dashboard
+          </Link>
+        </div>
+      )}
+    </Card>
   );
 }

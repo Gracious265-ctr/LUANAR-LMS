@@ -36,7 +36,8 @@
       },
       "assigned_at": "2026-10-12T08:32:11Z",
       "decided_at": "2026-10-14T07:15:03Z",
-      "comment": "Forwarded for review."
+      "comment": "Forwarded for review.",
+      "skip_reason": null
     },
     {
       "order": 2,
@@ -51,7 +52,8 @@
       },
       "assigned_at": "2026-10-20T13:12:07Z",
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 3,
@@ -61,7 +63,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 4,
@@ -71,7 +74,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     }
   ],
   "events": [
@@ -132,6 +136,7 @@
     "can_resubmit": false,
     "returns_to_stage": null
   },
+<<<<<<< HEAD
   "submission_cycle": 2,
   "decisions": [
     {
@@ -159,4 +164,7 @@
       "resubmitted_at": "2026-10-20T13:12:07Z"
     }
   ]
+=======
+  "documents": []
+>>>>>>> feature/plans-teams
 }

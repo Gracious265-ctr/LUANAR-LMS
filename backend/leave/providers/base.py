@@ -21,14 +21,20 @@ DurationUnit: TypeAlias = Literal["working_days", "calendar_days"]
 
 @dataclass(frozen=True)
 class EmployeeInfo:
-    """The employee attributes validation needs from an authenticated user."""
+    """The employee attributes validation needs from an authenticated user.
+
+    ``appointment_date`` is optional because the column is nullable: a profile
+    that exists but has no appointment date still maps to an employee, so the
+    run reports ``ELIGIBILITY_DATA_MISSING`` on the rule that needs it rather
+    than ``EMPLOYEE_PROFILE_MISSING``, which would deny the profile exists.
+    """
 
     id: int
     user_id: int
     grade: str
-    appointment_date: date
+    appointment_date: date | None
     category: str | None
-    department_id: int | None
+    team_id: int | None
     gender: str | None
 
 

@@ -49,6 +49,11 @@ class LeaveValidateView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+<<<<<<< HEAD
+=======
+        # Unit 17: validating an existing submitted application excludes that
+        # application from its own overlap check.
+>>>>>>> feature/plans-teams
         application_id = data.get("application_id")
         if application_id is not None:
             application = (
@@ -68,6 +73,7 @@ class LeaveValidateView(APIView):
             start_date_raw=data["start_date"],
             end_date_raw=data["end_date"],
             application=application,
+            exclude_application_id=application_id,
         )
         return Response(validation_payload(result))
 

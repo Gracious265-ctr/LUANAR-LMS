@@ -28,7 +28,8 @@
       },
       "assigned_at": "2026-10-12T08:32:11Z",
       "decided_at": "2026-10-14T07:15:03Z",
-      "comment": "Forwarded for review."
+      "comment": "Forwarded for review.",
+      "skip_reason": null
     },
     {
       "order": 2,
@@ -43,7 +44,8 @@
       },
       "assigned_at": "2026-10-14T09:00:00Z",
       "decided_at": "2026-10-16T11:40:55Z",
-      "comment": "Peak teaching period; please resubmit for the following term."
+      "comment": "Peak teaching period; please resubmit for the following term.",
+      "skip_reason": null
     },
     {
       "order": 3,
@@ -53,7 +55,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     },
     {
       "order": 4,
@@ -63,7 +66,8 @@
       "approver": null,
       "assigned_at": null,
       "decided_at": null,
-      "comment": null
+      "comment": null,
+      "skip_reason": null
     }
   ],
   "events": [

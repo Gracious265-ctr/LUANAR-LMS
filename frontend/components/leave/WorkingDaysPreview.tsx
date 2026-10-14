@@ -17,7 +17,7 @@ export function WorkingDaysPreview({ days, loading }: WorkingDaysPreviewProps) {
       {loading ? (
         <div className="h-8 w-16 animate-pulse rounded bg-surface-hover" />
       ) : (
-        <div className="text-2xl font-bold text-text-primary">
+        <div className="text-2xl font-semibold tracking-tight text-text-primary">
           {days !== null ? days : "—"}
         </div>
       )}

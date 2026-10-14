@@ -1,12 +1,17 @@
-import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { EntitlementForm } from "@/components/hr/entitlement-form";
 import { getCurrentUser } from "@/lib/auth";
-import { getEntitlement } from "@/lib/entitlements";
 
-export default async function EditEntitlementPage({
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the tables' row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a
+ * non-HR user following one of these still lands on `/dashboard` instead of
+ * bouncing through a list page that would refuse them anyway.
+ */
+export default async function ShimPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -21,39 +26,5 @@ export default async function EditEntitlementPage({
     redirect("/dashboard");
   }
 
-  let entitlement;
-  try {
-    entitlement = await getEntitlement(id);
-  } catch {
-    notFound();
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/entitlements"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to entitlements
-        </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
-          Edit entitlement
-        </h2>
-        <p className="text-text-secondary">
-          Grade range {entitlement.grade_start} – {entitlement.grade_end},
-          effective {entitlement.effective_from}.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <EntitlementForm
-          entitlement={entitlement}
-          endpoint={`/api/hr/entitlements/${entitlement.id}`}
-          method="PATCH"
-        />
-      </div>
-    </div>
-  );
+  redirect(`/dashboard/hr-admin/entitlements?entitlement=${id}`);
 }

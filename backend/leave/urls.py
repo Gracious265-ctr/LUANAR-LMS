@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from .views import (
+    EmployeeLeaveTypeViewSet,
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
@@ -11,6 +12,8 @@ from .views import (
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
+from .views.me import LeaveSummaryView
+from .views.resubmit import LeaveApplicationResubmitView
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 from .views.my_leave import MyLeaveOverviewView, MyLeaveTypesView
 from .views.history import ApplicationHistoryView, MyLeaveHistoryView
@@ -50,9 +53,15 @@ supporting_doc_list = SupportingDocumentViewSet.as_view(
 supporting_doc_detail = SupportingDocumentViewSet.as_view(
     {"get": "retrieve", "delete": "destroy"}
 )
+<<<<<<< HEAD
 supporting_doc_history = SupportingDocumentViewSet.as_view({"get": "history"})
 supporting_doc_replace = SupportingDocumentViewSet.as_view({"post": "replace_document"})
 supporting_doc_content = SupportingDocumentViewSet.as_view({"get": "content"})
+=======
+supporting_doc_replace = SupportingDocumentViewSet.as_view({"post": "replace"})
+
+employee_leave_types = EmployeeLeaveTypeViewSet.as_view({"get": "list"})
+>>>>>>> feature/plans-teams
 
 urlpatterns = [
     path(
@@ -76,18 +85,35 @@ urlpatterns = [
         name="leave-validate",
     ),
     path(
+<<<<<<< HEAD
         "leave-documents/config/",
         LeaveDocumentConfigView.as_view(),
         name="leave-document-config",
+=======
+        "leave/me/summary/",
+        LeaveSummaryView.as_view(),
+        name="leave-me-summary",
+>>>>>>> feature/plans-teams
     ),
     path(
         "leave-applications/<uuid:pk>/submit/",
         LeaveApplicationSubmitView.as_view(),
         name="leave-application-submit",
     ),
+    path(
+        "leave-applications/<uuid:pk>/resubmit/",
+        LeaveApplicationResubmitView.as_view(),
+        name="leave-application-resubmit",
+    ),
     path("", include("leave.tracking.urls")),
+    path("", include("leave.cancellations.urls")),
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
+    path(
+        "employee/leave-types/",
+        employee_leave_types,
+        name="employee-leave-type-options",
+    ),
     path(
         "leave-applications/<uuid:application_pk>/documents/",
         supporting_doc_list,
@@ -108,6 +134,7 @@ urlpatterns = [
         supporting_doc_replace,
         name="supportingdocument-replace",
     ),
+<<<<<<< HEAD
     path(
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/content/",
         supporting_doc_content,
@@ -174,4 +201,6 @@ urlpatterns = [
         CancellationDecisionView.as_view(),
         name="cancellation-decision",
     ),
+=======
+>>>>>>> feature/plans-teams
 ]

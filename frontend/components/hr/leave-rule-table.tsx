@@ -1,91 +1,111 @@
 import Link from "next/link";
 
 import type { LeaveRule } from "@/lib/leave-rules";
-import { leaveRuleStatus } from "@/lib/leave-rules";
+import { leaveRuleStatus } from "@/lib/leave-rules-pure";
 import { currentDateIso } from "@/lib/utils";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
+import { EmptyState } from "@/components/ui/states";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 export function LeaveRuleTable({
   rules,
   today = currentDateIso(),
+  onEdit,
 }: {
   rules: LeaveRule[];
   today?: string;
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (rules.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No leave rules found
-        </p>
-        <p className="mt-1 text-sm">
-          Add a rule to define how long and under what conditions a leave type
-          can be taken.
-        </p>
-      </div>
+      <EmptyState
+        title="No leave rules found"
+        description="Add a rule to define how long and under what conditions a leave type can be taken."
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Leave type</th>
-            <th className="py-3 pr-4">Max duration</th>
-            <th className="py-3 pr-4">Min notice</th>
-            <th className="py-3 pr-4">Document</th>
-            <th className="py-3 pr-4">Annual</th>
-            <th className="py-3 pr-4">Effective from</th>
-            <th className="py-3">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rules.map((rule) => {
-            const current = leaveRuleStatus(rule, today) === "current";
-            return (
-              <tr
-                key={rule.id}
-                className="border-b border-border-default transition-colors hover:bg-surface-hover"
-              >
-                <td className="py-3 pr-4">
-                  <Link
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Leave type</TableHead>
+          <TableHead>Max duration</TableHead>
+          <TableHead>Min notice</TableHead>
+          <TableHead>Document</TableHead>
+          <TableHead>Annual</TableHead>
+          <TableHead>Effective from</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rules.map((rule) => {
+          const current = leaveRuleStatus(rule, today) === "current";
+          return (
+            <TableRow
+              key={rule.id}
+            >
+              <TableCell>
+                <Link
+                  href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  {rule.leave_type_name}
+                </Link>
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.max_duration_days} days
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.min_notice_days} days
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.requires_supporting_document ? "Required" : "Not required"}
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.consumes_annual_entitlement ? "Yes" : "No"}
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.effective_from}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  size="sm"
+                  tone={current ? "info" : "muted"}
+                  className="font-medium"
+                >
+                  {current ? "Current" : "Scheduled"}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(rule.id)}
+                    label={`Edit ${rule.leave_type_name} rule`}
+                  />
+                ) : (
+                  <EditActionLink
                     href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    {rule.leave_type_name}
-                  </Link>
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.max_duration_days} days
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.min_notice_days} days
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.requires_supporting_document ? "Required" : "Not required"}
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.consumes_annual_entitlement ? "Yes" : "No"}
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.effective_from}
-                </td>
-                <td className="py-3">
-                  <span
-                    className={
-                      current
-                        ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                        : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-                    }
-                  >
-                    {current ? "Current" : "Scheduled"}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  />
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

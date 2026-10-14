@@ -34,4 +34,36 @@ describe("LeaveTypeForm", () => {
       "/dashboard/hr-admin/leave-types"
     );
   });
+
+  it("does not offer an editable form for annual leave", () => {
+    const leaveType: LeaveType = {
+      id: 1,
+      name: "Annual leave",
+      code: "annual",
+    };
+    render(<LeaveTypeForm leaveType={leaveType} />);
+
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Code")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save changes" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("points HR at entitlements when annual leave is opened", () => {
+    const leaveType: LeaveType = {
+      id: 1,
+      name: "Annual leave",
+      code: "annual-leave",
+    };
+    render(<LeaveTypeForm leaveType={leaveType} />);
+
+    expect(
+      screen.getByText(/is managed in Entitlements/i)
+    ).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Go to Entitlements" });
+    expect(link.getAttribute("href")).toBe(
+      "/dashboard/hr-admin/entitlements"
+    );
+  });
 });

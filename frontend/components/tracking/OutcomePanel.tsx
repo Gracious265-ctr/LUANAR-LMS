@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { formatDateTime } from "@/lib/tracking/format";
 import type { TrackingResponse } from "@/lib/tracking/types";
+import { STATUS_BORDER, STATUS_STYLES, STATUS_TEXT } from "@/lib/status-styles";
 
 /**
  * Attention panel: rejection or correction details with the (optional)
@@ -18,8 +19,8 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
 
   const isRejected = data.status === "rejected";
   const accent = isRejected
-    ? "border-status-rejected bg-status-rejected-subtle text-status-rejected"
-    : "border-status-correction bg-status-correction-subtle text-status-correction";
+    ? STATUS_STYLES.rejected
+    : STATUS_STYLES.correction_required;
 
   const resubmission = data.resubmission;
 
@@ -28,10 +29,10 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
       aria-label={isRejected ? "Rejection details" : "Correction details"}
       className={cn(
         "rounded-xl border bg-surface-card p-5 shadow-subtle",
-        isRejected ? "border-status-rejected/30" : "border-status-correction/30"
+        isRejected ? STATUS_BORDER.rejected : STATUS_BORDER.correction_required
       )}
     >
-      <div className={cn("flex items-center gap-2", isRejected ? "text-status-rejected" : "text-status-correction")}>
+      <div className={cn("flex items-center gap-2", isRejected ? STATUS_TEXT.rejected : STATUS_TEXT.correction_required)}>
         {isRejected ? (
           <AlertCircle className="h-5 w-5" aria-hidden="true" />
         ) : (
@@ -78,6 +79,14 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
         </div>
       </dl>
 
+      {/* The rejection ends the workflow here — stated once, in the panel
+          that owns the outcome, rather than repeated under every stage. */}
+      {isRejected && (
+        <p className="mt-4 text-sm font-medium text-text-secondary">
+          Workflow stopped.
+        </p>
+      )}
+
       {resubmission.returns_to_stage && (
         <p className="mt-4 text-sm break-words text-text-secondary">
           When you resubmit, this application returns to{" "}
@@ -87,8 +96,13 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
 
       {resubmission.can_resubmit && (
         <Link
+<<<<<<< HEAD
           href={`/applications/${data.application.id}/edit`}
           className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 sm:w-auto"
+=======
+          href={`/dashboard/leave/${data.application.id}/edit`}
+          className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-ring sm:w-auto"
+>>>>>>> feature/plans-teams
         >
           Edit &amp; resubmit
         </Link>

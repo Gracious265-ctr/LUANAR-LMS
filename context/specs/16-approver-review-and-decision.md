@@ -168,8 +168,24 @@ Returns `can_decide` plus a `reason` code. `can_decide` is true only when **all*
 
 Otherwise `reason` is one of `application_closed`, `not_current_stage`, `already_decided`. Later units (delegation, reassignment) extend this function only.
 
+**`is_self_application(user, application) -> bool`** — the single authoritative
+applicant-identity check (accepts a `User` or a bare id). An approver is never the
+approver of record for their own leave, so this one predicate backs the
+`self_application` reason above, the HR reassignment refusal (Unit 9), the
+cancellation decision refusal (Unit 18), and the stage-bypass routing in
+`workflows/services.py` (invariant 12.3 sole exception). Routing is forward-only
+and **starts after the applicant's last stage**: every stage at or before that
+position is bypassed and audited as `STAGE_SKIPPED` (per-stage reason
+`applicant_is_approver` or `before_applicant_stage`), including lower-level stages
+whose approver is not the applicant, because routing never travels back down the
+queue. In `supervisor → HOD → Registrar`, a Supervisor's application starts at the
+HOD and the HOD's starts at the Registrar. An application with **no stage after the
+applicant's last one** is refused at submission (`workflow_unavailable`, 422)
+because a role resolves to a single approver and nobody would be left to sign it
+off; the advance-time 409 is defence in depth for rows that predate the rule.
+
 **`get_view_access(user, application) -> ViewAccess | None`**
-The user may view the application only if they are the assigned approver of at least one of its stages whose status is **not** `waiting` (the application has reached them). Otherwise return `None`, and the API responds **404** so existence is not leaked. The returned object carries the user's `stage` (and its `role`) for that application. The viewer role used for the matrices below is the **stage role**, not the user's global role.
+The user may view the application only if they are the assigned approver of at least one of its stages whose status is neither `waiting` (not yet reached) nor `skipped` (bypassed, so removed from the path) — the application must have actually reached them. Otherwise return `None`, and the API responds **404** so existence is not leaked. The returned object carries the user's `stage` (and its `role`) for that application. The viewer role used for the matrices below is the **stage role**, not the user's global role.
 
 **Employee-information matrix** (all fields come from the backend employee record):
 
@@ -368,6 +384,7 @@ Management command `python manage.py seed_approvals_dev` (idempotent):
 - [ ] An approver whose stage is already decided sees the application read-only under "Decided by me" and cannot decide again (403).
 - [ ] A user who is not an approver has no Approvals nav item, and `/api/approvals/` returns empty lists; direct decision calls fail.
 - [ ] Changing an id in the URL or request body never grants access to another approver's application.
+- [ ] An applicant who also holds an approver role never receives their own application: routing starts after their last stage, every stage at or before it is bypassed and shown as skipped (a bypassed stage grants no review access), and an application with no stage after their last one is refused at submission (422).
 - [ ] Unauthenticated requests return 401.
 
 ### Review information

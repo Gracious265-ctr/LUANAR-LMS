@@ -3,20 +3,77 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
-import { createLeaveRule, updateLeaveRule } from "@/lib/leave-rules-client";
+import {
+  createLeaveRule,
+  createLeaveType,
+  updateLeaveRule,
+} from "@/lib/leave-rules-client";
+import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
 
 export function LeaveRuleForm({
   leaveRule,
   leaveTypes,
+  onSuccess,
+  onCancel,
 }: {
   leaveRule?: LeaveRule;
   leaveTypes: LeaveType[];
+  /**
+   * When provided the form reports the saved record instead of navigating, so a
+   * dialog can close and refresh its list without the page moving underneath it.
+   * Defaults to the push-and-refresh the standalone pages rely on.
+   */
+  onSuccess?: (leaveRule: LeaveRule) => void;
+  /** Replaces the Cancel link when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
+  const [effectiveFrom, setEffectiveFrom] = useState(leaveRule?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The server-loaded options are the starting point, not the final word: HR can
+  // create a leave type from this form, and the one they just made must appear in
+  // the picker without leaving the page.
+  const [leaveTypeOptions, setLeaveTypeOptions] =
+    useState<LeaveType[]>(leaveTypes);
+  const [selectedLeaveType, setSelectedLeaveType] = useState(
+    leaveRule?.leave_type === undefined || leaveRule?.leave_type === null
+      ? ""
+      : String(leaveRule.leave_type)
+  );
+  const [showNewLeaveType, setShowNewLeaveType] = useState(false);
+  const [newLeaveTypeName, setNewLeaveTypeName] = useState("");
+  const [creatingLeaveType, setCreatingLeaveType] = useState(false);
+  const [leaveTypeCreateError, setLeaveTypeCreateError] = useState("");
+
+  async function handleCreateLeaveType() {
+    const name = newLeaveTypeName.trim();
+    if (name === "") return;
+    setLeaveTypeCreateError("");
+    setCreatingLeaveType(true);
+    try {
+      const created = await createLeaveType({ name });
+      setLeaveTypeOptions((current) =>
+        [...current, created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setSelectedLeaveType(String(created.id));
+      setNewLeaveTypeName("");
+      setShowNewLeaveType(false);
+    } catch (err) {
+      setLeaveTypeCreateError(
+        err instanceof Error ? err.message : "Could not create the leave type."
+      );
+    } finally {
+      setCreatingLeaveType(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,6 +81,14 @@ export function LeaveRuleForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!effectiveFrom) {
+      setError("Choose an effective-from date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const input = {
@@ -37,13 +102,15 @@ export function LeaveRuleForm({
           formData.get("consumes_annual_entitlement") === "on",
         effective_from: String(formData.get("effective_from") || ""),
       };
-      if (leaveRule) {
-        await updateLeaveRule(leaveRule.id, input);
+      const saved = leaveRule
+        ? await updateLeaveRule(leaveRule.id, input)
+        : await createLeaveRule(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createLeaveRule(input);
+        router.push("/dashboard/hr-admin/leave-rules");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/leave-rules");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -53,111 +120,137 @@ export function LeaveRuleForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="leave_type"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Leave type
-        </label>
+      <Field
+        label="Leave type"
+        htmlFor="leave_type"
+        hint={
+          leaveTypeOptions.length === 0
+            ? "Create a leave type before adding a rule."
+            : undefined
+        }
+      >
+        {/* Deliberately a native <select> rather than the shared Radix picker:
+            creating a leave type here adds an option that has never been
+            rendered, and Radix only learns an item by mounting it, so it resets
+            the controlled value to "" and the new type can never show as
+            selected while the list is closed. */}
         <select
           id="leave_type"
           name="leave_type"
           required
-          defaultValue={leaveRule?.leave_type ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          value={selectedLeaveType}
+          onChange={(event) => setSelectedLeaveType(event.target.value)}
+          className="w-full rounded-control border border-input-border bg-input-background px-control-x-md py-control-y text-sm text-text-primary focus-ring"
         >
-          {leaveTypes.length === 0 && <option value="">No leave types available</option>}
-          {leaveTypes.map((leaveType) => (
+          <option value="">Choose a leave type…</option>
+          {leaveTypeOptions.map((leaveType) => (
             <option key={leaveType.id} value={leaveType.id}>
               {leaveType.name}
             </option>
           ))}
         </select>
-        {leaveTypes.length === 0 && (
-          <p className="mt-1 text-xs text-text-muted">
-            Create a leave type before adding a rule.
-          </p>
-        )}
-      </div>
 
-      <div>
-        <label
-          htmlFor="max_duration_days"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Maximum duration (days)
-        </label>
-        <input
+        {!showNewLeaveType ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-2"
+            onClick={() => setShowNewLeaveType(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Create leave type
+          </Button>
+        ) : (
+          <div className="mt-2 rounded-md border border-border-default bg-surface-muted p-3">
+            <Field label="New leave type name" htmlFor="new_leave_type_name">
+              <Input
+                id="new_leave_type_name"
+                value={newLeaveTypeName}
+                onChange={(event) => setNewLeaveTypeName(event.target.value)}
+                placeholder="e.g. Study leave"
+              />
+            </Field>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                loading={creatingLeaveType}
+                disabled={newLeaveTypeName.trim() === ""}
+                onClick={() => void handleCreateLeaveType()}
+              >
+                {creatingLeaveType ? "Saving..." : "Save leave type"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowNewLeaveType(false);
+                  setLeaveTypeCreateError("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+            {leaveTypeCreateError ? (
+              <FormError className="mt-1">{leaveTypeCreateError}</FormError>
+            ) : null}
+          </div>
+        )}
+      </Field>
+
+      <Field label="Maximum duration (days)" htmlFor="max_duration_days">
+        <Input
           id="max_duration_days"
           name="max_duration_days"
           type="number"
           min={1}
           required
           defaultValue={leaveRule?.max_duration_days}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="min_notice_days"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Minimum notice (days)
-        </label>
-        <input
+      <Field
+        label="Minimum notice (days)"
+        htmlFor="min_notice_days"
+        hint="0 means no advance notice is required."
+      >
+        <Input
           id="min_notice_days"
           name="min_notice_days"
           type="number"
           min={0}
           defaultValue={leaveRule?.min_notice_days ?? 0}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          0 means no advance notice is required.
-        </p>
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="effective_from"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Effective from
-        </label>
-        <input
+      <Field
+        label="Effective from"
+        htmlFor="effective_from"
+        hint="Future-dated rules only apply from this date; past rules stay intact."
+      >
+        <DatePicker
           id="effective_from"
-          name="effective_from"
-          type="date"
-          required
-          defaultValue={leaveRule?.effective_from}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          value={effectiveFrom}
+          onChange={setEffectiveFrom}
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Future-dated rules only apply from this date; past rules stay intact.
-        </p>
-      </div>
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="effective_from" value={effectiveFrom} />
+      </Field>
 
-      <div className="md:col-span-2">
-        <label
-          htmlFor="eligibility"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Eligibility
-        </label>
-        <textarea
+      <Field
+        label="Eligibility"
+        htmlFor="eligibility"
+        hint="A human-readable description of who qualifies for this leave type."
+        className="md:col-span-2"
+      >
+        <Textarea
           id="eligibility"
           name="eligibility"
           rows={3}
           defaultValue={leaveRule?.eligibility}
           placeholder="e.g. Female employees at any grade"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          A human-readable description of who qualifies for this leave type.
-        </p>
-      </div>
+      </Field>
 
       <label className="flex items-center gap-2 md:col-span-2">
         <input
@@ -184,25 +277,25 @@ export function LeaveRuleForm({
       </label>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : leaveRule ? "Save changes" : "Create rule"}
-        </button>
-        <Link
-          href="/dashboard/hr-admin/leave-rules"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/leave-rules"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

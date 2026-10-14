@@ -1,5 +1,12 @@
 # Unit 2 — HR Employee Directory
 
+> **Superseded in part by Unit 27** (`context/specs/27-hr-managed-credentials.md`,
+> 2026-10-01): the "unusable password" assumption below no longer holds. A
+> directory-created employee now gets a real, HR-set password, and `POST
+> /api/v1/employees/` requires one. Department is also now the `users.Department`
+> model, not free text (Unit 20). Everything else in this spec still describes
+> the directory.
+
 ## Goal
 
 Create the HR employee-management experience: an HR-only API and frontend pages for listing (with search and sorting), viewing, creating, editing, and activating/deactivating employee records. For development/testing, HR is the authoritative source of employee records (build-plan §4, Unit 2).
@@ -75,7 +82,8 @@ Response object (snake_case, DRF conventions):
 ```
 
 - Create requires `email`, `first_name`, `last_name`; other profile fields optional.
-- Update accepts `first_name`, `last_name`, `email` (renames the linked user), and profile fields; `is_active` toggles activation.
+- `role` is writable on create and update. Allowed values: `employee`, `supervisor`, `hod`, `dean`, `registrar`, `dvc`, `hr`. It defaults to `employee` when omitted or blank. HR assigns the role at create/update time, and role changes are audited with before/after values.
+- Update accepts `first_name`, `last_name`, `email` (renames the linked user), `role`, and profile fields; `is_active` toggles activation.
 - Errors follow Unit 1 conventions: `{"detail": "..."}` for single errors, `{"field": ["..."]}` for validation.
 
 ## Implementation
@@ -100,10 +108,10 @@ Work in the following order; verify each backend step before frontend work begin
 ### 4. Serializers
 
 - Extend `users/serializers.py` with `EmployeeSerializer`:
-  - Read-only: `id`, `user_id`, `email`, `full_name`, `role`, `is_active` (derived from the linked user).
-  - Writable: `email`, `first_name`, `last_name`, `designation`, `department`, `category`, `grade`, `appointment_date`, `is_active`.
-  - `create`: find-or-create the linked `User` by email (set unusable password when created), then create the profile.
-  - `update`: apply name/email/active changes to the linked user.
+  - Read-only: `id`, `user_id`, `email`, `full_name`, `is_active` (derived from the linked user).
+  - Writable: `email`, `first_name`, `last_name`, `role`, `designation`, `department`, `category`, `grade`, `appointment_date`, `is_active`.
+  - `create`: find-or-create the linked `User` by email (set unusable password when created), assign the submitted role or default to `employee`, then create the profile.
+  - `update`: apply name/email/role/active changes to the linked user.
 
 ### 5. Views
 

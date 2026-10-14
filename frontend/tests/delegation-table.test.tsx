@@ -83,6 +83,26 @@ describe("DelegationTable", () => {
     );
   });
 
+  it("honours an alternate base href and empty hint", () => {
+    render(
+      <DelegationTable
+        delegations={[delegate]}
+        baseHref="/dashboard/cover"
+      />
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Jane Dean" })
+        .getAttribute("href")
+    ).toBe("/dashboard/cover/1");
+
+    render(
+      <DelegationTable delegations={[]} emptyHint="Nothing to hand over yet." />
+    );
+    expect(screen.getByText("Nothing to hand over yet.")).toBeInTheDocument();
+  });
+
   it("renders an empty state when there are no delegations", () => {
     render(<DelegationTable delegations={[]} />);
 

@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { createLeaveApplication, type SupportingDocument } from "@/lib/leave-api";
@@ -10,28 +18,64 @@ import { LeaveTypeSelect } from "./LeaveTypeSelect";
 import { DateRangeFields } from "./DateRangeFields";
 import { WorkingDaysPreview } from "./WorkingDaysPreview";
 import { SupportingDocumentsUploader } from "./SupportingDocumentsUploader";
+import { Textarea } from "@/components/ui/textarea";
+import { Field } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
   applicationId?: string;
+  /**
+   * Called instead of navigating when the user continues to review. The compose
+   * overlay advances its own stage; the standalone pages fall back to a
+   * `router.push` when this is absent.
+   */
+  onContinueToReview?: (draftId: string) => void;
+  /** Fired once a draft exists, so the host can make the overlay deep-linkable. */
+  onDraftCreated?: (draftId: string) => void;
+  /** Hide the built-in action row when the host supplies its own footer. */
+  hideActions?: boolean;
 }
 
-export function LeaveApplicationForm({
-  mode,
-  applicationId,
-}: LeaveApplicationFormProps) {
+export interface LeaveApplicationFormHandle {
+  /** Persist any debounced autosave immediately. */
+  flush: () => void;
+  /** The draft id, once one has been created. */
+  getDraftId: () => string | null;
+}
+
+const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
+
+export const LeaveApplicationForm = forwardRef<
+  LeaveApplicationFormHandle,
+  LeaveApplicationFormProps
+>(function LeaveApplicationForm(
+  { mode, applicationId, onContinueToReview, onDraftCreated, hideActions },
+  ref
+) {
   const router = useRouter();
   const [leaveTypeId, setLeaveTypeId] = useState<number | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
+<<<<<<< HEAD
   const [documents, setDocuments] = useState<SupportingDocument[]>([]);
+=======
+  const [status, setStatus] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<SupportingDocument[]>([]);
+const [loadError, setLoadError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+>>>>>>> feature/plans-teams
   const [initialLoaded, setInitialLoaded] = useState(
     () => !(mode === "edit" && applicationId)
   );
   const [currentId, setCurrentId] = useState<string | null>(
     mode === "edit" ? (applicationId ?? null) : null
   );
+  const [calculatedDays, setCalculatedDays] = useState<number | null>(null);
 
   const formData = useMemo(
     () => ({
@@ -43,7 +87,21 @@ export function LeaveApplicationForm({
     [leaveTypeId, startDate, endDate, reason]
   );
 
-  const { saveStatus } = useAutosaveDraft(currentId, formData);
+  const { saveStatus, flush } = useAutosaveDraft(
+    currentId,
+    formData,
+    800,
+    (saved) => setCalculatedDays(saved.calculated_days ?? null)
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      flush,
+      getDraftId: () => currentId,
+    }),
+    [flush, currentId]
+  );
 
   useEffect(() => {
     if (!(mode === "edit" && applicationId)) return;
@@ -54,14 +112,24 @@ export function LeaveApplicationForm({
         });
         if (res.ok) {
           const data = await res.json();
+          if (READ_ONLY_STATUSES.includes(data.status)) {
+            setSubmitted(true);
+            return;
+          }
+          setStatus(data.status);
           setLeaveTypeId(data.leave_type_id);
           setStartDate(data.start_date || "");
           setEndDate(data.end_date || "");
           setReason(data.reason || "");
+          setCalculatedDays(data.calculated_days ?? null);
           setDocuments(data.documents || []);
+        } else {
+          setLoadError("Could not load this draft. It may have been removed.");
         }
       } catch {
-        // Error handled silently
+        setLoadError(
+          "Could not load this draft. Check your connection and try again."
+        );
       } finally {
         setInitialLoaded(true);
       }
@@ -91,16 +159,25 @@ export function LeaveApplicationForm({
     ["documents", "—"].includes(issue.field)
   );
 
-  const ensureDraftCreated = useCallback(async () => {
-    if (currentId) return currentId;
-    try {
-      const app = await createLeaveApplication({});
-      setCurrentId(app.id);
-      return app.id;
-    } catch {
-      return null;
-    }
-  }, [currentId]);
+  const ensureDraftCreated = useCallback(
+    async (patch: Record<string, unknown> = {}) => {
+      if (currentId) return currentId;
+      try {
+        const app = await createLeaveApplication(patch);
+        setCurrentId(app.id);
+        setCalculatedDays(app.calculated_days ?? null);
+        setCreateError(null);
+        onDraftCreated?.(app.id);
+        return app.id;
+      } catch {
+        setCreateError(
+          "Could not start your application. Check your connection and try again."
+        );
+        return null;
+      }
+    },
+    [currentId, onDraftCreated]
+  );
 
   const handleFieldChange = useCallback(
     async (field: string, value: unknown) => {
@@ -110,7 +187,7 @@ export function LeaveApplicationForm({
       if (field === "reason") setReason(value as string);
 
       if (!currentId) {
-        await ensureDraftCreated();
+        await ensureDraftCreated({ [field]: value ?? "" });
       }
     },
     [currentId, ensureDraftCreated]
@@ -126,9 +203,41 @@ export function LeaveApplicationForm({
     );
   }
 
+  if (submitted) {
+    return (
+      <Card className="text-center">
+        <div className="text-lg font-semibold text-text-primary mb-2">
+          Application No Longer Editable
+        </div>
+        <p className="text-sm text-text-secondary mb-6">
+          This leave application has left the editable stage and is now a
+          read-only record. View its current details in your applications list.
+        </p>
+        <Link
+          href="/dashboard/leave/drafts"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
+        >
+          Back to Applications
+        </Link>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      {loadError && (
+        <Alert tone="rejected" className="border border-border-error p-4">
+          {loadError}
+        </Alert>
+      )}
+
+      {createError && (
+        <Alert tone="rejected" className="border border-border-error p-4">
+          {createError}
+        </Alert>
+      )}
+
+      <Card>
         <h3 className="text-lg font-semibold text-text-primary mb-4">
           Leave Details
         </h3>
@@ -150,44 +259,49 @@ export function LeaveApplicationForm({
           {endError && <FieldError message={endError} id="end-date-error" />}
           <WorkingDaysPreview
             days={
-              startDate && endDate ? (validation.result?.working_days ?? null) : null
+              startDate && endDate
+                ? (validation.result?.working_days ?? calculatedDays ?? null)
+                : null
             }
             loading={Boolean(startDate && endDate) && validation.isLoading}
           />
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">
-              Reason
-            </label>
-            <textarea
+          <Field label="Reason" htmlFor="reason">
+            <Textarea
+              id="reason"
+              className="resize-none"
               value={reason}
               onChange={(e) => handleFieldChange("reason", e.target.value)}
               rows={3}
               aria-describedby={reasonError ? "reason-error" : undefined}
               placeholder="Provide a reason for your leave application..."
-              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-1 focus:ring-input-ring-focus resize-none"
             />
             {reasonError && <FieldError message={reasonError} id="reason-error" />}
-          </div>
+          </Field>
           {topIssues.length > 0 && (
-            <div role="alert" className="rounded-lg border border-border-error bg-status-rejected-subtle p-3">
+            <Alert
+              tone="rejected"
+              className="flex-col gap-0 border border-border-error p-3"
+            >
               {topIssues.map((issue) => (
                 <p key={issue.code} className="text-sm text-status-rejected">
                   {issue.message}
                 </p>
               ))}
-            </div>
+            </Alert>
           )}
         </div>
-      </div>
+      </Card>
 
-      <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+      <Card>
         <SupportingDocumentsUploader
           applicationId={currentId}
           documents={documents}
+          editable={mode === "create" || status === "draft" || status === "correction_required"}
+          canReplace={status === "correction_required"}
           onDocumentsChange={setDocuments}
           onEnsureDraft={ensureDraftCreated}
         />
-      </div>
+      </Card>
 
       {saveStatus !== "idle" && (
         <div className="text-sm text-text-muted">
@@ -199,22 +313,27 @@ export function LeaveApplicationForm({
         </div>
       )}
 
-      <div className="flex justify-end">
-        <button
-          onClick={() =>
-            currentId
-              ? router.push(`/dashboard/leave/${currentId}/review`)
-              : undefined
-          }
-          disabled={!currentId}
-          className="px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          Review Application
-        </button>
-      </div>
+      {!hideActions && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              if (!currentId) return;
+              if (onContinueToReview) {
+                flush();
+                onContinueToReview(currentId);
+              } else {
+                router.push(`/dashboard/leave/${currentId}/review`);
+              }
+            }}
+            disabled={!currentId}
+          >
+            Review Application
+          </Button>
+        </div>
+      )}
     </div>
   );
-}
+});
 
 function FieldError({ message, id }: { message: string; id: string }) {
   return (

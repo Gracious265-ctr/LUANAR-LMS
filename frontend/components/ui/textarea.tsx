@@ -1,9 +1,15 @@
 import { cn } from "@/lib/utils";
 
+<<<<<<< HEAD
+=======
+import { fieldStyles } from "./input";
+
+>>>>>>> feature/plans-teams
 export function Textarea({
   className,
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+<<<<<<< HEAD
   return (
     <textarea
       className={cn(
@@ -16,3 +22,7 @@ export function Textarea({
     />
   );
 }
+=======
+  return <textarea className={cn(fieldStyles, className)} {...props} />;
+}
+>>>>>>> feature/plans-teams

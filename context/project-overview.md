@@ -43,6 +43,7 @@ The **LUANAR Leave Management System** is a web-based application that digitizes
    * Allow HR to configure grade-based annual entitlements.
    * Allow HR to configure leave types and their rules.
    * Allow HR to configure approval workflows.
+   * Allow HR to define the approver positions those workflows name, and to staff them per team or institution-wide, without a code change.
    * Prevent HR from manually editing an individual employee's calculated leave balance.
 
 7. **Handle operational exceptions**
@@ -136,6 +137,16 @@ Example academic workflow:
 `Employee → HOD → Dean → Registrar → DVC`
 
 Every configured stage is mandatory and must be completed sequentially.
+
+These are examples of what HR configures, not a fixed chain. Approver
+positions are HR-managed records (`ApproverRole`) rather than names the
+software knows: HR creates the roles a stage may name, decides how much leave
+history each role may see, and staffs them either through a **team** (one role
+per person per team) or, for a role marked institution-wide, by naming a single
+holder. An employee's team decides which chain their applications follow; a
+team with no workflow of its own follows the institution-wide one. A stage that
+cannot be resolved for a given applicant stops the submission rather than
+falling back to someone else.
 
 ### 6. Approver reviews the application
 
@@ -314,12 +325,16 @@ These values are configurable by HR.
 
 ### Workflow Administration
 
-* HR workflow configuration.
+Workflows are not configured on their own. Each team owns one chain, and the
+chain is written and edited with the team, so there is never a second screen
+where a team's steps can be changed from under it.
+
+* Team-scoped workflow configuration: a chain is created with its team and
+  edited on the team's form.
 * Future effective dates.
 * Workflow validation before activation.
 * Active approver validation.
 * Required-stage validation.
-* Conflict detection.
 * Scheduled workflow configuration.
 * Temporary delegation.
 * Delegate nomination.
@@ -391,6 +406,9 @@ Failed required notifications are logged and reported to HR/administration.
 * Leave-rule configuration.
 * Minimum notice configuration.
 * Workflow configuration.
+* Approver-role configuration: create, rename, and retire the positions a stage may name, and set how much leave history each may see.
+* Team configuration: the people who hold a position for a group, the approval steps their applications follow, and an optional campus scope. A team owns its steps; they are never shared with another team.
+* Institution-wide role assignment for roles that must have a single holder.
 * Future-effective configuration.
 * Delegation management.
 * Application reassignment.
@@ -574,7 +592,7 @@ V1 is considered complete when the following can be demonstrated end-to-end.
 ### Security, Audit, and Integrity
 
 58. Users can only access information permitted by their role.
-59. HOD leave-history access is restricted to the relevant department.
+59. Leave-history access is restricted to the scope HR configured for the approver role concerned (the same department, the same faculty, the current financial year, or nothing) rather than to any role name the software recognises.
 60. Approvers cannot modify employee leave balances.
 61. Employees cannot modify HR-managed grade or entitlement information.
 62. Significant workflow, application, configuration, and administrative actions are recorded in the audit history.

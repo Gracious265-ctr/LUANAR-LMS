@@ -8,7 +8,33 @@ the context key supplied by the view.
 
 from rest_framework import serializers
 
+<<<<<<< HEAD
 from .contracts import _iso
+=======
+from ..services.storage import safe_signed_document_url
+
+
+class TrackedDocumentSerializer(serializers.Serializer):
+    """One active supporting document attached to the tracked application.
+
+    ``file_url`` is re-signed at read time like the employee document list,
+    falling back to the stored URL when storage is not configured or the
+    object is missing.
+    """
+
+    def to_representation(self, document):
+        file_url = safe_signed_document_url(
+            document.file_path, fallback=document.file_url
+        )
+        return {
+            "id": str(document.id),
+            "file_name": document.file_name,
+            "file_size": document.file_size,
+            "content_type": document.content_type,
+            "file_url": file_url,
+            "uploaded_at": _iso(document.uploaded_at),
+        }
+>>>>>>> feature/plans-teams
 
 
 class TrackedApproverSerializer(serializers.Serializer):
@@ -40,6 +66,9 @@ class TrackedStageSerializer(serializers.Serializer):
             "assigned_at": _iso(stage.assigned_at),
             "decided_at": _iso(stage.decided_at),
             "comment": stage.comment,
+            # Why a skipped stage was passed over (Unit 30). Null for every other
+            # state, so a client can render the reason only where it applies.
+            "skip_reason": stage.skip_reason,
         }
 
 
@@ -166,6 +195,7 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "resubmission": ResubmissionInfoSerializer().to_representation(
                 workflow.resubmission
             ),
+<<<<<<< HEAD
             "cancellation_action": workflow.cancellation_action,
             "cancellation_blocked_reason": workflow.cancellation_blocked_reason,
             "has_open_cancellation_request": workflow.has_open_cancellation_request,
@@ -178,3 +208,24 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             ),
             "restoration_financial_year": workflow.restoration_financial_year,
         }
+=======
+            "documents": [
+                TrackedDocumentSerializer().to_representation(document)
+                for document in payload.application.documents.all()
+            ],
+            "cancelled_at": _iso(workflow.cancelled_at),
+            "cancellation_action": workflow.cancellation_action,
+            "cancellation_blocked_reason": workflow.cancellation_blocked_reason,
+            "has_open_cancellation_request": (
+                workflow.has_open_cancellation_request
+            ),
+            "latest_cancellation": workflow.latest_cancellation,
+        }
+
+
+def _iso(value):
+    """Render a datetime as UTC ISO 8601 with a ``Z`` suffix (Section 1)."""
+    if not value:
+        return None
+    return value.isoformat().replace("+00:00", "Z")
+>>>>>>> feature/plans-teams

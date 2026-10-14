@@ -1,13 +1,20 @@
 @import "tailwindcss";
 
+/* The app is light-only, but shadcn components ship `dark:` variants. Without
+   this declaration Tailwind drops those rules at build time; with it they parse
+   and stay inert until a `.dark` palette is added. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  /* Brand and Primary */
-  --brand-primary: #0097F0;
-  --brand-primary-hover: #0088D8;
-  --brand-primary-active: #0079C0;
-  --brand-primary-subtle: #EFF8FF;
-  --brand-primary-muted: #DDF1FC;
-  --brand-primary-border: #B8E1F8;
+  /* Brand and Primary — Stripe's core brand is `#533afd`. Derive subtle tints
+     for selected/soft surfaces from the primary to avoid introducing arbitrary
+     hues. */
+  --brand-primary: #533afd;
+  --brand-primary-hover: #665efd;
+  --brand-primary-active: #4236cc;
+  --brand-primary-subtle: #f2f0ff;
+  --brand-primary-muted: #e7e2ff;
+  --brand-primary-border: #d3cbff;
   --brand-primary-foreground: #FFFFFF;
 
   /* Institutional Secondary */
@@ -18,34 +25,34 @@
   --brand-secondary-border: #B8E5BF;
   --brand-secondary-foreground: #FFFFFF;
 
-  /* Neutral Surfaces */
-  --surface-page: #F8FAFC;
+  /* Neutral Surfaces — Stripe uses a clean, light palette with plenty of white. */
+  --surface-page: #ffffff;
   --surface-card: #FFFFFF;
   --surface-elevated: #FFFFFF;
-  --surface-muted: #F1F5F9;
-  --surface-subtle: #F8FAFC;
-  --surface-hover: #F1F5F9;
-  --surface-active: #E8EEF5;
-  --surface-disabled: #F1F5F9;
+  --surface-muted: #f7fafc;
+  --surface-subtle: #f7fafc;
+  --surface-hover: #f6f9fc;
+  --surface-active: #eaf0f6;
+  --surface-disabled: #f7fafc;
 
-  /* Text */
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #64748B;
-  --text-placeholder: #94A3B8;
-  --text-disabled: #CBD5E1;
+  /* Text — predominantly black for body on light surfaces. */
+  --text-primary: #000000;
+  --text-secondary: #3d4d6b;
+  --text-muted: #7d8ba4;
+  --text-placeholder: #7d8ba4;
+  --text-disabled: #b1bbc9;
   --text-on-brand: #FFFFFF;
-  --text-link: #0079C0;
-  --text-link-hover: #00679F;
+  --text-link: #533afd;
+  --text-link-hover: #665efd;
 
   /* Borders and Dividers */
-  --border-default: #E2E8F0;
-  --border-subtle: #EEF2F6;
-  --border-strong: #CBD5E1;
-  --border-focus: #0097F0;
-  --border-error: #FCA5A5;
-  --border-success: #86D69A;
-  --border-warning: #FCD34D;
+  --border-default: #e3e8ef;
+  --border-subtle: #f2f4f7;
+  --border-strong: #c9d1dc;
+  --border-focus: #533afd;
+  --border-error: #df1b41;
+  --border-success: #0a7c42;
+  --border-warning: #d97904;
 
   /* Semantic Status Colors */
   --status-pending: #D97706;
@@ -63,17 +70,17 @@
 
   /* Form and Interaction */
   --input-background: #FFFFFF;
-  --input-border: #CBD5E1;
-  --input-border-hover: #94A3B8;
-  --input-border-focus: #0097F0;
-  --input-ring-focus: #0097F033;
-  --input-disabled: #F1F5F9;
-  --button-primary: #0097F0;
-  --button-primary-hover: #0088D8;
+  --input-border: #e3e8ef;
+  --input-border-hover: #c9d1dc;
+  --input-border-focus: #533afd;
+  --input-ring-focus: #533afd33;
+  --input-disabled: #f7fafc;
+  --button-primary: #533afd;
+  --button-primary-hover: #665efd;
   --button-secondary: #FFFFFF;
-  --button-secondary-hover: #F1F5F9;
-  --button-destructive: #DC2626;
-  --button-destructive-hover: #B91C1C;
+  --button-secondary-hover: #f7fafc;
+  --button-destructive: #df1b41;
+  --button-destructive-hover: #b91433;
 
   /* Accent Colors */
   --accent-blue: #0097F0;
@@ -95,21 +102,156 @@
   --ai-border: #DDD6FE;
   --ai-foreground: #FFFFFF;
 
-  /* Border Radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-3xl: 24px;
-  --radius-full: 9999px;
+  /* Chart palette: derived from the accent ramp so charts stay on brand
+     without introducing new hues. */
+  --chart-1: var(--accent-blue);
+  --chart-2: var(--accent-green);
+  --chart-3: var(--accent-orange);
+  --chart-4: var(--accent-purple);
+  --chart-5: var(--accent-red);
 
-  /* Shadows */
+  /* Sidebar */
+  --sidebar-background: var(--surface-page);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--brand-primary-foreground);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--border-focus);
+
+  /* Border Radius
+     The scale is deliberately only three values. `6px` is the default for every
+     card, input, button, select and dialog; `4px` is for small inline elements
+     such as badges; `9999px` is reserved for genuine circles — avatars,
+     timeline dots, stepper rings, scrollbars and count bubbles.
+
+     `md` is the control scale, so every button, input, select, textarea, chip
+     and date-picker trigger resolves to `rounded-control`, which points here.
+     The former `lg`/`xl`/`2xl`/`3xl`/`4xl` container steps all collapse onto
+     `6px` as well: with a 1px border carrying the edge, a larger radius stops
+     reading as "container" and starts competing with the pill shapes, so the
+     extra steps were decoration rather than hierarchy. `calendar` stays at
+     `4px` so multi-day range bars and day cells keep square-ish corners
+     instead of collapsing into circles. */
+  --radius: 6px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  --radius-4xl: 10px;
+  --radius-full: 100px;
+  --radius-calendar: 4px;
+
+  /* Depth
+     Border-first: a static element's edge is a real 1px `border`, not a shadow.
+     `card`/`subtle` therefore carry only the soft drop that lifts a bordered
+     surface off the page — the spec's own `elevation.card` also embeds a
+     `0 0 0 1px` ring, which would render a 2px edge next to the border we
+     already draw, so the ring is dropped and the border kept.
+
+     Shadows earn their keep in three places only: hover (the element is being
+     acted on), overlays (popovers/dropdowns/tooltips), and modals. */
   --shadow-none: none;
-  --shadow-subtle: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow-dropdown: 0 8px 24px rgba(15, 23, 42, 0.10);
-  --shadow-modal: 0 16px 40px rgba(15, 23, 42, 0.14);
+  --shadow-subtle: 0px 1px 3px rgba(23, 23, 23, 0.04);
+  --shadow-card: 0px 3px 6px rgba(23, 23, 23, 0.06);
+  --shadow-xs: var(--shadow-subtle);
+  --shadow-hover: 0px 15px 35px rgba(23, 23, 23, 0.08);
+  --shadow-dropdown: 0px 4px 8px rgba(23, 23, 23, 0.05);
+  --shadow-modal: 0px 16px 32px rgba(50, 50, 93, 0.12);
+  --shadow-pressed: inset 0 1px 2px rgba(23, 23, 23, 0.04);
+
+  /* Focus is the one depth that is a ring rather than a drop: an opaque
+     surface-coloured inner ring to separate the indicator from the control,
+     then the brand ring outside it. This keeps the indicator legible on both
+     light and dark surfaces without relying on a `ring-offset` colour, which
+     breaks on transparent and gradient parents. */
+  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #533afd;
+
+  /* shadcn elevation scale, aliased onto the depths above so vendored
+     components read correctly without introducing a second visual language.
+     The shadcn names imply heavier treatment than the same surface gets here,
+     so `sm`/`md` are mapped down to the card depth rather than up. */
+  --shadow-2xs: 0 1px 2px 0 #0000000d;
+  --shadow-sm: var(--shadow-card);
+  --shadow-md: var(--shadow-card);
+  --shadow-lg: var(--shadow-dropdown);
+  --shadow-xl: var(--shadow-dropdown);
+  --shadow-2xl: var(--shadow-modal);
+
+  /* Stacking
+     Overlays are grouped so a popover can never sit under a dialog, and a modal
+     is never opened from inside a menu. The spec's measured values are kept. */
+  --z-index-base: 0;
+  --z-index-raised: 1;
+  --z-index-header: 75;
+  --z-index-popover: 100;
+  --z-index-modal-overlay: 1000;
+  --z-index-modal: 1010;
+  --z-index-portal-above: 1100;
+  --z-index-toast: 1200;
+
+  /* Spacing Rhythm
+     The first five steps are a 4px base. Past page gutters the spec opens up
+     to a 24px rhythm (40/48/64), which is what keeps large screens from looking
+     sparse without letting a dashboard column grow unbounded. */
+  --space-hairline: 4px;
+  --space-tight: 8px;
+  --space-block: 12px;
+  --space-group: 16px;
+  --space-section: 24px;
+  --space-gutter: 24px;
+  --space-canvas: 32px;
+  --space-band: 40px;
+  --space-field: 48px;
+  --space-bleed: 64px;
+
+  /* Motion
+     The spec drives every interactive state change at 150ms, which is what the
+     controls here reach through the `base` default, so `fast` and `base` share
+     that value. `slow` carries the spec's 250ms tier for entrances, and
+     `instant` stays available for colour-only nudges where a full 150ms would
+     read as lag. */
+  --duration-instant: 75ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 250ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* Typography */
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --text-xs-line: 18px;
+  --text-sm-line: 20px;
+  --text-base-line: 24px;
+  --text-lg-line: 28px;
+  --text-xl-line: 28px;
+  --text-2xl-line: 32px;
+  --text-3xl-line: 36px;
+  --text-4xl-line: 40px;
+  --measure-body: 68ch;
+
+  /* Controls */
+  --control-radius: 4px;
+  --control-height-sm: 32px;
+  --control-height-md: 36px;
+  --control-height-lg: 40px;
+  --control-height-icon: 32px;
+  --control-pad-x-sm: 12px;
+  --control-pad-x-md: 14px;
+  --control-pad-x-lg: 16px;
+  --control-pad-y: 8px;
+  --control-gap: 8px;
+  --ring-width: 2px;
+  --ring-offset: 2px;
+  --disabled-opacity: 0.6;
 
   /* Theme Tokens */
   --theme-background: var(--surface-page);
@@ -127,6 +269,133 @@
   --theme-ring: var(--border-focus);
   --theme-destructive: var(--button-destructive);
   --theme-destructive-foreground: #FFFFFF;
+  --theme-popover: var(--surface-elevated);
+  --theme-popover-foreground: var(--text-primary);
+  --theme-accent: var(--surface-hover);
+  --theme-accent-foreground: var(--text-primary);
+}
+
+:root.dark {
+  /* Brand and Primary — hue held at 202°, lightness lifted for a dark ground */
+  --brand-primary: #7d8ba4; /* neutral; Stripe dark scheme primarily uses white/greys with subtle colour accents */
+  --brand-primary-hover: #5f6f8b;
+  --brand-primary-active: #5f6f8b;
+  --brand-primary-subtle: #1a2028;
+  --brand-primary-muted: #212836;
+  --brand-primary-border: #2a3546;
+  --brand-primary-foreground: #FFFFFF;
+
+  /* Institutional Secondary — brightened to the reference's success tone, with
+     the dark green reserved for the subtle fill it sits behind. */
+  --brand-secondary: #6EE6B6;
+  --brand-secondary-hover: #86EFAC;
+  --brand-secondary-subtle: #1C6537;
+  --brand-secondary-muted: #17472A;
+  --brand-secondary-border: #2A7A47;
+  --brand-secondary-foreground: #FFFFFF;
+
+  /* Neutral Surfaces — the measured elevation ladder */
+  --surface-page: #0a0f1a;
+  --surface-card: #0f1520;
+  --surface-elevated: #131924;
+  --surface-muted: #0c121d;
+  --surface-subtle: #0a1017;
+  --surface-hover: #131924;
+  --surface-active: #1a2230;
+  --surface-disabled: #0c121d;
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: #e3e8ef;
+  --text-muted: #9aa2b1;
+  --text-placeholder: #7d8ba4;
+  --text-disabled: #4a5568;
+  --text-on-brand: #0a0f1a;
+  --text-link: #e7e2ff;
+  --text-link-hover: #d3cbff;
+
+  /* Borders and Dividers */
+  --border-default: #1e2532;
+  --border-subtle: #151b26;
+  --border-strong: #263041;
+  --border-focus: #665efd;
+  --border-error: #ff5b7a;
+  --border-success: #3dd68c;
+  --border-warning: #f59e0b;
+
+  /* Semantic Status Colors */
+  --status-pending: #FDBA74;
+  --status-pending-subtle: #704119;
+  --status-approved: #6EE6B6;
+  --status-approved-subtle: #1C6537;
+  --status-rejected: #FEE1E1;
+  --status-rejected-subtle: #7E2323;
+  --status-correction: #C4B5FD;
+  --status-correction-subtle: #3B2A63;
+  --status-cancelled: #9BA2AE;
+  --status-cancelled-subtle: #242D3A;
+  --status-info: #85C7EE;
+  --status-info-subtle: #1A2C36;
+
+  /* The fills above are bright in dark, so the on-colour text goes dark —
+     roughly 12:1 against the pale green and better still against the near-white
+     red. This is the whole reason these are separate tokens. */
+  --status-pending-on: #0F172A;
+  --status-approved-on: #0F172A;
+  --status-rejected-on: #0F172A;
+  --status-correction-on: #0F172A;
+  --status-cancelled-on: #0F172A;
+  --status-info-on: #0F172A;
+
+  /* Form and Interaction */
+  --input-background: #0f1520;
+  --input-border: #263041;
+  --input-border-hover: #3c4a66;
+  --input-border-focus: #665efd;
+  --input-ring-focus: #665efd33;
+  --input-disabled: #0c121d;
+  --button-primary: #533afd;
+  --button-primary-hover: #665efd;
+  --button-secondary: #131924;
+  --button-secondary-hover: #1a2230;
+  --button-destructive: #b91433;
+  --button-destructive-hover: #df1b41;
+
+  /* Accent Colors */
+  --accent-blue: #85C7EE;
+  --accent-blue-subtle: #1A2C36;
+  --accent-green: #6EE6B6;
+  --accent-green-subtle: #1C6537;
+  --accent-orange: #FDBA74;
+  --accent-orange-subtle: #704119;
+  --accent-red: #FEE1E1;
+  --accent-red-subtle: #7E2323;
+  --accent-purple: #C4B5FD;
+  --accent-purple-subtle: #3B2A63;
+  --accent-slate: #9BA2AE;
+  --accent-slate-subtle: #242D3A;
+
+  /* AI Accent — a light purple on dark takes dark text, not white */
+  --ai-primary: #C4B5FD;
+  --ai-subtle: #3B2A63;
+  --ai-border: #4C3A7A;
+  --ai-foreground: #1A212E;
+
+  /* Depth
+     The light theme's 5% black is nearly invisible against a #1A212E ground, so
+     the same shadows are deepened rather than removed — a dark surface needs a
+     stronger drop to separate, exactly as it needs a stronger hairline.
+
+     `--shadow-focus` is the one that cannot simply be scaled: its inner ring is
+     an opaque *surface-coloured* ring, and on a dark surface that colour must be
+     the dark ground or the focus indicator reads as a white halo. */
+  --shadow-subtle: 0 1px 2px 0 #00000026;
+  --shadow-card: 0 1px 2px 0 #00000026;
+  --shadow-hover: 0 2px 8px 0 #00000033;
+  --shadow-dropdown: 0 4px 4px 0 #0000003d;
+  --shadow-modal: 0 8px 16px -4px #0000004d, 0 24px 32px -8px #00000066;
+  --shadow-pressed: inset 0 1px 1px #00000026;
+  --shadow-focus: 0 0 0 2px #0a0f1a, 0 0 0 4px #665efd;
 }
 
 @theme inline {
@@ -145,6 +414,27 @@
   --color-ring: var(--theme-ring);
   --color-destructive: var(--theme-destructive);
   --color-destructive-foreground: var(--theme-destructive-foreground);
+  --color-popover: var(--theme-popover);
+  --color-popover-foreground: var(--theme-popover-foreground);
+  --color-accent: var(--theme-accent);
+  --color-accent-foreground: var(--theme-accent-foreground);
+
+  /* Chart Colors */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Sidebar Colors */
+  --color-sidebar: var(--sidebar-background);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   /* Brand Colors */
   --color-brand-primary: var(--brand-primary);
@@ -221,38 +511,325 @@
   --color-button-destructive-hover: var(--button-destructive-hover);
 
   /* Border Radius */
+  --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-xl);
   --radius-2xl: var(--radius-2xl);
   --radius-3xl: var(--radius-3xl);
+  --radius-4xl: var(--radius-4xl);
   --radius-full: var(--radius-full);
+  --radius-calendar: var(--radius-calendar);
 
   /* Shadows */
   --shadow-none: var(--shadow-none);
+  --shadow-xs: var(--shadow-xs);
   --shadow-subtle: var(--shadow-subtle);
   --shadow-card: var(--shadow-card);
   --shadow-dropdown: var(--shadow-dropdown);
   --shadow-modal: var(--shadow-modal);
+  --shadow-hover: var(--shadow-hover);
+  --shadow-pressed: var(--shadow-pressed);
+  --shadow-focus: var(--shadow-focus);
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
 
-  /* Font Family */
-  --font-sans: var(--font-inter);
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Stacking */
+  --z-index-base: var(--z-index-base);
+  --z-index-raised: var(--z-index-raised);
+  --z-index-header: var(--z-index-header);
+  --z-index-popover: var(--z-index-popover);
+  --z-index-modal-overlay: var(--z-index-modal-overlay);
+  --z-index-modal: var(--z-index-modal);
+  --z-index-portal-above: var(--z-index-portal-above);
+  --z-index-toast: var(--z-index-toast);
 
-  /* Font Sizes */
+  /* Spacing Rhythm (named additions; the numeric scale is untouched) */
+  --spacing-hairline: var(--space-hairline);
+  --spacing-tight: var(--space-tight);
+  --spacing-block: var(--space-block);
+  --spacing-group: var(--space-group);
+  --spacing-section: var(--space-section);
+  --spacing-gutter: var(--space-gutter);
+  --spacing-canvas: var(--space-canvas);
+  --spacing-band: var(--space-band);
+  --spacing-field: var(--space-field);
+  --spacing-bleed: var(--space-bleed);
+
+  /* Motion */
+  --ease-standard: var(--ease-standard);
+  --ease-out: var(--ease-out);
+  --ease-in: var(--ease-in);
+  --duration-instant: var(--duration-instant);
+  --duration-fast: var(--duration-fast);
+  --duration-base: var(--duration-base);
+  --duration-slow: var(--duration-slow);
+  --animate-toast-in: toast-in var(--duration-base) var(--ease-out);
+  --animate-toast-out: toast-out var(--duration-base) var(--ease-in);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* Font Family — Stripe uses sohne-var as its primary typeface. System
+     fallbacks are kept to avoid relying on a locally unavailable font. */
+  --font-sans: sohne-var, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+
+  /* Font Sizes
+     Body is 14px per the spec; captions step down to 12px rather than the
+     shadcn 13px so metadata matches the documented caption role. */
   --text-xs: 12px;
+  --text-xs--line-height: 18px;
   --text-sm: 14px;
+  --text-sm--line-height: 20px;
   --text-base: 16px;
-  --text-lg: 18px;
-  --text-xl: 20px;
-  --text-2xl: 24px;
-  --text-3xl: 30px;
-  --text-4xl: 36px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-xl: 24px;
+  --text-xl--line-height: 32px;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 40px;
+  --text-3xl: 40px;
+  --text-3xl--line-height: 48px;
+  --text-4xl: 48px;
+  --text-4xl--line-height: 52px;
+
+  --leading-body: 1.5;
+  /* Headings sit at 1.2 per the spec's display/H1 rows. */
+  --leading-tight: 1.2;
+  --tracking-display: -0.02em; /* 32px and up (Geist display) */
+
+  /* Breakpoints
+     The data tables in this app are wide enough that a tablet in landscape is
+     still a phone-sized reading experience, so the two-column and table/card
+     switches are pushed out to 960px. `lg` is left at its default 1024px
+     because 27 call sites depend on the current value and the layout that
+     needs a true third column is genuinely desktop-only.
+
+     `MOBILE_BREAKPOINT_PX` in lib/hooks/useIsMobile.ts hard-codes the same
+     960px for the JS side; change both together. */
+  --breakpoint-sm: 600px;
+  --breakpoint-md: 960px;
+
+  /* Letter Spacing */
+  --tracking-tight: -0.01em; /* 24px titles (Geist) */
+  --tracking-normal: 0;
+
+  /* Controls */
+  --spacing-control-x-sm: var(--control-pad-x-sm);
+  --spacing-control-x-md: var(--control-pad-x-md);
+  --spacing-control-x-lg: var(--control-pad-x-lg);
+  --spacing-control-y: var(--control-pad-y);
+  --spacing-control-gap: var(--control-gap);
+  --spacing-control-height-sm: var(--control-height-sm);
+  --spacing-control-height-md: var(--control-height-md);
+  --spacing-control-height-lg: var(--control-height-lg);
+  --spacing-control-height-icon: var(--control-height-icon);
+  --radius-control: var(--control-radius);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes enter {
+  from {
+    opacity: var(--tw-enter-opacity, 1);
+    transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1)) rotate(var(--tw-enter-rotate, 0));
+  }
+}
+
+@keyframes exit {
+  to {
+    opacity: var(--tw-exit-opacity, 1);
+    transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/* Every interactive control focuses the same way: one ring token, applied on
+   keyboard focus only. Mouse users never see it. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+  }
+}
+
+/* Whole-element interactive cards lift on hover: a one-step shadow rise plus a
+   2px translate, animated at the fast duration. Reduced-motion users keep the
+   shadow cue but not the motion. */
+@utility hover-float {
+  transition-property: box-shadow, transform;
+  transition-timing-function: var(--ease-out);
+  transition-duration: var(--duration-fast);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &:hover {
+      transform: none;
+    }
+  }
+}
+
+@utility animate-in {
+  animation-name: enter;
+  animation-duration: var(--tw-duration, var(--default-transition-duration));
+  animation-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+}
+
+@utility animate-out {
+  animation-name: exit;
+  animation-duration: var(--tw-duration, var(--default-transition-duration));
+  animation-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+}
+
+@utility fade-in {
+  --tw-enter-opacity: 0;
+}
+
+@utility fade-in-0 {
+  --tw-enter-opacity: 0;
+}
+
+@utility fade-out {
+  --tw-exit-opacity: 0;
+}
+
+@utility fade-out-0 {
+  --tw-exit-opacity: 0;
+}
+
+@utility zoom-in-0 {
+  --tw-enter-scale: 0;
+}
+
+@utility zoom-in-95 {
+  --tw-enter-scale: 0.95;
+}
+
+@utility zoom-out-0 {
+  --tw-exit-scale: 0;
+}
+
+@utility zoom-out-95 {
+  --tw-exit-scale: 0.95;
+}
+
+@utility slide-in-from-bottom-2 {
+  --tw-enter-translate-y: 0.5rem;
+}
+
+@utility slide-in-from-top-2 {
+  --tw-enter-translate-y: -0.5rem;
+}
+
+@utility slide-in-from-left-2 {
+  --tw-enter-translate-x: -0.5rem;
+}
+
+@utility slide-in-from-right-2 {
+  --tw-enter-translate-x: 0.5rem;
+}
+
+@utility slide-out-to-bottom-2 {
+  --tw-exit-translate-y: 0.5rem;
+}
+
+@utility slide-out-to-top-2 {
+  --tw-exit-translate-y: -0.5rem;
+}
+
+@utility slide-out-to-left-2 {
+  --tw-exit-translate-x: -0.5rem;
+}
+
+@utility slide-out-to-right-2 {
+  --tw-exit-translate-x: 0.5rem;
 }
 
 body {
   background: var(--theme-background);
   color: var(--theme-foreground);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Touch targets
+   A 36px control is correct for a pointer and too small for a thumb, so
+   controls grow to the 44px minimum below the `md` breakpoint. Height is set
+   rather than padding so that adjacent controls in a flex row keep their
+   baseline alignment.
+
+   Scope is deliberately narrow: buttons, form controls, and the two nav
+   surfaces. Anything in a horizontally scrolling table is excluded by
+   `:not()` because those rows are a desktop-density table being read sideways
+   on a phone, and growing their actions would triple the row height. */
+@media (max-width: 959px) {
+  button:not([data-dense]),
+  a[role="button"]:not([data-dense]),
+  input:not([type="checkbox"]):not([type="radio"]):not([data-dense]),
+  select:not([data-dense]),
+  textarea:not([data-dense]) {
+    min-height: 44px;
+  }
+
+  .overflow-x-auto button,
+  .overflow-x-auto a[role="button"] {
+    min-height: unset;
+  }
 }

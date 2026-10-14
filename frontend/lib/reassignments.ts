@@ -13,6 +13,16 @@ export interface PendingApplication {
   submitted_at: string | null;
   current_approver: number | null;
   current_approver_name: string;
+  /**
+   * Who actually holds the application right now: `current_approver` unless an
+   * active delegation covers them, in which case their delegate. Needed because
+   * reassigning to an approver who is themselves away moves the spine without
+   * changing who acts.
+   */
+  acting_approver: number | null;
+  acting_approver_name: string;
+  /** True when an active delegation, not the spine, decides who acts. */
+  is_delegated: boolean;
 }
 
 export interface Reassignment {

@@ -1,7 +1,7 @@
 import type { Employee } from "./employees";
 import { apiErrorMessage } from "./utils";
-import { APPROVER_ROLE_CODES } from "./workflows-client";
 import type { Delegation, DelegationInput } from "./delegations";
+import type { BadgeTone } from "@/components/ui/badge";
 
 export const DELEGATION_STATE_CODES = [
   "requested",
@@ -27,36 +27,50 @@ export function delegationStateLabel(state: DelegationState): string {
   return DELEGATION_STATE_LABELS[state];
 }
 
-export function delegationStateBadgeClass(state: DelegationState): string {
+export function delegationStateTone(state: DelegationState): BadgeTone {
   switch (state) {
     case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
+      return "info";
     case "scheduled":
-      return "bg-brand-primary-subtle text-brand-primary";
+      return "brand";
     case "requested":
-      return "bg-status-pending-subtle text-status-pending";
+      return "pending";
     case "rejected":
-      return "bg-status-rejected-subtle text-status-rejected";
+      return "rejected";
     case "cancelled":
     case "ended":
-      return "bg-surface-muted text-text-muted";
+      return "muted";
   }
 }
 
+/**
+ * The people who can be asked to cover or to take over an approval.
+ *
+ * Read from the approver holdings the API reports rather than from a list of
+ * role names: a role HR adds later, or a membership a person holds under any
+ * team, has to count here without a code change.
+ */
 export function approverRolePeople(employees: Employee[]): Employee[] {
   return employees.filter(
-    (employee) =>
-      employee.is_active &&
-      (APPROVER_ROLE_CODES as readonly string[]).includes(employee.role)
+    (employee) => employee.is_active && employee.approver_roles.length > 0
   );
 }
 
+/**
+ * Create a delegation request.
+ *
+ * Posts to the un-namespaced proxy: a request is normally raised by the
+ * approver themselves (self-service), and only HR raises one on another's
+ * behalf. The backend decides which — it forces `approver` to the caller
+ * unless the caller is HR, and ignores any `approver` sent by a non-HR user.
+ */
 export async function createDelegation(
   input: DelegationInput
 ): Promise<Delegation> {
-  return proxyPost<Delegation>("/api/hr/delegations", input);
+  return proxyPost<Delegation>("/api/delegations", input);
 }
 
+// The three decisions stay HR-only, so they keep the hr-namespaced proxies.
 export async function approveDelegation(
   id: number | string,
   body: { delegate: number; decision_reason: string }

@@ -1,5 +1,8 @@
 import { AlertTriangle } from "lucide-react";
 
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+
 /**
  * Inline error card for network/5xx failures with a retry action.
  */
@@ -11,9 +14,9 @@ export function TrackingError({
   onRetry: () => void;
 }) {
   return (
-    <div
-      role="alert"
-      className="rounded-xl border border-status-rejected/30 bg-status-rejected-subtle p-5"
+    <Alert
+      tone="rejected"
+      className="rounded-xl border border-status-rejected/30 p-5"
     >
       <div className="flex items-start gap-3">
         <AlertTriangle
@@ -27,15 +30,11 @@ export function TrackingError({
           <p className="mt-1 break-words text-sm text-text-secondary">
             {message}
           </p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
-          >
+          <Button type="button" onClick={onRetry} variant="primary" className="mt-4 min-h-11">
             Try again
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Alert>
   );
 }

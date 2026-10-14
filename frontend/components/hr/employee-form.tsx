@@ -4,26 +4,63 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-import type { Employee } from "@/lib/employees";
+import type { Employee, UserRole } from "@/lib/employees";
 import { apiErrorMessage } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Field, Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "academic", label: "Academic" },
   { value: "administration", label: "Administration" },
 ];
 
+
+/**
+ * What an account can reach, said in words.
+ *
+ * This is displayed, not chosen: the directory creates normal employees,
+ * approver access follows from a workflow appointment, and an HR account is
+ * created by an administrator. Showing the current value keeps an edit from
+ * looking as though it could change it.
+ */
+const ROLE_LABELS: Record<UserRole, string> = {
+  employee: "Employee",
+  approver: "Approver",
+  hr: "Human Resources",
+};
+
 export function EmployeeForm({
   employee,
   endpoint,
   method,
   gradeOptions = [],
+  onSuccess,
+  onCancel,
 }: {
   employee?: Employee;
   endpoint: string;
   method: "POST" | "PATCH";
   gradeOptions?: string[];
+  /**
+   * Called with the saved employee instead of navigating, so a host overlay can
+   * close and refresh in place. Omit it and the form navigates to the list
+   * itself, which is what the standalone `[id]` page still relies on.
+   */
+  onSuccess?: (employee: Employee) => void;
+  /** Replaces the cancel link when the host already knows where to go back to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
+  const [appointmentDate, setAppointmentDate] = useState(employee?.appointment_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -43,7 +80,6 @@ export function EmployeeForm({
           last_name: formData.get("last_name"),
           email: formData.get("email"),
           designation: formData.get("designation"),
-          department: formData.get("department"),
           category: formData.get("category"),
           grade: formData.get("grade"),
           appointment_date: formData.get("appointment_date") || null,
@@ -51,14 +87,22 @@ export function EmployeeForm({
         }),
       });
 
+      // Read the body once: on failure it carries the field errors, and on
+      // success it is the saved record, whose id the overlay needs to tell
+      // whether the new row landed in the table it just refetched.
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
         setError(apiErrorMessage(data));
         return;
       }
 
-      router.push("/dashboard/hr-admin/employees");
-      router.refresh();
+      if (onSuccess) {
+        onSuccess(data as Employee);
+      } else {
+        router.push("/dashboard/hr-admin/employees");
+        router.refresh();
+      }
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
@@ -71,54 +115,54 @@ export function EmployeeForm({
       onSubmit={handleSubmit}
       className="grid grid-cols-1 gap-4 md:grid-cols-2"
     >
-      <div>
-        <label
-          htmlFor="first_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          First name
-        </label>
-        <input
+      <Field label="First name" htmlFor="first_name">
+        <Input
           id="first_name"
           name="first_name"
           required
           defaultValue={employee?.first_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="last_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Last name
-        </label>
-        <input
+      <Field label="Last name" htmlFor="last_name">
+        <Input
           id="last_name"
           name="last_name"
           required
           defaultValue={employee?.last_name}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="email"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Email
-        </label>
-        <input
+      <Field label="Email" htmlFor="email">
+        <Input
           id="email"
           name="email"
           type="email"
           required
           defaultValue={employee?.email}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="name@luanar.ac.mw"
         />
+      </Field>
+
+      <div>
+        <label
+          htmlFor="role"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Role
+        </label>
+        <input
+          id="role"
+          name="role"
+          readOnly
+          value={ROLE_LABELS[employee?.role ?? "employee"]}
+          className="w-full cursor-not-allowed rounded-md border border-input-border bg-input-background px-3 py-2 text-text-muted focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-text-muted">
+          The directory creates normal employees. Approver access follows from
+          the workflow stage you appoint somebody to, and an HR account is
+          created by an administrator.
+        </p>
       </div>
 
       <div>
@@ -137,56 +181,31 @@ export function EmployeeForm({
         />
       </div>
 
-      <div>
-        <label
-          htmlFor="department"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Department / Faculty
-        </label>
-        <input
-          id="department"
-          name="department"
-          defaultValue={employee?.department}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-          placeholder="e.g. Bunda College"
-        />
-      </div>
+      <Field label="Category" htmlFor="category">
+        <Select name="category" defaultValue={employee?.category ?? "academic"}>
+          <SelectTrigger id="category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIES.map((category) => (
+              <SelectItem key={category.value} value={category.value}>
+                {category.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="category"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Category
-        </label>
-        <select
-          id="category"
-          name="category"
-          defaultValue={employee?.category ?? "academic"}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          {CATEGORIES.map((category) => (
-            <option key={category.value} value={category.value}>
-              {category.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label
-          htmlFor="grade"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Grade
-        </label>
-        <input
+      <Field
+        label="Grade"
+        htmlFor="grade"
+        hint="Choose from configured grades or type a custom one."
+      >
+        <Input
           id="grade"
           name="grade"
           list={gradeOptions.length > 0 ? "grade-options" : undefined}
           defaultValue={employee?.grade}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Select a grade or type one"
         />
         {gradeOptions.length > 0 && (
@@ -196,28 +215,19 @@ export function EmployeeForm({
                 <option key={grade} value={grade} />
               ))}
             </datalist>
-            <p className="mt-1 text-xs text-text-muted">
-              Choose from configured grades or type a custom one.
-            </p>
           </>
         )}
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="appointment_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Date of appointment
-        </label>
-        <input
+      <Field label="Date of appointment" htmlFor="appointment_date">
+        <DatePicker
           id="appointment_date"
-          name="appointment_date"
-          type="date"
-          defaultValue={employee?.appointment_date ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          value={appointmentDate}
+          onChange={setAppointmentDate}
         />
-      </div>
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="appointment_date" value={appointmentDate} />
+      </Field>
 
       <label className="flex items-center gap-2 md:col-span-2">
         <input
@@ -230,25 +240,25 @@ export function EmployeeForm({
       </label>
 
       {error && (
-        <div className="text-sm text-status-rejected bg-status-rejected-subtle rounded-md p-3 md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : employee ? "Save changes" : "Create employee"}
-        </button>
-        <Link
-          href="/dashboard/hr-admin/employees"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/employees"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

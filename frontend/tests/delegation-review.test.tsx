@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { DelegationReview } from "@/components/hr/delegation-review";
 import type { Delegation } from "@/lib/delegations";
 import type { Employee } from "@/lib/employees";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
+import { selectOption } from "./helpers/select";
 
 vi.mock("@/lib/delegations-client", async (importOriginal) => {
   const actual =
@@ -22,32 +25,27 @@ import {
   rejectDelegation,
 } from "@/lib/delegations-client";
 
-function makeEmployee(id: number, role: string, name: string): Employee {
-  return {
-    id,
-    user_id: id,
-    email: `${name.replace(" ", ".").toLowerCase()}@test.luanar`,
-    first_name: name.split(" ")[0],
-    last_name: name.split(" ")[1] ?? "",
-    full_name: name,
-    role,
-    designation: "Role holder",
-    department: "Registry",
-    category: "academic",
-    grade: "G",
-    appointment_date: "2020-01-01",
-    is_active: true,
-  };
-}
-
+// The approvers here hold their positions as data, and their accounts carry no
+// special role: that is the shape the pickers now have to cope with. User ids
+// differ from record ids, because the pickers write user ids.
 const employees: Employee[] = [
-  makeEmployee(3, "dean", "Jane Dean"),
-  makeEmployee(5, "hod", "Bob HOD"),
+  makeEmployee({
+    id: 3,
+    user_id: 30,
+    full_name: "Jane Dean",
+    approver_roles: ["dean"],
+  }),
+  makeEmployee({
+    id: 5,
+    user_id: 50,
+    full_name: "Bob HOD",
+    approver_roles: ["hod"],
+  }),
 ];
 
 const base: Delegation = {
   id: 1,
-  approver: 3,
+  approver: 30,
   approver_name: "Jane Dean",
   approver_role: "dean",
   delegate: null,
@@ -112,13 +110,16 @@ describe("DelegationReview", () => {
     expect(approveDelegation).not.toHaveBeenCalled();
   });
 
-  it("submits an approval with delegate and reason", () => {
+  it("submits an approval with delegate and reason", async () => {
+    const user = userEvent.setup();
     render(<DelegationReview delegation={base} employees={employees} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    fireEvent.change(screen.getByLabelText("Delegate"), {
-      target: { value: "5" },
-    });
+    await selectOption(
+      screen.getByLabelText("Delegate"),
+      "Bob HOD",
+      { user }
+    );
     fireEvent.change(screen.getByLabelText("Decision reason"), {
       target: { value: "Approved" },
     });
@@ -127,7 +128,7 @@ describe("DelegationReview", () => {
     );
 
     expect(approveDelegation).toHaveBeenCalledWith(1, {
-      delegate: 5,
+      delegate: 50,
       decision_reason: "Approved",
     });
   });
@@ -165,7 +166,7 @@ describe("DelegationReview", () => {
       <DelegationReview
         delegation={{
           ...base,
-          delegate: 5,
+          delegate: 50,
           delegate_name: "Bob HOD",
           status: "approved",
           state: "active",
@@ -187,7 +188,7 @@ describe("DelegationReview", () => {
       <DelegationReview
         delegation={{
           ...base,
-          delegate: 5,
+          delegate: 50,
           delegate_name: "Bob HOD",
           status: "approved",
           state: "active",
@@ -231,5 +232,67 @@ describe("DelegationReview", () => {
       ).not.toBeInTheDocument();
       unmount();
     }
+  });
+
+  describe("read-only (approver-side) view", () => {
+    it("shows the record but none of the HR decision controls", () => {
+      // Even a requested delegation, which is exactly when HR gets buttons.
+      render(
+        <DelegationReview
+          delegation={base}
+          employees={employees}
+          readOnly
+          backHref="/dashboard/cover"
+          title="Delegation"
+        />
+      );
+
+      expect(screen.getByText("Attending a conference")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Delegation" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Approve" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Reject" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Cancel delegation" })
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides cancel on an active delegation too", () => {
+      render(
+        <DelegationReview
+          delegation={{
+            ...base,
+            state: "active",
+            status: "approved",
+            delegate: 50,
+            delegate_name: "Bob HOD",
+          }}
+          employees={employees}
+          readOnly
+        />
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Cancel delegation" })
+      ).not.toBeInTheDocument();
+    });
+
+    it("links back to the approver's own cover view", () => {
+      render(
+        <DelegationReview
+          delegation={base}
+          employees={employees}
+          readOnly
+          backHref="/dashboard/cover"
+        />
+      );
+
+      expect(
+        screen.getByRole("link", { name: /Back to delegations/ }).getAttribute("href")
+      ).toBe("/dashboard/cover");
+    });
   });
 });

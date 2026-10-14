@@ -70,15 +70,13 @@ cp .env.example .env
 
 # Edit .env with your database credentials if needed
 # Default: postgres://luanar:luanar@localhost:5432/luanar_leave
+# Also set the SUPABASE_* file-storage credentials (see "File Storage" below)
 
 # Install dependencies
 uv sync
 
 # Run migrations
 uv run manage.py migrate
-
-# Seed development users
-uv run manage.py seed_dev_users
 
 # Start the Django development server
 uv run manage.py runserver
@@ -103,40 +101,136 @@ npm run dev
 
 The frontend will be available at http://localhost:3000
 
-### 5. Background Tasks (Optional for Development)
+### 5. Background Tasks
 
 Django-Q2 uses the PostgreSQL database as the broker — no separate Redis service needed.
+
+In development, tasks run **inline**: `config/settings/development.py` sets
+`Q_CLUSTER["sync"] = True`, so `async_task` executes in the approving request
+rather than queueing for a worker. Nothing extra to start, and a generated
+artifact (such as the approved-leave PDF) is ready by the time the request
+returns. Only production needs a supervised worker:
 
 ```bash
 cd backend
 
-# Start the Django-Q2 cluster worker
+# Production / when you want to exercise the real async path
 uv run manage.py qcluster
 ```
 
-## Development Users
+`config.settings.test` pins `sync` back to `False`, because the suite asserts
+that a render is *enqueued* and then runs it explicitly.
 
-The seed command creates one user per role with password `testpass123`:
+**Scheduled jobs** (plan housekeeping: lapsing overdue blocks and block
+confirmation reminders) are a `django_q.Schedule` row created by
+`plans/migrations/0002_schedule_plan_housekeeping.py`, daily at 06:00. A schedule
+needs a live worker — `uv run manage.py qcluster` — so run one in any environment
+where reminders should actually fire.
 
-| Role | Email |
-|------|-------|
-| Employee | employee@test.luanar |
-| Supervisor | supervisor@test.luanar |
-| Head of Department | hod@test.luanar |
-| Dean | dean@test.luanar |
-| Registrar | registrar@test.luanar |
-| Deputy Vice-Chancellor | dvc@test.luanar |
-| Human Resources | hr@test.luanar |
+### 6. Email Notifications
 
-### Admin / Django-Q2 task inspection
+Every email is one append-only `NotificationOutbox` row: a composer writes the row
+and hands it to `notifications/tasks.py`, which is the only module that calls
+`send_mail`. Rows start `pending`, move to `sent`/`failed` through the delivery
+task, and are inspectable in Django admin (read-only) — so "did the mail go out,
+to whom, and if not why?" is answerable without a shell.
 
-The seed command does not create a superuser. Create one to inspect the Django
-admin (including the Django-Q2 queue and task results):
+Delivery is queued on commit with Django-Q2:
+
+```bash
+# in any environment where mail should actually leave the machine
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=<gmail address>
+EMAIL_HOST_PASSWORD=<app password>
+EMAIL_USE_TLS=True
+DEFAULT_FROM_EMAIL=<an address the account may send as>
+```
+
+* Without these, `EMAIL_BACKEND` defaults to the console backend and nothing is
+  sent — copy `backend/.env.example` for the full list.
+* Run `uv run manage.py qcluster` to deliver queued mail, or set
+  `NOTIFICATIONS_SYNC_SEND=True` on a single-process dev server to send inline.
+* `EMAIL_DEV_RECIPIENT_OVERRIDE` routes every notification to one inbox for
+  smoke tests; it is honoured only when `DEBUG=True` and refused otherwise.
+
+### 7. File Storage
+
+Supporting documents and generated approved-leave PDFs are stored in Supabase
+Storage. Copy `.env.example` to `.env` and set:
+
+```dotenv
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+SUPABASE_BUCKET=leave-documents
+```
+
+`SUPABASE_URL` must be the **bare project URL — host only, no path**. The
+Supabase dashboard's "Project URL" field ends in `/rest/v1/`, and copying it
+verbatim looks correct but breaks storage: `supabase-py` appends its own
+`/storage/v1/...` paths, so every request is sent to PostgREST and fails with an
+opaque `404` / `PGRST125` that names neither the bucket nor the setting. The
+backend rejects a suffixed URL with an actionable message.
+
+The bucket must already exist in the project (Dashboard → Storage).
+
+`SUPABASE_SERVICE_KEY` is the `service_role` key, which **bypasses row-level
+security**. Keep it in `.env` only — never in `.env.example` or any committed
+file.
+
+Without these the document pipeline cannot store anything: the render task
+records the failure on the document row and the UI reports that the document
+could not be generated. Everything else in the system works without them.
+
+## First account
+
+There is no seed command and no fixture users. A fresh database has the schema
+and **nothing else** — no approver roles, teams, campuses, workflows, leave
+types, or accounts. Create the bootstrap administrator to inspect the Django
+admin (including the Django-Q2 queue and task results) and to reach
+`/dashboard/admin/users`, where HR accounts are created:
 
 ```bash
 cd backend
 uv run manage.py createsuperuser
 ```
+
+**Use the email address as the `Username`.** The product signs people in by
+email and resolves it through the `username` column, so an account whose two
+disagree is created and then cannot log in.
+
+`createsuperuser` does not set `User.role`, which defaults to `employee`.
+The superuser is the bootstrap administrator outside the product's HR pages:
+they create the first HR account through `/dashboard/admin/users` (or
+`POST /api/v1/admin-users/`), and HR then creates roles, campuses, teams,
+workflows, and leave types through the frontend. If you also want the
+superuser to open HR screens directly, set the role once:
+
+```bash
+uv run manage.py shell -c "
+from django.contrib.auth import get_user_model
+u = get_user_model().objects.get(username='you@luanar.ac.mw')
+u.role = 'hr'; u.save()"
+```
+
+`/admin/users/user/add/` syncs `username` from `email` on save, so an account
+created there is usable without a second step.
+
+### Real users
+
+Real employees need no seed command and no superuser typing a password into
+Django admin. HR adds a person on the Employees page and a set-password link is
+emailed to them automatically; they follow it, choose their own password, and sign
+in. If the mail is lost, the employee's row has a **Send password link** action.
+
+In order: superuser, then employees, then approver roles, then the campus and its
+team members, then the financial year.
+
+Once someone is signed in they can change their own password from **My Account**
+in the sidebar. It asks for the current password, emails the account a notice,
+and signs every session out including the one they changed it from — so they
+land back on the sign-in page with a message saying why.
 
 ## Running Tests
 
@@ -161,6 +255,25 @@ each or they deadlock on `test_luanar_leave`:
 
 ```bash
 TEST_DB_NAME=test_luanar_leave_my_branch DJANGO_SETTINGS_MODULE=config.settings.test uv run manage.py test --keepdb --parallel auto
+```
+
+`manage.py test` automatically loads `config.settings.test`, which swaps the
+password hasher for a fast one so the suite does not spend most of its time
+hashing fixture passwords. Pass `--settings=config.settings.development` to run
+against the regular settings instead. Split work across workers when iterating:
+
+```bash
+uv run manage.py test --parallel auto
+```
+
+Do **not** reuse the test database with `--keepdb`. Rows a previous run left
+behind are visible to the next one, and suites that create configuration by id
+— approver roles, sections, leave types — then fail on state they did not
+create. A reused database reported 79 failures against a green suite. If the
+test database already exists from an earlier `--keepdb` run, delete it once:
+
+```bash
+uv run manage.py test --noinput
 ```
 
 If the test runner fails with `permission denied to create database`, the
@@ -216,14 +329,15 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/workflows/` | Create a workflow with its ordered approval stages (draft unless `effective_from` is sent; activating/scheduling validates approver availability and scope conflicts) |
 | GET | `/api/v1/workflows/{id}/` | Retrieve one workflow with its stages |
 | PATCH | `/api/v1/workflows/{id}/` | Update a workflow (replaces its stage list; `effective_from`/`is_active` may be sent with the same activation validation) |
-| GET | `/api/v1/delegations/` | List delegation requests (HR-only, paginated, newest first; `state=` and `approver=` search filters) |
+| GET | `/api/v1/delegations/` | List delegation requests (paginated, newest first; `state=` and `approver=` search filters). HR sees every request; an approver sees only the delegations they are a party to |
 | POST | `/api/v1/delegations/` | Create a delegation request (approver self-service forces `approver` to the authenticated user; HR can create on behalf) |
-| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR-only) |
+| GET | `/api/v1/delegations/{id}/` | Retrieve one delegation (HR sees any; an approver sees only their own, otherwise 404) |
+| GET | `/api/v1/delegations/candidates/` | Active approver-role users the caller may nominate as delegate, excluding the caller (approver self-service; avoids opening the HR-only employee list) |
 | POST | `/api/v1/delegations/{id}/approve/` | HR approves (mandatory `decision_reason` and `delegate`; rejects period overlap with an approved delegation) |
 | POST | `/api/v1/delegations/{id}/reject/` | HR rejects with a mandatory `decision_reason` |
 | POST | `/api/v1/delegations/{id}/cancel/` | HR cancels a scheduled/active approved delegation with a mandatory `decision_reason` |
-| GET | `/api/v1/reassignments/pending/` | Intervention queue: submitted applications, newest first, with employee, leave type, dates/days, reference, and `current_approver` (HR-only) |
-| POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver` and records history (HR-only) |
+| GET | `/api/v1/reassignments/pending/` | Intervention queue: submitted applications, newest first, with employee, leave type, dates/days, reference, `current_approver`, and the `acting_approver` / `is_delegated` that Unit 21 routing makes authoritative (HR-only) |
+| POST | `/api/v1/reassignments/` | Reassign a pending application (`application`, `to_approver`, `reason`); sets `current_approver`, records history, and emails both affected approvers on commit (HR-only) |
 | GET | `/api/v1/reassignments/` | Reassignment history, paginated newest first; `application=<uuid>` filter (HR-only) |
 | GET | `/api/v1/reassignments/{id}/` | Retrieve one reassignment record (HR-only) |
 | GET | `/api/v1/audit-entries/` | Append-only administrative audit log, newest first; filters `action` (dotted code), `target_type` (content-type model), `target_id`, `actor` (HR-only) |
@@ -232,6 +346,10 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/finalized-leave/{id}/` | One finalized application with history roll-up; 404 for drafts (HR-only) |
 | GET | `/api/v1/leave-document-template/` | Retrieve the single official leave-document template with its read-only field catalog (HR-only; creates the editable default on first access) |
 | PATCH | `/api/v1/leave-document-template/` | Update wording, field labels/inclusion/order, and signature areas (HR-only; field keys are validated against the fixed catalog, values are never stored) |
+| GET | `/api/v1/audit-entries/` | Administrative audit trail, paginated newest first; immutably records config changes, decisions, and submissions with the acting user. Filters: `action=`, `target_type=`, `target_id=`, `actor=` (HR-only) |
+| GET | `/api/v1/audit-entries/{id}/` | Retrieve one audit entry (HR-only) |
+| GET | `/api/v1/finalized-leave/` | Finalized (submitted) leave applications, newest submission first, with employee, leave type, dates/days, reference, and current approver; `employee=` name/email search (HR-only) |
+| GET | `/api/v1/finalized-leave/{id}/` | One submitted application with its documents, reassignment history, and oldest-first audit trail (HR-only; 404 for draft ids) |
 | GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
 | GET | `/api/v1/leave-documents/config/` | Upload-size/type policy (`max_size_bytes`, `allowed_content_types`) for the document UI |
 | GET | `/api/v1/leave-applications/{id}/documents/` | List active supporting documents (owner-only; paginated) |
@@ -278,7 +396,7 @@ luanar-lms/
 │   ├── users/         # User model and authentication
 │   ├── leave/         # Leave domain (grade entitlements, leave types/rules; applications later)
 │   ├── workflows/     # Approval workflow configuration (workflows, stages)
-│   ├── notifications/ # Notifications domain (stub)
+│   ├── notifications/ # Notification outbox + email delivery (django-q2 worker)
 │   ├── documents/     # Documents domain (stub)
 │   └── audit/         # Audit domain (append-only AuditEvent log + HR finalized-leave/audit views)
 ├── storage/           # File storage (TBD)

@@ -31,7 +31,11 @@ def validate_overlap(
         start_date__isnull=False,
         end_date__isnull=False,
     )
-    if ctx.application is not None:
+    # A resubmission excludes the live application explicitly; drafts attached
+    # to a run exclude themselves via ``ctx.application``.
+    if ctx.exclude_application_id is not None:
+        queryset = queryset.exclude(id=ctx.exclude_application_id)
+    elif ctx.application is not None:
         queryset = queryset.exclude(id=ctx.application.id)
     if ctx.exclude_application_id is not None:
         queryset = queryset.exclude(id=ctx.exclude_application_id)

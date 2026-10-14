@@ -1,24 +1,61 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { apiErrorMessage } from "@/lib/utils";
+import { Input, Field } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { listLeaveTypes } from "@/lib/leave-types-client";
+import type { LeaveTypeListResponse } from "@/lib/leave-rules";
 
 export function EntitlementForm({
   entitlement,
   endpoint,
   method,
+  onSuccess,
+  onCancel,
 }: {
   entitlement?: Entitlement;
   endpoint: string;
   method: "POST" | "PATCH";
+  /**
+   * When provided the form reports the saved record instead of navigating, so a
+   * dialog can close and refresh its list without the page moving underneath it.
+   * Defaults to the push-and-refresh the standalone pages rely on.
+   */
+  onSuccess?: (entitlement: Entitlement) => void;
+  /** Replaces the Cancel link when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
+  const [effectiveFrom, setEffectiveFrom] = useState(entitlement?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeListResponse | null>(null);
+  const [ltError, setLtError] = useState("");
+  // The picker is a popover trigger, so its value has to be mirrored into state
+  // for the display and still reach FormData through the Select's own name.
+  const [leaveTypeValue, setLeaveTypeValue] = useState(
+    entitlement?.leave_type ? String(entitlement.leave_type) : "",
+  );
+
+  useEffect(() => {
+    listLeaveTypes()
+      .then((data) => setLeaveTypes(data))
+      .catch(() => setLtError("Unable to load leave types. Please try again."));
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,6 +63,14 @@ export function EntitlementForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!effectiveFrom) {
+      setError("Choose an effective-from date.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch(endpoint, {
@@ -36,6 +81,10 @@ export function EntitlementForm({
           grade_end: formData.get("grade_end"),
           days: Number(formData.get("days")),
           effective_from: formData.get("effective_from"),
+          leave_type:
+            leaveTypeValue && leaveTypeValue !== ""
+              ? Number(leaveTypeValue)
+              : null,
         }),
       });
 
@@ -45,8 +94,15 @@ export function EntitlementForm({
         return;
       }
 
-      router.push("/dashboard/hr-admin/entitlements");
-      router.refresh();
+      // The viewset answers with the saved record, so the dialog host gets the
+      // entity without a second read.
+      const saved = (await response.json()) as Entitlement;
+      if (onSuccess) {
+        onSuccess(saved);
+      } else {
+        router.push("/dashboard/hr-admin/entitlements");
+        router.refresh();
+      }
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
@@ -56,95 +112,94 @@ export function EntitlementForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="grade_start"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Grade start
-        </label>
-        <input
+      <Field label="Grade start" htmlFor="grade_start">
+        <Input
           id="grade_start"
           name="grade_start"
           required
           defaultValue={entitlement?.grade_start}
           placeholder="e.g. A"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="grade_end"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Grade end
-        </label>
-        <input
+      <Field label="Grade end" htmlFor="grade_end">
+        <Input
           id="grade_end"
           name="grade_end"
           required
           defaultValue={entitlement?.grade_end}
           placeholder="e.g. C"
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="days"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Annual days
-        </label>
-        <input
+      <Field label="Annual days" htmlFor="days">
+        <Input
           id="days"
           name="days"
           type="number"
           min={1}
           required
           defaultValue={entitlement?.days}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
         />
-      </div>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="effective_from"
-          className="mb-1 block text-sm font-medium text-text-primary"
+      <Field
+        label="Leave type"
+        htmlFor="leave_type"
+        hint="Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Rules."
+        error={ltError || null}
+      >
+        <Select
+          name="leave_type"
+          value={leaveTypeValue}
+          onValueChange={setLeaveTypeValue}
         >
-          Effective from
-        </label>
-        <input
+          <SelectTrigger id="leave_type" aria-label="Leave type">
+            <SelectValue placeholder="Annual (untyped)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Annual (untyped)</SelectItem>
+            {(leaveTypes?.results || [])
+              .filter((lt) => lt.code === "annual")
+              .map((lt) => (
+                <SelectItem key={lt.id} value={String(lt.id)}>
+                  {lt.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <Field label="Effective from" htmlFor="effective_from">
+        <DatePicker
           id="effective_from"
-          name="effective_from"
-          type="date"
-          required
-          defaultValue={entitlement?.effective_from}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          value={effectiveFrom}
+          onChange={setEffectiveFrom}
         />
-      </div>
+        {/* The trigger is a <button>, so the name still has to reach FormData. */}
+        <input type="hidden" name="effective_from" value={effectiveFrom} />
+      </Field>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : entitlement ? "Save changes" : "Create entitlement"}
-        </button>
-        <Link
-          href="/dashboard/hr-admin/entitlements"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/entitlements"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

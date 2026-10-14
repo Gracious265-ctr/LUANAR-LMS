@@ -3,41 +3,12 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+<<<<<<< HEAD
+=======
+from django.db.models import Min
+>>>>>>> feature/plans-teams
 from django.utils import timezone
 from django.utils.text import slugify
-
-
-class GradeEntitlement(models.Model):
-    """Effective-dated annual leave entitlement for a grade range."""
-
-    grade_start = models.CharField(max_length=20)
-    grade_end = models.CharField(max_length=20)
-    days = models.PositiveIntegerField()
-    effective_from = models.DateField()
-
-    class Meta:
-        ordering = ["-effective_from", "grade_start", "grade_end"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(days__gte=1),
-                name="gradeentitlement_days_gte_1",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(grade_start__lte=models.F("grade_end")),
-                name="gradeentitlement_grade_start_le_grade_end",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.grade_start}–{self.grade_end}: {self.days} days "
-            f"(from {self.effective_from})"
-        )
-
-    def save(self, *args, **kwargs):
-        self.grade_start = self.grade_start.strip().upper()
-        self.grade_end = self.grade_end.strip().upper()
-        super().save(*args, **kwargs)
 
 
 class LeaveType(models.Model):
@@ -45,6 +16,14 @@ class LeaveType(models.Model):
 
     name = models.CharField(max_length=120, unique=True)
     code = models.SlugField(max_length=50, unique=True, blank=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether HR still offers this type. Retiring a type hides it from "
+            "employees without deleting it, so applications already filed against "
+            "it keep their type and its rules keep their history."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -61,6 +40,73 @@ class LeaveType(models.Model):
         super().save(*args, **kwargs)
 
 
+class GradeEntitlement(models.Model):
+    """Effective-dated entitlement to a leave type for a grade range.
+
+    This is what makes a leave type appear in an employee's selection: the band
+    says which type the grade is granted, and ``effective_from`` says from when.
+    Without a band, the type is offered to nobody.
+
+    ``leave_type`` is nullable, and a null means the pre-existing meaning: this
+    band *is* the annual leave entitlement, with no type named. Rows created
+    before the field existed are left that way rather than being given an
+    invented type. A null grants no selectable type and does not fund a specific
+    one, so it is the fallback the balance resolver uses when nothing is linked.
+    """
+
+    grade_start = models.CharField(max_length=20)
+    grade_end = models.CharField(max_length=20)
+    days = models.PositiveIntegerField()
+    effective_from = models.DateField()
+    leave_type = models.ForeignKey(
+        LeaveType,
+        on_delete=models.PROTECT,
+        related_name="grade_entitlements",
+        null=True,
+        blank=True,
+        help_text=(
+            "The leave type this band grants. Naming it is what puts the type in "
+            "the employee's selection for grades in this range."
+        ),
+    )
+
+    class Meta:
+        ordering = ["-effective_from", "grade_start", "grade_end"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(days__gte=1),
+                name="gradeentitlement_days_gte_1",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(grade_start__lte=models.F("grade_end")),
+                name="gradeentitlement_grade_start_le_grade_end",
+            ),
+            # One row per (type, grade range). Postgres treats the null in
+            # ``leave_type`` as distinct from itself and from every other null,
+            # so untyped bands are only constrained by the overlap check, which
+            # is where they are actually policed.
+            models.UniqueConstraint(
+                fields=["leave_type", "grade_start", "grade_end"],
+                name="gradeentitlement_type_range_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        # The type is in the label because the admin's band picker and the audit
+        # trail both read this string, and a list of bands that does not say
+        # which leave type each one grants is not distinguishable.
+        granted = self.leave_type.name if self.leave_type_id else "annual leave"
+        return (
+            f"{self.grade_start}–{self.grade_end}: {self.days} {granted} days "
+            f"(from {self.effective_from})"
+        )
+
+    def save(self, *args, **kwargs):
+        self.grade_start = self.grade_start.strip().upper()
+        self.grade_end = self.grade_end.strip().upper()
+        super().save(*args, **kwargs)
+
+
 class LeaveRule(models.Model):
     """Effective-dated configuration for a leave type."""
 
@@ -69,7 +115,19 @@ class LeaveRule(models.Model):
     )
     max_duration_days = models.PositiveIntegerField()
     eligibility = models.TextField(blank=True)
+<<<<<<< HEAD
     eligibility_rules = models.JSONField(default=list, blank=True)
+=======
+    eligibility_rules = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Machine-readable eligibility rules for the validation engine, each "
+            "``{'type': ..., 'params': {...}}``. ``eligibility`` above stays the "
+            "human-readable description."
+        ),
+    )
+>>>>>>> feature/plans-teams
     min_notice_days = models.PositiveIntegerField(default=0)
     requires_supporting_document = models.BooleanField(default=False)
     consumes_annual_entitlement = models.BooleanField(default=False)
@@ -137,11 +195,23 @@ class LeaveApplication(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
+<<<<<<< HEAD
         PENDING = "pending", "Pending"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUIRED = "correction_required", "Correction Required"
         CANCELLED = "cancelled", "Cancelled"
+=======
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUIRED = "correction_required", "Correction required"
+        CANCELLED = "cancelled", "Cancelled"
+
+    # The set of statuses where the employee can no longer submit/edit (Unit 17).
+    # Unit 18 adds ``CANCELLED``: a withdrawn or cancelled application is terminal.
+    SUBMITTED_STATUSES = (Status.SUBMITTED,)
+    APPROVED_STATUSES = (Status.APPROVED,)
+>>>>>>> feature/plans-teams
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     employee = models.ForeignKey(
@@ -167,9 +237,12 @@ class LeaveApplication(models.Model):
         max_length=32, unique=True, null=True, blank=True
     )
 
-    # The approver who currently must act on this pending application. Set only
-    # by HR emergency reassignment (Unit 9) for now; Unit 21 (workflow routing)
-    # resolves and writes it as the responsible-approver spine.
+    # The approver who has actually taken up this pending application. A section
+    # is resolved by whoever acts first, so this is null while a stage is still
+    # open and is written the moment one of its eligible members decides (or is
+    # placed there by HR emergency reassignment). The people who may act are
+    # ``Application.current_stage.eligible_approvers`` — this field records who
+    # did, not who could.
     current_approver = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -204,6 +277,33 @@ class LeaveApplication(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
 
+    # Set when the application reaches the terminal ``CANCELLED`` state (Unit 18):
+    # either the employee withdrew a pending application or an approved-leave
+    # cancellation was finally approved. Null for every other status.
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    # Set once, inside the approval transaction, when the application reaches
+    # its final ``APPROVED`` state (Unit 23b). The generated approved document
+    # states when the leave was approved, so the date has to be recorded rather
+    # than re-derived at render time. Never rewritten afterwards.
+    approved_on = models.DateTimeField(null=True, blank=True)
+
+    # Resubmission cycle counter. Starts at 1; increments on every resubmission.
+    # All workflow stages and approval decisions for one submission carry this
+    # value so a stale stage can never be confused with the live chain.
+    submission_cycle = models.PositiveSmallIntegerField(default=1)
+
+    # The stage the application is currently parked at. Written by the workflow
+    # assignment/approval services; null for drafts and finalised applications.
+    current_stage = models.ForeignKey(
+        "workflows.ApplicationStage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The live workflow stage awaiting (or last acted on) this application.",
+    )
+
     # Authoritative, server-calculated values written once at submission (Unit 14).
     working_days = models.PositiveSmallIntegerField(null=True, blank=True)
     calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -216,6 +316,20 @@ class LeaveApplication(models.Model):
     def __str__(self) -> str:
         ref = self.reference_number or "Draft"
         return f"LeaveApplication({ref} - {self.employee})"
+
+    @property
+    def workflow_chain_cycle(self) -> int:
+        """The cycle the live workflow chain was created under.
+
+        Resubmission reuses the original stage chain, so stage rows keep the
+        cycle of the first submission. Decision-time rules keep working off
+        ``submission_cycle``; chain lookups (which stage is pending, what comes
+        next) must use this property so they never filter against a cycle the
+        stages were not created under.
+        """
+        return (
+            self.stages.aggregate(chain=Min("submission_cycle"))["chain"] or 1
+        )
 
 
 class SupportingDocument(models.Model):
@@ -234,16 +348,36 @@ class SupportingDocument(models.Model):
         related_name="documents",
     )
     file_path = models.CharField(max_length=512)
+<<<<<<< HEAD
     file_url = models.URLField(max_length=2048)
+=======
+    file_url = models.URLField(
+        max_length=2048,
+        help_text=(
+            "Cached signed URL; a fresh one is minted per read. Must comfortably "
+            "exceed a Supabase signed URL at maximum length: a 255-char "
+            "file_name yields a ~311-char storage path, which signs to roughly "
+            "900 characters. Reads re-sign from file_path, so this column is a "
+            "cache/fallback only."
+        ),
+    )
+>>>>>>> feature/plans-teams
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()
     content_type = models.CharField(max_length=100)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+<<<<<<< HEAD
     # Unit 17 lifecycle: documents on a submitted application are never
     # physically deleted. A replace/remove retires the old row (``status``
     # drops to ``retired``) so it stays in the application history; the file in
     # storage is never removed either (retirement is metadata-only).
+=======
+    # Lifecycle (Unit 17). Documents are never hard-deleted after submission:
+    # replaced/removed rows are retired so the audit trail and the revision
+    # snapshot can still resolve their names. Only active rows are returned to
+    # employees/approvers and counted by the documents validator.
+>>>>>>> feature/plans-teams
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
@@ -253,19 +387,57 @@ class SupportingDocument(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
+<<<<<<< HEAD
         related_name="documents_retired",
     )
     retire_reason = models.CharField(
         max_length=20, choices=RetireReason.choices, null=True, blank=True
+=======
+        related_name="retired_documents",
+    )
+    retire_reason = models.CharField(
+        max_length=20,
+        choices=RetireReason.choices,
+        null=True,
+        blank=True,
+>>>>>>> feature/plans-teams
     )
     replaced_by = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
+<<<<<<< HEAD
         related_name="replaced_from",
     )
 
+=======
+        related_name="replaced_documents",
+    )
+
+    def retire(self, user, reason, *, replaced_by=None) -> None:
+        """Flip this row to ``retired`` (Unit 19).
+
+        Retirement is permanent: a document is never re-activated. The storage
+        object is deliberately kept so submitted revision snapshots and the
+        audit trail still resolve. ``reason`` is ``replaced`` or ``removed``.
+        """
+        self.status = self.Status.RETIRED
+        self.retired_at = timezone.now()
+        self.retired_by = user
+        self.retire_reason = reason
+        self.replaced_by = replaced_by
+        self.save(
+            update_fields=[
+                "status",
+                "retired_at",
+                "retired_by",
+                "retire_reason",
+                "replaced_by",
+            ]
+        )
+
+>>>>>>> feature/plans-teams
     class Meta:
         ordering = ["-uploaded_at"]
         indexes = [
@@ -276,6 +448,7 @@ class SupportingDocument(models.Model):
         return f"Document({self.file_name})"
 
 
+<<<<<<< HEAD
 class ApplicationRevision(models.Model):
     """An immutable content snapshot taken at each submission (Unit 17).
 
@@ -286,11 +459,44 @@ class ApplicationRevision(models.Model):
     for revision 1) and is what the approver sees in the change summary.
 
     Rows are append-only: no update or delete through the ORM, admin, or API.
+=======
+class ApplicationRevisionLockedError(Exception):
+    """Raised on any attempt to update or delete an ``ApplicationRevision``."""
+
+
+class ApplicationRevisionQuerySet(models.QuerySet):
+    """Append-only: queryset-wide update/delete are rejected."""
+
+    def update(self, *args: object, **kwargs: object):
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be updated."
+        )
+
+    def delete(self):
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be deleted."
+        )
+
+
+class ApplicationRevisionManager(models.Manager.from_queryset(ApplicationRevisionQuerySet)):
+    """Manager enforcing the append-only invariant."""
+
+
+class ApplicationRevision(models.Model):
+    """Append-only snapshot of an application at one submission (Unit 17, Unit 24).
+
+    ``revision_number`` equals the application's ``submission_cycle`` at write
+    time, so every resubmission records the exact state the approver saw before
+    deciding. The approval review payload diffs a newer revision against the
+    cycle-1 baseline to show "changes since your decision". Immutable like
+    ``ApprovalDecision``: rows are write-only history.
+>>>>>>> feature/plans-teams
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         LeaveApplication,
+<<<<<<< HEAD
         on_delete=models.CASCADE,
         related_name="revisions",
     )
@@ -303,40 +509,93 @@ class ApplicationRevision(models.Model):
         related_name="+",
     )
     leave_type_name = models.CharField(max_length=120)
+=======
+        on_delete=models.PROTECT,
+        related_name="revisions",
+    )
+    revision_number = models.PositiveSmallIntegerField()
+
+    leave_type_id = models.PositiveIntegerField(null=True, blank=True)
+    leave_type_name = models.CharField(max_length=120, blank=True, default="")
+>>>>>>> feature/plans-teams
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     working_days = models.PositiveSmallIntegerField(null=True, blank=True)
     reason = models.TextField(blank=True, default="")
+<<<<<<< HEAD
     documents = models.JSONField(default=list)
     changes = models.JSONField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
+=======
+
+    documents = models.JSONField(default=list)
+    changes = models.JSONField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+>>>>>>> feature/plans-teams
         null=True,
         blank=True,
         related_name="application_revisions",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+<<<<<<< HEAD
     class Meta:
         ordering = ["revision_number"]
         constraints = [
+=======
+    objects = ApplicationRevisionManager()
+
+    class Meta:
+        ordering = ["-revision_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "revision_number"],
+                name="applicationrevision_application_revision_number_uniq",
+            ),
+>>>>>>> feature/plans-teams
             models.CheckConstraint(
                 condition=models.Q(revision_number__gte=1),
                 name="applicationrevision_revision_number_gte_1",
             ),
+<<<<<<< HEAD
             models.UniqueConstraint(
                 fields=["application", "revision_number"],
                 name="applicationrevision_application_revision_number_unique",
             ),
+=======
+>>>>>>> feature/plans-teams
         ]
 
     def __str__(self) -> str:
         return (
+<<<<<<< HEAD
             f"Revision {self.revision_number} of "
             f"{self.application.reference_number or self.application_id}"
         )
 
+=======
+            f"Revision({self.revision_number} of "
+            f"{self.application.reference_number or self.application_id})"
+        )
+
+    def delete(self, *args: object, **kwargs: object) -> None:
+        raise ApplicationRevisionLockedError(
+            "Application revisions are append-only and cannot be deleted."
+        )
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if not self._state.adding:
+            raise ApplicationRevisionLockedError(
+                "Application revisions are append-only and cannot be updated."
+            )
+        super().save(*args, **kwargs)
+
+>>>>>>> feature/plans-teams
 
 class ReferenceSequence(models.Model):
     """Per-financial-year reference counter (Unit 14, decision D8).
@@ -353,6 +612,7 @@ class ReferenceSequence(models.Model):
         return f"RefSeq({self.financial_year_label}: {self.last_value})"
 
 
+<<<<<<< HEAD
 class CancellationRequest(models.Model):
     """A leave cancellation or withdrawal request (Unit 18).
 
@@ -522,3 +782,8 @@ class LeaveBalanceTransaction(models.Model):
 
     def delete(self, *args, **kwargs):
         raise RuntimeError("LeaveBalanceTransaction rows are append-only.")
+=======
+# Unit 18 models live in ``leave/cancellations/models.py`` (same app label). This
+# import registers them with the app so ``makemigrations`` sees the new tables.
+from .cancellations import models as _cancellations_models  # noqa: E402, F401  # isort: skip
+>>>>>>> feature/plans-teams

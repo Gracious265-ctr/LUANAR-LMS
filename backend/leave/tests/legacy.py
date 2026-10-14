@@ -1,19 +1,38 @@
+"""Leave entitlement, leave-type, rule, and holiday coverage.
+
+The department suite that used to live alongside this — ``Department`` itself, its
+HR-only CRUD, and the ``Department`` assertion in the bootstrap test below — was
+removed with the model. A fresh database is now checked for the entities that do
+exist instead.
+"""
 from datetime import date, timedelta
+from unittest import mock
 
 from django.contrib.admin.sites import AdminSite
-from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from users.models import User
+from users.models import EmployeeProfile, User
+
+from audit.models import AuditEntry
+from workflows.models import (
+    ApproverRole,
+    Campus,
+    RoleAssignment,
+    Section,
+    SectionMember,
+    Team,
+    Workflow,
+)
 
 from ..admin import (
     FinancialYearAdmin,
     FinancialYearAdminForm,
     GradeEntitlementAdmin,
     GradeEntitlementAdminForm,
+    LeaveTypeAdminForm,
     PublicHolidayAdmin,
     PublicHolidayAdminForm,
 )
@@ -29,11 +48,14 @@ from ..models import (
 from ..services import (
     active_financial_year,
     financial_year_for_date,
+    find_annual_leave_type,
     public_holidays_between,
     resolve_grade_entitlement,
     resolve_leave_rule,
 )
 from ..services.working_days import calculate_working_days
+from ..services.storage import upload_document
+from ..serializers import SupportingDocumentSerializer
 
 SEED_PASSWORD = "testpass123"
 TODAY = timezone.localdate()
@@ -348,46 +370,180 @@ class GradeEntitlementEndpointTests(TestCase):
         response = self.client.get(self.resolve_url, {"grade": "B", "as_of": "not-a-date"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_provisions_annual_leave_and_its_rule(self):
+        """Saving an entitlement is what brings annual leave into existence.
 
-class SeedDevelopmentCommandTests(TestCase):
-    """Seed command creates default entitlement rules idempotently."""
-
-    def test_seed_creates_default_entitlements_idempotently(self):
-        call_command("seed_dev_users")
-        call_command("seed_dev_users")
-
-        self.assertEqual(User.objects.count(), 7)
-        self.assertEqual(GradeEntitlement.objects.count(), 3)
-
-        days_by_band = {
-            (rule.grade_start, rule.grade_end): rule.days
-            for rule in GradeEntitlement.objects.all()
-        }
-        self.assertEqual(days_by_band[("A", "C")], 21)
-        self.assertEqual(days_by_band[("D", "G")], 24)
-        self.assertEqual(days_by_band[("H", "U")], 30)
-
-    def test_seed_creates_default_leave_types_and_rules_idempotently(self):
-        call_command("seed_dev_users")
-        call_command("seed_dev_users")
-
-        self.assertEqual(LeaveType.objects.count(), 4)
-        self.assertEqual(LeaveRule.objects.count(), 4)
-
-        rules_by_code = {
-            rule.leave_type.code: rule
-            for rule in LeaveRule.objects.select_related("leave_type")
-        }
-        self.assertEqual(rules_by_code["annual"].max_duration_days, 30)
-        self.assertTrue(rules_by_code["annual"].consumes_annual_entitlement)
-        self.assertEqual(rules_by_code["maternity"].max_duration_days, 90)
-        self.assertFalse(rules_by_code["maternity"].consumes_annual_entitlement)
-        self.assertEqual(rules_by_code["paternity"].max_duration_days, 10)
-        self.assertEqual(rules_by_code["compassionate"].max_duration_days, 5)
-        self.assertEqual(
-            {rule.leave_type.code for rule in LeaveRule.objects.all()},
-            {"annual", "maternity", "paternity", "compassionate"},
+        Both rows are created together: without the type the employee catalog
+        has nothing to offer, and without the rule HR's Leave Rules table and the
+        catalog's duration both stay empty.
+        """
+        maternity = LeaveType.objects.create(name="Maternity leave", code="maternity")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "grade_start": "V",
+                "grade_end": "W",
+                "days": 30,
+                "effective_from": TODAY.isoformat(),
+            },
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        annual = find_annual_leave_type()
+        self.assertIsNotNone(annual)
+        self.assertEqual(response.data["leave_type"], annual.pk)  # type: ignore[index]
+        self.assertEqual(response.data["leave_type_name"], "Annual Leave")  # type: ignore[index]
+        # The band that was just written grants annual leave, not maternity.
+        self.assertEqual(GradeEntitlement.objects.get(pk=response.data["id"]).leave_type, annual)  # type: ignore[index]
+
+        rule = LeaveRule.objects.get(leave_type=annual)
+        self.assertTrue(rule.consumes_annual_entitlement)
+        self.assertEqual(rule.max_duration_days, 30)
+        self.assertEqual(rule.effective_from, TODAY)
+
+        # The rule is visible in HR's Leave Rules table.
+        rules = self.client.get("/api/v1/leave-rules/")
+        self.assertEqual(rules.status_code, status.HTTP_200_OK)
+        rule_ids = [item["id"] for item in rules.data["results"]]  # type: ignore[index]
+        self.assertIn(rule.pk, rule_ids)
+        self.assertNotIn(maternity.pk, [item["leave_type"] for item in rules.data["results"]])  # type: ignore[index]
+
+    def test_create_provisions_annual_leave_when_a_type_is_supplied(self):
+        """``leave_type`` is read-only, so a supplied one cannot skip provisioning."""
+        self.client.force_authenticate(user=self.hr_user)
+        maternity = LeaveType.objects.create(name="Maternity leave", code="maternity")
+        response = self.client.post(
+            self.list_url,
+            {
+                "grade_start": "V",
+                "grade_end": "W",
+                "days": 30,
+                "effective_from": TODAY.isoformat(),
+                "leave_type": maternity.pk,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        band = GradeEntitlement.objects.get(pk=response.data["id"])  # type: ignore[index]
+        self.assertEqual(band.leave_type, find_annual_leave_type())
+        self.assertTrue(LeaveRule.objects.filter(leave_type=find_annual_leave_type()).exists())
+
+    def test_second_band_reuses_the_same_annual_type_and_rule(self):
+        """Provisioning is idempotent: one type, one starting rule."""
+        self.client.force_authenticate(user=self.hr_user)
+        self.client.post(
+            self.list_url,
+            {
+                "grade_start": "V",
+                "grade_end": "W",
+                "days": 30,
+                "effective_from": TODAY.isoformat(),
+            },
+        )
+        response = self.client.post(
+            self.list_url,
+            {
+                "grade_start": "X",
+                "grade_end": "Z",
+                "days": 21,
+                "effective_from": TODAY.isoformat(),
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(LeaveType.objects.filter(code__in=["annual", "annual-leave"]).count(), 1)
+        self.assertEqual(LeaveRule.objects.count(), 1)
+
+    def test_provisioned_leave_type_is_audited(self):
+        self.client.force_authenticate(user=self.hr_user)
+        self.client.post(
+            self.list_url,
+            {
+                "grade_start": "V",
+                "grade_end": "W",
+                "days": 30,
+                "effective_from": TODAY.isoformat(),
+            },
+        )
+        annual = find_annual_leave_type()
+        type_entry = AuditEntry.objects.filter(
+            target_type=AuditEntry.TargetType.LEAVE_TYPE, target_id=str(annual.pk)
+        )
+        rule_entry = AuditEntry.objects.filter(
+            target_type=AuditEntry.TargetType.LEAVE_RULE
+        )
+        self.assertEqual(type_entry.count(), 1)
+        self.assertEqual(type_entry.first().actor, self.hr_user)
+        self.assertEqual(rule_entry.count(), 1)
+        self.assertEqual(rule_entry.first().actor, self.hr_user)
+
+
+class CleanDatabaseBootstrapTests(TestCase):
+    """The product must run from an empty database.
+
+    A superadmin creates HR, and HR creates campuses, teams, workflows,
+    entitlements, and leave types through the frontend. Nothing may supply those
+    rows behind the UI's back — a seeder or a data migration that quietly created
+    them would leave HR looking at configuration it did not create and could not
+    explain. A test database is built by the migrations alone, which makes it
+    exactly that starting point.
+
+    Approver roles are HR data too: a fresh install has **none**. Migration
+    0011 used to seed six canonical codes for the old hardcoded stages; 0028
+    removes them again when nothing references them, so migrate-from-zero ends
+    at zero roles. HR creates the roles the institution actually uses through
+    the Roles screen.
+    """
+
+    def test_a_fresh_database_has_no_accounts(self):
+        self.assertFalse(User.objects.exists())
+        self.assertFalse(EmployeeProfile.objects.exists())
+
+    def test_a_fresh_database_has_no_approver_roles(self):
+        self.assertFalse(ApproverRole.objects.exists())
+
+    def test_a_fresh_database_has_no_business_data(self):
+        self.assertFalse(Campus.objects.exists())
+        self.assertFalse(Team.objects.exists())
+        self.assertFalse(Workflow.objects.exists())
+        self.assertFalse(Section.objects.exists())
+        self.assertFalse(SectionMember.objects.exists())
+        self.assertFalse(RoleAssignment.objects.exists())
+        self.assertFalse(GradeEntitlement.objects.exists())
+        self.assertFalse(LeaveType.objects.exists())
+        self.assertFalse(LeaveRule.objects.exists())
+
+    def test_the_first_hr_account_arrives_through_the_admin_users_endpoint(self):
+        """The bootstrap door is the API, and it hands over no configuration.
+
+        Creating HR is the first write a deployment makes, so it is the moment a
+        stray seed row would first become visible. The account arrives alone:
+        nothing about approving leave comes with it.
+        """
+        superuser = User.objects.create_superuser(
+            username="root@test.luanar",
+            email="root@test.luanar",
+            password=SEED_PASSWORD,
+        )
+        client = APIClient()
+        client.force_authenticate(user=superuser)
+        response = client.post(
+            "/api/v1/admin-users/",
+            {
+                "first_name": "Ada",
+                "last_name": "Person",
+                "email": "ada@test.luanar",
+                "password": "longenough",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(User.objects.get(email="ada@test.luanar").role, User.Role.HR)
+        self.assertFalse(Campus.objects.exists())
+        self.assertFalse(Team.objects.exists())
+        self.assertFalse(Workflow.objects.exists())
+        self.assertFalse(RoleAssignment.objects.exists())
+        self.assertFalse(GradeEntitlement.objects.exists())
+        self.assertFalse(LeaveType.objects.exists())
 
 
 class GradeEntitlementAdminTests(TestCase):
@@ -430,6 +586,79 @@ class GradeEntitlementAdminTests(TestCase):
     def test_admin_does_not_allow_delete(self):
         model_admin = GradeEntitlementAdmin(GradeEntitlement, AdminSite())
         self.assertFalse(model_admin.has_delete_permission(request=None))
+
+    def test_form_leave_type_is_not_editable(self):
+        """An entitlement is an annual-leave entitlement, so the type is settled."""
+        form = GradeEntitlementAdminForm(data=self._data(), instance=self.ac)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(form.fields["leave_type"].required)
+        self.assertTrue(form.fields["leave_type"].disabled)
+
+    def test_admin_save_provisions_annual_leave(self):
+        hr_user = User.objects.create_user(
+            username="hr@admin.test",
+            email="hr@admin.test",
+            password=SEED_PASSWORD,
+            role=User.Role.HR,
+        )
+        model_admin = GradeEntitlementAdmin(GradeEntitlement, AdminSite())
+        band = GradeEntitlement(
+            grade_start="X", grade_end="Z", days=21, effective_from=TODAY
+        )
+        request = mock.Mock(user=hr_user)
+        form = GradeEntitlementAdminForm(
+            data={
+                "grade_start": "X",
+                "grade_end": "Z",
+                "days": 21,
+                "effective_from": TODAY.isoformat(),
+            },
+            instance=band,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        model_admin.save_model(request, band, form, change=False)
+        self.assertEqual(band.leave_type, find_annual_leave_type())
+        self.assertTrue(
+            LeaveRule.objects.filter(leave_type=band.leave_type).exists()
+        )
+
+
+class LeaveTypeAdminFormTests(TestCase):
+    """The admin applies the same two annual-leave guards as the API."""
+
+    def setUp(self):
+        self.annual = LeaveType.objects.create(name="Annual Leave", code="annual")
+        self.maternity = LeaveType.objects.create(
+            name="Maternity leave", code="maternity"
+        )
+
+    def test_form_refuses_to_edit_annual_leave(self):
+        form = LeaveTypeAdminForm(
+            data={"name": "Annual leave (updated)", "is_active": "on"},
+            instance=self.annual,
+        )
+        self.assertFalse(form.is_valid())
+
+    def test_form_refuses_to_create_the_annual_leave_name(self):
+        form = LeaveTypeAdminForm(data={"name": "Annual Leave", "is_active": "on"})
+        self.assertFalse(form.is_valid())
+
+    def test_form_refuses_to_create_the_annual_leave_code(self):
+        form = LeaveTypeAdminForm(
+            data={"name": "Yearly leave", "code": "annual-leave", "is_active": "on"}
+        )
+        self.assertFalse(form.is_valid())
+
+    def test_form_allows_creating_another_leave_type(self):
+        form = LeaveTypeAdminForm(data={"name": "Study leave", "is_active": "on"})
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_form_allows_editing_another_leave_type(self):
+        form = LeaveTypeAdminForm(
+            data={"name": "Maternity leave", "is_active": "on"},
+            instance=self.maternity,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
 
 class LeaveRuleResolutionTests(TestCase):
     """Service-level effective-dated leave-rule resolution behavior."""
@@ -614,25 +843,175 @@ class LeaveTypeEndpointTests(TestCase):
 
     def test_hr_can_patch_leave_type(self):
         self.client.force_authenticate(user=self.hr_user)
+        detail_url = f"/api/v1/leave-types/{self.maternity.id}/"
+        response = self.client.patch(
+            detail_url, {"name": "Maternity leave (updated)"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.maternity.refresh_from_db()
+        self.assertEqual(self.maternity.name, "Maternity leave (updated)")
+
+    def test_hr_can_retire_a_non_annual_leave_type(self):
+        self.client.force_authenticate(user=self.hr_user)
+        detail_url = f"/api/v1/leave-types/{self.maternity.id}/"
+        response = self.client.patch(
+            detail_url, {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.maternity.refresh_from_db()
+        self.assertFalse(self.maternity.is_active)
+
+    def test_patch_refuses_to_rename_annual_leave(self):
+        """Annual leave is edited from Entitlements, not from Leave Types."""
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             self.detail_url, {"name": "Annual leave (updated)"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", response.data)  # type: ignore[index]
         self.annual.refresh_from_db()
-        self.assertEqual(self.annual.name, "Annual leave (updated)")
+        self.assertEqual(self.annual.name, "Annual leave")
 
-    def test_patch_rejects_name_taken_by_another_type(self):
+    def test_patch_refuses_to_retire_annual_leave(self):
+        """Retiring annual leave would empty every employee's leave selection."""
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
-            self.detail_url, {"name": "Maternity leave"}, format="json"
+            self.detail_url, {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.annual.refresh_from_db()
+        self.assertTrue(self.annual.is_active)
+
+    def test_create_rejects_reserving_the_annual_leave_name(self):
+        """An entitlement provisions annual leave, so the form cannot create it."""
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url, {"name": "Annual Leave", "code": "yearly"}, format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("name", response.data)  # type: ignore[index]
+
+    def test_create_rejects_reserving_the_annual_leave_code(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url, {"name": "Yearly leave", "code": "annual-leave"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("code", response.data)  # type: ignore[index]
+
+    def test_create_adopts_an_existing_annual_type_under_its_code(self):
+        """A database whose annual type sits on code 'annual' is still guarded."""
+        self.annual.delete()
+        legacy = LeaveType.objects.create(name="Annual", code="annual")
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(
+            f"/api/v1/leave-types/{legacy.id}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_patch_rejects_name_taken_by_another_type(self):
+        study = LeaveType.objects.create(name="Study leave", code="study")
+        self.client.force_authenticate(user=self.hr_user)
+        detail_url = f"/api/v1/leave-types/{self.maternity.id}/"
+        response = self.client.patch(detail_url, {"name": "Study leave"}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", response.data)  # type: ignore[index]
+        study.refresh_from_db()
+        self.assertEqual(study.name, "Study leave")
 
     def test_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.delete(self.detail_url)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class EmployeeLeaveTypeOptionsTests(TestCase):
+    """Read-only employee-facing leave-type catalog with live rule policy."""
+
+    def setUp(self):
+        self.client = APIClient()  # type: ignore[assignment]
+        self.employee_user = User.objects.create_user(
+            username="employee@test.luanar",
+            email="employee@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="Employee",
+            role=User.Role.EMPLOYEE,
+        )
+        self.hr_user = User.objects.create_user(
+            username="hr@test.luanar",
+            email="hr@test.luanar",
+            password=SEED_PASSWORD,
+            first_name="Test",
+            last_name="HR",
+            role=User.Role.HR,
+        )
+
+        EmployeeProfile.objects.create(user=self.employee_user, grade="B")
+        EmployeeProfile.objects.create(user=self.hr_user, grade="B")
+
+        self.annual = LeaveType.objects.create(name="Annual leave", code="annual")
+        self.paternity = LeaveType.objects.create(name="Paternity leave", code="paternity")
+
+        GradeEntitlement.objects.create(
+            grade_start="A",
+            grade_end="C",
+            days=10,
+            effective_from=TODAY - timedelta(days=1),
+            leave_type=self.paternity,
+        )
+        GradeEntitlement.objects.create(
+            grade_start="A",
+            grade_end="C",
+            days=21,
+            effective_from=TODAY - timedelta(days=1),
+            leave_type=self.annual,
+        )
+
+        self.effective_rule = LeaveRule.objects.create(
+            leave_type=self.paternity,
+            max_duration_days=10,
+            requires_supporting_document=True,
+            effective_from=TODAY - timedelta(days=1),
+        )
+        self.upcoming_rule = LeaveRule.objects.create(
+            leave_type=self.annual,
+            max_duration_days=99,
+            requires_supporting_document=False,
+            effective_from=TODAY + timedelta(days=1),
+        )
+
+        self.url = "/api/v1/employee/leave-types/"
+
+    def test_requires_authentication(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_employee_can_list_options_unpaginated(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data, list)  # type: ignore[arg-type]
+        by_code = {item["code"]: item for item in response.data}  # type: ignore[union-attr]
+
+        paternity = by_code["paternity"]
+        self.assertEqual(paternity["max_duration_days"], 10)
+        self.assertTrue(paternity["requires_supporting_document"])
+
+    def test_future_rule_is_not_considered_current(self):
+        self.client.force_authenticate(user=self.employee_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        by_code = {item["code"]: item for item in response.data}  # type: ignore[union-attr]
+
+        annual = by_code["annual"]
+        self.assertIsNone(annual["max_duration_days"])
+        self.assertFalse(annual["requires_supporting_document"])
+
+    def test_hr_can_read_the_same_catalog(self):
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 class LeaveRuleEndpointTests(TestCase):
@@ -847,6 +1226,14 @@ class LeaveRuleEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)  # type: ignore[index]
+
+    def test_invalid_leave_type_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("abc", "-1", "4.5"):
+            response = self.client.get(self.list_url, {"leave_type": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"leave_type={bad}"
+            )
 
     def test_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -1211,6 +1598,14 @@ class PublicHolidayEndpointTests(TestCase):
         self.assertEqual(response.data["count"], 1)  # type: ignore[index]
         self.assertEqual(response.data["results"][0]["name"], "New Year")  # type: ignore[index]
 
+    def test_invalid_year_filter_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.hr_user)
+        for bad in ("abc", "thirty", "4.5"):
+            response = self.client.get(self.list_url, {"year": bad})
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST, f"year={bad}"
+            )
+
     def test_delete_not_allowed(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.delete(self.detail_url)
@@ -1496,11 +1891,65 @@ class SupportingDocumentAPITest(TestCase):
         self.app.status = LeaveApplication.Status.SUBMITTED
         self.app.reference_number = "LUANAR-2026-00001"
         self.app.save()
-        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
+        response = self.client.post(
+            f"/api/v1/leave-applications/{self.app.id}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data["code"], "application_not_editable")
+
+    def test_upload_to_unknown_application_returns_404(self):
+        from uuid import uuid4
 
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
+        response = self.client.post(
+            f"/api/v1/leave-applications/{uuid4()}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_upload_to_foreign_application_returns_404(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        other = User.objects.create_user(
+            username="other", email="other@luanar.mw", password="testpass123"
+        )
+        foreign = LeaveApplication.objects.create(employee=other, leave_type_id=1)
+        file = SimpleUploadedFile("test.pdf", b"file_content", content_type="application/pdf")
+        response = self.client.post(
+            f"/api/v1/leave-applications/{foreign.id}/documents/",
+            {"file": file},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_upload_over_size_limit_returns_400(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        with mock.patch("leave.documents.services.MAX_DOCUMENT_SIZE", 100):
+            file = SimpleUploadedFile(
+                "big.pdf", b"x" * 101, content_type="application/pdf"
+            )
+            response = self.client.post(
+                f"/api/v1/leave-applications/{self.app.id}/documents/",
+                {"file": file},
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upload_with_unsupported_content_type_returns_400(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        file = SimpleUploadedFile(
+            "payload.exe", b"MZ", content_type="application/x-msdownload"
+        )
         response = self.client.post(
             f"/api/v1/leave-applications/{self.app.id}/documents/",
             {"file": file},
@@ -1524,3 +1973,125 @@ class UnauthenticatedAccessTest(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class SupportingDocumentSerializationTest(TestCase):
+    """file_url is re-signed from file_path at read time, never the stored URL."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser", email="test@luanar.mw", password=SEED_PASSWORD
+        )
+        self.app = LeaveApplication.objects.create(employee=self.user)
+        self.doc = SupportingDocument.objects.create(
+            application=self.app,
+            file_path="leave-documents/abcd/notes.pdf",
+            file_url="stale://signed-url",
+            file_name="notes.pdf",
+            file_size=1024,
+            content_type="application/pdf",
+        )
+
+    def test_file_url_is_re_signed_from_file_path(self):
+        with mock.patch(
+            "leave.serializers.safe_signed_document_url",
+            return_value="fresh://signed-url",
+        ) as signed:
+            data = SupportingDocumentSerializer(self.doc).data
+        signed.assert_called_once_with("leave-documents/abcd/notes.pdf", fallback=self.doc.file_url)
+        self.assertEqual(data["file_url"], "fresh://signed-url")
+
+    def test_serialization_falls_back_to_stored_url_when_storage_unconfigured(self):
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            side_effect=ValueError("Supabase credentials are not configured."),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertEqual(data["file_url"], "stale://signed-url")
+
+    def test_serialization_falls_back_to_stored_url_when_object_missing(self):
+        """A missing storage object (404) must not 500 the document list."""
+        from storage3.exceptions import StorageApiError
+
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            side_effect=StorageApiError("Object not found", code="404", status=404),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertEqual(data["file_url"], "stale://signed-url")
+
+    def test_fresh_signature_is_derived_from_the_path(self):
+        class _FakeBucket:
+            def create_signed_url(self, path, expiry):
+                return {"signedURL": f"https://signed/{path}?exp={expiry}"}
+
+        class _FakeBucketClient:
+            def from_(self, bucket):
+                return _FakeBucket()
+
+        class _FakeClient:
+            def __init__(self):
+                self.storage = _FakeBucketClient()
+
+        with mock.patch(
+            "leave.services.storage.get_supabase_client",
+            return_value=_FakeClient(),
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertIn(
+            "https://signed/leave-documents/abcd/notes.pdf", data["file_url"]
+        )
+
+    def test_stored_url_is_never_used_for_serialization(self):
+        with mock.patch(
+            "leave.serializers.safe_signed_document_url",
+            return_value="fresh://signed-url",
+        ):
+            data = SupportingDocumentSerializer(self.doc).data
+        self.assertNotIn("stale://signed-url", data["file_url"])
+
+
+class DocumentStorageTest(TestCase):
+    """Uploaded document keys are sanitized and collision-safe."""
+
+    def test_upload_uses_sanitized_collision_safe_key(self):
+        captured = {}
+
+        class _FakeBucket:
+            def upload(self, path, data, opts):
+                captured["path"] = path
+
+            def create_signed_url(self, path, expiry):
+                return {"signedURL": f"https://signed/{path}"}
+
+        class _FakeBucketClient:
+            def from_(self, bucket):
+                return _FakeBucket()
+
+        class _FakeClient:
+            def __init__(self):
+                self.storage = _FakeBucketClient()
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from uuid import uuid4
+
+        app_id = str(uuid4())
+        with mock.patch(
+            "leave.services.storage.get_supabase_client",
+            return_value=_FakeClient(),
+        ):
+            file = SimpleUploadedFile(
+                "../../Budget Plan (2).pdf", b"%PDF", content_type="application/pdf"
+            )
+            result = upload_document(file, app_id)
+
+        path = captured["path"]
+        self.assertTrue(path.startswith(f"leave-documents/{app_id}/"))
+        name = path.replace(f"leave-documents/{app_id}/", "")
+        self.assertNotIn("/", name)
+        self.assertNotIn("..", name)
+        token, _, base = name.partition("-")
+        self.assertEqual(len(token), 32)
+        self.assertEqual(base, "Budget_Plan__2_.pdf")
+        self.assertEqual(result["path"], path)
+        self.assertEqual(result["url"], f"https://signed/{path}")

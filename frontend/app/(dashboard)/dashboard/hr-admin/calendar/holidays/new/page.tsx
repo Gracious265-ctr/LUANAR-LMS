@@ -1,11 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { PublicHolidayForm } from "@/components/hr/public-holiday-form";
 import { getCurrentUser } from "@/lib/auth";
 
-export default async function NewHolidayPage() {
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the tables' row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a
+ * non-HR user following one of these still lands on `/dashboard` instead of
+ * bouncing through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -15,27 +21,5 @@ export default async function NewHolidayPage() {
     redirect("/dashboard");
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/calendar"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to leave calendar
-        </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
-          New public holiday
-        </h2>
-        <p className="text-text-secondary">
-          Add a date that should not count as a working leave day.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <PublicHolidayForm />
-      </div>
-    </div>
-  );
+  redirect(`/dashboard/hr-admin/calendar?holiday=new`);
 }

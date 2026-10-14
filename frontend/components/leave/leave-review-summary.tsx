@@ -5,38 +5,62 @@ import { CalendarDays, FileText, Pencil } from "lucide-react";
 
 import type { ValidationResult } from "@/lib/leave-validation";
 import type { LeaveApplication } from "@/lib/leave-api";
+<<<<<<< HEAD
 import { DocumentList } from "./document-list";
+=======
+import { Card } from "@/components/ui/card";
+>>>>>>> feature/plans-teams
 
 interface LeaveReviewSummaryProps {
   application: LeaveApplication;
   leaveTypeName: string;
   validation: ValidationResult | null;
+  /**
+   * Overrides the edit link so the compose overlay can step back to its own
+   * form stage instead of navigating away. Omitted on the standalone page.
+   */
+  onEdit?: () => void;
 }
 
 /**
  * Summary card for the review screen. Working days come from the server's
- * validation result (never recomputed client-side).
+ * validation result when available, falling back to the application's stored
+ * calculated days so the row still reads while validation is pending,
+ * unavailable, or precondition checks prevent a live count. Days are never
+ * recomputed client-side.
  */
 export function LeaveReviewSummary({
   application,
   leaveTypeName,
   validation,
+  onEdit,
 }: LeaveReviewSummaryProps) {
-  const workingDays = validation?.working_days ?? application.calculated_days;
+  const workingDays = validation?.working_days ?? application.calculated_days ?? null;
   const calendarDays = validation?.calendar_days;
   const financialYear = validation?.financial_year;
 
   return (
-    <div className="bg-surface-card rounded-xl border border-border-default shadow-subtle p-6">
+    <Card>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-text-primary">Summary</h2>
-        <Link
-          href={`/dashboard/leave/${application.id}/edit`}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-          Edit
-        </Link>
+        <h2 className="text-xl font-semibold text-text-primary">Summary</h2>
+        {onEdit ? (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        ) : (
+          <Link
+            href={`/dashboard/leave/${application.id}/edit`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Link>
+        )}
       </div>
 
       <div className="space-y-0 divide-y divide-border-subtle">
@@ -89,7 +113,7 @@ export function LeaveReviewSummary({
           />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -114,7 +138,7 @@ function Row({
       </div>
       <span
         className={`text-sm text-text-primary text-right ${
-          emphasis ? "text-lg font-bold" : multiline ? "whitespace-pre-wrap" : ""
+          emphasis ? "text-lg font-semibold" : multiline ? "whitespace-pre-wrap" : ""
         }`}
       >
         {value}

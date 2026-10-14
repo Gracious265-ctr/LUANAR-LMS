@@ -5,7 +5,11 @@ import { ArrowLeft } from "lucide-react";
 import { ApplicationHistoryView } from "@/components/hr/application-history-view";
 import { getCurrentUser } from "@/lib/auth";
 import { getFinalizedApplication } from "@/lib/audit";
+<<<<<<< HEAD
 import { getApplicationTimeline, type TimelineEntry } from "@/lib/leave-history";
+=======
+import { FadeIn } from "@/components/motion/FadeIn";
+>>>>>>> feature/plans-teams
 
 export default async function AuditApplicationDetailPage({
   params,
@@ -29,6 +33,7 @@ export default async function AuditApplicationDetailPage({
     notFound();
   }
 
+<<<<<<< HEAD
   let entries: TimelineEntry[] = [];
   try {
     const timeline = await getApplicationTimeline(id);
@@ -59,5 +64,30 @@ export default async function AuditApplicationDetailPage({
 
       <ApplicationHistoryView application={application} entries={entries} />
     </div>
+=======
+  return (
+    <FadeIn>
+      <div className="space-y-6">
+        <div>
+          <Link
+            href="/dashboard/hr-admin/audit"
+            className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to audit view
+          </Link>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">
+            {application.reference_number || "Leave application"}
+          </h2>
+          <p className="text-text-secondary">
+            {application.employee_name}
+            {application.leave_type_name ? ` \u00b7 ${application.leave_type_name}` : ""}
+          </p>
+        </div>
+
+        <ApplicationHistoryView application={application} />
+      </div>
+    </FadeIn>
+>>>>>>> feature/plans-teams
   );
 }

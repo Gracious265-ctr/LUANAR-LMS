@@ -9,13 +9,25 @@ import {
   createFinancialYear,
   updateFinancialYear,
 } from "@/lib/financial-years-client";
+import { Field } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-picker";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 
 export function FinancialYearForm({
   financialYear,
+  onSuccess,
+  onCancel,
 }: {
   financialYear?: FinancialYear;
+  /** Replaces the default `router.push(listRoute)` + `router.refresh()`. */
+  onSuccess?: (financialYear: FinancialYear) => void;
+  /** Adds a dismiss action; an inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
+  const [startDate, setStartDate] = useState(financialYear?.start_date ?? "");
+  const [endDate, setEndDate] = useState(financialYear?.end_date ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,19 +38,29 @@ export function FinancialYearForm({
 
     const formData = new FormData(event.currentTarget);
 
+    // The picker is a popover trigger, so the browser can no longer enforce
+    // `required` for it; check here instead of dropping the guarantee.
+    if (!startDate || !endDate) {
+      setError("Choose the full period.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const input = {
         start_date: String(formData.get("start_date") || ""),
         end_date: String(formData.get("end_date") || ""),
         is_active: Boolean(formData.get("is_active")),
       };
-      if (financialYear) {
-        await updateFinancialYear(financialYear.id, input);
+      const saved = financialYear
+        ? await updateFinancialYear(financialYear.id, input)
+        : await createFinancialYear(input);
+      if (onSuccess) {
+        onSuccess(saved);
       } else {
-        await createFinancialYear(input);
+        router.push("/dashboard/hr-admin/calendar");
+        router.refresh();
       }
-      router.push("/dashboard/hr-admin/calendar");
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
@@ -48,42 +70,25 @@ export function FinancialYearForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      <div>
-        <label
-          htmlFor="start_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Start date
-        </label>
-        <input
+      <Field
+        label="Period"
+        htmlFor="start_date"
+        hint="Periods must not overlap each other."
+        className="md:col-span-2"
+      >
+        <DateRangePicker
           id="start_date"
-          name="start_date"
-          type="date"
-          required
-          defaultValue={financialYear?.start_date}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+          from={startDate}
+          to={endDate}
+          onRangeChange={(from, to) => {
+            setStartDate(from);
+            setEndDate(to);
+          }}
         />
-      </div>
-
-      <div>
-        <label
-          htmlFor="end_date"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          End date
-        </label>
-        <input
-          id="end_date"
-          name="end_date"
-          type="date"
-          required
-          defaultValue={financialYear?.end_date}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          Periods must not overlap each other.
-        </p>
-      </div>
+        {/* The trigger is a <button>, so the names still have to reach FormData. */}
+        <input type="hidden" name="start_date" value={startDate} />
+        <input type="hidden" name="end_date" value={endDate} />
+      </Field>
 
       <div className="flex items-center gap-2 md:col-span-2">
         <input
@@ -107,25 +112,25 @@ export function FinancialYearForm({
       </p>
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
-          {error}
-        </div>
+        <FormError className="md:col-span-2">{error}</FormError>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Saving..." : financialYear ? "Save changes" : "Create financial year"}
-        </button>
-        <Link
-          href="/dashboard/hr-admin/calendar"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href="/dashboard/hr-admin/calendar"
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

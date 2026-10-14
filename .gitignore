@@ -54,5 +54,14 @@ db.sqlite3
 # Drafts
 *.draft
 
+<<<<<<< HEAD
 # Unit 19 local document storage root (LEAVE_STORAGE_ROOT default)
 /storage/
+=======
+# Database dumps
+# pg_dump output contains user rows, password hashes and leave history.
+# Never commit these; keep them local or move them outside the repo.
+storage/*.sql
+*.dump
+*.sql.gz
+>>>>>>> feature/plans-teams

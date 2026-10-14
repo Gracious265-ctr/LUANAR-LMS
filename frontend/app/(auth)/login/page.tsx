@@ -1,12 +1,25 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
+import { Field, Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/dashboard";
+  // Set by the account page after a successful change, which signs the caller
+  // out here. Without it this screen looks like an unexplained logout; the
+  // point of a password change is that somebody watching for the consequences
+  // should be told, and this is the only place the user is guaranteed to read.
+  const justChanged = searchParams.get("changed") === "1";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -43,65 +56,71 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface-page">
-      <div className="w-full max-w-md p-8 bg-surface-card rounded-xl shadow-card">
-        <h1 className="text-2xl font-bold text-center text-text-primary mb-2">
+    <div className="relative min-h-screen flex items-center justify-center bg-surface-page">
+      {/* The auth pages have no sidebar, so the toggle has no natural
+          home and is pinned to the corner of the canvas. */}
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
+      <Card className="border-0 mini-h-screen shadow-card backdrop-blur-sm backdrop-saturate-150 w-full max-w-sm">
+        <div className="relative z-10 flex justify-center mb-6s">
+
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           LUANAR Leave Management
         </h1>
         <p className="text-sm text-center text-text-secondary mb-8">
           Sign in to your account
         </p>
 
+        {justChanged && (
+          <div className="mb-6">
+            <Alert tone="approved">
+              Your password was changed and every session was signed out. Sign in
+              again with your new password.
+            </Alert>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="email"
-              className="block text-sm font-medium text-text-primary mb-1"
-            >
-              Email
-            </label>
-            <input
+          <Field label="Email" htmlFor="email">
+            <Input
               id="email"
               name="email"
               type="email"
               required
-              className="w-full px-3 py-2 border border-input-border rounded-md bg-input-background text-text-primary placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-input-ring-focus focus:border-input-border-focus"
               placeholder="your@email.luanar"
             />
-          </div>
+          </Field>
 
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-text-primary mb-1"
-            >
-              Password
-            </label>
-            <input
+          <Field label="Password" htmlFor="password">
+            <Input
               id="password"
               name="password"
               type="password"
               required
-              className="w-full px-3 py-2 border border-input-border rounded-md bg-input-background text-text-primary placeholder:text-text-placeholder focus:outline-none focus:ring-2 focus:ring-input-ring-focus focus:border-input-border-focus"
               placeholder="Enter your password"
             />
-          </div>
+          </Field>
 
           {error && (
-            <div className="text-sm text-status-rejected bg-status-rejected-subtle p-3 rounded-md">
-              {error}
-            </div>
+            <FormError>{error}</FormError>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 px-4 bg-button-primary text-button-primary-foreground rounded-md font-medium hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <Button type="submit" variant="primary" className="w-full" loading={loading}>
             {loading ? "Signing in..." : "Sign in"}
-          </button>
+          </Button>
+
+          <div className="text-center text-sm text-text-secondary">
+            <Link
+              href="/forgot-password"
+              className="text-sm underline-offset-2 hover:underline"
+            >
+              Forgotten your password?
+            </Link>
+          </div>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -109,7 +128,9 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense>
-      <LoginForm />
+      <FadeIn>
+        <LoginForm />
+      </FadeIn>
     </Suspense>
   );
 }

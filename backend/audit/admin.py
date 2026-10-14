@@ -1,31 +1,49 @@
 from django.contrib import admin
 from django.db import models
 
+<<<<<<< HEAD
 from .models import AuditEvent
 from .services import record_config_change
+=======
+from .models import AuditEntry
+>>>>>>> feature/plans-teams
 
 
-@admin.register(AuditEvent)
-class AuditEventAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "actor", "action", "prev_state", "new_state")
-    list_filter = ("action", "created_at")
-    search_fields = ("actor__username", "action")
-    ordering = ("-created_at",)
-    readonly_fields = (
-        "created_at",
+@admin.register(AuditEntry)
+class AuditEntryAdmin(admin.ModelAdmin):
+    """View-only inspector for the append-only audit log."""
+
+    list_display = (
         "actor",
         "action",
-        "content_type",
-        "object_id",
-        "prev_state",
-        "new_state",
-        "metadata",
+        "target_type",
+        "target_id",
+        "target_summary",
+        "created_at",
     )
-
-    def has_add_permission(self, request):
-        return False
+    list_filter = ("action", "target_type")
+    search_fields = (
+        "actor__first_name",
+        "actor__last_name",
+        "actor__email",
+        "target_summary",
+        "target_id",
+    )
+    raw_id_fields = ("actor",)
+    readonly_fields = (
+        "actor",
+        "action",
+        "target_type",
+        "target_id",
+        "target_summary",
+        "detail",
+        "reason",
+        "created_at",
+    )
+    ordering = ("-created_at",)
 
     def has_delete_permission(self, request, obj=None):
+<<<<<<< HEAD
         return False
 
     def has_change_permission(self, request, obj=None):
@@ -105,3 +123,6 @@ class AuditedModelAdmin(admin.ModelAdmin):
                 request, obj, action="created" if is_new else "updated", before=before
             )
         formset.save_m2m()
+=======
+        return False
+>>>>>>> feature/plans-teams

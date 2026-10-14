@@ -4,12 +4,14 @@ Each test fixes the reference date (Monday 21 Sep 2026) and asserts on the
 specific error codes + messages/fields defined by Unit 14.
 """
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase
 
 from leave.models import LeaveApplication
+from leave.providers.base import EligibilityRule
 from leave.validation.pipeline import run_validation
 
 from .stubs import (
@@ -395,6 +397,46 @@ class PreconditionTests(StubProviderMixin, TestCase):
         codes = [e.code for e in result.errors]
         self.assertIn("EMPLOYEE_PROFILE_MISSING", codes)
         self.assertEqual(len(result.errors), 1)
+
+    def test_profile_without_appointment_date_is_not_missing(self):
+        # The profile exists and only the date is absent. Reporting the whole
+        # profile as missing would send the user to HR about the wrong thing.
+        stub = self.use_stub()
+        user = make_user()
+        stub.register_employee(user, appointment_date=None)
+        result = run_validation(
+            user=user,
+            leave_type_id=1,
+            start_date_raw=EARLIEST_ANNUAL_START,
+            end_date_raw=date(2026, 10, 2),
+        )
+        codes = [e.code for e in result.errors]
+        self.assertNotIn("EMPLOYEE_PROFILE_MISSING", codes)
+        self.assertTrue(result.valid, result.errors)
+
+    def test_missing_appointment_date_blames_the_rule_that_needs_it(self):
+        stub = self.use_stub()
+        user = make_user()
+        stub.register_employee(user, appointment_date=None)
+        stub.leave_types = tuple(
+            replace(
+                rules,
+                eligibility=(EligibilityRule("min_service", {"months": 12}),),
+            )
+            if rules.id == 1
+            else rules
+            for rules in stub.leave_types
+        )
+        result = run_validation(
+            user=user,
+            leave_type_id=1,
+            start_date_raw=EARLIEST_ANNUAL_START,
+            end_date_raw=date(2026, 10, 2),
+        )
+        issue = next(
+            e for e in result.errors if e.code == "ELIGIBILITY_DATA_MISSING"
+        )
+        self.assertEqual(issue.detail["missing"], "appointment_date")
 
     def test_unavailable_leave_type_stops_the_run(self):
         stub = self.use_stub()

@@ -11,10 +11,23 @@ import {
   approveDelegation,
   approverRolePeople,
   cancelDelegation,
-  delegationStateBadgeClass,
+  delegationStateTone,
   delegationStateLabel,
   rejectDelegation,
 } from "@/lib/delegations-client";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
 type DecisionKind = "approve" | "reject" | "cancel" | null;
 
@@ -30,20 +43,29 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 export function DelegationReview({
   delegation,
   employees,
+  readOnly = false,
+  backHref = "/dashboard/hr-admin/delegations",
+  title = "Review delegation request",
 }: {
   delegation: Delegation;
+  /** Only used for the approve panel's delegate picker; ignored when readOnly. */
   employees: Employee[];
+  /** Approver-side view: show the record, never the HR decision controls. */
+  readOnly?: boolean;
+  backHref?: string;
+  title?: string;
 }) {
   const router = useRouter();
   const [kind, setKind] = useState<DecisionKind>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const showApproveReject = delegation.state === "requested";
+  const showApproveReject = !readOnly && delegation.state === "requested";
   const showCancel =
-    delegation.state === "scheduled" || delegation.state === "active";
+    !readOnly &&
+    (delegation.state === "scheduled" || delegation.state === "active");
   const delegates = approverRolePeople(employees).filter(
-    (employee) => employee.id !== delegation.approver
+    (employee) => employee.user_id !== delegation.approver
   );
 
   const period = delegation.ends_on
@@ -114,25 +136,25 @@ export function DelegationReview({
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/hr-admin/delegations"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to delegations
         </Link>
         <div className="mt-2 flex items-center gap-3">
-          <h2 className="text-2xl font-bold text-text-primary">
-            Review delegation request
-          </h2>
-          <span
-            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${delegationStateBadgeClass(delegation.state)}`}
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">{title}</h2>
+          <Badge
+            size="sm"
+            tone={delegationStateTone(delegation.state)}
+            className="font-medium"
           >
             {delegationStateLabel(delegation.state)}
-          </span>
+          </Badge>
         </div>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+      <Card>
         <dl className="divide-y divide-border-default">
           <DetailRow label="Approver">
             <span className="font-medium">{delegation.approver_name}</span>
@@ -161,39 +183,37 @@ export function DelegationReview({
             </DetailRow>
           )}
         </dl>
-      </div>
+      </Card>
 
       {showApproveReject && (
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => openKind("approve")}
-            className="inline-flex items-center gap-1.5 rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
+          <Button type="button" onClick={() => openKind("approve")} variant="primary">
             <Check className="h-4 w-4" />
             Approve
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={() => openKind("reject")}
-            className="inline-flex items-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2 font-medium text-status-rejected hover:bg-surface-hover"
+            variant="secondary"
+            className="border-status-rejected bg-status-rejected-subtle text-status-rejected"
           >
             <X className="h-4 w-4" />
             Reject
-          </button>
+          </Button>
         </div>
       )}
 
       {showCancel && (
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
             onClick={() => openKind("cancel")}
-            className="inline-flex items-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-4 py-2 font-medium text-status-rejected hover:bg-surface-hover"
+            variant="secondary"
+            className="border-status-rejected bg-status-rejected-subtle text-status-rejected"
           >
             <X className="h-4 w-4" />
             Cancel delegation
-          </button>
+          </Button>
         </div>
       )}
 
@@ -216,66 +236,47 @@ export function DelegationReview({
           </p>
 
           {kind === "approve" && (
-            <div className="mt-4">
-              <label
-                htmlFor="delegate"
-                className="mb-1 block text-sm font-medium text-text-primary"
-              >
-                Delegate
-              </label>
-              <select
-                id="delegate"
-                name="delegate"
-                defaultValue={delegation.delegate ?? ""}
-                className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-              >
-                <option value="">Select the delegate</option>
-                {delegates.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Field label="Delegate" htmlFor="delegate" className="mt-4">
+              <Select name="delegate" defaultValue={delegation.delegate ? String(delegation.delegate) : ""}>
+                <SelectTrigger id="delegate" aria-label="Delegate">
+                  <SelectValue placeholder="Select the delegate" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Select the delegate</SelectItem>
+                  {delegates.map((employee) => (
+                    <SelectItem key={employee.id} value={String(employee.user_id)}>
+                      {employee.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           )}
 
-          <div className="mt-4">
-            <label
-              htmlFor="decision_reason"
-              className="mb-1 block text-sm font-medium text-text-primary"
-            >
-              Decision reason
-            </label>
-            <textarea
+          <Field
+            label="Decision reason"
+            htmlFor="decision_reason"
+            className="mt-4"
+          >
+            <Textarea
               id="decision_reason"
               name="decision_reason"
               rows={3}
-              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
               placeholder="Explain this HR decision."
             />
-          </div>
+          </Field>
 
           {error && (
-            <div className="mt-4 rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-              {error}
-            </div>
+            <FormError className="mt-4">{error}</FormError>
           )}
 
           <div className="mt-4 flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" loading={loading}>
               {loading ? "Saving..." : submitLabel}
-            </button>
-            <button
-              type="button"
-              onClick={closePanel}
-              className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-            >
+            </Button>
+            <Button variant="secondary" onClick={closePanel}>
               Close
-            </button>
+            </Button>
           </div>
         </form>
       )}

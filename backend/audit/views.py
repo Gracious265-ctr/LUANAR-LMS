@@ -2,6 +2,7 @@ from django.db.models import Q
 from django.http import Http404
 from rest_framework import mixins, permissions, viewsets
 
+<<<<<<< HEAD
 from leave.models import LeaveApplication
 from users.permissions import IsHRRole
 
@@ -14,23 +15,47 @@ from .serializers import (
 
 
 class AuditEventViewSet(
+=======
+from leave.models import LeaveApplication, LeaveType
+from users.permissions import IsHRRole
+
+from .models import AuditEntry
+from .serializers import (
+    AuditEntrySerializer,
+    FinalizedApplicationListSerializer,
+    HRLeaveApplicationSerializer,
+)
+from .validation import positive_int
+
+
+class AuditEntryViewSet(
+>>>>>>> feature/plans-teams
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
     """HR-only read access to the append-only audit log."""
 
+<<<<<<< HEAD
     serializer_class = AuditEventSerializer
+=======
+    serializer_class = AuditEntrySerializer
+>>>>>>> feature/plans-teams
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
     http_method_names = ["get", "head", "options"]
 
     def get_queryset(self):
+<<<<<<< HEAD
         queryset = AuditEvent.objects.select_related("actor", "content_type")
+=======
+        queryset = AuditEntry.objects.select_related("actor")
+>>>>>>> feature/plans-teams
         action = self.request.query_params.get("action")
         if action:
             queryset = queryset.filter(action=action)
         target_type = self.request.query_params.get("target_type")
         if target_type:
+<<<<<<< HEAD
             queryset = queryset.filter(content_type__model=target_type.lower())
         target_id = self.request.query_params.get("target_id")
         if target_id:
@@ -38,6 +63,15 @@ class AuditEventViewSet(
         actor = self.request.query_params.get("actor")
         if actor:
             queryset = queryset.filter(actor_id=actor)
+=======
+            queryset = queryset.filter(target_type=target_type)
+        target_id = self.request.query_params.get("target_id")
+        if target_id:
+            queryset = queryset.filter(target_id=target_id)
+        actor = self.request.query_params.get("actor")
+        if actor:
+            queryset = queryset.filter(actor_id=positive_int(actor, "actor"))
+>>>>>>> feature/plans-teams
         return queryset
 
 
@@ -46,6 +80,7 @@ class FinalizedLeaveViewSet(
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
+<<<<<<< HEAD
     """HR-only organization-wide read of submitted (finalized) applications."""
 
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
@@ -59,6 +94,42 @@ class FinalizedLeaveViewSet(
     def get_queryset(self):
         queryset = LeaveApplication.objects.filter(
             status=LeaveApplication.Status.SUBMITTED
+=======
+    """HR-only organization-wide read of in-flight and approved applications.
+
+    Unit 25 (D6): the view previously filtered ``SUBMITTED`` only, so an
+    approved — i.e. actually finalized — application was invisible to HR and
+    ``get_object`` 404'd it. Rejected and cancelled applications stay out; the
+    audit log is the record of those (Unit 24 D1).
+    """
+
+    serializer_class = HRLeaveApplicationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    http_method_names = ["get", "head", "options"]
+
+    #: The statuses HR treats as "in flight or finalized" (Unit 25 D6).
+    VISIBLE_STATUSES = (
+        LeaveApplication.Status.SUBMITTED,
+        LeaveApplication.Status.APPROVED,
+    )
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return HRLeaveApplicationSerializer
+        return FinalizedApplicationListSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == "list":
+            context["leave_type_names"] = dict(
+                LeaveType.objects.values_list("id", "name")
+            )
+        return context
+
+    def get_queryset(self):
+        queryset = LeaveApplication.objects.filter(
+            status__in=self.VISIBLE_STATUSES
+>>>>>>> feature/plans-teams
         ).select_related("employee", "current_approver")
         search = self.request.query_params.get("employee")
         if search:
@@ -71,6 +142,10 @@ class FinalizedLeaveViewSet(
 
     def get_object(self):
         obj = super().get_object()
+<<<<<<< HEAD
         if obj.status != LeaveApplication.Status.SUBMITTED:
+=======
+        if obj.status not in self.VISIBLE_STATUSES:
+>>>>>>> feature/plans-teams
             raise Http404("Not found.")
         return obj

@@ -1,10 +1,18 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { EmployeeTable } from "@/components/hr/employee-table";
+import { EmployeesSection } from "@/components/hr/EmployeesSection";
 import { getCurrentUser } from "@/lib/auth";
+import type { EmployeeListResponse } from "@/lib/employees";
 import { listEmployees } from "@/lib/employees";
+import {
+  gradeOptionsFromEntitlements,
+  listEntitlements,
+} from "@/lib/entitlements";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
 
 export default async function EmployeesPage({
   searchParams,
@@ -23,7 +31,7 @@ export default async function EmployeesPage({
   const { search } = await searchParams;
   const query = typeof search === "string" ? search : "";
   let error = "";
-  let employees;
+  let employees: EmployeeListResponse | undefined;
 
   try {
     employees = await listEmployees(query);
@@ -31,54 +39,57 @@ export default async function EmployeesPage({
     error = "Unable to load employees. Please try again.";
   }
 
+  // The create overlay needs its option set on the page. Teams are filled from
+  // the team side, so the only option here is the grade list, which comes from
+  // the entitlements rather than being typed, because a grade that no
+  // entitlement uses is silently ignored downstream.
+  const gradeOptions = await listEntitlements()
+    .then((entitlements) => gradeOptionsFromEntitlements(entitlements.results))
+    .catch(() => [] as string[]);
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
+    <FadeIn>
+      <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-text-primary">Employees</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Employees</h2>
           <p className="text-text-secondary">
             Search and manage employee records.
           </p>
         </div>
-        <Link
-          href="/dashboard/hr-admin/employees/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New employee
-        </Link>
-      </div>
 
-      <form
-        method="get"
-        className="flex max-w-md items-center gap-2"
-      >
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <input
-            name="search"
-            defaultValue={query}
-            placeholder="Search name, email, department..."
-            className="w-full rounded-md border border-input-border bg-input-background py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+        <Card>
+          <EmployeesSection
+            employees={employees?.results ?? []}
+            totalCount={employees?.count ?? 0}
+            gradeOptions={gradeOptions}
+            search={query}
+            error={error}
+            filter={
+              // This JSX is authored in a server component and rendered inside the
+              // client `EmployeesSection`, so it crosses the RSC boundary. The
+              // boundary re-creates these elements without the dev runtime's
+              // "written as static siblings" flag, which makes React treat them as
+              // a list and demand keys. The keys below are what satisfies that;
+              // without them React warns "Each child in a list should have a
+              // unique key prop" and names this section.
+              <form method="get" className="mb-4 flex max-w-md items-center gap-2">
+                <div key="search-field" className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+                  <Input
+                    name="search"
+                    defaultValue={query}
+                    placeholder="Search name, email, team..."
+                    className="pl-9 pr-3"
+                  />
+                </div>
+                <Button key="search-submit" type="submit" variant="secondary">
+                  Search
+                </Button>
+              </form>
+            }
           />
-        </div>
-        <button
-          type="submit"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Search
-        </button>
-      </form>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        {error ? (
-          <div className="py-12 text-center text-sm text-status-rejected bg-status-rejected-subtle rounded-md">
-            {error}
-          </div>
-        ) : employees ? (
-          <EmployeeTable employees={employees.results} />
-        ) : null}
+        </Card>
       </div>
-    </div>
+    </FadeIn>
   );
 }

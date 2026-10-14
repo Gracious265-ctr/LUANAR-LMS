@@ -1,7 +1,18 @@
 import Link from "next/link";
 
 import type { Entitlement } from "@/lib/entitlements";
+import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
+import { EditActionLink, EditIconButton } from "./edit-action-link";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
 function isCurrentlyEffective(rule: Entitlement, today: string): boolean {
   return rule.effective_from <= today;
@@ -10,70 +21,84 @@ function isCurrentlyEffective(rule: Entitlement, today: string): boolean {
 export function EntitlementTable({
   entitlements,
   today = currentDateIso(),
+  onEdit,
 }: {
   entitlements: Entitlement[];
   today?: string;
+  /**
+   * Opens the edit overlay for this row. Omitted on hosts that still link
+   * to the standalone edit page, in which case the pencil renders as a link.
+   */
+  onEdit?: (id: number) => void;
 }) {
   if (entitlements.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">
-          No entitlement rules found
-        </p>
-        <p className="mt-1 text-sm">
-          Add a grade range and annual leave entitlement to get started.
-        </p>
-      </div>
+      <EmptyState
+        title="No entitlement rules found"
+        description="Add a grade range and annual leave entitlement to get started."
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Grade range</th>
-            <th className="py-3 pr-4">Annual days</th>
-            <th className="py-3 pr-4">Effective from</th>
-            <th className="py-3">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entitlements.map((rule) => {
-            const current = isCurrentlyEffective(rule, today);
-            return (
-              <tr
-                key={rule.id}
-                className="border-b border-border-default transition-colors hover:bg-surface-hover"
-              >
-                <td className="py-3 pr-4">
-                  <Link
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Grade range</TableHead>
+          <TableHead>Annual days</TableHead>
+          <TableHead>Leave type</TableHead>
+          <TableHead>Effective from</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {entitlements.map((rule) => {
+          const current = isCurrentlyEffective(rule, today);
+          return (
+            <TableRow
+              key={rule.id}
+            >
+              <TableCell>
+                <Link
+                  href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  {rule.grade_start}–{rule.grade_end}
+                </Link>
+              </TableCell>
+              <TableCell className="text-text-secondary">{rule.days} days</TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.leave_type_name || "Annual (untyped)"}
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {rule.effective_from}
+              </TableCell>
+              <TableCell>
+                <Badge
+                  size="sm"
+                  tone={current ? "info" : "muted"}
+                  className="font-medium"
+                >
+                  {current ? "Current" : "Scheduled"}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                {onEdit ? (
+                  <EditIconButton
+                    onClick={() => onEdit(rule.id)}
+                    label={`Edit ${rule.grade_start}–${rule.grade_end}`}
+                  />
+                ) : (
+                  <EditActionLink
                     href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    {rule.grade_start}–{rule.grade_end}
-                  </Link>
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">{rule.days} days</td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {rule.effective_from}
-                </td>
-                <td className="py-3">
-                  <span
-                    className={
-                      current
-                        ? "inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary"
-                        : "inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted"
-                    }
-                  >
-                    {current ? "Current" : "Scheduled"}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  />
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

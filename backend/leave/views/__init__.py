@@ -1,15 +1,20 @@
 import logging
 from datetime import date, datetime
 
+<<<<<<< HEAD
 from django.conf import settings
 from django.http import FileResponse, Http404
+=======
+from django.http import Http404
+>>>>>>> feature/plans-teams
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
-from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from audit.validation import positive_int
 
 from users.permissions import IsHRRole
 
@@ -23,21 +28,31 @@ from ..models import (
     LeaveRule,
     LeaveType,
     PublicHoliday,
-    SupportingDocument,
 )
 from ..permissions import IsOwner
 from ..serializers import (
+    EmployeeLeaveTypeSerializer,
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
     LeaveRuleSerializer,
     LeaveTypeSerializer,
     PublicHolidaySerializer,
-    SupportingDocumentSerializer,
 )
+<<<<<<< HEAD
 from ..services import documents, normalize_grade, resolve_grade_entitlement
 from ..services.working_days import calculate_working_days
 from ..storage import get_storage_backend
+=======
+from ..services import (
+    leave_types_available_to,
+    normalize_grade,
+    resolve_grade_entitlement,
+)
+from ..services.storage import delete_document
+from ..services.working_days import calculate_working_days, holidays_in_range
+from .documents import SupportingDocumentViewSet
+>>>>>>> feature/plans-teams
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +71,7 @@ class GradeEntitlementViewSet(
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        return GradeEntitlement.objects.all()
+        return GradeEntitlement.objects.all().select_related("leave_type")
 
     @action(detail=False, methods=["get"])
     def resolve(self, request):
@@ -106,6 +121,30 @@ class LeaveTypeViewSet(
         return LeaveType.objects.all()
 
 
+class EmployeeLeaveTypeViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Employee-facing, read-only catalog of leave types.
+
+    A type is offered only if it is active and there is an effective
+    ``GradeEntitlement`` for the viewer's grade. That is the "configured and
+    available now" rule — a scheduled entitlement does not make it appear, and
+    an unmapped grade sees an empty list.
+    """
+
+    serializer_class = EmployeeLeaveTypeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+    http_method_names = ["get", "head", "options"]
+
+    def get_queryset(self):
+        profile = getattr(self.request.user, "employee_profile", None)
+        grade = getattr(profile, "grade", None) if profile else None
+        return leave_types_available_to(grade)
+
+
 class LeaveRuleViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
@@ -123,7 +162,9 @@ class LeaveRuleViewSet(
         queryset = LeaveRule.objects.all()
         leave_type = self.request.query_params.get("leave_type")
         if leave_type:
-            queryset = queryset.filter(leave_type=leave_type)
+            queryset = queryset.filter(
+                leave_type=positive_int(leave_type, "leave_type")
+            )
         effective = self.request.query_params.get("effective")
         if effective == "current":
             queryset = queryset.filter(effective_from__lte=timezone.localdate())
@@ -166,7 +207,9 @@ class PublicHolidayViewSet(
         queryset = PublicHoliday.objects.all()
         year = self.request.query_params.get("year")
         if year:
-            queryset = queryset.filter(date__year=year)
+            queryset = queryset.filter(
+                date__year=positive_int(year, "year")
+            )
         return queryset
 
 
@@ -198,20 +241,31 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
             instance.save(update_fields=["calculated_days"])
 
+    #: Statuses an employee may still edit (Unit 25 D7). ``CORRECTION_REQUIRED``
+    #: is editable because that is the whole point of returning an application
+    #: for correction; the employee edits, then calls ``resubmit`` which
+    #: re-validates, advances ``submission_cycle`` and freezes a new revision.
+    #: The frontend already assumed this (``LeaveApplicationForm.tsx`` treats
+    #: ``correction_required`` as editable and omits it from READ_ONLY_STATUSES).
+    EDITABLE_STATUSES = (
+        LeaveApplication.Status.DRAFT,
+        LeaveApplication.Status.CORRECTION_REQUIRED,
+    )
+
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status != LeaveApplication.Status.DRAFT:
+        if instance.status not in self.EDITABLE_STATUSES:
             return Response(
-                {"detail": "Submitted applications cannot be edited."},
+                {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status != LeaveApplication.Status.DRAFT:
+        if instance.status not in self.EDITABLE_STATUSES:
             return Response(
-                {"detail": "Submitted applications cannot be edited."},
+                {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return super().partial_update(request, *args, **kwargs)
@@ -240,6 +294,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         days = calculate_working_days(start, end)
+<<<<<<< HEAD
         return Response({"days": days})
 
     @action(detail=True, methods=["get"], url_path="approved-document")
@@ -404,3 +459,9 @@ class SupportingDocumentViewSet(viewsets.ModelViewSet):
         except documents.ApplicationNotFoundError:
             raise Http404
         return Response(payload)
+=======
+        # Weekends and configured public holidays are excluded; the count says
+        # how many public holidays were dropped so the UI can explain the number.
+        holidays = holidays_in_range(start, end) if start <= end else {}
+        return Response({"days": days, "holidays_excluded": len(holidays)})
+>>>>>>> feature/plans-teams

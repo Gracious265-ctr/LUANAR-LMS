@@ -5,8 +5,11 @@ spec (section 1). They contain **no Django imports** so the provider interface
 stays decoupled: the fixture provider (now) and the real provider (Unit 20)
 both speak this shape, and the serializers translate it into the API response.
 
-Unit 20 must reconcile this contract with the real Unit 6 workflow model. The
-frontend depends only on the serialized shape, not on these classes.
+Unit 21 reconciled this contract with the real Unit 6/16 workflow model
+(see ``workflows/docs/workflow-provider-contract.md``): the tracking provider
+now serves real ``ApplicationStage``/``ApprovalDecision``/audit rows through
+``DatabaseTrackingProvider``, and the frontend depends only on the serialized
+shape, not on these classes.
 """
 
 from dataclasses import dataclass, field
@@ -36,8 +39,9 @@ class TrackedStage:
     """One stage of the workflow snapshot the application was submitted with.
 
     ``state`` is one of ``approved | awaiting | rejected | returned |
-    upcoming``. ``approver`` is ``None`` until the stage has been resolved to an
-    approver.
+    skipped | upcoming``. ``approver`` is ``None`` until the stage has been
+    resolved to an approver. ``skip_reason`` carries why a skipped stage was
+    passed over (Unit 30); it is ``None`` for every other state.
     """
 
     order: int
@@ -48,6 +52,7 @@ class TrackedStage:
     assigned_at: datetime | None
     decided_at: datetime | None
     comment: str | None
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +123,7 @@ class WorkflowTracking:
             count=0, last_resubmitted_at=None, can_resubmit=False
         )
     )
+<<<<<<< HEAD
     submission_cycle: int = 1
     resubmissions: tuple[dict, ...] = field(default_factory=tuple)
     decisions: tuple[dict, ...] = field(default_factory=tuple)
@@ -128,3 +134,12 @@ class WorkflowTracking:
     cancelled_at: datetime | None = None
     estimated_restoration_days: Decimal | None = None
     restoration_financial_year: str | None = None
+=======
+    # Unit 18 additions: cancellation state appended to the same payload so
+    # existing consumers keep working unchanged.
+    cancelled_at: datetime | None = None
+    cancellation_action: str | None = None
+    cancellation_blocked_reason: str | None = None
+    has_open_cancellation_request: bool = False
+    latest_cancellation: dict | None = None
+>>>>>>> feature/plans-teams

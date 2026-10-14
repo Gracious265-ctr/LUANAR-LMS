@@ -1,11 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 
-import { EntitlementForm } from "@/components/hr/entitlement-form";
 import { getCurrentUser } from "@/lib/auth";
 
-export default async function NewEntitlementPage() {
+/**
+ * Create and edit now happen in an overlay on the list page, so this route only
+ * exists to keep the old `new` / `[id]/edit` links working: the tables' row
+ * links, the pencil fallback, and any bookmarked URL.
+ *
+ * The auth and role guard is kept rather than redirecting blind, so a
+ * non-HR user following one of these still lands on `/dashboard` instead of
+ * bouncing through a list page that would refuse them anyway.
+ */
+export default async function ShimPage() {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -15,28 +21,5 @@ export default async function NewEntitlementPage() {
     redirect("/dashboard");
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          href="/dashboard/hr-admin/entitlements"
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to entitlements
-        </Link>
-        <h2 className="mt-2 text-2xl font-bold text-text-primary">
-          New entitlement
-        </h2>
-        <p className="text-text-secondary">
-          Define an annual leave entitlement for a grade range that is not
-          already covered. To change an existing band, edit that rule instead.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <EntitlementForm endpoint="/api/hr/entitlements" method="POST" />
-      </div>
-    </div>
-  );
+  redirect(`/dashboard/hr-admin/entitlements?entitlement=new`);
 }

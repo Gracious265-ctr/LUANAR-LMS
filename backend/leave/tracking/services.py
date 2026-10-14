@@ -5,13 +5,17 @@ payload. It enforces employee ownership (404 for anyone else — never 403) and
 the submitted-status gate (409 ``application_not_submitted`` for drafts), then
 delegates workflow state to the configured tracking provider.
 
-No audit records are read or written: the tracking payload is a live workflow
-view with no audit-requirements (per the spec). The fixture provider performs
-no database access, so ``assertNumQueries`` on the whole endpoint stays at one.
+Unit 18 extends the payload with cancellation state: the real application
+status wins over the fixture scenario once it leaves ``submitted`` (so a
+cancelled application reports ``cancelled``), and one extra query loads the
+latest cancellation request. The fixture provider's own scenario load performs
+no database access, so the owner endpoint totals three queries (application,
+prefetched active documents, latest cancellation).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+<<<<<<< HEAD
 from ..cancellations.services import compute_cancellation_eligibility
 from ..models import (
     CancellationApprovalStage,
@@ -27,6 +31,12 @@ from .contracts import (
     WorkflowTracking,
     _iso,
 )
+=======
+from django.db.models import Prefetch
+
+from ..models import LeaveApplication, SupportingDocument
+from .contracts import WorkflowTracking
+>>>>>>> feature/plans-teams
 from .provider import get_tracking_provider
 
 
@@ -59,6 +69,13 @@ def get_application_tracking(user, application_id) -> TrackingPayload:
     """
     application = LeaveApplication.objects.filter(
         id=application_id, employee=user
+    ).prefetch_related(
+        Prefetch(
+            "documents",
+            queryset=SupportingDocument.objects.filter(
+                status=SupportingDocument.Status.ACTIVE
+            ),
+        )
     ).first()
     if application is None:
         raise ApplicationNotFoundError()
@@ -66,6 +83,7 @@ def get_application_tracking(user, application_id) -> TrackingPayload:
         raise ApplicationNotSubmittedError()
 
     workflow = get_tracking_provider().get_workflow_tracking(application)
+<<<<<<< HEAD
     workflow = _merge_real_data(workflow, application)
     return TrackingPayload(application=application, workflow=workflow)
 
@@ -184,3 +202,62 @@ def _merge_real_data(workflow: WorkflowTracking, application) -> WorkflowTrackin
         estimated_restoration_days=eligibility["estimated_restoration_days"],
         restoration_financial_year=eligibility["restoration_financial_year"],
     )
+=======
+
+    if application.status != LeaveApplication.Status.SUBMITTED:
+        workflow = replace(workflow, status=application.status)
+    if application.status == LeaveApplication.Status.CANCELLED:
+        workflow = replace(workflow, cancelled_at=application.cancelled_at)
+
+    workflow = replace(workflow, **_cancellation_state(application, user))
+    return TrackingPayload(application=application, workflow=workflow)
+
+
+def _cancellation_state(application, user) -> dict:
+    """The cancellation facts appended to every tracking payload (Unit 18).
+
+    One query loads the latest cancellation request; the open-request flag is
+    derived from it (the partial unique constraint allows at most one pending).
+    Eligibility is reused from the Unit 18 service so the payload and the
+    cancellation endpoints can never disagree.
+    """
+    from leave.cancellations.models import CancellationRequest
+    from leave.cancellations.services import get_eligibility
+
+    latest = (
+        CancellationRequest.objects.filter(application=application)
+        .order_by("-requested_at")
+        .first()
+    )
+    open_request = (
+        latest
+        if latest is not None
+        and latest.status == CancellationRequest.Status.PENDING
+        else None
+    )
+    eligibility = get_eligibility(application, user, open_request=open_request)
+
+    return {
+        "cancellation_action": eligibility.cancellation_action,
+        "cancellation_blocked_reason": eligibility.cancellation_blocked_reason,
+        "has_open_cancellation_request": open_request is not None,
+        "latest_cancellation": (
+            {
+                "id": str(latest.id),
+                "kind": latest.kind,
+                "status": latest.status,
+                "requested_at": _z(latest.requested_at),
+                "decided_at": _z(latest.decided_at),
+            }
+            if latest is not None
+            else None
+        ),
+    }
+
+
+def _z(value):
+    """Render a datetime as UTC ISO 8601 with a ``Z`` suffix, or ``None``."""
+    if not value:
+        return None
+    return value.isoformat().replace("+00:00", "Z")
+>>>>>>> feature/plans-teams

@@ -30,7 +30,7 @@ When Unit 4/5 land, only the **inside** of `getLeaveTypes()` changes (mock array
 
 On the backend, since there's no real `LeaveType` model yet, `LeaveApplication.leave_type_id` is stored as a **plain integer with no foreign key constraint** — a soft reference. This is a known, documented gap: once Unit 4 ships a real `LeaveType` model, a follow-up migration adds the FK and backfills/validates existing rows. This is called out explicitly in code comments and in this spec so it isn't forgotten.
 
-Working-day calculation on the backend is implemented as an isolated function `leave/services/working_days.py::calculate_working_days()`. For Unit 13 it only excludes weekends (Sat/Sun) — **no public holiday exclusion**, since holiday data belongs to Unit 5. This is a temporary, clearly-labeled stub; the call site (`calculate_working_days`) is the only place that needs to change when Unit 5 ships its real calendar service.
+Working-day calculation on the backend is implemented as an isolated function `leave/services/working_days.py::calculate_working_days()`. It excludes weekends (Sat/Sun) **and configured public holidays**, reading them through the configured `LEAVE_RULES_PROVIDER` (`get_public_holidays`) and delegating the counting itself to the validation pipeline's `leave/validation/working_days.count_working_days()`. There is therefore exactly one counting rule in the product: this entry point for drafts and the preview endpoint, and the pipeline for submission/resubmission. (It shipped weekend-only in Unit 13 as a labeled stub; Unit 5 supplied the holiday source.)
 
 ### Application lifecycle (this unit)
 
@@ -114,28 +114,31 @@ class SupportingDocument(models.Model):
     uploaded_at = models.DateTimeField(auto_now_add=True)
 ```
 
-### 2. Backend — working-days stub
+### 2. Backend — working-days entry point
 
 ```python
 # backend/leave/services/working_days.py
-from datetime import date, timedelta
+def holidays_in_range(start, end, provider=None) -> dict[date, str]:
+    """Public holidays in the inclusive range, via the configured rules provider."""
+    ...
 
-def calculate_working_days(start_date: date, end_date: date) -> int:
-    """
-    TEMPORARY STUB (Unit 13). Excludes weekends only.
-    TODO(unit-5): delegate to the real calendar/rule service once available,
-    which must also exclude configured public holidays.
+def calculate_working_days(start_date, end_date, *, holidays=None, provider=None) -> int:
+    """Weekends and configured public holidays are not working days.
+
+    Delegates to leave.validation.working_days.count_working_days so the draft
+    preview and the validation pipeline can never disagree.
     """
     if start_date is None or end_date is None or end_date < start_date:
         return 0
-    days = 0
-    current = start_date
-    while current <= end_date:
-        if current.weekday() < 5:  # Mon-Fri
-            days += 1
-        current += timedelta(days=1)
-    return days
+    if holidays is None:
+        holidays = set(holidays_in_range(start_date, end_date, provider))
+    return count_working_days(start_date, end_date, holidays)
 ```
+
+`calculated_days` (this unit) and `working_days` (Unit 14, frozen at submission)
+are both written from this one rule, so the two columns on an application row
+cannot drift apart; the only intended difference is that `working_days` is
+frozen at submission and ignores holidays HR configures afterwards.
 
 ### 3. Backend — serializers, permissions, viewset
 
@@ -144,13 +147,13 @@ def calculate_working_days(start_date: date, end_date: date) -> int:
 - `LeaveApplicationViewSet` (DRF `ModelViewSet`, scoped to `self.request.user.leave_applications`):
   - `perform_create`: sets `employee=request.user`, `status=draft`.
   - `perform_update`: **reject** (400) if `instance.status != draft` — submitted applications are immutable in this unit.
-  - On create/update, if both `start_date` and `end_date` are present, recompute `calculated_days` via `calculate_working_days()` and store it — the frontend never sends this value, and if it does, it's ignored.
+  - On create/update, if both `start_date` and `end_date` are present, recompute `calculated_days` via `calculate_working_days()` and store it — the frontend never sends this value, and if it does, it's ignored. Because the column is denormalized, a change to the holiday calendar must also refresh it: `leave/holiday_refresh.py` (wired in `LeaveConfig.ready()`) re-counts the `draft` / `correction_required` applications whose range covers a newly configured public holiday, on both `pre_save` (to remember a moved holiday's old date) and `post_save`. It is a `post_save` receiver rather than view logic so the Django admin and the HR endpoint are both covered. Submitted and approved applications are never recounted (invariant 12.5).
   - `destroy`: **reject** (400) if `instance.status != draft`.
   - Custom action `POST /leave-applications/{id}/submit/`:
     - 400 if already submitted, or if `leave_type_id`/`start_date`/`end_date`/`reason` are missing (minimal completeness check — real eligibility/balance/notice-period validation is out of scope, deferred to Unit 4/5 integration).
     - Generates `reference_number` (format: `LUANAR-{YYYY}-{5-digit sequence}`, sequence derived from a simple per-year counter — e.g. a small `ReferenceSequence` model or `select_for_update` counter row to avoid race conditions).
     - Sets `status=submitted`, `submitted_at=now()`.
-  - Custom action `POST /leave-applications/preview-days/` (no instance required): accepts `start_date`, `end_date` in the request body, returns `{ "days": <int> }` via `calculate_working_days()`. Used by the frontend for live preview before a draft necessarily has both dates saved.
+  - Custom action `POST /leave-applications/preview-days/` (no instance required): accepts `start_date`, `end_date` in the request body, returns `{ "days": <int>, "holidays_excluded": <int> }` via `calculate_working_days()` — `days` excludes weekends and configured public holidays, and `holidays_excluded` says how many public holidays were dropped so the UI can explain the number. Used by the frontend for live preview before a draft necessarily has both dates saved.
 
 - `SupportingDocumentViewSet` (nested under application, or a flat viewset filtered by `application_id`):
   - `create`: reject if parent application isn't `draft`. Accepts multipart upload, uploads to Supabase Storage (see below), then creates the `SupportingDocument` row.
@@ -299,5 +302,7 @@ No new backend web framework or auth dependencies — reuses Unit 1's DRF setup 
 
 **Integration seams (for future units)**
 - [ ] `getLeaveTypes()` is the only place leave-type data is read from on the frontend — no component hardcodes the mock list itself.
-- [ ] `calculate_working_days()` is the only backend function that computes day counts — no duplicate calculation logic elsewhere.
+- [ ] `calculate_working_days()` is the only backend entry point that computes day counts outside the validation pipeline, and it excludes weekends **and** configured public holidays — no duplicate calculation rule anywhere.
+- [ ] A public holiday set in the `PublicHoliday` table reduces the draft `calculated_days`, the `preview-days` response, the frozen `working_days`, and the balance deduction by the same amount.
+- [ ] Setting a public holiday after a draft was saved updates that draft's stored `calculated_days` without the employee re-saving it, and never touches a submitted or approved application.
 - [ ] `leave_type_id` has no FK constraint yet, and this is documented in the model with a `TODO(unit-4)` comment.

@@ -12,7 +12,7 @@ this pipeline returns.
   document and reason checks).
 - `POST /leave-applications/<uuid>/submit/` — runs the pipeline against the
   stored draft, then records the submission, issues a reference number and
-  creates an `AuditEvent`.
+  writes an `AuditEntry` (`record_audit`, action `submitted`).
 
 Both live behind JWT auth. The response shape is
 

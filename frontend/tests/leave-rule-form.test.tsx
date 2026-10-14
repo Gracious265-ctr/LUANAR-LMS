@@ -1,8 +1,10 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LeaveRuleForm } from "@/components/hr/leave-rule-form";
 import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
+
+import { dateDisplay } from "./helpers/date";
 
 const leaveTypes: LeaveType[] = [
   { id: 1, name: "Annual leave", code: "annual" },
@@ -38,9 +40,8 @@ describe("LeaveRuleForm", () => {
   it("offers every leave type in the dropdown", () => {
     render(<LeaveRuleForm leaveTypes={leaveTypes} />);
 
-    const select = screen.getByLabelText("Leave type");
     const options = Array.from(
-      select.querySelectorAll("option")
+      (screen.getByLabelText("Leave type") as HTMLSelectElement).options
     ).map((option) => option.textContent);
     expect(options).toContain("Annual leave");
     expect(options).toContain("Maternity leave");
@@ -52,9 +53,15 @@ describe("LeaveRuleForm", () => {
 
     expect(screen.getByLabelText("Maximum duration (days)")).toHaveValue(90);
     expect(screen.getByLabelText("Minimum notice (days)")).toHaveValue(5);
-    expect(screen.getByLabelText("Effective from")).toHaveValue("2026-01-01");
+    expect(dateDisplay(screen.getByLabelText("Effective from"))).toBe(
+      "01 Jan 2026"
+    );
     expect(screen.getByLabelText("Eligibility")).toHaveValue("Female employees");
-    expect(screen.getByLabelText("Leave type")).toHaveValue("2");
+    // The leave-type picker is a native <select>, so its value is read directly.
+    expect(
+      (screen.getByLabelText("Leave type") as HTMLSelectElement)
+        .selectedOptions[0]?.textContent
+    ).toBe("Maternity leave");
     expect(
       screen.getByLabelText("Requires a supporting document")
     ).toBeChecked();
@@ -71,5 +78,95 @@ describe("LeaveRuleForm", () => {
     expect(cancel.getAttribute("href")).toBe(
       "/dashboard/hr-admin/leave-rules"
     );
+  });
+
+  describe("inline leave type creation", () => {
+    beforeEach(() => {
+      vi.stubGlobal("fetch", vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("creates a leave type inline and selects it", async () => {
+      const created: LeaveType = {
+        id: 4,
+        name: "Study leave",
+        code: "study",
+      };
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(JSON.stringify(created), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+
+      render(<LeaveRuleForm leaveTypes={leaveTypes} />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Create leave type" })
+      );
+      fireEvent.change(screen.getByLabelText("New leave type name"), {
+        target: { value: "Study leave" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save leave type" })
+      );
+
+      await waitFor(() =>
+        expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+          "/api/hr/leave-types",
+          expect.objectContaining({ method: "POST" })
+        )
+      );
+      // The picker is a Radix `Select`, so the newly created type is read off
+      // the trigger's text and from the list it opens -- not off a `.value`
+      // or `.options` of a native <select>.
+      await waitFor(() =>
+        expect(screen.getByLabelText("Leave type")).toHaveValue("4")
+      );
+      expect(
+        Array.from(
+          (screen.getByLabelText("Leave type") as HTMLSelectElement).options
+        ).map((option) => option.textContent)
+      ).toEqual([
+        "Choose a leave type…",
+        "Annual leave",
+        "Maternity leave",
+        "Paternity leave",
+        "Study leave",
+      ]);
+    });
+
+    it("shows the server's reason when a leave type cannot be created", async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({ detail: "A leave type with this name already exists." }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+
+      render(<LeaveRuleForm leaveTypes={leaveTypes} />);
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Create leave type" })
+      );
+      fireEvent.change(screen.getByLabelText("New leave type name"), {
+        target: { value: "Annual leave" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save leave type" })
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.getByText("A leave type with this name already exists.")
+        ).toBeInTheDocument()
+      );
+    });
   });
 });

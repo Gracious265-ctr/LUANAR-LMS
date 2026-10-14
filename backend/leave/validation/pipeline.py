@@ -63,10 +63,17 @@ def run_validation(
 ) -> ValidationResult:
     """Run the full validation pipeline and return a :class:`ValidationResult`.
 
+<<<<<<< HEAD
     ``as_of`` is the Unit 17 alias for ``today`` (the date used for notice,
     future-date and financial-year checks). ``exclude_application_id`` (when
     given) makes the overlap rule ignore that application — used to keep the
     application itself from blocking its own resubmission.
+=======
+    ``as_of``/``today`` name the same clock seam (``as_of`` is preferred);
+    ``exclude_application_id`` lets a resubmission validate the employee's
+    other open applications without treating the live application (or its draft)
+    as its own overlap blocker.
+>>>>>>> feature/plans-teams
     """
     today = today or as_of or get_today()
     provider = get_provider()

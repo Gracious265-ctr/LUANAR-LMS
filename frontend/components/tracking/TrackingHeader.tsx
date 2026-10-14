@@ -1,12 +1,15 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 
 import { CancelApplicationButton } from "@/components/cancellation/CancelApplicationButton";
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
+import { STATUS_TEXT } from "@/lib/status-styles";
+import { Button } from "@/components/ui/button";
 
 import { StatusBadge } from "./StatusBadge";
+import { Badge } from "@/components/ui/badge";
 
 export function TrackingHeader({
   data,
@@ -27,7 +30,7 @@ export function TrackingHeader({
       <div className="flex items-center justify-between gap-3">
         <Link
           href="/dashboard/leave/drafts"
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-text-link hover:text-text-link-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-text-link hover:text-text-link-hover focus-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           My applications
@@ -38,6 +41,7 @@ export function TrackingHeader({
               Last refreshed {formatDateTime(lastRefreshed.toISOString())}
             </p>
           )}
+<<<<<<< HEAD
           <CancelApplicationButton
             application={application}
             eligibility={{
@@ -48,26 +52,37 @@ export function TrackingHeader({
             onSuccess={onRefresh}
           />
           <button
+=======
+          <Button
+>>>>>>> feature/plans-teams
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border-default bg-surface-card px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            variant="secondary"
+            className="min-h-11"
           >
             <meta.icon className="h-4 w-4" aria-hidden="true" />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <h1 className="break-words font-mono text-lg font-bold text-text-primary">
+        <h1 className="break-words font-mono text-lg font-semibold text-text-primary">
           {application.reference_number}
         </h1>
         <StatusBadge status={status} />
         {data.has_open_cancellation_request && (
+<<<<<<< HEAD
           <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
             Cancellation requested
           </span>
+=======
+          <Badge tone="pending">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            Cancellation requested
+          </Badge>
+>>>>>>> feature/plans-teams
         )}
       </div>
 
@@ -84,12 +99,19 @@ export function TrackingHeader({
             {formatDateTime(application.submitted_at)}
           </time>
         </p>
+<<<<<<< HEAD
         {status === "cancelled" && data.cancelled_at && (
           <p className="text-text-secondary">
             Cancelled{" "}
             <time dateTime={data.cancelled_at}>
               {formatDateTime(data.cancelled_at)}
             </time>
+=======
+        {data.cancelled_at && (
+          <p className={STATUS_TEXT.cancelled}>
+            Cancelled on{" "}
+            <time dateTime={data.cancelled_at}>{formatDateTime(data.cancelled_at)}</time>
+>>>>>>> feature/plans-teams
           </p>
         )}
       </div>

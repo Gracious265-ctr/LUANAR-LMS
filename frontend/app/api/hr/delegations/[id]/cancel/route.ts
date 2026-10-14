@@ -1,34 +1,10 @@
-import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
-
-const DJANGO_API_URL = process.env.DJANGO_API_URL || "http://localhost:8000";
+import { apiFetch } from "@/app/api/_lib/api-fetch";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
-
-  if (!accessToken) {
-    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
-  }
-
   const body = await request.json();
-
-  const response = await fetch(
-    `${DJANGO_API_URL}/api/v1/delegations/${id}/cancel/`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(body),
-    }
-  );
-
-  const data = await response.json().catch(() => ({}));
-  return NextResponse.json(data, { status: response.status });
+  return apiFetch("POST", `delegations/${id}/cancel/`, { body });
 }

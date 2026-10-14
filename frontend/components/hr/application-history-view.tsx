@@ -1,4 +1,5 @@
 import type { ApplicationDetail } from "@/lib/audit";
+<<<<<<< HEAD
 import type { TimelineEntry } from "@/lib/leave-history";
 import { TimelineView } from "@/components/leave/timeline-view";
 
@@ -12,6 +13,20 @@ export function ApplicationHistoryView({
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+=======
+import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
+import { AuditActionPill, auditChangesText } from "./audit-meta";
+import { Card } from "@/components/ui/card";
+
+export function ApplicationHistoryView({
+  application,
+}: {
+  application: ApplicationDetail;
+}) {
+  return (
+    <div className="space-y-6">
+      <Card>
+>>>>>>> feature/plans-teams
         <h3 className="text-lg font-semibold text-text-primary">
           Application summary
         </h3>
@@ -54,9 +69,15 @@ export function ApplicationHistoryView({
             <span className="text-text-secondary">{application.reason}</span>
           </div>
         )}
+<<<<<<< HEAD
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+=======
+      </Card>
+
+      <Card>
+>>>>>>> feature/plans-teams
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Documents
         </h3>
@@ -69,7 +90,11 @@ export function ApplicationHistoryView({
             {application.documents.map((doc) => (
               <li
                 key={doc.id}
+<<<<<<< HEAD
                 className="flex items-center justify-between rounded-md border border-border-default px-4 py-3"
+=======
+                className="flex items-center justify-between rounded-lg border border-border-default px-4 py-3"
+>>>>>>> feature/plans-teams
               >
                 <div>
                   <div className="font-medium text-text-primary">
@@ -92,6 +117,7 @@ export function ApplicationHistoryView({
             ))}
           </ul>
         )}
+<<<<<<< HEAD
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
@@ -100,6 +126,75 @@ export function ApplicationHistoryView({
         </h3>
         <TimelineView entries={entries} />
       </div>
+=======
+      </Card>
+
+      {application.status === "approved" && (
+        <ApprovedDocumentCard applicationId={application.id} audience="hr" />
+      )}
+
+      <Card>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">
+          Reassignment history
+        </h3>        {application.reassignments.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            This application has not been reassigned.
+          </p>
+        ) : (
+          <ul className="space-y-3 text-sm">
+            {application.reassignments.map((reassignment) => (
+              <li
+                key={reassignment.id}
+                className="rounded-lg border border-border-default px-4 py-3"
+              >
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <span className="font-medium text-text-primary">
+                    {reassignment.to_approver_name}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {new Date(reassignment.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <div className="mt-1 text-text-secondary">
+                  {reassignment.reason}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">
+          Audit trail
+        </h3>
+        {application.audit_entries.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            No recorded events for this application.
+          </p>
+        ) : (
+          <ol className="relative space-y-4 border-l border-border-default pl-5">
+            {application.audit_entries.map((entry) => (
+              <li key={entry.id} className="relative text-sm">
+                <span className="absolute -left-[26px] top-1.5 h-2.5 w-2.5 rounded-full bg-brand-primary" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <AuditActionPill action={entry.action} />
+                  <span className="font-medium text-text-primary">
+                    {entry.actor_name || (entry.actor ? `#${entry.actor}` : "System")}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {new Date(entry.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <div className="mt-1 text-text-secondary">
+                  {auditChangesText(entry)}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
+>>>>>>> feature/plans-teams
     </div>
   );
 }

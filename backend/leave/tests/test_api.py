@@ -14,6 +14,7 @@ from .stubs import (
     StubProviderMixin,
     make_approver_chain,
     make_user,
+    register_chain_approvers,
 )
 
 
@@ -116,7 +117,11 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         self.client = APIClient()
         self.user = make_user()
         self.stub.register_employee(self.user)
+<<<<<<< HEAD
         make_approver_chain()
+=======
+        register_chain_approvers(self.stub)
+>>>>>>> feature/plans-teams
         self.client.force_authenticate(user=self.user)
 
     def draft(self, **kwargs):

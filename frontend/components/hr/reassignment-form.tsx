@@ -7,14 +7,39 @@ import Link from "next/link";
 import { approverRolePeople } from "@/lib/delegations-client";
 import type { Employee } from "@/lib/employees";
 import { reassignApplication } from "@/lib/reassignments-client";
+import { STATUS_STYLES } from "@/lib/status-styles";
 import type { PendingApplication } from "@/lib/reassignments";
+import { Field } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
+import { Textarea } from "@/components/ui/textarea";
+
+/** Where the standalone form returns to, and what Cancel links back to. */
+const LIST_ROUTE = "/dashboard/hr-admin/reassignments";
 
 export function ReassignmentForm({
   application,
   employees,
+  onSuccess,
+  onCancel,
 }: {
   application: PendingApplication;
   employees: Employee[];
+  /**
+   * Replaces the default `router.push(listRoute)` + `router.refresh()`. The
+   * overlay passes this so it can close itself and refetch; with it omitted the
+   * form navigates on its own, which is what the standalone page needs.
+   */
+  onSuccess?: () => void;
+  /** Adds a dismiss action. An inline page form has nothing to dismiss to. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -22,9 +47,19 @@ export function ReassignmentForm({
 
   const candidates = approverRolePeople(employees).filter(
     (employee) =>
-      String(employee.id) !== String(application.employee) &&
-      String(employee.id) !== String(application.current_approver)
+      String(employee.user_id) !== String(application.employee) &&
+      String(employee.user_id) !== String(application.current_approver)
   );
+
+  /** Close-and-refresh when hosted, navigate when standalone. */
+  function done() {
+    if (onSuccess) {
+      onSuccess();
+      return;
+    }
+    router.push(LIST_ROUTE);
+    router.refresh();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,8 +74,7 @@ export function ReassignmentForm({
         to_approver: Number(formData.get("to_approver")),
         reason: String(formData.get("reason") || ""),
       });
-      router.push("/dashboard/hr-admin/reassignments");
-      router.refresh();
+      done();
     } catch (err) {
       setError(
         err instanceof Error
@@ -54,7 +88,7 @@ export function ReassignmentForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
-      <div className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+      <div className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
         <p className="font-medium text-text-primary">Reassigning</p>
         <p className="mt-1">
           {application.reference_number || "\u2014"} — {application.employee_name}
@@ -63,85 +97,87 @@ export function ReassignmentForm({
             : ""}
         </p>
         <p className="mt-0.5 text-xs text-text-muted">
-          {application.start_date ?? "\u2014"}
+          {application.start_date ?? "—"}
           {application.end_date ? ` → ${application.end_date}` : ""} · Current
           approver: {application.current_approver_name || "Unassigned"}
         </p>
+        {application.is_delegated && (
+          /* Stated before the select, not after: cover is a query-time overlay,
+             so handing this to the named approver would leave their delegate
+             acting and the intervention would appear to do nothing. */
+          <p
+            className={`mt-2 rounded-md px-3 py-2 text-xs ${STATUS_STYLES.pending}`}
+          >
+            {application.acting_approver_name} is currently acting as delegate
+            for {application.current_approver_name}. Reassigning moves the record
+            to your chosen approver; if you choose{" "}
+            {application.current_approver_name}, their delegate keeps acting.
+          </p>
+        )}
+
       </div>
 
-      <div>
-        <label
-          htmlFor="to_approver"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Replacement approver
-        </label>
-        <select
-          id="to_approver"
-          name="to_approver"
-          required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-        >
-          <option value="">Select the replacement approver</option>
-          {candidates.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.full_name}
-            </option>
-          ))}
-        </select>
-        <p className="mt-1 text-xs text-text-muted">
-          An active user with an approver role, different from the current
-          approver and the applicant.
-        </p>
-      </div>
+      <Field
+        label="Replacement approver"
+        htmlFor="to_approver"
+        hint="An active user with an approver role, different from the current approver and the applicant."
+      >
+        <Select name="to_approver" required>
+          <SelectTrigger id="to_approver" aria-label="Replacement approver">
+            <SelectValue placeholder="Select the replacement approver" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Select the replacement approver</SelectItem>
+            {candidates.map((employee) => (
+              <SelectItem key={employee.id} value={String(employee.user_id)}>
+                {employee.full_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <div>
-        <label
-          htmlFor="reason"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Reassignment reason
-        </label>
-        <textarea
+      <Field
+        label="Reassignment reason"
+        htmlFor="reason"
+        hint="Mandatory. Recorded on the reassignment history row."
+      >
+        <Textarea
           id="reason"
           name="reason"
           rows={3}
           required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Why is the application being reassigned?"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          Mandatory. Recorded on the reassignment history row.
-        </p>
-      </div>
+      </Field>
 
       {candidates.length === 0 && (
-        <p className="rounded-md bg-surface-muted p-3 text-sm text-text-secondary">
+        <p className="rounded-lg bg-surface-muted p-3 text-sm text-text-secondary">
           No eligible replacement approvers are available. Create employee
           records with approver roles first.
         </p>
       )}
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected">
-          {error}
-        </div>
+        <FormError>{error}</FormError>
       )}
 
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" loading={loading}>
           {loading ? "Reassigning..." : "Reassign application"}
-        </button>
-        <Link
-          href="/dashboard/hr-admin/reassignments"
-          className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-        >
-          Cancel
-        </Link>
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Link
+            href={LIST_ROUTE}
+            className={buttonVariants({ variant: "secondary" })}
+          >
+            Cancel
+          </Link>
+        )}
       </div>
     </form>
   );

@@ -10,6 +10,8 @@ const currentEntitlement: Entitlement = {
   grade_end: "C",
   days: 21,
   effective_from: "2026-01-01",
+  leave_type: null,
+  leave_type_name: null,
 };
 
 const scheduledEntitlement: Entitlement = {
@@ -18,6 +20,8 @@ const scheduledEntitlement: Entitlement = {
   grade_end: "U",
   days: 30,
   effective_from: "2027-01-01",
+  leave_type: null,
+  leave_type_name: null,
 };
 
 describe("EntitlementTable", () => {

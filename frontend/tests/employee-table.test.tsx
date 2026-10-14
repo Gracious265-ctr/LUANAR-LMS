@@ -2,53 +2,66 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 
 import { EmployeeTable } from "@/components/hr/employee-table";
-import type { Employee } from "@/lib/employees";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
 
-const activeEmployee: Employee = {
+const activeEmployee = makeEmployee({
   id: 1,
   user_id: 7,
-  email: "hod@test.luanar",
+  email: "lead@test.luanar",
   first_name: "Test",
-  last_name: "HOD",
-  full_name: "Test HOD",
-  role: "hod",
-  designation: "Head of Department",
-  department: "Bunda College",
+  last_name: "Lead",
+  full_name: "Test Lead",
+  role: "approver",
+  approver_roles: ["lead"],
+  designation: "Team Leader",
   category: "academic",
   grade: "G",
   appointment_date: "2015-01-10",
+  team: 4,
+  team_name: "Bunda College Faculty",
   is_active: true,
-};
+});
 
-const inactiveEmployee: Employee = {
-  ...activeEmployee,
+const inactiveEmployee = makeEmployee({
   id: 2,
+  user_id: 8,
   email: "employee@test.luanar",
   first_name: "Test",
   last_name: "Employee",
   full_name: "Test Employee",
   role: "employee",
+  approver_roles: [],
   designation: "Administrative Officer",
-  department: "Administration",
   category: "administration",
+  grade: "G",
+  appointment_date: "2018-02-01",
+  team: null,
+  team_name: "",
   is_active: false,
-};
+});
 
 describe("EmployeeTable", () => {
   it("renders employee rows with details", () => {
     render(<EmployeeTable employees={[activeEmployee]} />);
 
-    expect(screen.getByText("Test HOD")).toBeInTheDocument();
-    expect(screen.getByText("hod@test.luanar")).toBeInTheDocument();
-    expect(screen.getByText("Bunda College")).toBeInTheDocument();
-    expect(screen.getByText("Head of Department")).toBeInTheDocument();
+    expect(screen.getByText("Test Lead")).toBeInTheDocument();
+    expect(screen.getByText("lead@test.luanar")).toBeInTheDocument();
+    expect(screen.getByText("Team Leader")).toBeInTheDocument();
     expect(screen.getByText("G")).toBeInTheDocument();
+    expect(screen.getByText("Bunda College Faculty")).toBeInTheDocument();
+  });
+
+  it("shows a dash for an employee on no team", () => {
+    render(<EmployeeTable employees={[inactiveEmployee]} />);
+
+    // Every other cell on this row is filled, so the lone dash is the team.
+    expect(screen.getAllByText("—")).toHaveLength(1);
   });
 
   it("renders Active and Inactive badges for the right records", () => {
     render(<EmployeeTable employees={[activeEmployee, inactiveEmployee]} />);
 
-    expect(screen.getByText("Test HOD")).toBeInTheDocument();
+    expect(screen.getByText("Test Lead")).toBeInTheDocument();
     expect(screen.getByText("Test Employee")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("Inactive")).toBeInTheDocument();
@@ -57,7 +70,7 @@ describe("EmployeeTable", () => {
   it("links each row to the employee profile", () => {
     render(<EmployeeTable employees={[activeEmployee]} />);
 
-    const link = screen.getByRole("link", { name: "Test HOD" });
+    const link = screen.getByRole("link", { name: "Test Lead" });
     expect(link.getAttribute("href")).toBe("/dashboard/hr-admin/employees/1");
   });
 

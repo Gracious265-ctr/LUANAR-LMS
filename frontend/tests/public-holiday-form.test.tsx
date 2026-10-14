@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { PublicHolidayForm } from "@/components/hr/public-holiday-form";
 import type { PublicHoliday } from "@/lib/financial-years";
 
+import { dateDisplay } from "./helpers/date";
+
 describe("PublicHolidayForm", () => {
   it("renders name and date fields for a new holiday", () => {
     render(<PublicHolidayForm />);
@@ -24,7 +26,7 @@ describe("PublicHolidayForm", () => {
     render(<PublicHolidayForm publicHoliday={holiday} />);
 
     expect(screen.getByLabelText("Name")).toHaveValue("Independence Day");
-    expect(screen.getByLabelText("Date")).toHaveValue("2026-07-06");
+    expect(dateDisplay(screen.getByLabelText("Date"))).toBe("06 Jul 2026");
     expect(
       screen.getByRole("button", { name: "Save changes" })
     ).toBeInTheDocument();

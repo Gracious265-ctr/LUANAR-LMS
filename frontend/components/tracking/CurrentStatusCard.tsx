@@ -2,6 +2,9 @@ import { formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 import type { ReactNode } from "react";
+import { badgeVariants } from "@/components/ui/badge";
+import { STATUS_STYLES } from "@/lib/status-styles";
+import { cn } from "@/lib/utils";
 
 /**
  * Full-width card composed purely from response fields (backend authority: the
@@ -22,7 +25,10 @@ export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
     >
       <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${meta.badgeClass}`}
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+            badgeVariants({ tone: meta.badgeTone })
+          )}
         >
           <Icon className="h-6 w-6" aria-hidden="true" />
         </div>
@@ -46,12 +52,22 @@ export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
           )}
         </div>
         {rejection && (
-          <p className="sm:ml-auto max-w-md break-words rounded-lg bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected">
+          <p
+            className={cn(
+              "sm:ml-auto max-w-md break-words rounded-lg px-3 py-2 text-sm",
+              STATUS_STYLES.rejected
+            )}
+          >
             {rejection.reason}
           </p>
         )}
         {correction && (
-          <p className="sm:ml-auto max-w-md break-words rounded-lg bg-status-correction-subtle px-3 py-2 text-sm text-status-correction">
+          <p
+            className={cn(
+              "sm:ml-auto max-w-md break-words rounded-lg px-3 py-2 text-sm",
+              STATUS_STYLES.correction_required
+            )}
+          >
             {correction.comment}
           </p>
         )}
