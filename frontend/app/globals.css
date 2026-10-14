@@ -6,13 +6,15 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Brand and Primary */
-  --brand-primary: #0097F0;
-  --brand-primary-hover: #0088D8;
-  --brand-primary-active: #0079C0;
-  --brand-primary-subtle: #EFF8FF;
-  --brand-primary-muted: #DDF1FC;
-  --brand-primary-border: #B8E1F8;
+  /* Brand and Primary — Stripe's core brand is `#533afd`. Derive subtle tints
+     for selected/soft surfaces from the primary to avoid introducing arbitrary
+     hues. */
+  --brand-primary: #533afd;
+  --brand-primary-hover: #665efd;
+  --brand-primary-active: #4236cc;
+  --brand-primary-subtle: #f2f0ff;
+  --brand-primary-muted: #e7e2ff;
+  --brand-primary-border: #d3cbff;
   --brand-primary-foreground: #FFFFFF;
 
   /* Institutional Secondary */
@@ -23,34 +25,34 @@
   --brand-secondary-border: #B8E5BF;
   --brand-secondary-foreground: #FFFFFF;
 
-  /* Neutral Surfaces */
-  --surface-page: #F8FAFC;
+  /* Neutral Surfaces — Stripe uses a clean, light palette with plenty of white. */
+  --surface-page: #ffffff;
   --surface-card: #FFFFFF;
   --surface-elevated: #FFFFFF;
-  --surface-muted: #F1F5F9;
-  --surface-subtle: #F8FAFC;
-  --surface-hover: #F1F5F9;
-  --surface-active: #E8EEF5;
-  --surface-disabled: #F1F5F9;
+  --surface-muted: #f7fafc;
+  --surface-subtle: #f7fafc;
+  --surface-hover: #f6f9fc;
+  --surface-active: #eaf0f6;
+  --surface-disabled: #f7fafc;
 
-  /* Text */
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-muted: #64748B;
-  --text-placeholder: #94A3B8;
-  --text-disabled: #CBD5E1;
+  /* Text — predominantly black for body on light surfaces. */
+  --text-primary: #000000;
+  --text-secondary: #3d4d6b;
+  --text-muted: #7d8ba4;
+  --text-placeholder: #7d8ba4;
+  --text-disabled: #b1bbc9;
   --text-on-brand: #FFFFFF;
-  --text-link: #0079C0;
-  --text-link-hover: #00679F;
+  --text-link: #533afd;
+  --text-link-hover: #665efd;
 
   /* Borders and Dividers */
-  --border-default: #E2E8F0;
-  --border-subtle: #EEF2F6;
-  --border-strong: #CBD5E1;
-  --border-focus: #0097F0;
-  --border-error: #FCA5A5;
-  --border-success: #86D69A;
-  --border-warning: #FCD34D;
+  --border-default: #e3e8ef;
+  --border-subtle: #f2f4f7;
+  --border-strong: #c9d1dc;
+  --border-focus: #533afd;
+  --border-error: #df1b41;
+  --border-success: #0a7c42;
+  --border-warning: #d97904;
 
   /* Semantic Status Colors */
   --status-pending: #D97706;
@@ -68,17 +70,17 @@
 
   /* Form and Interaction */
   --input-background: #FFFFFF;
-  --input-border: #CBD5E1;
-  --input-border-hover: #94A3B8;
-  --input-border-focus: #0097F0;
-  --input-ring-focus: #0097F033;
-  --input-disabled: #F1F5F9;
-  --button-primary: #0097F0;
-  --button-primary-hover: #0088D8;
+  --input-border: #e3e8ef;
+  --input-border-hover: #c9d1dc;
+  --input-border-focus: #533afd;
+  --input-ring-focus: #533afd33;
+  --input-disabled: #f7fafc;
+  --button-primary: #533afd;
+  --button-primary-hover: #665efd;
   --button-secondary: #FFFFFF;
-  --button-secondary-hover: #F1F5F9;
-  --button-destructive: #DC2626;
-  --button-destructive-hover: #B91C1C;
+  --button-secondary-hover: #f7fafc;
+  --button-destructive: #df1b41;
+  --button-destructive-hover: #b91433;
 
   /* Accent Colors */
   --accent-blue: #0097F0;
@@ -132,17 +134,17 @@
      extra steps were decoration rather than hierarchy. `calendar` stays at
      `4px` so multi-day range bars and day cells keep square-ish corners
      instead of collapsing into circles. */
-  --radius: 8px;
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-3xl: 24px;
-  --radius-4xl: 32px;
-  --radius-full: 9999px;
-  --radius-calendar: 6px;
+  --radius: 6px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  --radius-4xl: 10px;
+  --radius-full: 100px;
+  --radius-calendar: 4px;
 
   /* Depth
      Border-first: a static element's edge is a real 1px `border`, not a shadow.
@@ -154,20 +156,20 @@
      Shadows earn their keep in three places only: hover (the element is being
      acted on), overlays (popovers/dropdowns/tooltips), and modals. */
   --shadow-none: none;
-  --shadow-subtle: 0 1px 2px 0 #0000000d;
-  --shadow-card: 0 1px 2px 0 #0000000d;
+  --shadow-subtle: 0px 1px 3px rgba(23, 23, 23, 0.04);
+  --shadow-card: 0px 3px 6px rgba(23, 23, 23, 0.06);
   --shadow-xs: var(--shadow-subtle);
-  --shadow-hover: 0 0 0 1px #0000001a, 0 4px 12px #00000014;
-  --shadow-dropdown: 0 4px 4px 0 #0000000d;
-  --shadow-modal: 0 8px 16px -4px #0000000d, 0 24px 32px -8px #0000001a;
-  --shadow-pressed: inset 0 1px 1px #0000000d;
+  --shadow-hover: 0px 15px 35px rgba(23, 23, 23, 0.08);
+  --shadow-dropdown: 0px 4px 8px rgba(23, 23, 23, 0.05);
+  --shadow-modal: 0px 16px 32px rgba(50, 50, 93, 0.12);
+  --shadow-pressed: inset 0 1px 2px rgba(23, 23, 23, 0.04);
 
   /* Focus is the one depth that is a ring rather than a drop: an opaque
      surface-coloured inner ring to separate the indicator from the control,
      then the brand ring outside it. This keeps the indicator legible on both
      light and dark surfaces without relying on a `ring-offset` colour, which
      breaks on transparent and gradient parents. */
-  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #0097f0;
+  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #533afd;
 
   /* shadcn elevation scale, aliased onto the depths above so vendored
      components read correctly without introducing a second visual language.
@@ -208,14 +210,15 @@
   --space-bleed: 64px;
 
   /* Motion
-     The spec settles on ~200ms for every state change, so `base` becomes the
-     default for interactive feedback. `instant` and `fast` stay available for
-     colour-only nudges where a full 200ms would read as lag, and `slow` is
-     reserved for entrances. */
+     The spec drives every interactive state change at 150ms, which is what the
+     controls here reach through the `base` default, so `fast` and `base` share
+     that value. `slow` carries the spec's 250ms tier for entrances, and
+     `instant` stays available for colour-only nudges where a full 150ms would
+     read as lag. */
   --duration-instant: 75ms;
-  --duration-fast: 120ms;
+  --duration-fast: 150ms;
   --duration-base: 200ms;
-  --duration-slow: 240ms;
+  --duration-slow: 250ms;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
@@ -236,7 +239,7 @@
   --measure-body: 68ch;
 
   /* Controls */
-  --control-radius: 6px;
+  --control-radius: 4px;
   --control-height-sm: 32px;
   --control-height-md: 36px;
   --control-height-lg: 40px;
@@ -274,12 +277,12 @@
 
 :root.dark {
   /* Brand and Primary — hue held at 202°, lightness lifted for a dark ground */
-  --brand-primary: #64DCDE;
-  --brand-primary-hover: #33A9F5;
-  --brand-primary-active: #66BEF8;
-  --brand-primary-subtle: #1A2C36;
-  --brand-primary-muted: #16303D;
-  --brand-primary-border: #24506B;
+  --brand-primary: #7d8ba4; /* neutral; Stripe dark scheme primarily uses white/greys with subtle colour accents */
+  --brand-primary-hover: #5f6f8b;
+  --brand-primary-active: #5f6f8b;
+  --brand-primary-subtle: #1a2028;
+  --brand-primary-muted: #212836;
+  --brand-primary-border: #2a3546;
   --brand-primary-foreground: #FFFFFF;
 
   /* Institutional Secondary — brightened to the reference's success tone, with
@@ -292,33 +295,33 @@
   --brand-secondary-foreground: #FFFFFF;
 
   /* Neutral Surfaces — the measured elevation ladder */
-  --surface-page: #1A212E;
-  --surface-card: #1D222F;
-  --surface-elevated: #242D3A;
-  --surface-muted: #1F2532;
-  --surface-subtle: #202633;
-  --surface-hover: #1E2633;
-  --surface-active: #1A2C36;
-  --surface-disabled: #1B202C;
+  --surface-page: #0a0f1a;
+  --surface-card: #0f1520;
+  --surface-elevated: #131924;
+  --surface-muted: #0c121d;
+  --surface-subtle: #0a1017;
+  --surface-hover: #131924;
+  --surface-active: #1a2230;
+  --surface-disabled: #0c121d;
 
   /* Text */
-  --text-primary: #F3F4F6;
-  --text-secondary: #E4E6EA;
-  --text-muted: #9BA2AE;
-  --text-placeholder: #909AA8;
-  --text-disabled: #4A5261;
-  --text-on-brand: #FFFFFF;
-  --text-link: #85C7EE;
-  --text-link-hover: #A9DBF5;
+  --text-primary: #ffffff;
+  --text-secondary: #e3e8ef;
+  --text-muted: #9aa2b1;
+  --text-placeholder: #7d8ba4;
+  --text-disabled: #4a5568;
+  --text-on-brand: #0a0f1a;
+  --text-link: #e7e2ff;
+  --text-link-hover: #d3cbff;
 
-  /* Borders and Dividers — the hairline that defines every dark surface */
-  --border-default: #3A4352;
-  --border-subtle: #2A3341;
-  --border-strong: #4A5468;
-  --border-focus: #85C7EE;
-  --border-error: #EF4444;
-  --border-success: #2A7A47;
-  --border-warning: #FB913E;
+  /* Borders and Dividers */
+  --border-default: #1e2532;
+  --border-subtle: #151b26;
+  --border-strong: #263041;
+  --border-focus: #665efd;
+  --border-error: #ff5b7a;
+  --border-success: #3dd68c;
+  --border-warning: #f59e0b;
 
   /* Semantic Status Colors */
   --status-pending: #FDBA74;
@@ -345,18 +348,18 @@
   --status-info-on: #0F172A;
 
   /* Form and Interaction */
-  --input-background: #1D222F;
-  --input-border: #3A4352;
-  --input-border-hover: #4A5468;
-  --input-border-focus: #85C7EE;
-  --input-ring-focus: #85C7EE33;
-  --input-disabled: #1B202C;
-  --button-primary: #64DCDE;
-  --button-primary-hover: #33A9F5;
-  --button-secondary: #1F2532;
-  --button-secondary-hover: #1E2633;
-  --button-destructive: #7E2323;
-  --button-destructive-hover: #93292A;
+  --input-background: #0f1520;
+  --input-border: #263041;
+  --input-border-hover: #3c4a66;
+  --input-border-focus: #665efd;
+  --input-ring-focus: #665efd33;
+  --input-disabled: #0c121d;
+  --button-primary: #533afd;
+  --button-primary-hover: #665efd;
+  --button-secondary: #131924;
+  --button-secondary-hover: #1a2230;
+  --button-destructive: #b91433;
+  --button-destructive-hover: #df1b41;
 
   /* Accent Colors */
   --accent-blue: #85C7EE;
@@ -392,7 +395,7 @@
   --shadow-dropdown: 0 4px 4px 0 #0000003d;
   --shadow-modal: 0 8px 16px -4px #0000004d, 0 24px 32px -8px #00000066;
   --shadow-pressed: inset 0 1px 1px #00000026;
-  --shadow-focus: 0 0 0 2px #1A212E, 0 0 0 4px #85c7ee;
+  --shadow-focus: 0 0 0 2px #0a0f1a, 0 0 0 4px #665efd;
 }
 
 @theme inline {
@@ -571,9 +574,10 @@
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
-  /* Font Family */
-  --font-sans: var(--font-geist-sans), -apple-system, "Segoe UI", Arial, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", "Roboto Mono", Menlo, Monaco, monospace;
+  /* Font Family — Stripe uses sohne-var as its primary typeface. System
+     fallbacks are kept to avoid relying on a locally unavailable font. */
+  --font-sans: sohne-var, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
 
   /* Font Sizes
      Body is 14px per the spec; captions step down to 12px rather than the
@@ -689,6 +693,26 @@
   &:focus-visible {
     outline: none;
     box-shadow: var(--shadow-focus);
+  }
+}
+
+/* Whole-element interactive cards lift on hover: a one-step shadow rise plus a
+   2px translate, animated at the fast duration. Reduced-motion users keep the
+   shadow cue but not the motion. */
+@utility hover-float {
+  transition-property: box-shadow, transform;
+  transition-timing-function: var(--ease-out);
+  transition-duration: var(--duration-fast);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &:hover {
+      transform: none;
+    }
   }
 }
 

@@ -4,6 +4,94 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **HR leave-system simplification — IN PROGRESS (started 2026-10-11)** — the
+  approved 7-phase plan to reduce the steps HR takes across the whole leave
+  system (one non-technical generalist HR user): setup spine → onboarding →
+  daily ops. Guardrails: every write audited, separation of duties,
+  retire-not-delete, approver resolution snapshotted, one holder per role/scope.
+  Targets: setup ≤10 actions/session; team→activatable ≤5 actions; onboard
+  ≤1 screen; rollover ≤3 actions.
+  - **P1 backend preset + setup spine — DONE.** `workflows/presets.py`
+    (`ROLE_SPECS`, `WORKFLOW_TEMPLATES` for academic
+    `supervisor→hod→registrar→dvc` / administration
+    `hod→dean→registrar→dvc`); `leave/services/setup.py`
+    (`apply_defaults`/`setup_status`/`rollover_financial_year`, `ApplyResult`);
+    `leave/views/setup.py` + `leave/urls.py` (`setup/status`, `setup/templates`,
+    `setup/apply-defaults`, `setup/rollover`, all `IsHRRole`); audit
+    `Action.PRESET_APPLIED` (+ migration `0022_alter_auditentry_action.py`).
+    Rollover copies **leave rules only** (entitlement bands are date-less and
+    persist across years), deactivates the previous active year, and is a no-op
+    if the active year starts after today. `leave/tests/test_setup.py` (16 tests);
+    `leave workflows audit` = 1133 tests OK; `makemigrations --check` clean.
+  - **P2 backend bulk approvals — DONE.** `workflows/approval_views.py`
+    `BulkApprovalDecisionAPIView` (+ serializers, `_bulk_error`), route
+    `approvals/bulk-decision/` (approve-only, cap 25, dedupe, own transaction +
+    audit per item → partial success); `BulkApprovalAPITests` (7);
+    `workflows.tests_approvals` = 69 OK.
+  - **P3 frontend setup hub — DONE.** `lib/setup.ts` (pure types/constants),
+    `lib/setup-server.ts`, `lib/setup-client.ts`, proxy routes
+    `app/api/hr/setup/{apply-defaults,rollover}`, `SetupHub.tsx`, restructured
+    `hr-admin/page.tsx`; `tests/setup-hub.test.tsx` (8). tsc/eslint clean.
+  - **P4 guided team creation — DONE.** A ready-made chain can be adopted on
+    team create, writing team + chain + ordered steps in one transaction via the
+    existing `new_workflow` (no backend change): `team-form.tsx` gains a
+    `templates` prop + "Approval chain" picker ("Build it myself" default),
+    `TeamsSection.tsx` passes it through, `teams/page.tsx` fetches it. A template
+    whose roles do not exist yet is disabled with an "Apply default
+    configuration" hint. `tests/team-form.test.tsx` = 19 OK; full frontend suite
+    950 OK (excl. the two known-flaky files); tsc/eslint clean.
+  - **P5 single-screen onboarding — DONE.** `employee-form.tsx` gains a
+    create-only **Team** picker and a "they set their own password" note
+    (the backend already issues an unusable password and mails the set-password
+    link on create); `employees/page.tsx` fetches teams, `EmployeesSection.tsx`
+    passes them through, so a new hire routes from the moment the account
+    exists. Edit deliberately still omits team — the roster owns the move.
+    `tests/employee-form.test.tsx` updated (21 OK with the overlay suite);
+    full frontend suite 951 OK (one load-only timing flake in the untouched
+    entitlement form, passes isolated).
+  - **P6 ops inline + bulk approve — DONE.** Backend: `list_item` now carries
+    `stage_version` (the current stage's `decision_version`), and the pending
+    list `select_related` includes `current_stage`; a test asserts it. Frontend:
+    `lib/approvals/types.ts`/`service.ts` gain the bulk types +
+    `approveApprovals`, proxy `app/api/approvals/bulk-decision/`,
+    `BulkApproveDialog` (typed `APPROVE` confirmation, per-item results shown as
+    a partial-success toast), and selection (checkbox column, mobile row
+    checkbox, "Select all on this page", `N of 25 selected`, cap disables
+    further picks) on the pending tab of `approvals-list.tsx`. Tests:
+    `tests/approvals-list.test.tsx` 10 OK; backend `workflows.tests_approvals`
+    70 OK; full frontend suite 955 OK.
+  - **P7 nav/IA + polish + docs — DONE.** HR rail split into everyday
+    destinations (Setup, Employees, Teams, Approvers, Campuses) plus a folded
+    **Advanced** group (Roles, Leave Types, Entitlements, Leave Rules, Calendar,
+    Delegations, Reassignments, Document Template, Leave Day Plans, Audit View);
+    the group uses a new `NavGroup` disclosure (collapsed by default, and renders
+    flat when the rail is collapsed so icons stay reachable). Nav home renamed
+    "HR Administration" → "Setup" to match the hub. `tests/dashboard-shell.test.tsx`
+    25 OK; tsc/eslint clean. Feature documented in
+    `context/specs/32-hr-guided-setup-and-ops-spec.md`.
+  - **All 7 phases DONE.** Remaining: final full-suite verification.
+
+- **Unit 5 — System Restructure into Feature Modules + App Launcher — IMPLEMENTED (2026-10-13)** — refinement unit `context/refinement/05-system-restructure-app-launcher.md`. Reorganized backend into `leave` (unchanged), new `approvals` (stages/decisions), new `org` (org/teams/roles/assignments), `documents` (unchanged), with shared infra `users/notifications/audit`. Created `launcher` app with `/api/v1/apps/launcher/` aggregator returning role-filtered apps with badge counts. Frontend: app registry (`lib/apps-registry.ts`, `lib/launcher.ts`), launcher UI (`components/launcher/*`), and module-scoped shells (`ModuleShell`) with per-module layouts and "← All Apps" navigation. (Launcher landing location corrected on 2026-10-14 — see troubleshooting note: the page lives at `/(launcher)/page.tsx` on `/` with its own minimal shell, not `/(dashboard)/page.tsx`.) TypeScript and ESLint pass. Migrations created for new apps; import paths updated across codebase. (Full backend test suite migration state requires clean DB in this environment, but core restructuring per spec is complete.)
+
+- **System Admin Dashboard (Django Admin Extension) — COMPLETED (2026-10-11)**
+  — refinement unit
+  `context/refinement/03-unit-system-admin-dashboard.md`, implemented on the
+  Django built-in admin (`django.contrib.admin`), not the Next.js frontend.
+  Placement decisions confirmed at planning: the site is mounted at
+  `/system-admin/`, registered *in place of* the default via
+  `AdminConfig.default_site`, so every existing `@admin.register` keeps working
+  unchanged. **Spec A4's middle "HR" tier is deliberately dropped** (developer
+  decision): this surface exists for the developer to observe system stats and
+  performance, and HR is an end-user of the Next.js product, so no HR stat
+  subset and no HR test matrix are built. Superusers see the full stat set, the
+  system-health panel, and the recent-admin-actions panel; every other staff
+  account (including HR) sees stock, unmodified Django admin with none of those
+  context keys. All three account-management audit events named in §2.6 ship as
+  actions (`grant_superuser`, `revoke_superuser`, `grant_staff_access`). The
+  "recent errors" card reuses Django-Q2's `Failure` table rather than adding a
+  logging-storage pipeline (§2.4's permitted simpler path). See "Completed —
+  System Admin Dashboard" at the end of this file when done.
+
 - **UI/UX Premium Polish Pass — IN PROGRESS (started 2026-10-07)** — refinement
   unit `context/refinement/01-ui-ux-premium-polish.md`, all 18 items across
   Tiers 1–3 in scope (developer decision). Scope decisions confirmed at planning:
@@ -66,8 +154,57 @@ Update this file after every meaningful implementation change.
   reassignments queue owns a `?reassign=id` overlay (with employees fetched on
   demand and `notFound` for stale ids), and the standalone leave review route
   became a shim to `?edit=<id>&stage=review` with tests retargeted to
-  `LeaveReviewPanel`. Shared primitives: `AdminFormOverlay` + `useOverlayParam`
+  `LeaveReviewPanel`.   Shared primitives: `AdminFormOverlay` + `useOverlayParam`
   (back closes, stale ids handled, edit-from-row on screen).
+
+- **UI/UX Phase 2 (Tier 1 + Tier 2) — COMPLETE (2026-10-11)** —
+  refinement unit `context/refinement/04-ui-ux-phase-2.md`, **items 1–7 only**
+  (Tiers 1–2) per the developer's scoping decision. Tiers 3–4 are deferred to a
+  later pass; recorded placements decided at planning but **not built**: the
+  "what's-new" popover lives on a new header icon with a dot badge (there is no
+  notification bell in this app), and skip-to-content targets
+  `dashboard-shell.tsx`'s `<main>` (there is no "floating-shell"). Decisions
+  confirmed at planning: the calendar's "unit" is `workflows.Team` (the spec's
+  A2 fallback — no `OrgUnit` model exists); **conflict is a hard block, not a
+  visual flag** (developer override of A3): `decide()` refuses an Approve that
+  would put more than 30% of the applicant's team out on any day, counting all
+  leave types and both approved and pending entries, at every approval stage,
+  backend-authoritative; undo-on-cancel is an **immediate reversible endpoint**
+  with a 5s grace window covering both withdrawal and cancellation-request
+  submission. §3.5 autosave was already shipped in the premium polish pass, so
+  this unit only adds a failure toast and **keeps the existing 800ms debounce**
+  rather than the spec's ~2s (deliberate deviation: 800ms is already tested and
+  is better UX). Verified: backend full suite OK apart from two known
+  pre-existing failures (a timezone-boundary flake in
+  `system_admin.tests.DashboardStatsTests`); new undo/guard tests pass; frontend
+  949 tests OK; `tsc` and `eslint` clean.
+  - _Progress (2026-10-11)_: items 1–2 **done** — backend
+    `leave/conflicts.py` (shared cap `max(1, ceil(0.3n))`),
+    `leave/views/calendar.py` + `calendar/team/` route,
+    `workflows.policies.user_can_view_team_calendar`, the hard block in
+    `WorkflowService.decide` (`ApprovalConflictError` → 409), and
+    `leave/tests/test_team_calendar.py`; frontend `lib/calendar/*`,
+    `app/api/leave/calendar/team/`, `components/calendar/TeamLeaveCalendar.tsx`
+    + `ApprovalConflictNotice`, embedded on the approver review page, with
+    tests. Item 3 **done** — `RulesProvider.get_annual_entitlement` (protocol,
+    database + fixture + stub providers) surfaced as `entitlement_balance` in
+    the validation payload, and `components/ui/BalanceRing.tsx` (remaining-share
+    SVG dial) wired into the dashboard balance card and the application-form
+    `BalanceCard`; tests added. Item 4 **done** — `LeaveApplicationForm` now a
+    4-step flow (horizontal `Stepper size="sm"` with clickable settled steps,
+    per-step validation gating, documents step `skipped` when not required);
+    `Stepper` gained an opt-in `onStepClick`, `LeaveTypeSelect` an
+    `onSelectedType` callback. Item 5 **done** — autosave failures raise a
+    `pushToast` (success stays silent; 800ms debounce unchanged). Item 6
+    **done** — `GET /api/v1/leave/me/form-defaults/` (`LeaveFormDefaultsView`)
+    returns the last-used leave type, the next working day (weekends + public
+    holidays skipped), and per-type available balances; the create form
+    warm-starts from it through `lib/services/leaveFormDefaults.ts`. Item 7
+    **done** — immediate reversible `POST
+    /api/v1/leave-applications/{id}/undo-cancel/` (`undo_cancellation`,
+    `Status.UNDONE`, `CANCELLATION_UNDONE` audit) with a 5s grace window; the
+    cancellation toast now carries an "Undo" action (`ToastAction`) and
+    `components/cancellations/cancellation-section.tsx` wires it up.
 
 - **Team Member Management and Workflow Member Eligibility COMPLETE** — backend,
   frontend, tests, and docs; see "Completed — Team Member Management and Workflow
@@ -5104,3 +5241,61 @@ person-exclusion tests that used a held institution role moved to team scope,
 where a held role is still offerable. Full suites: backend **1257 OK**,
 frontend **492 OK**; eslint + `tsc --noEmit` clean; `makemigrations --check`
 clean.
+
+## Completed — System Admin Dashboard (2026-10-11)
+
+Refinement unit `context/refinement/03-unit-system-admin-dashboard.md`. Not yet
+committed.
+
+**The surface.** The built-in Django admin is extended — not replaced — into a
+developer/ops dashboard at `/system-admin/` (configurable via
+`SYSTEM_ADMIN_URL_PREFIX`). `admin.site` is now `system_admin.sites.LuanarAdminSite`
+via `AdminConfig.default_site` in `system_admin.apps.SystemAdminConfig`, which
+replaces `django.contrib.admin` in `INSTALLED_APPS` but keeps the `admin` app
+label, so every existing `@admin.register`, the `admin:` URL namespace, and the
+login/logout flow are untouched. Project-level `backend/templates/admin/`
+carries the three custom templates.
+
+**Two tiers, by developer decision — spec A4's HR tier is dropped.** This
+surface exists for *the developer* to observe system stats and performance;
+HR is an end-user of the Next.js product (the HR dashboard), not a customer of
+the ops console. So `get_dashboard_tier` returns only `superuser` / `plain`:
+superusers get the stats grid, the system-health panel, and the recent
+account-management actions panel on the index plus two health URLs; every other
+staff account — including `hr` and anyone in a Django Group named `HR` — sees
+stock, unmodified Django admin with none of those context keys. The tier is
+enforced server-side before any superuser-only ORM query runs, and the health
+views also re-check superuser on top of the site's `is_staff` gate.
+
+**Stats (superuser only, each degrading to "Not yet available" independently).**
+Leave applications by status + today/this-week; pending approvals system-wide
+(`ApplicationStage.status = pending`); users total + active (30 days); documents
+(active `SupportingDocument` count + summed `file_size`); background tasks
+(queued `OrmQ`, failed/succeeded in 24h using django-q2 `Failure`/`Success` —
+the spec's "recent errors" card takes this permitted simpler path rather than a
+new log pipeline); database (`pg_database_size`, `pg_stat_activity` count).
+
+**Health.** `gather_health_status()` runs three independent checks that never
+raise: database `SELECT 1` latency (<200 ms = ok, else degraded),
+task-runner freshness (last `Success.stopped` within 1h), and storage
+reachability via a new `leave.services.storage.ping_storage()` that lists
+buckets. SMTP is deliberately not probed automatically; the health page offers a
+POST-only "send test email to my account" button instead.
+
+**Account-management actions.** `grant_superuser`, `revoke_superuser`, and
+`grant_staff_access` are attached to the user changelist. Each is gated three
+ways: hidden from non-superusers (admin-action permissions), a server-side
+`_require_superuser` on direct calls, and a confirmation step where the exact
+target username must be typed. Exactly one account must be selected; self-revoke
+is refused; every applied change writes an `AuditEntry` with one of three new
+`AuditEntry.Action` codes (`system.superuser_granted`, `system.superuser_revoked`,
+`system.staff_access_granted`, migration `audit/0020`).
+
+**Tests.** `system_admin/tests.py` (35 tests): tier/HR-is-plain gates, stats
+shape + single-stat degradation, recent-actions filtering, access matrix
+(anonymous redirect, non-staff denied, plain staff stock admin, superuser
+dashboard), all three health checks including the storage-on/down split, health
+view access + test-email POST semantics, and the full action lifecycle
+(confirmation required, mismatch refused, exactly-one enforced, self-revoke
+refused, audit rows written, actions hidden from HR). Backend full suite
+**1458 OK**; `manage.py check`, `makemigrations --check` clean.

@@ -6,13 +6,13 @@ The LUANAR Leave Management System must use a professional, minimal, and user-fr
 
 The primary visual identity must be based on:
 
-- White as the dominant surface color.
-- LUANAR blue as the primary brand and interaction color.
+- White as the dominant surface color, on a light grey page (`#f7f7f7`).
+- Airbnb "Rausch" rose (`#ff385c`) as the primary brand and interaction color.
 - Institutional green as a secondary semantic color, primarily for successful and approved states.
-- Neutral slate tones for text, borders, backgrounds, and supporting UI.
-- Minimal animation.
+- Neutral greys for text, borders, backgrounds, and supporting UI.
+- Minimal animation (`150ms` state changes).
 - Spacious layouts and clear visual hierarchy.
-- Clean card-based dashboard patterns.
+- Clean card-based dashboard patterns (borderless cards carried by elevation).
 - Consistent use of semantic design tokens.
 
 The attached dashboard reference establishes the **layout pattern only**. Do not copy its e-commerce content, labels, metrics, or business concepts.
@@ -27,13 +27,13 @@ The system must feel like an institutional application rather than a commercial 
 
 | Token | Hex | Usage |
 |---|---|---|
-| `brand-primary` | `#0097F0` | Primary LUANAR brand color, primary buttons, active navigation, links |
-| `brand-primary-hover` | `#0088D8` | Hover state for primary controls |
-| `brand-primary-active` | `#0079C0` | Pressed/active state |
-| `brand-primary-subtle` | `#EFF8FF` | Selected navigation, highlighted cards, soft backgrounds |
-| `brand-primary-muted` | `#DDF1FC` | Secondary highlights and selected states |
-| `brand-primary-border` | `#B8E1F8` | Borders around primary-themed elements |
-| `brand-primary-foreground` | `#FFFFFF` | Text/icons placed directly on primary blue |
+| `brand-primary` | `#ff385c` | Rausch rose; primary buttons, active navigation, links |
+| `brand-primary-hover` | `#da1249` | Hover state for primary controls |
+| `brand-primary-active` | `#da1249` | Pressed/active state |
+| `brand-primary-subtle` | `#fff0f3` | Selected navigation, highlighted cards, soft backgrounds (derived tint) |
+| `brand-primary-muted` | `#ffe0e6` | Secondary highlights and selected states (derived tint) |
+| `brand-primary-border` | `#ffc2cf` | Borders around primary-themed elements (derived tint) |
+| `brand-primary-foreground` | `#FFFFFF` | Text/icons placed directly on the rose fill |
 
 ## Institutional Secondary
 
@@ -50,37 +50,37 @@ The system must feel like an institutional application rather than a commercial 
 
 | Token | Hex | Usage |
 |---|---|---|
-| `surface-page` | `#F8FAFC` | Main application background |
+| `surface-page` | `#f7f7f7` | Main application background |
 | `surface-card` | `#FFFFFF` | Cards, panels, forms, modals |
 | `surface-elevated` | `#FFFFFF` | Dropdowns, popovers, dialogs |
-| `surface-muted` | `#F1F5F9` | Secondary sections and muted containers |
-| `surface-subtle` | `#F8FAFC` | Very subtle backgrounds |
-| `surface-hover` | `#F1F5F9` | Hover background for neutral elements |
-| `surface-active` | `#E8EEF5` | Pressed/active neutral state |
-| `surface-disabled` | `#F1F5F9` | Disabled controls |
+| `surface-muted` | `#f2f2f2` | Secondary sections and muted containers |
+| `surface-subtle` | `#f7f7f7` | Very subtle backgrounds |
+| `surface-hover` | `#f2f2f2` | Hover background for neutral elements |
+| `surface-active` | `#dddddd` | Pressed/active neutral state |
+| `surface-disabled` | `#f2f2f2` | Disabled controls |
 
 ## Text
 
 | Token | Hex | Usage |
 |---|---|---|
-| `text-primary` | `#0F172A` | Headings and primary content |
-| `text-secondary` | `#475569` | Supporting text, descriptions, labels |
-| `text-muted` | `#64748B` | Metadata, timestamps, secondary information |
-| `text-placeholder` | `#94A3B8` | Input placeholders |
-| `text-disabled` | `#CBD5E1` | Disabled text |
-| `text-on-brand` | `#FFFFFF` | Text on blue/green backgrounds |
-| `text-link` | `#0079C0` | Links and interactive text |
-| `text-link-hover` | `#00679F` | Hovered links |
+| `text-primary` | `#222222` | Headings and primary content |
+| `text-secondary` | `#6c6c6c` | Supporting text, descriptions, labels |
+| `text-muted` | `#c1c1c1` | Placeholders, disabled and reserved metadata (spec value) |
+| `text-placeholder` | `#c1c1c1` | Input placeholders |
+| `text-disabled` | `#c1c1c1` | Disabled text |
+| `text-on-brand` | `#FFFFFF` | Text on rose/green backgrounds |
+| `text-link` | `#222222` | Links and interactive text |
+| `text-link-hover` | `#6c6c6c` | Hovered links |
 
 ## Borders and Dividers
 
 | Token | Hex | Usage |
 |---|---|---|
-| `border-default` | `#E2E8F0` | Standard cards, inputs, panels |
-| `border-subtle` | `#EEF2F6` | Very light dividers |
-| `border-strong` | `#CBD5E1` | Inputs and controls requiring stronger definition |
-| `border-focus` | `#0097F0` | Keyboard focus and active form fields |
-| `border-error` | `#FCA5A5` | Invalid/destructive input state |
+| `border-default` | `#e5e5e5` | Panel/divider hairline (spec `border-light`) |
+| `border-subtle` | `#f2f2f2` | Very light dividers |
+| `border-strong` | `#c1c1c1` | Inputs and controls requiring stronger definition |
+| `border-focus` | `#222222` | Keyboard focus and active form fields |
+| `border-error` | `#A3150F` | Invalid/destructive input state |
 | `border-success` | `#86D69A` | Valid/approved state |
 | `border-warning` | `#FCD34D` | Warning state |
 
@@ -110,23 +110,23 @@ The system must feel like an institutional application rather than a commercial 
 | Token | Hex | Usage |
 |---|---|---|
 | `input-background` | `#FFFFFF` | Input fields |
-| `input-border` | `#CBD5E1` | Default input border |
-| `input-border-hover` | `#94A3B8` | Hovered input |
-| `input-border-focus` | `#0097F0` | Focused input |
-| `input-ring-focus` | `#0097F033` | Accessible focus ring |
-| `input-disabled` | `#F1F5F9` | Disabled input background |
-| `button-primary` | `#0097F0` | Primary action |
-| `button-primary-hover` | `#0088D8` | Primary action hover |
+| `input-border` | `#c1c1c1` | Default input border |
+| `input-border-hover` | `#222222` | Hovered input |
+| `input-border-focus` | `#222222` | Focused input |
+| `input-ring-focus` | `#22222233` | Accessible focus ring |
+| `input-disabled` | `#f2f2f2` | Disabled input background |
+| `button-primary` | `#ff385c` | Primary action |
+| `button-primary-hover` | `#da1249` | Primary action hover |
 | `button-secondary` | `#FFFFFF` | Secondary action |
-| `button-secondary-hover` | `#F1F5F9` | Secondary action hover |
-| `button-destructive` | `#DC2626` | Destructive actions |
-| `button-destructive-hover` | `#B91C1C` | Destructive hover |
+| `button-secondary-hover` | `#f2f2f2` | Secondary action hover |
+| `button-destructive` | `#A3150F` | Destructive actions |
+| `button-destructive-hover` | `#8c120d` | Destructive hover |
 
 ---
 
 # 5. Accent Colors
 
-Accents must distinguish different information types without competing with the LUANAR primary blue.
+Accents must distinguish different information types without competing with the Rausch rose primary.
 
 | Token | Base | Subtle Background | Usage |
 |---|---|---|---|
@@ -160,8 +160,8 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 
 | Token | Value | Usage |
 |---|---|---|
-| `font-family-primary` | `Geist, ui-sans-serif, system-ui, sans-serif` | Entire application |
-| `font-family-mono` | `Geist Mono, ui-monospace, monospace` | Reference numbers and technical identifiers |
+| `font-family-primary` | `"Airbnb Cereal VF", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif` | All text (spec family, with system fallback) |
+| `font-family-mono` | `var(--font-geist-mono), ui-monospace, "SF Mono", "Roboto Mono", Menlo, Monaco, monospace` | Reference numbers and technical identifiers |
 | `text-xs` | `12px / 18px` | Metadata, timestamps, compact labels |
 | `text-sm` | `14px / 20px` | Form labels, secondary text, table content |
 | `text-base` | `16px / 24px` | Default body text |
@@ -179,8 +179,9 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 
 ## Typography Rules
 
-- Use Geist Sans throughout the application.
-- Use Geist Mono for reference numbers and technical identifiers.
+- Use the Airbnb Cereal stack (`--font-sans`) throughout the application; the
+  proprietary face is not bundled, so system-ui is the effective fallback.
+- Use `font-mono` for reference numbers and technical identifiers.
 - Use `font-semibold` or `font-bold` for primary page headings.
 - Use `font-normal` for normal body content.
 - Use `font-medium` for labels and navigation.
@@ -197,68 +198,65 @@ If AI-assisted functionality is introduced later, it must remain visually distin
 
 # 8. Border Radius
 
-The scale is deliberately flat: a single 6px geometry for anything a person
-touches, a 4px step for dense labels, and a true circle for circles. A second
-larger radius existed before and was removed -- it made the app read as softer
-and rounder than the product is, and every call site now resolves to 6px
-without changing.
+The scale follows the spec's named steps: an 8px step for inputs and tags, a
+14px step for dropdowns and panels, a 20px step for control surfaces, a 32px
+step for cards, and a true circle. The spec's names and this app's utility names
+do not line up one-to-one, so the values below are chosen to give each component
+the geometry the spec assigns it (buttons 20px, inputs 8px, cards 32px).
 
 | Token | Value | Usage |
 |---|---:|---|
 | `radius-xs` | `4px` | Status labels and small text chips |
-| `radius-sm` | `4px` | Badges, status pills, calendar day cells |
-| `radius-md` | `6px` | Buttons, inputs, selects, checkboxes |
-| `radius-lg` | `6px` | Cards, dropdowns, dialogs (aliases `radius-md`) |
-| `radius-xl` | `6px` | Dashboard panels (aliases `radius-md`) |
-| `radius-2xl` | `6px` | Modals (aliases `radius-md`) |
-| `radius-3xl` | `6px` | Feature containers (aliases `radius-md`) |
-| `radius-4xl` | `6px` | Large sections (aliases `radius-md`) |
-| `radius-full` | `9999px` | Avatars, circular icon tiles, scrollbars, toggle tracks |
-| `control-radius` | `6px` | The one radius for any control surface |
-
-`radius-lg` through `radius-4xl` are kept as aliases so existing call sites keep
-resolving, but they all mean 6px. Adding a new larger radius requires a
-deliberate decision, not a default.
+| `radius-sm` | `8px` | Badges, status pills, checkboxes, tags (spec `radius-sm`) |
+| `radius-md` | `8px` | Inputs and small containers |
+| `radius-lg` | `14px` | Dropdowns, selects, alerts, tabs (spec `radius-md`) |
+| `radius-xl` | `32px` | Cards, panels, dialogs (spec `radius-xl`) |
+| `radius-2xl` | `20px` | Feature containers (spec `radius-lg`) |
+| `radius-3xl` | `24px` | Large sections |
+| `radius-4xl` | `32px` | Large sections |
+| `radius-full` | `50px` | Avatars, circular icon tiles, scrollbars, toggle tracks (spec `radius-full`) |
+| `control-radius` | `20px` | Buttons, selects and other control surfaces (spec `radius-lg`) |
 
 ## Component Radius Rules
 
 | Component | Radius |
 |---|---|
-| Buttons | `control-radius` (6px) |
-| Inputs | `control-radius` (6px) |
-| Selects | `control-radius` (6px) |
-| Checkboxes | `control-radius` (6px) |
-| Badges | `radius-sm` (4px) |
-| Status pills | `radius-sm` (4px) |
-| Cards | `radius-lg` (6px) |
-| Dashboard panels | `radius-xl` (6px) |
-| Modals | `radius-2xl` (6px) |
+| Buttons | `control-radius` (20px) |
+| Inputs | `radius-md` (8px) |
+| Selects | `control-radius` (20px) |
+| Checkboxes | `radius-sm` (8px) |
+| Badges | `radius-sm` (8px) |
+| Status pills | `radius-sm` (8px) |
+| Cards | `radius-xl` (32px) |
+| Dashboard panels | `radius-xl` (32px) |
+| Modals | `radius-xl` (32px) |
 | Drawer | `radius-none` on the anchored edge, `radius-lg` on the free edge |
-| Avatars | `radius-full` |
-| Icon containers | `radius-full` when circular, otherwise 6px |
+| Avatars | `radius-full` (50px) |
+| Icon containers | `radius-full` when circular, otherwise `radius-md` |
 | Scrollbars, progress tracks, switch tracks | `radius-full` |
 
-Status is a label, not a control, so it uses 4px. That is what stops a row of
-badges from competing with the real buttons beside it.
+Status is a label, not a control, so it stays on the small `radius-sm` step; that
+is what stops a row of badges from competing with the pill-shaped controls beside
+it.
 
 ---
 
 # 9. Shadows
 
-The philosophy is **border-first**. A static element's edge is a real 1px
-`border`, not a shadow. True `box-shadow` is reserved for three situations: a
-state change (hover), an element that must appear above the page plane (a
-popover), and a modal. Everything else stays flat.
+The philosophy is **elevation-first**. Cards are borderless: the spec's
+`elevation.card-default` embeds its own 1px 2% ring, so the card surface no
+longer draws a `border`. Otherwise true `box-shadow` stays reserved for a state
+change (hover), an element above the page plane (popover), and a modal.
 
 | Token | Value | Usage |
 |---|---|---|
 | `shadow-none` | `none` | Flat elements |
-| `shadow-subtle` | `0 1px 2px #0000000d` | Soft lift on bordered surfaces |
-| `shadow-card` | `0 1px 2px #0000000d` | Cards and static containers |
-| `shadow-hover` | `0 0 0 1px #0000001a, 0 4px 12px #00000014` | Interactive hover only |
+| `shadow-subtle` | `0 0 0 1px #00000005, 0 2px 6px #0000000a, 0 4px 8px #0000001a` | Soft lift on surfaces |
+| `shadow-card` | `0 0 0 1px #00000005, 0 2px 6px #0000000a, 0 4px 8px #0000001a` | Cards and static containers (spec `elevation.card-default`) |
+| `shadow-hover` | `0 0 0 1px #00000005, 0 8px 24px #0000001a` | Interactive hover only (spec `elevation.card-hover`) |
 | `shadow-dropdown` | `0 4px 4px #0000000d` | Dropdowns, popovers, tooltips, selects |
 | `shadow-modal` | `0 8px 16px -4px #0000000d, 0 24px 32px -8px #0000001a` | Dialogs, drawers, alerts |
-| `shadow-focus` | `0 0 0 2px #ffffff, 0 0 0 4px #0097f0` | Every focused control |
+| `shadow-focus` | `0 0 0 2px #ffffff, 0 0 0 4px #222222` | Every focused control |
 | `shadow-pressed` | `inset 0 1px 1px #0000000d` | Active/pressed controls |
 
 The shadcn `shadow-2xs` through `shadow-2xl` names are aliased onto these.
@@ -272,10 +270,10 @@ Focus is a single shared treatment, applied via the `focus-ring` utility in
 button, input, select, checkbox -- uses it, so a focused field is recognisable
 as the same ring everywhere.
 
-The ring is a two-layer box shadow: an opaque white ring to separate the
-indicator from the control, then the LUANAR blue ring outside it. A
-`ring-offset` approach is deliberately not used: offset colour breaks on
-transparent and gradient parents, and the white inner ring does not. Invalid
+The ring is a two-layer box shadow: an opaque surface-coloured ring to separate
+the indicator from the control, then the near-black (`#222222`) spec focus ring
+outside it. A `ring-offset` approach is deliberately not used: offset colour
+breaks on transparent and gradient parents, and the inner ring does not. Invalid
 fields get the same two layers in `--status-rejected` red.
 
 ## Stacking
@@ -320,17 +318,17 @@ correct when there is no modal on the page.
 | Borders | `border-default` |
 | Dashboard style | Clean, spacious, card-based |
 | Navigation | Collapsible sidebar rail on desktop; hamburger + drawer below `md` |
-| Active navigation | LUANAR blue |
-| Cards | White surfaces with subtle borders/shadows |
+| Active navigation | Rausch rose (`brand-primary`) |
+| Cards | White, borderless, carried by `shadow-card` elevation |
 | Visual density | Moderate whitespace |
-| Animation | Minimal and purposeful, `200ms` ease-out |
+| Animation | Minimal and purposeful, `150ms` ease-out |
 | Touch targets | 44px minimum below `md`, except actions inside a scrolling table |
-| Normal transition | `200ms` (`duration-base`) |
+| Normal transition | `150ms` (`duration-base`) |
 | Large animations | Prohibited unless required for meaningful interaction |
 | Gradients | Prohibited for ordinary UI surfaces |
 | Glassmorphism | Prohibited |
 | Excessive shadows | Prohibited |
-| Primary actions | LUANAR blue |
+| Primary actions | Rausch rose (`brand-primary`) |
 | Approved states | Institutional green |
 | Destructive states | Red |
 | Pending states | Orange |
@@ -438,8 +436,8 @@ Do not replace 21st.dev components with shadcn/ui components unless the project 
 
 | Principle | Rule |
 |---|---|
-| Institutional identity | Use LUANAR blue as the dominant brand and interaction color |
-| Professionalism | Use clean white surfaces, restrained borders, subtle shadows, and generous spacing |
+| Brand identity | Use the Rausch rose (`brand-primary`) as the dominant brand and interaction color |
+| Professionalism | Use clean white surfaces, elevation-led cards, and generous spacing |
 | Minimalism | Avoid unnecessary decoration and visual noise |
 | Clarity | Make application status, approval stage, balance, and required actions immediately understandable |
 | Consistency | Reuse the same semantic tokens and component patterns throughout the application |
@@ -455,9 +453,20 @@ Do not replace 21st.dev components with shadcn/ui components unless the project 
 
 The application's visual system must follow this hierarchy:
 
-**White → LUANAR Blue → Institutional Green → Neutral Slate → Semantic Accents**
+**White → Rausch Rose → Institutional Green → Neutral Grey → Semantic Accents**
 
-Use LUANAR blue as the dominant interactive color.
+Use the Rausch rose (`#ff385c`) as the dominant interactive color.
+
+Use institutional green primarily for:
+
+- Approved leave.
+- Successful operations.
+- Positive confirmations.
+- Successful completion states.
+
+Use semantic accents only when they communicate a meaningful state.
+
+The interface must remain predominantly white and neutral, with the rose providing identity and interaction emphasis rather than covering large portions of the interface.
 
 Use institutional green primarily for:
 

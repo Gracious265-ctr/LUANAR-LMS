@@ -19,7 +19,7 @@ export function Checkbox({
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "peer size-5 shrink-0 rounded-control border border-input-border bg-input-background",
+        "peer size-5 shrink-0 rounded-sm border border-input-border bg-input-background",
         "transition-[background-color,border-color,box-shadow] duration-base ease-standard",
         "focus-visible:border-input-border-focus focus-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",

@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
-/** One source of truth for every content card surface. */
+/** One source of truth for every content card surface. The elevation token
+ *  carries its own 1px ring, so the card is borderless by design. */
 export const cardStyles = [
-  "rounded-xl border border-border-default bg-surface-card p-6 shadow-card",
-  "transition-[box-shadow,transform] duration-base ease-standard",
+  "rounded-xl bg-surface-card p-6 shadow-card",
 ] as const;
 
 export function Card({
@@ -15,8 +15,7 @@ export function Card({
     <div
       className={cn(
         cardStyles,
-        interactive &&
-          "hover:-translate-y-0.5 hover:shadow-hover motion-reduce:hover:translate-y-0",
+        interactive && "hover-float",
         className,
       )}
       {...props}
