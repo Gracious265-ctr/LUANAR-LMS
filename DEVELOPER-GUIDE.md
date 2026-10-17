@@ -91,7 +91,7 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | Login flow, user model, roles, JWT | `backend/users/models.py`, `backend/users/views.py`, `backend/users/permissions.py` |
 | The set-password link (request, resend, confirm) | `backend/users/services.py`, `backend/notifications/accounts.py`, `frontend/lib/password-set.ts` |
 | Changing a password from a live session (and the session eviction) | `backend/users/services.py` (`change_password`), `backend/users/authentication.py` |
-| Seed users + default HR config (grades, leave types, rules, financial year, workflows) | `backend/users/management/commands/seed_dev_users.py` |
+| Seed dev demo data (a routable team, its Supervisor→HOD→Registrar chain, approver + employee accounts, and baseline leave config) | `backend/users/management/commands/seed_demo_data.py` |
 | Employee/HR data serialisers (employees, entitlements, leave types, rules, financial years, holidays, applications) | `backend/leave/serializers/__init__.py` |
 | The HR/employee API endpoints (entitlements, leave types/rules, financial years, holidays, applications, documents) | `backend/leave/views/__init__.py` |
 | Employee "my leave" overview and history endpoints | `backend/leave/views/my_leave.py`, `backend/leave/views/history.py` |
@@ -136,7 +136,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | `frontend/app/(dashboard)/dashboard/…` | The pages you see inside the app (employee + HR) |
 | `frontend/app/(dashboard)/approvals/…` | Approvers' "pending approvals" pages |
 | `frontend/app/(auth)/login/` | The login page |
-| `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals) |
+| `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans) |
 | `frontend/components/…` | Reusable UI pieces, grouped by area (hr, approvals, applications, cancellation, tracking, dashboard) |
 | `frontend/lib/…` | Typed helpers for each domain — where API calls + TypeScript types live |
 | `frontend/scripts/e2e.sh` | The end-to-end smoke test script (`npm run test:e2e`) |
@@ -154,6 +154,8 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | Employee leave **dashboard** (landing page: balance rings, needs attention, drafts, recent) | `frontend/app/(dashboard)/dashboard/leave/page.tsx` + `frontend/components/leave/*Section.tsx`, `frontend/lib/hooks/useLeaveDashboard.ts` |
 | Employee drafts list | `frontend/app/(dashboard)/dashboard/leave/drafts/` |
 | One application's pages (details, review, tracking, history, edit) | `frontend/app/(dashboard)/dashboard/leave/[id]/…` |
+| **Leave Plans** (plan ahead → reminder → apply) | `frontend/app/(dashboard)/dashboard/plans/…` + `frontend/components/plans/`, `frontend/lib/plans/`, `frontend/lib/hooks/usePlans.ts` and `useTeamPlans.ts`; backend `backend/plans/` |
+| Scheduled plan reminders / missed-plan sweep | `backend/plans/tasks.py` (`check_and_notify_plans`) + `backend/plans/migrations/0002_schedule_plan_check.py` |
 | Approvals list / approval detail for approvers | `frontend/app/(dashboard)/approvals/` + `frontend/components/approvals/` |
 | HR admin home and all HR pages (employees, entitlements, leave rules, workflows, leave types, calendar, delegations, reassignments, audit, document template) | `frontend/app/(dashboard)/dashboard/hr-admin/…` |
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
@@ -197,11 +199,11 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    - decisions: `backend/notifications/services.py` (`compose_subject`/`compose_body`)
    - delegation: `backend/notifications/delegations.py`
    - reassignment: `backend/notifications/reassignments.py`
-   - leave day plans: `backend/notifications/plans.py`
+   - leave plans: `backend/notifications/plans.py`
    - cancellations: `backend/notifications/cancellations.py`
 2. **When** a notification fires comes from the event that emits on commit
    (`backend/workflows/events.py`, `backend/leave/cancellations/events.py`, or a
-   plan/block service), not from the composer.
+   plan service), not from the composer.
 3. Every composer ends in `enqueue_delivery()`; `backend/notifications/tasks.py`
    is the only module that calls `send_mail`. Do not send anywhere else — the
    outbox row, the recipient override and the `failed` record all live there.
@@ -244,14 +246,11 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    `EMAIL_DEV_RECIPIENT_OVERRIDE=<your inbox>` — it is honoured **only** when
    `DEBUG=True` and is refused (with an error log) otherwise. Leave it unset once
    real employees exist; the recipients are then real.
-6. Scheduled jobs (plan housekeeping: lapsing blocks, confirmation reminders) come
-   from the `django_q.Schedule` row created by
-   `backend/plans/migrations/0002_schedule_plan_housekeeping.py` and also need
-   `qcluster` running. That schedule is a **cron expression**, so `croniter` must
-   be installed — without it `qcluster` dies on boot with `ImportError: Please
-   install croniter to enable cron expressions` and every queued notification
-   stays `pending` with nothing retrying it. It is a declared dependency in
-   `backend/pyproject.toml`; if you ever see that ImportError, run `uv sync`.
+6. Scheduled Leave Plan jobs come from the `django_q.Schedule` row created by
+   `backend/plans/migrations/0002_schedule_plan_check.py` — a daily
+   (`Schedule.DAILY`) run of `plans.tasks.check_and_notify_plans`, which sends
+   plan reminders, one follow-up, and marks missed plans. It also needs
+   `qcluster` running, or the queued reminders stay `pending`.
 7. Inspect results in Django admin → Notifications → Notification outbox
    (read-only: state, recipient, and the error text on failures).
 8. **The sending address must not be one of the recipients.** A finalised

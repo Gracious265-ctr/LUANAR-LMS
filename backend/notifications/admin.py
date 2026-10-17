@@ -29,7 +29,6 @@ class NotificationOutboxAdmin(admin.ModelAdmin):
         "delegation",
         "reassignment",
         "plan",
-        "plan_block",
         "cancellation",
         "submission_cycle",
     )

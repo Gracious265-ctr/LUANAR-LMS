@@ -1,179 +1,124 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { format, parseISO } from "date-fns";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PlansWorkspace } from "@/components/plans/plans-workspace";
-import { makeDraftDetail } from "@/lib/plans/__fixtures__";
-import { selectOption } from "./helpers/select";
-
-/** October 2026 is the calendar's default month, so day lookups are stable. */
-const TODAY = new Date(2026, 9, 5);
-
-const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
-  routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
-  searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/plans" },
-}));
+const push = vi.fn();
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => routerMock,
-  usePathname: () => pathnameRef.current,
-  useSearchParams: () => searchParamsRef.current,
+  useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/dashboard/plans",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
-// The list panels fetch their own data; the overlay is what is under test.
-vi.mock("@/components/plans/plans-list", () => ({ PlansList: () => null }));
-vi.mock("@/components/plans/plan-approvals-list", () => ({
-  PlanApprovalsList: () => null,
-}));
-vi.mock("@/components/plans/plan-confirmations-panel", () => ({
-  PlanConfirmationsPanel: () => null,
+vi.mock("@/lib/hooks/usePlans", () => ({ usePlans: vi.fn() }));
+vi.mock("@/lib/plans/service", () => ({
+  applyPlan: vi.fn(),
+  cancelPlan: vi.fn(),
 }));
 
-function dayButton(iso: string): HTMLElement {
-  return within(screen.getByRole("grid")).getByRole("button", {
-    name: format(parseISO(iso), "PPPP"),
-  });
+import { MyPlans } from "@/components/plans/MyPlans";
+import { usePlans } from "@/lib/hooks/usePlans";
+import { applyPlan, cancelPlan } from "@/lib/plans/service";
+import { makePlan } from "@/lib/plans/__fixtures__";
+import type { LeavePlan } from "@/lib/plans/types";
+
+function mockPlans(
+  plans: LeavePlan[] | null,
+  over: Record<string, unknown> = {}
+) {
+  vi.mocked(usePlans).mockReturnValue({
+    data: plans,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    ...over,
+  } as ReturnType<typeof usePlans>);
 }
 
-function chooseRange(name: string | RegExp, from: string, to: string) {
-  fireEvent.click(screen.getByRole("button", { name }));
-  fireEvent.click(dayButton(from));
-  fireEvent.click(dayButton(to));
-}
+beforeEach(() => {
+  vi.mocked(usePlans).mockReset();
+  vi.mocked(applyPlan).mockReset();
+  vi.mocked(cancelPlan).mockReset();
+  push.mockReset();
+});
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+describe("MyPlans", () => {
+  it("splits live plans from history", () => {
+    mockPlans([
+      makePlan({ id: "live", status: "upcoming" }),
+      makePlan({ id: "done", status: "converted", converted_application: "draft-1" }),
+    ]);
 
-describe("PlansWorkspace plan overlay", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(TODAY);
-    pathnameRef.current = "/dashboard/plans";
-    searchParamsRef.current = new URLSearchParams();
+    render(<MyPlans />);
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes("/api/leave/leave-types/")) {
-          return Promise.resolve(
-            jsonResponse([{ id: 1, name: "Annual leave", code: "annual" }])
-          );
-        }
-        return Promise.resolve(jsonResponse(makeDraftDetail()));
-      })
-    );
+    expect(screen.getByRole("heading", { name: "Planned leave" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Earlier plans" })).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+  it("shows the empty state when there are no plans", () => {
+    mockPlans([]);
+    render(<MyPlans />);
+    expect(screen.getByText(/no leave plans yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create a plan/i })).toBeInTheDocument();
   });
 
-  it("renders the workspace with no overlay open", () => {
-    render(<PlansWorkspace />);
+  it("shows an error state when loading failed", () => {
+    mockPlans(null, { error: "boom" });
+    render(<MyPlans />);
+    expect(screen.getByText(/couldn't load your plans/i)).toBeInTheDocument();
+  });
+});
+
+describe("PlanCard actions", () => {
+  it("Apply Now converts the plan and opens the draft editor", async () => {
+    vi.mocked(applyPlan).mockResolvedValue({ application_id: "draft-42" });
+    mockPlans([makePlan({ id: "plan-9", status: "notified" })]);
+
+    render(<MyPlans />);
+    fireEvent.click(screen.getByRole("button", { name: /apply now/i }));
+
+    await waitFor(() => expect(applyPlan).toHaveBeenCalledWith("plan-9"));
+    expect(push).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-42");
+  });
+
+  it("surfaces an apply failure instead of navigating", async () => {
+    vi.mocked(applyPlan).mockRejectedValue(new Error("This plan has already been applied."));
+    mockPlans([makePlan({ id: "plan-9", status: "notified" })]);
+
+    render(<MyPlans />);
+    fireEvent.click(screen.getByRole("button", { name: /apply now/i }));
 
     expect(
-      screen.getByRole("button", { name: /New plan/ })
+      await screen.findByText("This plan has already been applied.")
     ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(push).not.toHaveBeenCalled();
   });
 
-  it("opens the create form from the trigger", () => {
-    render(<PlansWorkspace />);
+  it("cancels a plan after confirmation and refreshes", async () => {
+    const refetch = vi.fn();
+    vi.mocked(cancelPlan).mockResolvedValue(undefined);
+    mockPlans([makePlan({ id: "plan-9", status: "upcoming" })], { refetch });
 
-    fireEvent.click(screen.getByRole("button", { name: /New plan/ }));
+    render(<MyPlans />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
-    expect(routerMock.push).toHaveBeenCalledWith("/dashboard/plans?plan=new");
+    await waitFor(() => expect(cancelPlan).toHaveBeenCalledWith("plan-9"));
+    expect(refetch).toHaveBeenCalled();
   });
 
-  it("reopens the create form from the URL alone, so a refresh resumes it", async () => {
-    searchParamsRef.current = new URLSearchParams("plan=new");
-    render(<PlansWorkspace />);
+  it("links a missed plan to re-plan with the same leave type", () => {
+    mockPlans([makePlan({ id: "plan-9", status: "missed", leave_type_id: 7 })]);
 
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(
-      await screen.findByRole("combobox", { name: "Leave type (block 1)" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
+    render(<MyPlans />);
+    const link = screen.getByRole("button", { name: /plan a new one/i });
+    fireEvent.click(link);
+
+    expect(push).toHaveBeenCalledWith("/dashboard/plans/new?leaveType=7");
   });
 
-  it("closes on cancel without writing anything", async () => {
-    searchParamsRef.current = new URLSearchParams("plan=new");
-    render(<PlansWorkspace />);
-    await screen.findByRole("combobox", { name: "Leave type (block 1)" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    // Cancel is a button here, not a link: the overlay owns dismissal. The
-    // lone JSDOM history entry takes close's replace fallback.
-    expect(routerMock.replace).toHaveBeenCalledWith("/dashboard/plans");
-    expect(routerMock.push).not.toHaveBeenCalled();
-    // The dialog itself only disappears once the mocked router feeds the
-    // cleared URL back in, which is the real navigation's job.
-  });
-
-  it("swaps the overlay URL for the new plan's page after a save", async () => {
-    searchParamsRef.current = new URLSearchParams("plan=new");
-    render(<PlansWorkspace />);
-    await screen.findByRole("combobox", { name: "Leave type (block 1)" });
-
-    chooseRange("Period covered", "2026-10-01", "2026-10-30");
-    await selectOption(
-      screen.getByRole("combobox", { name: "Leave type (block 1)" }),
-      "Annual leave"
-    );
-    chooseRange("Dates (block 1)", "2026-10-12", "2026-10-14");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-
-    // `replace`, not `push`: the overlay's own history entry is the one being
-    // swapped for the plan, so Back from the plan lands on the list rather
-    // than on an empty create form.
-    await waitFor(() =>
-      expect(routerMock.replace).toHaveBeenCalledWith("/dashboard/plans/plan-1")
-    );
-    expect(routerMock.push).not.toHaveBeenCalled();
-  });
-
-  it("leaves the overlay open and shows the reason when the save fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes("/api/leave/leave-types/")) {
-          return Promise.resolve(
-            jsonResponse([{ id: 1, name: "Annual leave", code: "annual" }])
-          );
-        }
-        return Promise.resolve(
-          jsonResponse({ detail: "Block overlaps another plan." }, 400)
-        );
-      })
-    );
-    searchParamsRef.current = new URLSearchParams("plan=new");
-    render(<PlansWorkspace />);
-    await screen.findByRole("combobox", { name: "Leave type (block 1)" });
-
-    chooseRange("Period covered", "2026-10-01", "2026-10-30");
-    await selectOption(
-      screen.getByRole("combobox", { name: "Leave type (block 1)" }),
-      "Annual leave"
-    );
-    chooseRange("Dates (block 1)", "2026-10-12", "2026-10-14");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-
-    expect(
-      await screen.findByText("Block overlaps another plan.")
-    ).toBeInTheDocument();
-    expect(routerMock.replace).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  it("does not offer Apply Now for a finished plan", () => {
+    mockPlans([makePlan({ status: "cancelled" })]);
+    render(<MyPlans />);
+    expect(screen.queryByRole("button", { name: /apply now/i })).not.toBeInTheDocument();
   });
 });

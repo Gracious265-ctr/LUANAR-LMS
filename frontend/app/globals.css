@@ -26,7 +26,7 @@
   --brand-secondary-foreground: #FFFFFF;
 
   /* Neutral Surfaces — Stripe uses a clean, light palette with plenty of white. */
-  --surface-page: #ffffff;
+  --surface-page: #f1f1ee;
   --surface-card: #FFFFFF;
   --surface-elevated: #FFFFFF;
   --surface-muted: #f7fafc;

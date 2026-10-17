@@ -1,418 +1,144 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  confirmBlock,
-  fetchAdminPlans,
-  fetchPlan,
-  fetchPlanApproval,
-  fetchPlanApprovals,
-  fetchPlans,
-  fetchPendingConfirmations,
-  fetchPlanSettings,
-  postPlanDecision,
-  releaseBlock,
-  savePlanSettings,
-  submitPlan,
+  applyPlan,
+  cancelPlan,
+  createPlan,
+  getPlan,
+  getScopeOptions,
+  getTeamPlans,
+  listPlans,
 } from "@/lib/plans/service";
-import {
-  makeApprovalDetail,
-  makeApprovalListResponse,
-  makeBlock,
-  makeDetail,
-  makeListResponse,
-  makePendingConfirmation,
-} from "@/lib/plans/__fixtures__";
-import type { PlanValidationIssue } from "@/lib/plans/types";
+import { makePlan, makeScope } from "@/lib/plans/__fixtures__";
 
-function jsonResponse(body: unknown, status: number): Response {
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
-      impl(String(input), init)
-    )
+function mockFetch(impl: (url: string, init?: RequestInit) => Response | Promise<Response>) {
+  const spy = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+    Promise.resolve(impl(String(input), init))
   );
+  vi.stubGlobal("fetch", spy);
+  return spy;
 }
 
-describe("fetchPlans", () => {
-  it("returns the list for the requested scope", async () => {
-    mockFetch((url) => {
-      expect(url).toContain("/api/plans/?");
-      expect(url).toContain("scope=team");
-      return Promise.resolve(jsonResponse(makeListResponse([]), 200));
-    });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-    const result = await fetchPlans("team");
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("reports a scope the caller is not placed in as forbidden", async () => {
+describe("listPlans", () => {
+  it("unwraps a paginated response to the plan array", async () => {
+    const plan = makePlan();
     mockFetch(() =>
-      Promise.resolve(jsonResponse({ detail: "You have no team." }, 403))
+      jsonResponse({ count: 1, next: null, previous: null, results: [plan] })
     );
 
-    const result = await fetchPlans("department");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.kind).toBe("forbidden");
-      expect(result.message).toBe("You have no team.");
-    }
+    await expect(listPlans()).resolves.toEqual([plan]);
   });
 
-  it("returns a network error on rejection", async () => {
-    mockFetch(() => Promise.reject(new Error("down")));
+  it("accepts an unpaginated array too", async () => {
+    const plan = makePlan();
+    mockFetch(() => jsonResponse([plan]));
+    await expect(listPlans()).resolves.toEqual([plan]);
+  });
 
-    const result = await fetchPlans("mine");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("error");
+  it("surfaces the backend detail on failure", async () => {
+    mockFetch(() => jsonResponse({ detail: "Not authenticated" }, 401));
+    await expect(listPlans()).rejects.toThrow("Not authenticated");
   });
 });
 
-describe("fetchPlan", () => {
-  it("encodes the id in the path", async () => {
-    mockFetch((url) => {
-      expect(url).toBe("/api/plans/plan%2F1/");
-      return Promise.resolve(jsonResponse(makeDetail(), 200));
-    });
-
-    const result = await fetchPlan("plan/1");
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("separates a missing plan from a failure", async () => {
-    mockFetch(() => Promise.resolve(jsonResponse({}, 404)));
-
-    const result = await fetchPlan("plan-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("not_found");
-  });
-
-  it("reports a plan the caller may not read as forbidden", async () => {
-    mockFetch(() => Promise.resolve(jsonResponse({ detail: "Not yours." }, 403)));
-
-    const result = await fetchPlan("plan-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("forbidden");
-  });
-});
-
-describe("submitPlan", () => {
-  it("posts and returns the submitted plan", async () => {
+describe("createPlan", () => {
+  it("POSTs the body as JSON to the plans proxy", async () => {
+    const seen: { url: string; init?: RequestInit }[] = [];
     mockFetch((url, init) => {
-      expect(url).toBe("/api/plans/plan-1/submit/");
-      expect(init?.method).toBe("POST");
-      return Promise.resolve(jsonResponse(makeDetail(), 200));
+      seen.push({ url, init });
+      return jsonResponse(makePlan());
     });
 
-    const result = await submitPlan("plan-1");
+    const input = {
+      leave_type: 2,
+      planned_start_date: "2026-11-02",
+      planned_end_date: "2026-11-06",
+      notes: "Family trip",
+    };
+    await createPlan(input);
 
-    expect(result.ok).toBe(true);
+    expect(seen[0].url).toBe("/api/plans/");
+    expect(seen[0].init?.method).toBe("POST");
+    expect(seen[0].init?.body).toBe(JSON.stringify(input));
   });
 
-  it("keeps the issues and warnings of a refused submission", async () => {
-    const issues: PlanValidationIssue[] = [
-      { field: "blocks", code: "insufficient_balance", message: "Too many days.", block: 0 },
-    ];
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResponse(
-          {
-            detail: "This plan cannot be submitted yet.",
-            errors: issues,
-            warnings: [
-              {
-                peer_name: "A. Banda",
-                peer_department: "Administration",
-                leave_type_id: 1,
-                start_date: "2026-10-12",
-                end_date: "2026-10-13",
-                overlaps_start: "2026-10-12",
-                overlaps_end: "2026-10-13",
-              },
-            ],
-          },
-          422
-        )
-      )
-    );
-
-    const result = await submitPlan("plan-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.kind).toBe("validation");
-      expect(result.errors).toHaveLength(1);
-      // A submission can be blocked and still carry a warning the owner has to
-      // see, so warnings are never dropped alongside the errors.
-      expect(result.warnings).toHaveLength(1);
-    }
-  });
-
-  it("reports an already-submitted plan as a conflict", async () => {
-    mockFetch(() => Promise.resolve(jsonResponse({}, 409)));
-
-    const result = await submitPlan("plan-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("conflict");
-  });
-
-  it("never throws when the body is not JSON", async () => {
-    mockFetch(() =>
-      Promise.resolve(new Response("<html>502</html>", { status: 422 }))
-    );
-
-    const result = await submitPlan("plan-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors).toEqual([]);
+  it("passes an overlap warning straight through", async () => {
+    mockFetch(() => jsonResponse(makePlan({ overlap_warning: "Overlaps a teammate" })));
+    const plan = await createPlan({
+      leave_type: 1,
+      planned_start_date: "2026-11-02",
+      planned_end_date: "2026-11-06",
+    });
+    expect(plan.overlap_warning).toBe("Overlaps a teammate");
   });
 });
 
-describe("block actions", () => {
-  it("confirms a block through the block-scoped path", async () => {
-    mockFetch((url, init) => {
-      expect(url).toBe("/api/plans/plan-1/blocks/block-1/confirm/");
-      expect(init?.method).toBe("POST");
-      return Promise.resolve(jsonResponse({ status: "confirmed", id: "block-1" }, 200));
-    });
+describe("getPlan", () => {
+  it("requests the id-scoped path", async () => {
+    const spy = mockFetch(() => jsonResponse(makePlan({ id: "abc" })));
+    await getPlan("abc");
+    expect(spy.mock.calls[0][0]).toBe("/api/plans/abc/");
+  });
+});
 
-    const result = await confirmBlock("plan-1", "block-1");
+describe("cancelPlan", () => {
+  it("DELETEs and tolerates a 204 with no body", async () => {
+    const spy = mockFetch(() => new Response(null, { status: 204 }));
+    await expect(cancelPlan("abc")).resolves.toBeUndefined();
+    expect(spy.mock.calls[0][1]?.method).toBe("DELETE");
+  });
+});
 
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.status).toBe("confirmed");
+describe("applyPlan", () => {
+  it("POSTs to the apply action and returns the application id", async () => {
+    const spy = mockFetch(() => jsonResponse({ application_id: "draft-9" }));
+    await expect(applyPlan("abc")).resolves.toEqual({ application_id: "draft-9" });
+    expect(spy.mock.calls[0][0]).toBe("/api/plans/abc/apply/");
+    expect(spy.mock.calls[0][1]?.method).toBe("POST");
   });
 
-  it("releases a block", async () => {
-    mockFetch((url) => {
-      expect(url).toBe("/api/plans/plan-1/blocks/block-1/release/");
-      return Promise.resolve(jsonResponse({ status: "released", id: "block-1" }, 200));
-    });
-
-    const result = await releaseBlock("plan-1", "block-1");
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("reports a block that can no longer change as a conflict", async () => {
-    mockFetch(() =>
-      Promise.resolve(jsonResponse({ detail: "Too late." }, 409))
+  it("passes a converted-plan conflict through as an error", async () => {
+    mockFetch(() => jsonResponse({ detail: "This plan has already been applied." }, 409));
+    await expect(applyPlan("abc")).rejects.toThrow(
+      "This plan has already been applied."
     );
-
-    const result = await confirmBlock("plan-1", "block-1");
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("conflict");
   });
 });
 
-describe("fetchPendingConfirmations", () => {
-  it("returns the reserved blocks with their plan periods", async () => {
-    mockFetch((url) => {
-      expect(url).toBe("/api/plans/pending-confirmations/");
-      return Promise.resolve(
-        jsonResponse({ count: 1, results: [makePendingConfirmation()] }, 200)
-      );
-    });
-
-    const result = await fetchPendingConfirmations();
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.results[0].plan_id).toBe("plan-1");
+describe("getScopeOptions", () => {
+  it("returns the scope array", async () => {
+    const scopes = [makeScope()];
+    mockFetch(() => jsonResponse(scopes));
+    await expect(getScopeOptions()).resolves.toEqual(scopes);
   });
 });
 
-describe("approval queue", () => {
-  it("sends the tab and page", async () => {
-    mockFetch((url) => {
-      expect(url).toContain("/api/plans/approvals/?");
-      expect(url).toContain("tab=decided");
-      expect(url).toContain("page=2");
-      return Promise.resolve(jsonResponse(makeApprovalListResponse([]), 200));
-    });
+describe("getTeamPlans", () => {
+  it("forwards scope and month as query params", async () => {
+    const spy = mockFetch(() => jsonResponse({ results: [] }));
+    await getTeamPlans({ scope: "team:3", month: "2026-11" });
 
-    const result = await fetchPlanApprovals("decided", 2);
-
-    expect(result.ok).toBe(true);
+    const url = new URL(String(spy.mock.calls[0][0]));
+    expect(url.pathname).toBe("/api/plans/team/");
+    expect(url.searchParams.get("scope")).toBe("team:3");
+    expect(url.searchParams.get("month")).toBe("2026-11");
   });
 
-  it("treats a 404 from the queue as 'you cannot review plans'", async () => {
-    mockFetch(() => Promise.resolve(jsonResponse({}, 404)));
-
-    const result = await fetchPlanApprovals("pending", 1);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("not_found");
-  });
-
-  it("reads the approver detail", async () => {
-    mockFetch((url) => {
-      expect(url).toBe("/api/plans/approvals/plan-1/");
-      return Promise.resolve(jsonResponse(makeApprovalDetail(), 200));
-    });
-
-    const result = await fetchPlanApproval("plan-1");
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.decision_version).toBe(1);
-  });
-});
-
-describe("postPlanDecision", () => {
-  it("sends the action, comment and stage version", async () => {
-    mockFetch((url, init) => {
-      expect(url).toBe("/api/plans/approvals/plan-1/decision/");
-      expect(init?.method).toBe("POST");
-      expect(JSON.parse(String(init?.body))).toEqual({
-        action: "reject",
-        comment: "Too busy that week.",
-        stage_version: 3,
-      });
-      return Promise.resolve(jsonResponse(makeDetail(), 200));
-    });
-
-    const result = await postPlanDecision("plan-1", {
-      action: "reject",
-      comment: "Too busy that week.",
-      stage_version: 3,
-    });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("reports a stage somebody else already decided as a conflict", async () => {
-    mockFetch(() =>
-      Promise.resolve(jsonResponse({ detail: "Already decided." }, 409))
-    );
-
-    const result = await postPlanDecision("plan-1", {
-      action: "approve",
-      comment: "",
-      stage_version: 1,
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.kind).toBe("conflict");
-  });
-
-  it("pulls the comment error out of a 400 for the field", async () => {
-    mockFetch(() =>
-      Promise.resolve(jsonResponse({ comment: ["This field is required."] }, 400))
-    );
-
-    const result = await postPlanDecision("plan-1", {
-      action: "reject",
-      comment: "",
-      stage_version: 1,
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.kind).toBe("validation");
-      expect(result.fields?.comment).toBe("This field is required.");
-    }
-  });
-
-  it("keeps the reason a decision was refused", async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResponse({ detail: "Not your stage.", reason: "not_current_stage" }, 403)
-      )
-    );
-
-    const result = await postPlanDecision("plan-1", {
-      action: "approve",
-      comment: "",
-      stage_version: 1,
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("not_current_stage");
-  });
-});
-
-describe("settings", () => {
-  it("reads the confirmation window", async () => {
-    mockFetch((url) => {
-      expect(url).toBe("/api/plans/settings/");
-      return Promise.resolve(jsonResponse({ confirmation_lead_days: 14 }, 200));
-    });
-
-    const result = await fetchPlanSettings();
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.confirmation_lead_days).toBe(14);
-  });
-
-  it("patches the confirmation window and returns what was saved", async () => {
-    mockFetch((url, init) => {
-      expect(url).toBe("/api/plans/settings/");
-      expect(init?.method).toBe("PATCH");
-      return Promise.resolve(jsonResponse({ confirmation_lead_days: 7 }, 200));
-    });
-
-    const result = await savePlanSettings({ confirmation_lead_days: 7 });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.confirmation_lead_days).toBe(7);
-  });
-});
-
-describe("fetchAdminPlans", () => {
-  it("omits the filters that are not set", async () => {
-    mockFetch((url) => {
-      expect(url).toContain("/api/plans/admin/?");
-      expect(url).toContain("page=1");
-      expect(url).not.toContain("status=");
-      expect(url).not.toContain("block_status=");
-      return Promise.resolve(jsonResponse({ count: 0, next: null, previous: null, results: [] }, 200));
-    });
-
-    const result = await fetchAdminPlans({ page: 1 });
-
-    expect(result.ok).toBe(true);
-  });
-
-  it("sends both filters when both are set", async () => {
-    mockFetch((url) => {
-      expect(url).toContain("status=approved");
-      expect(url).toContain("block_status=reserved");
-      return Promise.resolve(jsonResponse({ count: 0, next: null, previous: null, results: [] }, 200));
-    });
-
-    const result = await fetchAdminPlans({
-      status: "approved",
-      blockStatus: "reserved",
-      page: 1,
-    });
-
-    expect(result.ok).toBe(true);
-  });
-});
-
-describe("block payload handling", () => {
-  it("survives a block list that is not an array", async () => {
-    mockFetch(() =>
-      Promise.resolve(
-        jsonResponse({ ...makeDetail(), blocks: makeBlock() }, 200)
-      )
-    );
-
-    const result = await fetchPlan("plan-1");
-
-    // The cast is unchecked by design, so the read must not throw at runtime.
-    expect(result.ok).toBe(true);
+  it("omits the params when not given", async () => {
+    const spy = mockFetch(() => jsonResponse({ results: [] }));
+    await getTeamPlans();
+    const url = new URL(String(spy.mock.calls[0][0]));
+    expect(url.search).toBe("");
   });
 });

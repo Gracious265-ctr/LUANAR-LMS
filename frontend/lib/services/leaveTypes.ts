@@ -4,6 +4,10 @@ export interface LeaveType {
   requiresDocuments: boolean;
   maxDurationDays: number | null;
   entitlementDays?: number | null;
+  /** Whether this type may be scheduled ahead of time as a Leave Plan. */
+  plannable?: boolean;
+  /** Days before the start date a plan reminder fires; null means immediate. */
+  planNoticeDays?: number | null;
 }
 
 interface LeaveTypeOptionsResponse {
@@ -13,6 +17,8 @@ interface LeaveTypeOptionsResponse {
   max_duration_days: number | null;
   requires_supporting_document: boolean;
   entitlement_days?: number | null;
+  plannable?: boolean;
+  plan_notice_days?: number | null;
 }
 
 export async function getLeaveTypes(): Promise<LeaveType[]> {
@@ -33,5 +39,13 @@ export async function getLeaveTypes(): Promise<LeaveType[]> {
     requiresDocuments: t.requires_supporting_document,
     maxDurationDays: t.max_duration_days,
     entitlementDays: t.entitlement_days ?? null,
+    plannable: t.plannable ?? true,
+    planNoticeDays: t.plan_notice_days ?? null,
   }));
+}
+
+/** Leave types that can be scheduled ahead of time (Leave Plans, unit 04). */
+export async function getPlannableLeaveTypes(): Promise<LeaveType[]> {
+  const types = await getLeaveTypes();
+  return types.filter((t) => t.plannable !== false);
 }

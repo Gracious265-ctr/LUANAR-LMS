@@ -1,4 +1,11 @@
-import { Calendar, ShieldCheck, Building2, FileStack, Users } from "lucide-react";
+import {
+  Calendar,
+  CalendarClock,
+  ShieldCheck,
+  Building2,
+  FileStack,
+  Users,
+} from "lucide-react";
 
 export const APPS_REGISTRY = {
   leave: {
@@ -6,6 +13,12 @@ export const APPS_REGISTRY = {
     description: "Submit and track your leave requests",
     icon: Calendar,
     route: "/dashboard/leave",
+  },
+  plans: {
+    name: "Leave Plans",
+    description: "Plan your upcoming leave ahead of time",
+    icon: CalendarClock,
+    route: "/dashboard/plans",
   },
   approvals: {
     name: "Approvals",

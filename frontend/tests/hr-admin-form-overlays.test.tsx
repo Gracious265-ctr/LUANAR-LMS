@@ -166,6 +166,8 @@ describe("HR admin form overlays", () => {
         name: "Study leave",
         code: undefined,
         is_active: true,
+        plannable: true,
+        plan_notice_days: null,
       });
       // The lone JSDOM history entry takes close's replace fallback; either way
       // the point is that it did not `push` the user off the list.
@@ -185,6 +187,8 @@ describe("HR admin form overlays", () => {
         name: "Maternity leave",
         code: "maternity",
         is_active: true,
+        plannable: true,
+        plan_notice_days: null,
       });
       expect(createLeaveType).not.toHaveBeenCalled();
     });

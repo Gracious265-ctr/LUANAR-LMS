@@ -1,175 +1,160 @@
-import { NextResponse } from "next/server";
+/**
+ * The Leave Plans browser proxies.
+ *
+ * Each route is a two-line pass-through, so the tests stay narrow: does it hit
+ * the right Django path with the method/body/query intact, and does a refusal
+ * arrive as a refusal? Cookie refresh is `apiFetch`'s job and is covered by
+ * tests/api-fetch.test.ts, so it is mocked away here rather than re-pinned.
+ */
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/app/api/_lib/api-fetch", () => ({
-  // Forwarded as a tuple so a handler that passes no options stays a two-argument
-  // call: the assertions below care that the proxy forwards exactly what it read.
-  apiFetch: (...args: [string, string, unknown?]) => mockedApiFetch(...args),
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(),
 }));
 
-import { GET as adminList } from "@/app/api/plans/admin/route";
-import { POST as approvalDecision } from "@/app/api/plans/approvals/[id]/decision/route";
-import { GET as approvalQueue } from "@/app/api/plans/approvals/route";
-import { GET as approvalDetailRoute } from "@/app/api/plans/approvals/[id]/route";
-import { POST as blockConfirm } from "@/app/api/plans/[id]/blocks/[blockId]/confirm/route";
-import { POST as blockRelease } from "@/app/api/plans/[id]/blocks/[blockId]/release/route";
-import { GET as planDetail } from "@/app/api/plans/[id]/route";
-import { POST as planSubmit } from "@/app/api/plans/[id]/submit/route";
-import { GET as capabilities } from "@/app/api/plans/capabilities/route";
-import { GET as pendingConfirmations } from "@/app/api/plans/pending-confirmations/route";
-import { GET as planList, POST as planCreate } from "@/app/api/plans/route";
-import { GET as readSettings, PATCH as writeSettings } from "@/app/api/plans/settings/route";
+import { cookies } from "next/headers";
 
-const mockedApiFetch = vi.fn<(...args: unknown[]) => Promise<NextResponse>>(
-  async () => NextResponse.json({ ok: true })
-);
+import { GET as listGET, POST as listPOST } from "@/app/api/plans/route";
+import {
+  GET as detailGET,
+  DELETE as detailDELETE,
+} from "@/app/api/plans/[id]/route";
+import { POST as applyPOST } from "@/app/api/plans/[id]/apply/route";
+import { GET as teamGET } from "@/app/api/plans/team/route";
+import { GET as scopeOptionsGET } from "@/app/api/plans/scope-options/route";
 
-function getRequest(query = "") {
-  return new Request(`http://localhost:3000/api/plans${query}`);
+const DJANGO = process.env.DJANGO_API_URL || "http://localhost:8000";
+
+function mockCookies(access: string | undefined) {
+  vi.mocked(cookies).mockResolvedValue({
+    get: (name: string) =>
+      name === "access_token" && access ? { name, value: access } : undefined,
+  } as never);
 }
 
-function jsonRequest(query: string, body: unknown) {
-  return new Request(`http://localhost:3000/api/plans${query}`, {
-    method: "POST",
-    body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
-  });
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status });
 }
 
-const blockParams = Promise.resolve({ id: "7", blockId: "11" });
-const planParams = Promise.resolve({ id: "7" });
+const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
-describe("plans proxy routes", () => {
+describe("Leave Plans proxies", () => {
   beforeEach(() => {
-    mockedApiFetch.mockClear();
+    vi.restoreAllMocks();
+    mockCookies("an-access-token");
   });
 
-  it("reads the caller's own plans when no scope is asked for", async () => {
-    await planList(getRequest());
+  it("GET /api/plans forwards to the Django list endpoint", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ count: 0, results: [] }));
 
-    expect(mockedApiFetch).toHaveBeenCalledWith("GET", "plans/?scope=mine");
-  });
+    await listGET();
 
-  it("keeps a known scope and narrows an unknown one to mine", async () => {
-    await planList(getRequest("?scope=department"));
-    await planList(getRequest("?scope=everyone"));
-    await planList(getRequest("?scope=mine&page=2"));
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "GET", "plans/?scope=department");
-    // A hand-edited scope cannot quietly relabel the caller's own plans as a
-    // team's, and the route forwards one parameter at a time.
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "GET", "plans/?scope=mine");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "GET", "plans/?scope=mine");
-  });
-
-  it("creates a plan with the body it was given", async () => {
-    const body = { reason: "Fieldwork", blocks: [] };
-
-    await planCreate(jsonRequest("", body));
-
-    expect(mockedApiFetch).toHaveBeenCalledWith("POST", "plans/", { body });
-  });
-
-  it("waits for the plan id before reading or acting on a plan", async () => {
-    await planDetail(getRequest("/7"), { params: planParams });
-    await planSubmit(getRequest("/7/submit"), { params: planParams });
-    await blockConfirm(getRequest("/7/blocks/11/confirm"), { params: blockParams });
-    await blockRelease(getRequest("/7/blocks/11/release"), { params: blockParams });
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "GET", "plans/7/");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "POST", "plans/7/submit/");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      3,
-      "POST",
-      "plans/7/blocks/11/confirm/"
-    );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      4,
-      "POST",
-      "plans/7/blocks/11/release/"
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/`,
+      expect.objectContaining({ method: "GET" }),
     );
   });
 
-  it("defaults the approval queue to the first pending page", async () => {
-    await approvalQueue(getRequest("/approvals"));
+  it("POST /api/plans forwards the JSON body to Django", async () => {
+    const body = { leave_type: 1, planned_start_date: "2026-11-02" };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ id: "plan-1" }, 201));
 
-    expect(mockedApiFetch).toHaveBeenCalledWith(
-      "GET",
-      "plans/approvals/?tab=pending&page=1"
-    );
-  });
-
-  it("passes the queue tab and page the caller asked for", async () => {
-    await approvalQueue(getRequest("/approvals?tab=decided&page=3"));
-
-    expect(mockedApiFetch).toHaveBeenCalledWith(
-      "GET",
-      "plans/approvals/?tab=decided&page=3"
-    );
-  });
-
-  it("reads one plan from the approver's own view", async () => {
-    await approvalDetailRoute(getRequest("/approvals/7"), { params: planParams });
-
-    expect(mockedApiFetch).toHaveBeenCalledWith("GET", "plans/approvals/7/");
-  });
-
-  it("forwards a decision verbatim, stage version included", async () => {
-    const body = { action: "reject", comment: "Not this term", stage_version: 4 };
-
-    await approvalDecision(jsonRequest("/approvals/7/decision", body), {
-      params: planParams,
-    });
-
-    expect(mockedApiFetch).toHaveBeenCalledWith("POST", "plans/approvals/7/decision/", {
-      body,
-    });
-  });
-
-  it("reads pending confirmations and capabilities without a query", async () => {
-    await pendingConfirmations();
-    await capabilities();
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      1,
-      "GET",
-      "plans/pending-confirmations/"
-    );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "GET", "plans/capabilities/");
-  });
-
-  it("reads and writes the deadline settings", async () => {
-    const body = { minimum_notice_days: 7 };
-
-    await readSettings();
-    await writeSettings(
-      new Request("http://localhost:3000/api/plans/settings", {
-        method: "PATCH",
+    await listPOST(
+      new Request("http://localhost:3000/api/plans/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      })
+      }),
     );
 
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "GET", "plans/settings/");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "PATCH", "plans/settings/", {
-      body,
-    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify(body) }),
+    );
   });
 
-  it("always pages the admin table and adds only the filters given", async () => {
-    await adminList(getRequest("/admin"));
-    await adminList(getRequest("/admin?status=pending&block_status=awaiting&page=2"));
-    await adminList(getRequest("/admin?status=approved"));
+  it("GET /api/plans/{id} forwards to the id-scoped endpoint", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ id: "plan-7" }));
 
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "GET", "plans/admin/?page=1");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      2,
-      "GET",
-      "plans/admin/?page=2&status=pending&block_status=awaiting"
+    await detailGET(new Request("http://localhost:3000/api/plans/plan-7/"), params("plan-7"));
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/plan-7/`,
+      expect.objectContaining({ method: "GET" }),
     );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      3,
-      "GET",
-      "plans/admin/?page=1&status=approved"
+  });
+
+  it("DELETE /api/plans/{id} forwards a DELETE and preserves a 204", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const response = await detailDELETE(
+      new Request("http://localhost:3000/api/plans/plan-7/", { method: "DELETE" }),
+      params("plan-7"),
     );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/plan-7/`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(response.status).toBe(204);
+  });
+
+  it("POST /api/plans/{id}/apply forwards to the apply action", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ application_id: "draft-1" }));
+
+    await applyPOST(
+      new Request("http://localhost:3000/api/plans/plan-7/apply/", { method: "POST" }),
+      params("plan-7"),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/plan-7/apply/`,
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("GET /api/plans/team carries the scope and month through as query params", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse({ results: [] }));
+
+    await teamGET(
+      new Request("http://localhost:3000/api/plans/team?scope=team:3&month=2026-11"),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/team/?scope=team%3A3&month=2026-11`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("GET /api/plans/scope-options forwards to the scope endpoint", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse([]));
+
+    await scopeOptionsGET();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${DJANGO}/api/v1/plans/scope-options/`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("returns 401 when there is no session", async () => {
+    mockCookies(undefined);
+    const response = await listGET();
+    expect(response.status).toBe(401);
   });
 });

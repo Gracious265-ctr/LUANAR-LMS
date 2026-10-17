@@ -411,7 +411,7 @@ describe("DashboardShell Leave module", () => {
 
     for (const hidden of [
       "Approvals",
-      "Plans",
+      "Leave Plans",
       "Request Cover",
       "My Account",
       "Audit View",
@@ -462,5 +462,73 @@ describe("DashboardShell Leave module", () => {
     expect(
       within(nav).getByRole("link", { name: "My Applications" }),
     ).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("DashboardShell Plans module", () => {
+  it("scopes the rail to the launcher plus exactly the three Plans items", () => {
+    currentPath = "/dashboard/plans";
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "My Plans" })).toHaveAttribute(
+      "href",
+      "/dashboard/plans",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Create a Plan" }),
+    ).toHaveAttribute("href", "/dashboard/plans/new");
+    expect(
+      within(nav).getByRole("link", { name: "Team Plans" }),
+    ).toHaveAttribute("href", "/dashboard/plans/team");
+
+    // Exactly three destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+
+    for (const hidden of [
+      "Approvals",
+      "Request Cover",
+      "My Account",
+      "Audit View",
+      "Teams",
+    ]) {
+      expect(
+        within(nav).queryByRole("link", { name: hidden }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("marks My Plans active on the module index and the emailed detail page", () => {
+    for (const path of ["/dashboard/plans", "/dashboard/plans/123"]) {
+      currentPath = path;
+      const { unmount } = renderShell(mockUser);
+
+      const nav = screen.getByRole("navigation");
+      expect(within(nav).getByRole("link", { name: "My Plans" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(
+        within(nav).getByRole("link", { name: "Create a Plan" }),
+      ).not.toHaveAttribute("aria-current");
+      unmount();
+    }
+  });
+
+  it.each([
+    ["/dashboard/plans/new", "Create a Plan"],
+    ["/dashboard/plans/team", "Team Plans"],
+  ])("marks %s active on its own item", (path, label) => {
+    currentPath = path;
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: label }),
+    ).toHaveAttribute("aria-current", "page");
   });
 });

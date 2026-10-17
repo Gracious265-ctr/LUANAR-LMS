@@ -5,17 +5,12 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 export function auditActionTone(action: string): BadgeTone {
   switch (action) {
     case "approved":
-    case "plan_approved":
       return "info";
     case "rejected":
     case "cancelled":
-    case "plan_rejected":
       return "rejected";
     case "submitted":
     case "reassigned":
-    case "plan_submitted":
-    case "plan_confirmed":
-    case "plan_released":
       return "brand";
     default:
       return "muted";
@@ -215,10 +210,6 @@ export function auditEditHref(entry: AuditEntry): string | null {
       return `/dashboard/hr-admin/employees/${entry.target_id}`;
     case "document-template":
       return "/dashboard/hr-admin/leave-document-template";
-    // A plan is read through its own page, so an entry links there rather than
-    // to the HR sweep: the entry names one plan, not the list.
-    case "plan":
-      return `/dashboard/plans/${entry.target_id}`;
     default:
       return null;
   }

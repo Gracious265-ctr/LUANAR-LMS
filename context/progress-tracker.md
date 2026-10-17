@@ -4,6 +4,29 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Unit 4 — Leave Plans App — DONE (2026-10-17)** — refinement
+  unit `context/refinement/04-leave-plans-app.md`. A self-service Leave Plan
+  (employee personal scheduling reminder; never submitted, never approved) that
+  converts on demand — "Apply Now" or a scheduled reminder email — into a
+  pre-filled draft through the existing Leave app. Developer decisions at
+  planning: (1) the committed **Leave Day Plans feature is replaced entirely**
+  (backend `plans` app, frontend `/dashboard/plans`, `components/plans`,
+  `lib/plans`, `/api/plans/*` proxies) since it occupies the same namespace and
+  routes; (2) Team Plans calendar scoping is **assignment-driven** (there is no
+  `OrgUnit`/`home_unit`): regular employee → own team; team-wide
+  `TeamRoleAssignment` holder → those teams; campus-wide
+  `CampusRoleAssignment` holder → that campus; institution-wide
+  `RoleAssignment` holder → everyone, defaulting to the narrowest scope.
+  Recorded adaptations: backend API stays on the `/api/v1/` convention with
+  browser proxies at `/api/plans/`; module nav follows the Leave module pattern
+  (`lib/nav/plans-nav.ts` + a `ModuleNavLinks` branch in `dashboard-shell.tsx`);
+  Apply Now redirects to the real edit surface
+  `/dashboard/leave/drafts?edit={id}`; `LeaveType.plannable`/
+  `plan_notice_days` also exposed on the LeaveType serializer so HR can
+  configure them; no new audit actions (employee self-service writes are not
+  audited, matching draft handling). See "Completed (Unit 4 — Leave Plans App)
+  (2026-10-17)" at the end of this file.
+
 - **Unit 3 — Leave App Dashboard — DONE (2026-10-17)** — refinement unit
   `context/refinement/03-leave-app-dashboard.md`. Builds the Leave module's
   landing dashboard (balance rings, needs-attention, drafts, recent
@@ -5411,3 +5434,203 @@ Two more pieces on the same unit, no new endpoint and no route moves.
   clean. (Three full-suite load-timing flakes in untouched files —
   `entitlement-form`, `submission-confirmation`, a plans test — pass in
   isolation; unrelated to this unit.)
+
+## Completed (Unit 4 — Leave Plans App) (2026-10-17)
+
+**Goal.** A personal Leave Plan an employee keeps for themselves: a leave type +
+dates saved ahead of time, never submitted and never approved. The plan is a
+reminder, not a request. When the date nears a scheduled email nudges the owner
+to act, and one click ("Apply Now") turns the plan into a **pre-filled draft** in
+the existing Leave app. A scoped Team Plans calendar shows planned (dashed)
+leave across a viewer's unit without exposing anyone's private plans to the
+wrong eyes.
+
+**Replacement decision.** The repo already shipped a *different* committed
+"Leave Day Plans" feature (backend `plans` app with blocks + approval, frontend
+`/dashboard/plans`). Because it occupied the same app label, routes and API
+namespaces, the approved decision was to **replace it entirely** rather than
+coexist: the old backend app, its notifications, its frontend pages/components/
+lib/proxies, and the `plan_*` audit vocabulary were removed and the new spec
+rebuilt in place under the same names.
+
+**Backend.**
+- **New `plans` app.** `LeavePlan` (`employee` FK, `leave_type` FK,
+  `financial_year` FK nullable, `planned_start_date`/`planned_end_date`, `notes`,
+  `status` ∈ `upcoming|notified|missed|converted|cancelled`, `notified_at`,
+  `follow_up_sent_at`, `converted_application` FK to the produced application),
+  with the check constraint `leaveplan_end_date_gte_start_date`, indexes for the
+  owner+date lookups, and an `is_actionable` helper. Migration `0001_initial`
+  depends on `leave.0018` + AUTH_USER.
+- **Services** (`plans/services.py`): `create_plan`/`update_plan` (reject types
+  that are not `plannable`), `find_plan_overlap` (a non-blocking
+  `overlap_warning`), `convert_plan_to_draft` (idempotent; hands the plan to
+  `leave.services.drafts.create_draft_application`), `cancel_plan` (idempotent),
+  `mark_missed_plans`, and the assignment-driven scope resolver — a `PlanScope`
+  dataclass, `resolve_scopes`, `default_scope`, `find_scope` (unknown/ unowned
+  token → `None`, never a wider view), `plans_for_scope`.
+- **Conversion target.** `leave/services/drafts.py::create_draft_application`
+  creates a `draft` `LeaveApplication` pre-filled from the plan; the preview
+  field is `calculated_days`; `LeaveApplication.source_plan` records provenance
+  (`leave/migrations/0019_leaveapplication_source_plan_and_more`).
+- **API** (`/api/v1/plans/…`): `GET`/`POST` list+create (owner-only, paginated),
+  `GET`/`DELETE` `{id}/` (owner-only), `POST {id}/apply/` → `{application_id}`
+  (400 when the plan is no longer open), `GET scope-options/`, `GET team/?scope=&month=YYYY-MM`
+  (defaults to current month; unknown scope → 404). Literal paths are declared
+  before the router include so `plans/team/` and `plans/scope-options/` are not
+  swallowed as plan ids.
+- **Scheduled task** (`plans/tasks.py::check_and_notify_plans`, registered by
+  `plans/migrations/0002_schedule_plan_check.py` as a `Schedule.DAILY` row,
+  depends on `plans.0001` + `django_q.__latest__`): one idempotent daily pass
+  that emails a reminder and moves `upcoming`→`notified`, sends one follow-up
+  (`FOLLOW_UP_AFTER_DAYS=5`) to a still-unconverted `notified` plan, and marks
+  past-window open plans `missed`. Never touches the approval workflow.
+- **Leave type config.** `LeaveType.plannable` (bool, default True) and
+  `plan_notice_days` (nullable int) added to `leave.models` and exposed on both
+  `LeaveTypeSerializer` (HR read/write, audited) and `EmployeeLeaveTypeSerializer`
+  (employee read). `leave/migrations/0018_...`.
+- **Notifications.** `notifications/plans.py` rewritten with the `PLAN_REMINDER`
+  and `PLAN_FOLLOW_UP` composers; the `NotificationOutbox.plan` FK repointed to
+  `plans.LeavePlan`, the old `plan_block` FK and its constraints removed,
+  `one_outbox_row_per_plan_kind` on `["plan", "kind"]`
+  (`notifications/migrations/0004`/`0005`).
+- **Audit.** The old `plan_*` actions and `TargetType.PLAN` were removed
+  (`audit/migrations/0020_alter_auditentry_action_…`); the new employee
+  self-service writes are intentionally not audited, matching draft handling.
+- **Launcher.** `can_access_plans` (every authenticated user) and
+  `_plans_badge` (count of the caller's `notified` plans, shape
+  `{"count", "label": "ready to apply"}` — the badge the launcher card renders).
+
+**Frontend.**
+- **Routes** under `app/(dashboard)/dashboard/plans/`: `page.tsx` (My Plans —
+  live vs history sections, empty/error states), `new/page.tsx` (Create a Plan;
+  reads `?leaveType=` inside a `Suspense` to pre-select for a missed plan),
+  `team/page.tsx` (Team Plans), `[id]/page.tsx` (the emailed deep link — a
+  server component that loads the plan via `apiClient` and redirects to
+  `/dashboard/plans` on a miss) + `[id]/loading.tsx`.
+- **Components** (`components/plans/`): `PlanCard` (Apply Now / cancel-with-
+  confirm / reopen-draft / re-plan-missed), `MyPlans`, `CreatePlanForm`
+  (plannable types only, reminder-window hint, overlap warning is a warning not a
+  blocker), `ScopeSelector` (renders only when the scope list widens),
+  `TeamPlansCalendar` (dashed month grid, per-day plan bars colour-coded by type,
+  prev/next, day popover), `PlanDetailOverlay` (read-only day list),
+  `PlanDetail` (the deep-link body with Apply Now / open-draft / re-plan).
+- **Lib/hooks.** `lib/plans/{types,labels,service}.ts` +
+  `lib/plans/__fixtures__`; `lib/hooks/usePlans.ts`, `useTeamPlans.ts`;
+  `lib/services/leaveTypes.ts` gained `plannable`/`planNoticeDays` +
+  `getPlannableLeaveTypes()`. `lib/plans/labels.ts` maps each status to a label,
+  badge tone and icon (notified → "Ready to apply", `pending` tone);
+  `isActionable` covers `upcoming` **and** `notified` (Apply Now is available
+  from creation, per spec 2.3).
+- **Proxies** (`app/api/plans/`): `_lib/proxy.ts` (delegates to the shared
+  `apiFetch`), `route.ts`, `[id]/route.ts`, `[id]/apply/route.ts`,
+  `team/route.ts`, `scope-options/route.ts`.
+- **Nav/registry.** `lib/nav/plans-nav.ts` (`PLANS_NAV_ITEMS`, `isPlansModule`);
+  `dashboard-shell.tsx` generalized the Leave-only `LeaveNavLinks` into one
+  `ModuleNavLinks` and added the Plans branch (My Plans / Create a Plan / Team
+  Plans + "← All Apps"); dashboard rail link "Leave Plans" → `/dashboard/plans`;
+  `lib/apps-registry.ts` gained the `plans` launcher entry (CalendarClock,
+  `/dashboard/plans`).
+- **HR config.** `components/hr/leave-type-form.tsx` gained the "Plannable"
+  checkbox and the "Plan reminder notice (days)" number field, submitted with
+  the rest of the type.
+
+**Adaptations to the real codebase** (vs the spec's aspirational paths):
+- Backend stays on the `/api/v1/` convention; the browser calls the app's own
+  `/api/plans/…` proxies, so no bearer token is handled in the browser.
+- Module nav is done through `lib/nav/plans-nav.ts` + a branch in the shared
+  `dashboard-shell.tsx` (the codebase's pattern), not a per-module `layout.tsx`.
+- "Apply Now" routes to the real edit surface
+  `/dashboard/leave/drafts?edit={id}`.
+- Scoping is assignment-driven (no `OrgUnit`): `scope-options` returns the
+  heterogeneous tokens `team:<id>`, `campus:<id>`, `institution`; the default is
+  the caller's narrowest scope. There is no "Manager" role to special-case, so
+  visibility is derived purely from role assignments.
+- The Team Plans calendar is strictly informational — a plan is personal, so a
+  viewer can never act on someone else's plan from it.
+- Create form requires a deliberate leave-type choice (no silent auto-select),
+  so a wrong-type plan is never one absent-minded Save away.
+
+**Tests.** Backend `plans/tests.py` (29: create/overlap/plannable-only, update,
+convert idempotent + non-open 400, cancel, missed sweep, scoping resolution,
+endpoint auth/ownership/404, monthly calendar, the daily task's three passes,
+and the launcher badge). Frontend: `plans-labels`, `plans-service`,
+`plans-proxy`, `plans-workspace-overlay`, `plan-form`, `plan-detail`,
+`team-plans-calendar`, plus new `leave-type-form` planning-field cases and a
+fixed `hr-admin-form-overlays` payload expectation (now includes
+`plannable`/`plan_notice_days`).
+
+**Verification.** Backend full suite **1428 tests OK**; `plans` app **29 OK**;
+`makemigrations --check` clean. Frontend **108 files / 903 tests OK**;
+`npx tsc --noEmit` clean; `npx eslint` clean; `next build` succeeds with the four
+`/dashboard/plans…` routes and the `/api/plans/…` handlers. (`npm run
+typecheck:test` still reports a **pre-existing, unrelated** TS2306 in
+`tests/instrumentation-client.test.ts` — that file is a side-effect script with
+no exports; untouched by this unit.)
+
+**Dev note.** This unit **requires a dev DB reset**: the app replacement collides
+with the already-applied old `plans` migrations. The test suite builds a fresh
+DB from migrations, which is why the full suite (and the acyclic
+`plans`/`leave`/`notifications`/`audit` migration DAG) is the source of truth.
+
+**Follow-up — post-reset console errors fixed (2026-10-17).** After the required
+dev DB reset, two problems surfaced while exercising the Team Plans page.
+- **Team calendar fired a scoped request with no scope.** `useTeamPlans` fetched
+  `/api/plans/team/` on mount, before (and without) a resolved scope, so the
+  bootstrap superuser — who belongs to no team and holds no assignment — always
+  got a 404 the backend answers by design. The hook now waits for
+  `scope-options` and requests nothing when the list is empty, and exposes
+  `scopesLoaded` so the page can tell "still loading" from "no team". The
+  calendar renders a friendly "No team to show yet" empty state instead of an
+  error. `isLoading` is flipped on by scope/month changes (not the effect body),
+  matching `usePlans` and keeping `react-hooks/set-state-in-effect` quiet.
+  Tests: new `tests/use-team-plans.test.tsx` (default scope, no scope, not-yet-
+  loaded, scope failure) + two `team-plans-calendar` cases.
+- **`/api/v1/auth/refresh/` returned 500 for a deleted user.** With
+  `CHECK_REVOKE_TOKEN` on, SimpleJWT's `TokenRefreshSerializer` looks the user up
+  itself and raised `User.DoesNotExist` (a 500) for a refresh token naming a user
+  that no longer exists — routine after a reset, when a browser still holds a
+  pre-reset session. `RefreshView` now answers it as the access path does: a 401
+  ("User not found"). Test added in `users/tests_password_change.py`. The
+  launcher's earlier 500s were the pre-migration schema mismatch (code expected
+  `plans_leaveplan`, the DB still had the old `plans_leavedayplan`) and cleared
+  once the DB was migrated. Verification: backend **1429 OK**; frontend **109
+  files / 909 tests**; `tsc --noEmit`, `eslint`, and `next build` clean.
+
+## Completed — Dev leave-flow seed (`seed_demo_data`) (2026-10-17)
+
+**Goal.** Make the leave approval flow exercisable by hand against the dev
+database: a team with five employees and a Supervisor → HOD → Registrar chain,
+plus approver accounts, with the existing superuser holding **HOD**.
+
+**Delivered.** `backend/users/management/commands/seed_demo_data.py` — an
+idempotent, transactional dev seeder that builds the graph through the same
+services HR's screens call (`workflows.services.create_team` → `activate_team`,
+`create_role_assignment`, `assign_workflow_member`), so it cannot build a
+configuration the product would refuse. It creates:
+
+- the `supervisor` (team-scoped), `hod` (team-scoped) and `registrar`
+  (institution-wide) `ApproverRole` rows, mirroring `workflows.testing.ROLE_SPECS`;
+- a **"Registry Services"** administration team (no campus) owning one workflow
+  whose three ordered sections are `Supervisor Review` → `HOD Review` →
+  `Registrar Review`; the registrar step is left unstaffed and auto-staffed from
+  the institution-wide holding;
+- accounts with password `testpass123`: `supervisor@test.luanar`,
+  `registrar@test.luanar`, and five employees `employee1..5@test.luanar` (each on
+  the team and in the workflow member pool);
+- baseline leave configuration: an active current-year `FinancialYear`, the
+  plannable **Annual Leave** type (`plan_notice_days=7`), a `LeaveRule` and a
+  grade A–Z `GradeEntitlement` — so an employee can plan and apply, not just be
+  routed.
+
+**HOD is configuration, not `User.role`.** The pre-existing superuser
+(`admin@test.luanar`) keeps `role=employee`; HOD is conferred by the `Section`
+appointment (verified: `is_approver_user` true, `approver_role_codes_for` →
+`['hod']`), which also gives the account a Team Plans scope
+(`resolve_scopes` → `team:<id>` "Registry Services").
+
+**Verification.** `manage.py check` clean; team `ACTIVE` and
+`validate_team(...).ready` true; all three sections resolve to one approver;
+five employees on the team; `check_schema_drift` → "No schema drift detected".
+Fresh-run and re-run (idempotent) both green. `manage.py test workflows plans
+users` → **773 tests OK**. Documented in `README.md` ("Demo data (development
+only)") and the `DEVELOPER-GUIDE.md` commands table.

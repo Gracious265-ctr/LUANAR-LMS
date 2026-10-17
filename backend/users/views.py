@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import filters, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -102,8 +103,16 @@ class RefreshView(TokenRefreshView):
             user_id = token.payload.get("user_id")
             if user_id is not None:
                 user = User.objects.filter(pk=user_id).first()
-                if user is not None:
-                    assert_token_matches_password(user, token)
+                if user is None:
+                    # The account is gone (deleted, or the token predates a
+                    # database reset). With ``CHECK_REVOKE_TOKEN`` on, the base
+                    # serializer would look the user up itself and raise
+                    # ``User.DoesNotExist`` — a 500 for what is really a stale
+                    # token. Answer it as the access path does: a 401.
+                    raise AuthenticationFailed(
+                        "User not found", code="user_not_found"
+                    )
+                assert_token_matches_password(user, token)
 
         return super().post(request, *args, **kwargs)
 

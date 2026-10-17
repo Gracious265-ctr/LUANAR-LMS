@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import { Stepper, type Step } from "@/components/ui/Stepper";
 import {
-  chainFromPlanStages,
   chainFromTracking,
   chainFromWorkflow,
   stepsFromCancellation,
@@ -11,7 +10,6 @@ import {
 import { formatDateTime } from "@/lib/tracking/format";
 import type { ApprovalStage } from "@/lib/approvals/types";
 import type { CancellationStage } from "@/lib/cancellations/types";
-import type { PlanStage } from "@/lib/plans/types";
 import type { TrackingResponse } from "@/lib/tracking/types";
 
 function makeStep(overrides: Partial<Step> = {}): Step {
@@ -484,51 +482,6 @@ describe("chain adapters", () => {
     expect(steps[2].detail).toBe("Upload the missing file");
     expect(steps[4].sublabel).toBe("Self approval");
     expect(steps[5].sublabel).toBe("Rejected");
-  });
-
-  it("maps plan stages onto steps", () => {
-    const stages: PlanStage[] = [
-      {
-        id: "s1",
-        stage_order: 1,
-        role: "supervisor",
-        role_label: "Supervisor",
-        role_ref_id: null,
-        section_ref_id: null,
-        history_scope: null,
-        assigned_approver_id: 7,
-        approver_name: "Jane Phiri",
-        eligible_approver_ids: [],
-        eligible_approvers: [],
-        is_claimed: true,
-        status: "approved",
-        status_label: "Approved",
-        is_final: true,
-        decision_version: 1,
-      },
-      {
-        id: "s2",
-        stage_order: 2,
-        role: "hod",
-        role_label: "HOD",
-        role_ref_id: null,
-        section_ref_id: null,
-        history_scope: null,
-        assigned_approver_id: null,
-        approver_name: "",
-        eligible_approver_ids: [],
-        eligible_approvers: [],
-        is_claimed: false,
-        status: "pending",
-        status_label: "Pending",
-        is_final: false,
-        decision_version: 0,
-      },
-    ];
-
-    const steps = chainFromPlanStages(stages);
-    expect(steps.map((step) => step.status)).toEqual(["completed", "blocked"]);
-    expect(steps[1].sublabel).toBe("No approver assigned");
   });
 
   it("maps cancellation stages onto a shortened chain", () => {

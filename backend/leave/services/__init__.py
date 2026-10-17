@@ -425,3 +425,4 @@ def public_holidays_between(start: date, end: date):
 # Imported last so ``dashboard`` can read the names above from this package
 # without a circular-import failure.
 from .dashboard import get_dashboard_data  # noqa: E402,F401
+from .drafts import create_draft_application  # noqa: E402,F401

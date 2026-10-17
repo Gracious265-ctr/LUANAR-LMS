@@ -20,6 +20,23 @@ class LeaveType(models.Model):
             "it keep their type and its rules keep their history."
         ),
     )
+    plannable = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether employees may pre-plan this type (Leave Plans). Types that "
+            "are rarely planned ahead — sick leave, for instance — set this off so "
+            "they never appear on the Create a Plan form."
+        ),
+    )
+    plan_notice_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "How many days before a plan's start date the reminder email fires. "
+            "Null means no reminder window is configured; the plan stays visible "
+            "and can still be applied for manually."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -271,6 +288,20 @@ class LeaveApplication(models.Model):
     calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
     financial_year_label = models.CharField(max_length=16, null=True, blank=True)
     rules_snapshot = models.JSONField(null=True, blank=True)
+
+    # The personal Leave Plan (refinement unit 04) this application was drafted
+    # from, if any. Set only on the draft created by "Apply Now" and kept for the
+    # audit trail afterwards; never used by the approval workflow, and null for
+    # every application the employee filed directly. ``source_plan`` is nullable
+    # and SET_NULL so deleting a plan can never cascade to real leave.
+    source_plan = models.ForeignKey(
+        "plans.LeavePlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The Leave Plan this draft was generated from, if any.",
+    )
 
     class Meta:
         ordering = ["-updated_at"]

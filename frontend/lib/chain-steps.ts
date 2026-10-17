@@ -1,7 +1,6 @@
 import type { Step, StepStatus } from "@/components/ui/Stepper";
 import type { ApprovalStage, StageStatus } from "@/lib/approvals/types";
 import type { CancellationStage } from "@/lib/cancellations/types";
-import type { PlanStage, PlanStageStatus } from "@/lib/plans/types";
 import type {
   StageState,
   TrackingApprover,
@@ -12,8 +11,7 @@ import { formatDateTime } from "@/lib/tracking/format";
 /**
  * Adapters from each real payload shape into the generic `Step[]` the Stepper
  * consumes (refinement 02 §3). The component stays domain-free; everything
- * that knows about a leave chain, a plan chain or a cancellation chain lives
- * here.
+ * that knows about a leave chain or a cancellation chain lives here.
  */
 
 function joinContext(parts: Array<string | null | undefined>): string | undefined {
@@ -109,52 +107,6 @@ export function chainFromWorkflow(stages: ApprovalStage[]): Step[] {
       actor: assigned ? { id: assigned, name: assigned } : null,
       timestamp: stage.decided_at,
       detail: stage.comment,
-      isActing: false,
-    };
-  });
-}
-
-const PLAN_STATUS: Record<PlanStageStatus, StepStatus> = {
-  approved: "completed",
-  rejected: "error",
-  pending: "current",
-  waiting: "pending",
-};
-
-export function chainFromPlanStages(stages: PlanStage[]): Step[] {
-  return stages.map((stage, index): Step => {
-    const order = stage.stage_order ?? index + 1;
-    const isClaimed = stage.is_claimed;
-    const hasAssignedApprover = stage.assigned_approver_id != null;
-    const approverName = stage.approver_name?.trim();
-
-    let actor: Step["actor"] = null;
-    if (isClaimed || hasAssignedApprover) {
-      if (approverName) {
-        actor = { id: String(stage.assigned_approver_id ?? approverName), name: approverName };
-      } else if (hasAssignedApprover) {
-        actor = {
-          id: String(stage.assigned_approver_id),
-          name: `Approver #${stage.assigned_approver_id}`,
-        };
-      }
-    }
-
-    const vacant = stage.status === "pending" && !actor;
-    const status: StepStatus = vacant ? "blocked" : PLAN_STATUS[stage.status];
-
-    let sublabel: string | undefined;
-    if (vacant) sublabel = "No approver assigned";
-    else if (stage.status === "rejected") sublabel = "Rejected";
-
-    return {
-      id: `stage-${order}`,
-      label: stage.role_label,
-      sublabel,
-      status,
-      actor,
-      timestamp: null,
-      detail: null,
       isActing: false,
     };
   });

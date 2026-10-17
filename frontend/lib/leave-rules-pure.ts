@@ -17,12 +17,18 @@ export interface LeaveType {
   name: string;
   code: string;
   is_active?: boolean;
+  /** May this type be scheduled ahead of time as a Leave Plan? */
+  plannable?: boolean;
+  /** Days before the start date a plan reminder fires; null means immediate. */
+  plan_notice_days?: number | null;
 }
 
 export interface LeaveTypeInput {
   name: string;
   code?: string;
   is_active?: boolean;
+  plannable?: boolean;
+  plan_notice_days?: number | null;
 }
 
 export interface LeaveTypeListResponse {

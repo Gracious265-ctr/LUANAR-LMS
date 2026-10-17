@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, NotebookTabs, Tags, UserCheck, UserCog, Users } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, UserCog, Users } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -159,19 +159,6 @@ export default async function HRAdminPage() {
             <p className="mt-1 text-sm text-text-secondary">
               Configure the official template used for approved leave documents:
               wording, fields, and signature areas.
-            </p>
-          </Link>
-          <Link
-            href="/dashboard/hr-admin/plans"
-            className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
-          >
-            <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
-              <NotebookTabs className="h-5 w-5" />
-            </div>
-            <h3 className="text-lg font-semibold text-text-primary">Leave Day Plans</h3>
-            <p className="mt-1 text-sm text-text-secondary">
-              Oversee every plan, and set how long an owner has to confirm a
-              reserved block before it is released.
             </p>
           </Link>
           <Link

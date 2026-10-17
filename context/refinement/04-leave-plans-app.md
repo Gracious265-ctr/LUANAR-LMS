@@ -1,9 +1,6 @@
 # Unit — Leave Plans App
 
-*Unit number left open. New module — adds `backend/plans/` and `frontend/app/(dashboard)/plans/` to the module list, plus a new "Leave Plans" card on the App Launcher. Depends on the Leave app (draft creation, reused directly), the org-tree blueprint (for team/department/campus scoping of the calendar), and the existing SMTP email setup.*
-
-**This resolves an old open question.** Early in this project, when Plans first came up, the open question was whether Plans needed their own approval workflow — the recommendation at the time was to avoid generalizing the approval-stage machinery for v1 specifically because Plans' approval needs were unclear. Your description here confirms it: **a Leave Plan is never submitted and never approved.** It's purely a personal scheduling/reminder tool that, when acted on, hands off to the *existing* Leave application flow (which already has its own approval chain). This means the generic content-type-based approval engine discussed during the restructuring conversation is **not needed for this feature** — Plans don't touch the approvals system at all. Good news: this is simpler than it could have been.
-
+read `./AGENTS.md` before starting.
 ---
 
 ## 1. Goal

@@ -9,6 +9,28 @@ def _leave_badge(user) -> dict | None:
     return None
 
 
+def can_access_plans(user) -> bool:
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return True  # Every authenticated user may keep personal leave plans
+
+
+def _plans_badge(user) -> dict | None:
+    """Count of plans whose reminder has fired and are still awaiting action.
+
+    Only ``notified`` plans badge: an ``upcoming`` plan is not yet the employee's
+    turn to act, and a ``missed`` one is history, so neither is a live nudge.
+    """
+    from plans.models import LeavePlan, LeavePlanStatus
+
+    count = LeavePlan.objects.filter(
+        employee=user, status=LeavePlanStatus.NOTIFIED
+    ).count()
+    if not count:
+        return None
+    return {"count": count, "label": "ready to apply"}
+
+
 def can_access_approvals(user) -> bool:
     if not getattr(user, "is_authenticated", False):
         return False
@@ -72,6 +94,8 @@ def get_launcher_apps(user) -> list[dict]:
     apps = []
     if can_access_leave(user):
         apps.append({"key": "leave", "badge": _leave_badge(user)})
+    if can_access_plans(user):
+        apps.append({"key": "plans", "badge": _plans_badge(user)})
     if can_access_approvals(user):
         apps.append({"key": "approvals", "badge": _approvals_badge(user)})
     if can_access_org(user):

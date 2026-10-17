@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   Building2,
   Calendar,
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   ChevronLeft,
@@ -16,7 +17,6 @@ import {
   KeyRound,
   LogOut,
   Menu,
-  NotebookTabs,
   ShieldCheck,
   Tags,
   User,
@@ -34,10 +34,10 @@ import {
   isLeaveModule,
   LEAVE_NAV_ITEMS,
 } from "@/lib/nav/leave-nav";
+import { isPlansModule, PLANS_NAV_ITEMS } from "@/lib/nav/plans-nav";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
-import { PlansNavItem } from "@/components/plans/plans-nav-item";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Toaster } from "@/components/ui/toast";
@@ -66,8 +66,6 @@ interface DashboardShellProps {
   isApprover: boolean;
   /** Pending approvals for the nav badge; 0 when unknown or not an approver. */
   pendingApprovals: number;
-  /** The caller's reserved blocks awaiting confirmation, for the plans badge. */
-  planPendingConfirmations?: number;
   children: React.ReactNode;
 }
 
@@ -85,7 +83,6 @@ export function DashboardShell({
   user,
   isApprover,
   pendingApprovals,
-  planPendingConfirmations,
   children,
 }: DashboardShellProps) {
   // Two independent states because they answer different questions. `sidebarOpen`
@@ -133,7 +130,6 @@ export function DashboardShell({
         currentPath={pathname}
         isApprover={isApprover}
         pendingApprovals={pendingApprovals}
-        planPendingConfirmations={planPendingConfirmations}
         showCover={showCover}
         showHR={showHR}
         showAdmin={showAdmin}
@@ -156,7 +152,6 @@ export function DashboardShell({
             user={user}
             isApprover={isApprover}
             pendingApprovals={pendingApprovals}
-            planPendingConfirmations={planPendingConfirmations}
             showCover={showCover}
             showHR={showHR}
             showAdmin={showAdmin}
@@ -239,7 +234,6 @@ const Sidebar = memo(function Sidebar({
   user,
   isApprover,
   pendingApprovals,
-  planPendingConfirmations,
   showCover,
   showHR,
   showAdmin,
@@ -250,7 +244,6 @@ const Sidebar = memo(function Sidebar({
   user: User;
   isApprover: boolean;
   pendingApprovals: number;
-  planPendingConfirmations?: number;
   showCover: boolean;
   showHR: boolean;
   showAdmin: boolean;
@@ -269,7 +262,6 @@ const Sidebar = memo(function Sidebar({
         currentPath={currentPath}
         isApprover={isApprover}
         pendingApprovals={pendingApprovals}
-        planPendingConfirmations={planPendingConfirmations}
         showCover={showCover}
         showHR={showHR}
         showAdmin={showAdmin}
@@ -291,7 +283,6 @@ const NavLinks = memo(function NavLinks({
   currentPath,
   isApprover,
   pendingApprovals,
-  planPendingConfirmations,
   showCover,
   showHR,
   showAdmin,
@@ -300,17 +291,24 @@ const NavLinks = memo(function NavLinks({
   currentPath: string;
   isApprover: boolean;
   pendingApprovals: number;
-  planPendingConfirmations?: number;
   showCover: boolean;
   showHR: boolean;
   showAdmin: boolean;
   open: boolean;
 }) {
-  // The Leave module owns its own three-item rail, so a user inside it is not
-  // shown the HR/approvals/account destinations that belong to other modules.
-  // Every other route keeps the full institutional rail below.
-  if (isLeaveModule(currentPath)) {
-    return <LeaveNavLinks currentPath={currentPath} open={open} />;
+  // The Leave and Plans modules each own their own short rail: a way back to
+  // the launcher, then exactly the destinations that belong to that module.
+  // Kept out of the institutional rail so the two cannot leak into each other —
+  // a module user never sees the HR folio, and HR never sees a truncated list.
+  const moduleItems = isLeaveModule(currentPath)
+    ? LEAVE_NAV_ITEMS
+    : isPlansModule(currentPath)
+      ? PLANS_NAV_ITEMS
+      : null;
+  if (moduleItems) {
+    return (
+      <ModuleNavLinks currentPath={currentPath} open={open} items={moduleItems} />
+    );
   }
 
   return (
@@ -336,7 +334,13 @@ const NavLinks = memo(function NavLinks({
         currentPath={currentPath}
         open={open}
       />
-      <PlansNavItem open={open} pendingConfirmations={planPendingConfirmations} />
+      <Option
+        Icon={CalendarClock}
+        title="Leave Plans"
+        href="/dashboard/plans"
+        currentPath={currentPath}
+        open={open}
+      />
       <ApprovalsNavItem
         open={open}
         isApprover={isApprover}
@@ -469,13 +473,6 @@ const NavLinks = memo(function NavLinks({
             open={open}
           />
           <Option
-            Icon={NotebookTabs}
-            title="Leave Day Plans"
-            href="/dashboard/hr-admin/plans"
-            currentPath={currentPath}
-            open={open}
-          />
-          <Option
             Icon={History}
             title="Audit View"
             href="/dashboard/hr-admin/audit"
@@ -489,22 +486,27 @@ const NavLinks = memo(function NavLinks({
 });
 
 /**
- * The Leave module's rail: a way back to the launcher, then exactly the three
- * destinations that belong to the module. Kept separate from the institutional
- * rail so the two cannot leak into each other — the Leave user never sees an
- * HR folio, and the HR user never sees a truncated leave list.
+ * The rail shared by the self-contained modules (Leave, Plans): a way back to
+ * the launcher, then exactly the destinations that belong to the module.
  */
-const LeaveNavLinks = memo(function LeaveNavLinks({
+const ModuleNavLinks = memo(function ModuleNavLinks({
   currentPath,
   open,
+  items,
 }: {
   currentPath: string;
   open: boolean;
+  items: readonly {
+    label: string;
+    href: string;
+    icon: React.ComponentType<{ className?: string }>;
+    match: (pathname: string) => boolean;
+  }[];
 }) {
   return (
     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
       <AllAppsLink open={open} />
-      {LEAVE_NAV_ITEMS.map((item) => (
+      {items.map((item) => (
         <Option
           key={item.href}
           Icon={item.icon}

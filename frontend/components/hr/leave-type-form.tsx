@@ -71,12 +71,15 @@ export function LeaveTypeForm({
 
     const formData = new FormData(event.currentTarget);
 
+    const noticeRaw = String(formData.get("plan_notice_days") ?? "").trim();
+    const input = {
+      name: String(formData.get("name") || "").trim(),
+      code: String(formData.get("code") || "").trim() || undefined,
+      is_active: formData.get("is_active") === "on",
+      plannable: formData.get("plannable") === "on",
+      plan_notice_days: noticeRaw === "" ? null : Number(noticeRaw),
+    };
     try {
-      const input = {
-        name: String(formData.get("name") || "").trim(),
-        code: String(formData.get("code") || "").trim() || undefined,
-        is_active: formData.get("is_active") === "on",
-      };
       const saved = leaveType
         ? await updateLeaveType(leaveType.id, input)
         : await createLeaveType(input);
@@ -130,6 +133,35 @@ export function LeaveTypeForm({
           Active (offered to employees with a matching entitlement)
         </label>
       </div>
+
+      <div className="flex items-center gap-2 md:col-span-2">
+        <input
+          id="plannable"
+          name="plannable"
+          type="checkbox"
+          defaultChecked={leaveType?.plannable !== false}
+          className="h-4 w-4 rounded border-input-border text-brand-primary focus:ring-input-ring-focus"
+        />
+        <label htmlFor="plannable" className="text-sm text-text-primary">
+          Plannable (can be scheduled ahead of time as a Leave Plan)
+        </label>
+      </div>
+
+      <Field
+        label="Plan reminder notice (days)"
+        htmlFor="plan_notice_days"
+        hint="How many days before the planned start date a reminder email fires. Leave blank to alert immediately."
+        className="md:col-span-2"
+      >
+        <Input
+          id="plan_notice_days"
+          name="plan_notice_days"
+          type="number"
+          min={0}
+          defaultValue={leaveType?.plan_notice_days ?? ""}
+          placeholder="e.g. 14"
+        />
+      </Field>
 
       {error && (
         <FormError className="md:col-span-2">{error}</FormError>

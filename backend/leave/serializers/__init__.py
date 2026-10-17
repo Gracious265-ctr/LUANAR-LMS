@@ -144,7 +144,7 @@ class LeaveTypeSerializer(AuditedModelSerializer):
     """HR-facing serializer for leave types (registry entries)."""
 
     target_type = AuditEntry.TargetType.LEAVE_TYPE
-    audit_fields = ["name", "code", "is_active"]
+    audit_fields = ["name", "code", "is_active", "plannable", "plan_notice_days"]
 
     class Meta:
         model = LeaveType
@@ -153,6 +153,8 @@ class LeaveTypeSerializer(AuditedModelSerializer):
             "name",
             "code",
             "is_active",
+            "plannable",
+            "plan_notice_days",
         ]
 
     def validate(self, attrs: dict) -> dict:
@@ -257,6 +259,10 @@ class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
             "max_duration_days",
             "requires_supporting_document",
             "entitlement_days",
+            # Leave Plans (unit 04) only offer types flagged plannable, and use
+            # the notice window to explain when a reminder will fire.
+            "plannable",
+            "plan_notice_days",
         ]
 
     def get_max_duration_days(self, obj: LeaveType):
@@ -500,6 +506,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "reason",
             "status",
             "reference_number",
+            "source_plan",
             "created_at",
             "updated_at",
             "submitted_at",
@@ -513,6 +520,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "financial_year_label",
             "status",
             "reference_number",
+            "source_plan",
             "employee",
             "created_at",
             "updated_at",

@@ -62,17 +62,12 @@ class AuditEntry(models.Model):
         CANCELLATION_APPROVED = "cancellation_approved", "Cancellation approved"
         CANCELLATION_REJECTED = "cancellation_rejected", "Cancellation rejected"
         BALANCE_RESTORED = "balance_restored", "Leave balance restored"
-        PLAN_SUBMITTED = "plan_submitted", "Plan submitted"
-        PLAN_APPROVED = "plan_approved", "Plan approved"
-        PLAN_REJECTED = "plan_rejected", "Plan rejected"
         PASSWORD_SET_REQUESTED = (
             "password_set_requested",
             "Password set link requested",
         )
         PASSWORD_SET = "password_set", "Password set"
         PASSWORD_CHANGED = "password_changed", "Password changed"
-        PLAN_CONFIRMED = "plan_confirmed", "Plan block confirmed"
-        PLAN_RELEASED = "plan_released", "Plan block released"
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""
@@ -94,7 +89,6 @@ class AuditEntry(models.Model):
         DOCUMENT_TEMPLATE = "document-template", "Document template"
         CANCELLATION = "cancellation", "Cancellation request"
         BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
-        PLAN = "plan", "Leave day plan"
         USER_ACCOUNT = "useraccount", "User account"
 
     actor = models.ForeignKey(
