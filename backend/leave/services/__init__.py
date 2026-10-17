@@ -420,3 +420,8 @@ def public_holidays_between(start: date, end: date):
     This is the configuration boundary later working-day calculations consume.
     """
     return PublicHoliday.objects.filter(date__gte=start, date__lte=end).order_by("date")
+
+
+# Imported last so ``dashboard`` can read the names above from this package
+# without a circular-import failure.
+from .dashboard import get_dashboard_data  # noqa: E402,F401

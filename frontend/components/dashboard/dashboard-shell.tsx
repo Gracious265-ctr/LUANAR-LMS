@@ -7,6 +7,7 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  ChevronLeft,
   ChevronsRight,
   ClipboardList,
   FileText,
@@ -28,6 +29,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import {
+  ALL_APPS_HREF,
+  isLeaveModule,
+  LEAVE_NAV_ITEMS,
+} from "@/lib/nav/leave-nav";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
@@ -300,6 +306,13 @@ const NavLinks = memo(function NavLinks({
   showAdmin: boolean;
   open: boolean;
 }) {
+  // The Leave module owns its own three-item rail, so a user inside it is not
+  // shown the HR/approvals/account destinations that belong to other modules.
+  // Every other route keeps the full institutional rail below.
+  if (isLeaveModule(currentPath)) {
+    return <LeaveNavLinks currentPath={currentPath} open={open} />;
+  }
+
   return (
     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
       <Option
@@ -475,20 +488,82 @@ const NavLinks = memo(function NavLinks({
   );
 });
 
+/**
+ * The Leave module's rail: a way back to the launcher, then exactly the three
+ * destinations that belong to the module. Kept separate from the institutional
+ * rail so the two cannot leak into each other — the Leave user never sees an
+ * HR folio, and the HR user never sees a truncated leave list.
+ */
+const LeaveNavLinks = memo(function LeaveNavLinks({
+  currentPath,
+  open,
+}: {
+  currentPath: string;
+  open: boolean;
+}) {
+  return (
+    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
+      <AllAppsLink open={open} />
+      {LEAVE_NAV_ITEMS.map((item) => (
+        <Option
+          key={item.href}
+          Icon={item.icon}
+          title={item.label}
+          href={item.href}
+          currentPath={currentPath}
+          match={item.match}
+          open={open}
+        />
+      ))}
+    </div>
+  );
+});
+
+/** The single path out of a module, back to the launcher. */
+const AllAppsLink = memo(function AllAppsLink({ open }: { open: boolean }) {
+  return (
+    <div className="mb-2 border-b border-border-default pb-2">
+      <Link
+        href={ALL_APPS_HREF}
+        // Collapsed, the label is not rendered, so the icon alone would leave
+        // the link with no accessible name.
+        aria-label="All apps"
+        className={cn(
+          "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
+          "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+        )}
+      >
+        <div className="grid h-full w-12 place-content-center">
+          <ChevronLeft className="h-4 w-4" />
+        </div>
+
+        {open && (
+          <span className="text-sm font-medium transition-opacity duration-200">
+            All Apps
+          </span>
+        )}
+      </Link>
+    </div>
+  );
+});
+
 const Option = memo(function Option({
   Icon,
   title,
   href,
   currentPath,
   open,
+  match,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   title: string;
   href: string;
   currentPath: string;
   open: boolean;
+  /** Overrides the default exact-path match when a section owns sub-routes. */
+  match?: (pathname: string) => boolean;
 }) {
-  const isSelected = currentPath === href;
+  const isSelected = match ? match(currentPath) : currentPath === href;
 
   return (
     <Link
@@ -496,6 +571,9 @@ const Option = memo(function Option({
       // Collapsed, the label span is not rendered, so the icon alone would
       // leave the link with no accessible name.
       aria-label={title}
+      // Announced only for module-scoped items (those that pass `match`), so the
+      // institutional rail's markup stays exactly as it was.
+      aria-current={match && isSelected ? "page" : undefined}
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
         isSelected

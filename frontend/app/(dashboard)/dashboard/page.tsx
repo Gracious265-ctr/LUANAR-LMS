@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { loadApprovalCapabilities } from "@/lib/approvals/capabilities";
 import { getLeaveSummary } from "@/lib/leave-summary";
 import { Card } from "@/components/ui/card";
-import { STATUS_STYLES } from "@/lib/status-styles";
+import { StatCard } from "@/components/ui/stat-card";
 import { FadeIn } from "@/components/motion/FadeIn";
 import { Stagger } from "@/components/motion/Stagger";
 import { StaggerItem } from "@/components/motion/StaggerItem";
@@ -116,36 +116,3 @@ export default async function DashboardPage() {
   );
 }
 
-const STAT_CARD_VARIANTS = {
-  primary: "bg-brand-primary-subtle text-brand-primary",
-  pending: STATUS_STYLES.pending,
-  info: "bg-status-info-subtle text-status-info",
-  secondary: "bg-brand-secondary-subtle text-brand-secondary",
-} as const;
-
-function StatCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  variant,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  variant: keyof typeof STAT_CARD_VARIANTS;
-}) {
-  return (
-    <Card>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-text-secondary">{title}</span>
-        <div className={`p-2 rounded-lg ${STAT_CARD_VARIANTS[variant]}`}>
-          {icon}
-        </div>
-      </div>
-      <div className="text-3xl font-semibold tracking-tight text-text-primary">{value}</div>
-      <p className="text-sm text-text-muted mt-1">{subtitle}</p>
-    </Card>
-  );
-}

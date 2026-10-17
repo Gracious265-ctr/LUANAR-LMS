@@ -382,3 +382,85 @@ describe("DashboardShell mobile drawer", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+describe("DashboardShell Leave module", () => {
+  it("scopes the rail to the launcher plus exactly the three Leave items", () => {
+    currentPath = "/dashboard/leave";
+    // An HR approver is the strictest case: the module rail must hide their HR
+    // and approvals destinations, not merely the employee-only extras.
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      "/dashboard/leave",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "My Applications" }),
+    ).toHaveAttribute("href", "/dashboard/leave/drafts");
+    expect(
+      within(nav).getByRole("link", { name: "New Application" }),
+    ).toHaveAttribute("href", "/dashboard/leave/new");
+
+    // Exactly three destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+
+    for (const hidden of [
+      "Approvals",
+      "Plans",
+      "Request Cover",
+      "My Account",
+      "Audit View",
+      "Teams",
+    ]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps the full institutional rail outside the Leave module", () => {
+    currentPath = "/dashboard/approvals";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "My Account" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "All apps" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["/dashboard/leave/drafts"],
+    ["/dashboard/leave/123/edit"],
+    ["/applications/9"],
+  ])("marks My Applications active at %s", (path) => {
+    currentPath = path;
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: "My Applications" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: "Dashboard" })).not.toHaveAttribute(
+      "aria-current",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "New Application" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks Dashboard active only on the Leave index", () => {
+    currentPath = "/dashboard/leave";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "My Applications" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+});

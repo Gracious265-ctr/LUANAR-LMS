@@ -99,6 +99,16 @@ describe("ApplicationsList", () => {
     expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
   });
 
+  it("passes the ?status= filter through to the API", async () => {
+    setSearchParams("status=submitted");
+    vi.mocked(getLeaveApplications).mockResolvedValue({ count: 0, results: [] });
+
+    render(<ApplicationsList />);
+
+    expect(await screen.findByText("My Applications")).toBeInTheDocument();
+    expect(getLeaveApplications).toHaveBeenCalledWith("submitted");
+  });
+
   it("renders the empty state when there are no applications", async () => {
     vi.mocked(getLeaveApplications).mockResolvedValue({ count: 0, results: [] });
 

@@ -4,6 +4,21 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Unit 3 — Leave App Dashboard — DONE (2026-10-17)** — refinement unit
+  `context/refinement/03-leave-app-dashboard.md`. Builds the Leave module's
+  landing dashboard (balance rings, needs-attention, drafts, recent
+  applications) with the 3-click rule. Adaptations agreed at planning: page
+  lives at `app/(dashboard)/dashboard/leave/page.tsx` (launcher registry
+  repointed to `/dashboard/leave`); one backend read endpoint
+  `/api/v1/leave/dashboard/`; annual ring reuses the existing provider and
+  per-type rings come from effective typed `GradeEntitlement` rows; client
+  fetch hook (skeleton + Retry). No changes to Units 13/14/17/18 endpoints.
+  **Follow-up (same day):** a top stat-card row (Pending Applications,
+  Upcoming Leave) added to the same endpoint (`pending_count`, `upcoming_leave`)
+  — not a second endpoint — plus a module-scoped Leave sidebar (3 items +
+  "← All Apps"). See "Completed (Unit 3 — Leave App Dashboard) (2026-10-17)"
+  at the end of this file.
+
 - **HR leave-system simplification — IN PROGRESS (started 2026-10-11)** — the
   approved 7-phase plan to reduce the steps HR takes across the whole leave
   system (one non-technical generalist HR user): setup spine → onboarding →
@@ -5299,3 +5314,100 @@ view access + test-email POST semantics, and the full action lifecycle
 (confirmation required, mismatch refused, exactly-one enforced, self-revoke
 refused, audit rows written, actions hidden from HR). Backend full suite
 **1458 OK**; `manage.py check`, `makemigrations --check` clean.
+
+## Completed (Unit 3 — Leave App Dashboard) (2026-10-17)
+
+**Goal.** The Leave module's landing page — the screen an employee reaches from
+the App Launcher's "Leave Applications" card: their own balances, anything
+needing attention, drafts, recent applications, and a one-click path to start
+something new. Strictly scoped to *the employee's own leave* — no approver
+queues, org structure, or HR-admin content.
+
+**Backend (one new read endpoint, no new models).**
+- `leave/services/dashboard.py` — `get_dashboard_data(user)`: applications
+  scoped to `employee=user`; `needs_attention` (`rejected` /
+  `correction_required`, newest `updated_at`, cap 5), `drafts` (`draft`,
+  cap 5), `recent` (all statuses except `draft`, newest `created_at`, cap 5).
+  `last_comment_excerpt` is the latest non-empty `workflows.ApprovalDecision`
+  comment for the application, trimmed to 60 chars with an ellipsis. Status
+  `submitted` serializes as `pending` to match the tracking vocabulary.
+- **Balances** reuse the existing provider: the annual ring is
+  `total = resolved annual entitlement`, `used = total − available` from
+  `leave_providers.get_provider().get_available_balance`. Per-type rings come
+  from effective typed `GradeEntitlement` rows; each `used` is the sum of that
+  employee's approved `calculated_days` of that type in the active financial
+  year. The annual type is excluded from the per-type list (it is the annual
+  ring) and the list is capped at 4 (`MAX_BALANCE_RINGS`). No balance math is
+  reimplemented.
+- `leave/views/dashboard.py` — `LeaveDashboardView(APIView)`,
+  `IsAuthenticated`, GET → `get_dashboard_data(request.user)`.
+- `leave/urls.py` — `path("leave/dashboard/", ..., name="leave-dashboard")`.
+
+**Frontend (client fetch, per the spec).**
+- `app/api/leave/dashboard/route.ts` proxy → backend `leave/dashboard/`.
+- `lib/leave-dashboard.ts` (types + `getLeaveDashboard`),
+  `lib/hooks/useLeaveDashboard.ts` (loading / error / refetch).
+- `components/ui/BalanceRing.tsx` — plain SVG conic ring (no chart lib),
+  zero-total safe, remaining-days centre.
+- `components/leave/ApplicationStatusBadge.tsx`, `NeedsAttentionSection.tsx`,
+  `BalanceSection.tsx`, `DraftsSection.tsx`, `RecentApplicationsSection.tsx`.
+- `app/(dashboard)/dashboard/leave/page.tsx` — header + "+ New Application",
+  layout-matching skeleton, `ErrorState` with Retry, empty-aware sections.
+- `lib/apps-registry.ts` — launcher leave route repointed `/dashboard` →
+  `/dashboard/leave`.
+
+**Adaptations to the real codebase** (the spec's aspirational paths):
+- Routes are `/dashboard/leave/...`; new/edit is an overlay
+  (`?compose=1` / `?edit=<id>`), so needs-attention and draft cards route to
+  `/dashboard/leave/drafts?edit=<id>`, "New Application"/empty-state action to
+  `?compose=1`, recent rows to `/applications/<id>` (tracking — first step of
+  the 3-click cancel flow, which already lives on tracking), "View all" to
+  `/dashboard/leave/drafts`.
+- `LeaveApplication.leave_type_id` is a soft int (no FK), so names are looked
+  up by id rather than `application.leave_type.name`.
+- `>4` leave types: the spec's "View all" has no in-scope destination, so the
+  list is simply capped at 4.
+
+**Tests.** Backend `leave/tests/test_dashboard.py` (23 tests: auth 401, scoping
+to `employee=user`, section ordering/caps, pending mapping, leave-type
+name/null, excerpt latest/truncated/null, annual ring total/used, per-type
+sums, no annual duplication, empty balances without a grade, cap 4). Frontend
+`tests/leave-dashboard.test.tsx` (9) + `tests/balance-ring.test.tsx` (3).
+Verification: backend full suite **1446 OK**, `makemigrations --check` clean;
+frontend **107 files / 924 tests OK**, `tsc --noEmit` and `eslint .` clean.
+
+**Follow-up — landing stat cards + module-scoped sidebar (2026-10-17).**
+Two more pieces on the same unit, no new endpoint and no route moves.
+- **Stat cards.** `GET /api/v1/leave/dashboard/` now also returns
+  `pending_count` (applications in `SUBMITTED_STATUSES`) and `upcoming_leave`
+  (the earliest `APPROVED` application with `start_date >= today`, else `null`;
+  today counts so the next leave is never hidden). The dashboard renders a
+  2-up `DashboardStatCards` row as the first block after the header — Pending
+  → `/dashboard/leave/drafts?status=submitted`, Upcoming →
+  `/applications/<id>` — and the loading skeleton mirrors that row. The card
+  is a shared `components/ui/stat-card.tsx` (extracted from the home dashboard,
+  which now imports it too). No new colors/shadows/radius: the icon chip reuses
+  `STATUS_STYLES.pending`/brand tokens, `shadow-xs`, `rounded-lg`; the "Awaiting
+  My Approval" card stays home-dashboard-only; every card is one click from its
+  target. "Needs Your Attention" **already existed** (`needs_attention` in the
+  same service + `NeedsAttentionSection.tsx`) and was left as-is.
+- **`?status=` filter.** `ApplicationsList` reads `?status=` and passes it to
+  the existing `useLeaveApplications(status?)`/server filter, so the pending
+  card lands on a real filtered "My Applications" list with no new UI.
+- **Module-scoped sidebar.** New `lib/nav/leave-nav.ts`; the shared
+  `dashboard-shell.tsx`'s `NavLinks` swaps to `LeaveNavLinks` when
+  `isLeaveModule(pathname)` (includes the tracking route `/applications/…`),
+  showing Dashboard / My Applications / New Application plus a "← All Apps"
+  link. `Option` gained an optional `match` predicate and `aria-current="page"`
+  (gated so other modules' markup is unchanged).
+- **Tests.** Backend `leave/tests/test_dashboard.py` gains `DashboardStatCardTests`
+  (pending counts submitted only + scoped to the employee; upcoming null / none /
+  earliest-approved-future / starts-today / leave-type name) → `leave` app
+  **469 OK**, `makemigrations --check` clean. Frontend gains
+  `tests/dashboard-shell.test.tsx` Leave-module cases, `leave-dashboard.test.tsx`
+  stat-card cases (both cards, pending route, upcoming route, null/em-dash
+  non-clickable) and an `applications-list.test.tsx` `?status=submitted`
+  passthrough case → **107 files / 935 tests**, `tsc --noEmit` and `eslint .`
+  clean. (Three full-suite load-timing flakes in untouched files —
+  `entitlement-form`, `submission-confirmation`, a plans test — pass in
+  isolation; unrelated to this unit.)

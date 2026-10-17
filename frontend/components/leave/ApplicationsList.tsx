@@ -35,10 +35,14 @@ interface OverlayTarget {
  * through the redirect shims in those routes.
  */
 export function ApplicationsList() {
-  const { applications, loading, error, refetch, removeLocal, restoreLocal } =
-    useLeaveApplications();
   const router = useRouter();
   const searchParams = useSearchParams();
+  // An optional `?status=` narrows the list (e.g. the dashboard's pending card
+  // links here with `status=submitted`). It maps straight onto the server-side
+  // filter the endpoint already exposes; absent, every application is shown.
+  const statusFilter = searchParams.get("status") ?? undefined;
+  const { applications, loading, error, refetch, removeLocal, restoreLocal } =
+    useLeaveApplications(statusFilter);
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
   const composeParam = searchParams.get("compose");

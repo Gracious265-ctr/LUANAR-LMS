@@ -5,7 +5,7 @@ export const APPS_REGISTRY = {
     name: "Leave Applications",
     description: "Submit and track your leave requests",
     icon: Calendar,
-    route: "/dashboard",
+    route: "/dashboard/leave",
   },
   approvals: {
     name: "Approvals",

@@ -95,6 +95,7 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | Employee/HR data serialisers (employees, entitlements, leave types, rules, financial years, holidays, applications) | `backend/leave/serializers/__init__.py` |
 | The HR/employee API endpoints (entitlements, leave types/rules, financial years, holidays, applications, documents) | `backend/leave/views/__init__.py` |
 | Employee "my leave" overview and history endpoints | `backend/leave/views/my_leave.py`, `backend/leave/views/history.py` |
+| The employee leave **dashboard** summary (balances + needs-attention + drafts + recent) | `backend/leave/services/dashboard.py`, `backend/leave/views/dashboard.py` |
 | Resubmission endpoint after a correction | `backend/leave/views/resubmission.py` |
 | Which fields are validated and how (grade ranges, dates, balance, overlap…) | `backend/leave/validation/pipeline.py` + `backend/leave/validation/validators/` |
 | Logic of **submitting** an application | `backend/leave/services/submission.py` |
@@ -150,6 +151,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | Login page | `frontend/app/(auth)/login/` |
 | After-login access control (redirects by role) | `frontend/middleware.ts`, `frontend/lib/auth.ts` |
 | Employee "new application" form | `frontend/app/(dashboard)/dashboard/leave/new/` and its form components |
+| Employee leave **dashboard** (landing page: balance rings, needs attention, drafts, recent) | `frontend/app/(dashboard)/dashboard/leave/page.tsx` + `frontend/components/leave/*Section.tsx`, `frontend/lib/hooks/useLeaveDashboard.ts` |
 | Employee drafts list | `frontend/app/(dashboard)/dashboard/leave/drafts/` |
 | One application's pages (details, review, tracking, history, edit) | `frontend/app/(dashboard)/dashboard/leave/[id]/…` |
 | Approvals list / approval detail for approvers | `frontend/app/(dashboard)/approvals/` + `frontend/components/approvals/` |
