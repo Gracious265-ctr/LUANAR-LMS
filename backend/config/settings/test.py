@@ -1,35 +1,4 @@
 """
-<<<<<<< HEAD
-Test settings for the LUANAR Leave Management System.
-
-Fast, isolated test runs:
-
-- MD5 password hasher (users are created in nearly every test)
-- In-memory email backend
-- Per-session disposable test database names so parallel ``manage.py test``
-  runs (one per opencode session/branch) never collide on ``test_luanar_leave``
-  and deadlock. See context/troubleshooting-notes.md (DeadlockDetected entry).
-
-Usage::
-
-    DJANGO_SETTINGS_MODULE=config.settings.test \\
-        TEST_DB_NAME=test_luanar_leave_19 \\
-        uv run manage.py test --keepdb --parallel auto
-
-``TEST_DB_NAME`` defaults to ``test_luanar_leave`` so a plain
-``--settings=config.settings.test`` run is indistinguishable from the old
-behaviour.
-"""
-
-import os
-
-from .base import *  # noqa: F401, F403
-
-DEBUG = False
-
-# Users are created constantly across the test suite; PBKDF2 is intentionally
-# slow, so swap in the (test-only, insecure) MD5 hasher.
-=======
 Fast Django test settings for LUANAR Leave Management System.
 
 Test fixtures create users through PBKDF2 throughout the suite; swapping in a
@@ -40,29 +9,10 @@ test (password strength is a deployment setting, not a behavior tested here).
 from .base import *  # noqa: F401, F403
 from .development import *  # noqa: F401, F403  (DEBUG / hosts / CORS)
 
->>>>>>> feature/plans-teams
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
-<<<<<<< HEAD
-EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-
-# Notifications (Unit 22): keep the whole existing suite free of Notification
-# rows and email side effects. The notification tests enable dispatch
-# explicitly via override_settings(NOTIFICATION_DISPATCHER="on").
-NOTIFICATION_DISPATCHER = "off"
-
-# Approval finalisation (Unit 23): keep the whole existing suite free of ledger
-# deduction rows and generated documents. The Unit 23 tests enable finalisation
-# explicitly via override_settings(APPROVAL_FINALISATION="on").
-APPROVAL_FINALISATION = "off"
-
-# Distinct name per parallel session to avoid test-DB deadlocks.
-DATABASES["default"]["TEST"] = {
-    "NAME": os.environ.get("TEST_DB_NAME", "test_luanar_leave"),
-}
-=======
 # The suite tests the *enqueue* contract, not the executed task: a render is
 # dispatched with ``async_task`` and then run explicitly where the test is about
 # the render. Development sets ``sync = True`` (see ``development.py``), and this
@@ -113,4 +63,3 @@ PASSWORD_SET_TOKEN_LIFETIME_HOURS = 72
 # behavior stub the client themselves.
 SUPABASE_URL = ""
 SUPABASE_SERVICE_KEY = ""
->>>>>>> feature/plans-teams

@@ -1,11 +1,3 @@
-import type {
-  CancellationAction,
-  CancellationBlockedReason,
-  CancellationRequestKind,
-  CancellationRequestStatus,
-  CancellationStage,
-} from "@/lib/cancellation/types";
-
 export type TrackingStatus =
   | "pending"
   | "approved"
@@ -117,26 +109,6 @@ export interface CurrentStage {
   assigned_at: string;
 }
 
-<<<<<<< HEAD
-export interface TrackingDecision {
-  cycle: number;
-  stage_order: number;
-  role_label: string;
-  approver_name: string;
-  action: DecisionAction;
-  comment: string;
-  decided_at: string;
-}
-
-export type DecisionAction =
-  | "approve"
-  | "reject"
-  | "return_for_correction";
-
-export interface TrackingResubmissionEntry {
-  cycle: number;
-  resubmitted_at: string;
-=======
 export type CancellationAction = "withdraw" | "request";
 
 export interface LatestCancellation {
@@ -145,44 +117,18 @@ export interface LatestCancellation {
   status: "pending" | "approved" | "rejected";
   requested_at: string | null;
   decided_at: string | null;
->>>>>>> feature/plans-teams
 }
 
 export interface TrackingResponse {
   application: ApplicationSummary;
   status: TrackingStatus;
   approved_at: string | null;
-  submission_cycle: number;
   current_stage: CurrentStage | null;
   stages: TrackingStage[];
   events: TrackingEvent[];
-  decisions: TrackingDecision[];
-  resubmissions: TrackingResubmissionEntry[];
   rejection: TrackingOutcome | null;
   correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
-<<<<<<< HEAD
-  cancellation_action: CancellationAction | null;
-  cancellation_blocked_reason: CancellationBlockedReason | null;
-  has_open_cancellation_request: boolean;
-  latest_cancellation: TrackingCancellationRequest | null;
-  cancelled_at: string | null;
-  estimated_restoration_days: string | null;
-  restoration_financial_year: string | null;
-}
-
-/** Open cancellation request summary in the tracking payload (Unit 18). */
-export interface TrackingCancellationRequest {
-  id: string;
-  kind: CancellationRequestKind;
-  status: CancellationRequestStatus;
-  reason: string;
-  requested_at: string | null;
-  decided_at: string | null;
-  stage_version: number;
-  current_stage_role: string | null;
-  stages: CancellationStage[];
-=======
   /** Unit 19 addition: the employee's active supporting documents. */
   documents: TrackingDocument[];
   /** Unit 18 additions: cancellation state appended to the same payload. */
@@ -191,7 +137,6 @@ export interface TrackingCancellationRequest {
   cancellation_blocked_reason: string | null;
   has_open_cancellation_request: boolean;
   latest_cancellation: LatestCancellation | null;
->>>>>>> feature/plans-teams
 }
 
 export type TrackingResult =

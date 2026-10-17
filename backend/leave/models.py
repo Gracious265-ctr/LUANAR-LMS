@@ -1,12 +1,8 @@
 import uuid
-from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
-<<<<<<< HEAD
-=======
 from django.db.models import Min
->>>>>>> feature/plans-teams
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -115,9 +111,6 @@ class LeaveRule(models.Model):
     )
     max_duration_days = models.PositiveIntegerField()
     eligibility = models.TextField(blank=True)
-<<<<<<< HEAD
-    eligibility_rules = models.JSONField(default=list, blank=True)
-=======
     eligibility_rules = models.JSONField(
         default=list,
         blank=True,
@@ -127,7 +120,6 @@ class LeaveRule(models.Model):
             "human-readable description."
         ),
     )
->>>>>>> feature/plans-teams
     min_notice_days = models.PositiveIntegerField(default=0)
     requires_supporting_document = models.BooleanField(default=False)
     consumes_annual_entitlement = models.BooleanField(default=False)
@@ -195,13 +187,6 @@ class LeaveApplication(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
-<<<<<<< HEAD
-        PENDING = "pending", "Pending"
-        APPROVED = "approved", "Approved"
-        REJECTED = "rejected", "Rejected"
-        CORRECTION_REQUIRED = "correction_required", "Correction Required"
-        CANCELLED = "cancelled", "Cancelled"
-=======
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         CORRECTION_REQUIRED = "correction_required", "Correction required"
@@ -211,7 +196,6 @@ class LeaveApplication(models.Model):
     # Unit 18 adds ``CANCELLED``: a withdrawn or cancelled application is terminal.
     SUBMITTED_STATUSES = (Status.SUBMITTED,)
     APPROVED_STATUSES = (Status.APPROVED,)
->>>>>>> feature/plans-teams
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     employee = models.ForeignKey(
@@ -250,28 +234,6 @@ class LeaveApplication(models.Model):
         blank=True,
         related_name="applications_assigned",
     )
-
-    # Unit 16 workflow spine. ``current_stage`` is the live ApprovalStage the
-    # application sits on (null until the workflow is assigned at submission);
-    # ``submission_cycle`` counts submissions and is copied onto decisions so a
-    # future resubmission unit can group them (incremented there, not here).
-    current_stage = models.ForeignKey(
-        "workflows.ApplicationStage",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
-    submission_cycle = models.PositiveIntegerField(default=1)
-
-    # Unit 17 optimistic-concurrency token. Incremented on every saved edit and
-    # every document operation while the application is rejected or correction
-    # required, so two windows can never silently overwrite each other.
-    row_version = models.PositiveIntegerField(default=1)
-
-    # Unit 18 cancellation. Set when the application is withdrawn or
-    # a cancellation is finally approved.
-    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -348,9 +310,6 @@ class SupportingDocument(models.Model):
         related_name="documents",
     )
     file_path = models.CharField(max_length=512)
-<<<<<<< HEAD
-    file_url = models.URLField(max_length=2048)
-=======
     file_url = models.URLField(
         max_length=2048,
         help_text=(
@@ -361,23 +320,15 @@ class SupportingDocument(models.Model):
             "cache/fallback only."
         ),
     )
->>>>>>> feature/plans-teams
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField()
     content_type = models.CharField(max_length=100)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
-<<<<<<< HEAD
-    # Unit 17 lifecycle: documents on a submitted application are never
-    # physically deleted. A replace/remove retires the old row (``status``
-    # drops to ``retired``) so it stays in the application history; the file in
-    # storage is never removed either (retirement is metadata-only).
-=======
     # Lifecycle (Unit 17). Documents are never hard-deleted after submission:
     # replaced/removed rows are retired so the audit trail and the revision
     # snapshot can still resolve their names. Only active rows are returned to
     # employees/approvers and counted by the documents validator.
->>>>>>> feature/plans-teams
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
@@ -387,12 +338,6 @@ class SupportingDocument(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-<<<<<<< HEAD
-        related_name="documents_retired",
-    )
-    retire_reason = models.CharField(
-        max_length=20, choices=RetireReason.choices, null=True, blank=True
-=======
         related_name="retired_documents",
     )
     retire_reason = models.CharField(
@@ -400,18 +345,12 @@ class SupportingDocument(models.Model):
         choices=RetireReason.choices,
         null=True,
         blank=True,
->>>>>>> feature/plans-teams
     )
     replaced_by = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-<<<<<<< HEAD
-        related_name="replaced_from",
-    )
-
-=======
         related_name="replaced_documents",
     )
 
@@ -437,7 +376,6 @@ class SupportingDocument(models.Model):
             ]
         )
 
->>>>>>> feature/plans-teams
     class Meta:
         ordering = ["-uploaded_at"]
         indexes = [
@@ -448,18 +386,6 @@ class SupportingDocument(models.Model):
         return f"Document({self.file_name})"
 
 
-<<<<<<< HEAD
-class ApplicationRevision(models.Model):
-    """An immutable content snapshot taken at each submission (Unit 17).
-
-    Revision ``1`` is written at the initial submission (Unit 14); the
-    `resubmit` service writes revision ``N`` for cycle ``N``. ``revision_number``
-    therefore equals ``LeaveApplication.submission_cycle`` at the time of
-    creation. ``changes`` is the diff against the previous revision (``None``
-    for revision 1) and is what the approver sees in the change summary.
-
-    Rows are append-only: no update or delete through the ORM, admin, or API.
-=======
 class ApplicationRevisionLockedError(Exception):
     """Raised on any attempt to update or delete an ``ApplicationRevision``."""
 
@@ -490,26 +416,11 @@ class ApplicationRevision(models.Model):
     deciding. The approval review payload diffs a newer revision against the
     cycle-1 baseline to show "changes since your decision". Immutable like
     ``ApprovalDecision``: rows are write-only history.
->>>>>>> feature/plans-teams
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
         LeaveApplication,
-<<<<<<< HEAD
-        on_delete=models.CASCADE,
-        related_name="revisions",
-    )
-    revision_number = models.PositiveIntegerField()
-    leave_type = models.ForeignKey(
-        LeaveType,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="+",
-    )
-    leave_type_name = models.CharField(max_length=120)
-=======
         on_delete=models.PROTECT,
         related_name="revisions",
     )
@@ -517,18 +428,10 @@ class ApplicationRevision(models.Model):
 
     leave_type_id = models.PositiveIntegerField(null=True, blank=True)
     leave_type_name = models.CharField(max_length=120, blank=True, default="")
->>>>>>> feature/plans-teams
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     working_days = models.PositiveSmallIntegerField(null=True, blank=True)
     reason = models.TextField(blank=True, default="")
-<<<<<<< HEAD
-    documents = models.JSONField(default=list)
-    changes = models.JSONField(null=True, blank=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-=======
 
     documents = models.JSONField(default=list)
     changes = models.JSONField(null=True, blank=True)
@@ -536,18 +439,12 @@ class ApplicationRevision(models.Model):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
->>>>>>> feature/plans-teams
         null=True,
         blank=True,
         related_name="application_revisions",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-<<<<<<< HEAD
-    class Meta:
-        ordering = ["revision_number"]
-        constraints = [
-=======
     objects = ApplicationRevisionManager()
 
     class Meta:
@@ -557,28 +454,14 @@ class ApplicationRevision(models.Model):
                 fields=["application", "revision_number"],
                 name="applicationrevision_application_revision_number_uniq",
             ),
->>>>>>> feature/plans-teams
             models.CheckConstraint(
                 condition=models.Q(revision_number__gte=1),
                 name="applicationrevision_revision_number_gte_1",
             ),
-<<<<<<< HEAD
-            models.UniqueConstraint(
-                fields=["application", "revision_number"],
-                name="applicationrevision_application_revision_number_unique",
-            ),
-=======
->>>>>>> feature/plans-teams
         ]
 
     def __str__(self) -> str:
         return (
-<<<<<<< HEAD
-            f"Revision {self.revision_number} of "
-            f"{self.application.reference_number or self.application_id}"
-        )
-
-=======
             f"Revision({self.revision_number} of "
             f"{self.application.reference_number or self.application_id})"
         )
@@ -595,7 +478,6 @@ class ApplicationRevision(models.Model):
             )
         super().save(*args, **kwargs)
 
->>>>>>> feature/plans-teams
 
 class ReferenceSequence(models.Model):
     """Per-financial-year reference counter (Unit 14, decision D8).
@@ -612,178 +494,6 @@ class ReferenceSequence(models.Model):
         return f"RefSeq({self.financial_year_label}: {self.last_value})"
 
 
-<<<<<<< HEAD
-class CancellationRequest(models.Model):
-    """A leave cancellation or withdrawal request (Unit 18).
-
-    A withdrawal is a ``kind = withdrawal`` request created directly in
-    ``approved`` status with no approver stages. An approved-leave
-    cancellation is ``kind = approved_leave`` and progresses through
-    ``CancellationApprovalStage`` rows.
-    """
-
-    class Kind(models.TextChoices):
-        WITHDRAWAL = "withdrawal", "Withdrawal"
-        APPROVED_LEAVE = "approved_leave", "Approved Leave Cancellation"
-
-    class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        APPROVED = "approved", "Approved"
-        REJECTED = "rejected", "Rejected"
-
-    class EmployeeNotificationState(models.TextChoices):
-        NOT_REQUIRED = "not_required", "Not required"
-        PENDING = "pending", "Pending"
-        SENT = "sent", "Sent"
-        FAILED = "failed", "Failed"
-
-    application = models.ForeignKey(
-        "leave.LeaveApplication",
-        on_delete=models.CASCADE,
-        related_name="cancellation_requests",
-    )
-    requested_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="cancellation_requests",
-    )
-    kind = models.CharField(max_length=20, choices=Kind.choices)
-    reason = models.TextField()
-    status = models.CharField(
-        max_length=20, choices=Status.choices, default=Status.PENDING
-    )
-    stage_version = models.PositiveIntegerField(default=1)
-    requested_at = models.DateTimeField(default=timezone.now)
-    decided_at = models.DateTimeField(null=True, blank=True)
-    application_status_at_request = models.CharField(max_length=20)
-    balance_restored_days = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0
-    )
-    restored_financial_year = models.CharField(max_length=16, null=True, blank=True)
-    employee_notification_state = models.CharField(
-        max_length=20,
-        choices=EmployeeNotificationState.choices,
-        default=EmployeeNotificationState.NOT_REQUIRED,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-requested_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["application"],
-                condition=models.Q(status="pending"),
-                name="cancellationrequest_one_pending_per_application",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"Cancellation({self.application_id} - {self.kind} - {self.status})"
-
-
-class CancellationApprovalStage(models.Model):
-    """One sequential approval stage of a cancellation request (Unit 18)."""
-
-    class Status(models.TextChoices):
-        WAITING = "waiting", "Waiting"
-        PENDING = "pending", "Pending"
-        APPROVED = "approved", "Approved"
-        REJECTED = "rejected", "Rejected"
-        NOT_REACHED = "not_reached", "Not Reached"
-        CANCELLED = "cancelled", "Cancelled"
-
-    request = models.ForeignKey(
-        CancellationRequest,
-        on_delete=models.CASCADE,
-        related_name="stages",
-    )
-    order = models.PositiveIntegerField()
-    role = models.CharField(max_length=20)
-    role_label = models.CharField(max_length=100)
-    approver = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="cancellation_stages",
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=Status.choices,
-        default=Status.WAITING,
-    )
-    decided_at = models.DateTimeField(null=True, blank=True)
-    comment = models.TextField(blank=True, default="")
-
-    class Meta:
-        ordering = ["order"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["request", "order"],
-                name="cancellationapprovalstage_request_order_unique",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"CancellationStage({self.request_id} stage {self.order} - {self.role})"
-
-
-class LeaveBalanceTransaction(models.Model):
-    """Append-only balance ledger (Unit 18)."""
-
-    class Type(models.TextChoices):
-        DEDUCTION = "deduction", "Deduction"
-        RESTORATION = "restoration", "Restoration"
-
-    employee = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="balance_transactions",
-    )
-    financial_year = models.CharField(max_length=16)
-    leave_type = models.ForeignKey(
-        "leave.LeaveType",
-        on_delete=models.PROTECT,
-        related_name="balance_transactions",
-    )
-    application = models.ForeignKey(
-        "leave.LeaveApplication",
-        on_delete=models.PROTECT,
-        related_name="balance_transactions",
-    )
-    cancellation_request = models.ForeignKey(
-        CancellationRequest,
-        on_delete=models.PROTECT,
-        related_name="balance_transactions",
-        null=True,
-        blank=True,
-    )
-    type = models.CharField(max_length=20, choices=Type.choices)
-    days = models.DecimalField(max_digits=10, decimal_places=2)
-    carry_forward_eligible = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["cancellation_request", "type"],
-                condition=models.Q(type="restoration"),
-                name="balancetransaction_unique_restoration_per_request",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"BalanceTransaction({self.type} - {self.days}d - {self.employee})"
-
-    def save(self, *args, **kwargs):
-        if not self._state.adding:
-            raise RuntimeError("LeaveBalanceTransaction rows are append-only.")
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        raise RuntimeError("LeaveBalanceTransaction rows are append-only.")
-=======
 # Unit 18 models live in ``leave/cancellations/models.py`` (same app label). This
 # import registers them with the app so ``makemigrations`` sees the new tables.
 from .cancellations import models as _cancellations_models  # noqa: E402, F401  # isort: skip
->>>>>>> feature/plans-teams

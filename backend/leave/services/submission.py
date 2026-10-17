@@ -64,10 +64,7 @@ def submit_application(*, user, application_id):
     from ..validation.pipeline import run_validation
     from ..validation.types import ValidationIssue
     from .references import next_reference
-<<<<<<< HEAD
-=======
     from .workflow_gate import WorkflowUnavailableError, check_workflow_ready
->>>>>>> feature/plans-teams
 
     with transaction.atomic():
         provider = get_provider()
@@ -81,10 +78,7 @@ def submit_application(*, user, application_id):
         if app is None:
             raise ApplicationNotFoundError()
 
-        if app.status in (
-            LeaveApplication.Status.SUBMITTED,
-            LeaveApplication.Status.PENDING,
-        ):
+        if app.status == LeaveApplication.Status.SUBMITTED:
             raise AlreadySubmittedError(app.reference_number)
         if app.status != LeaveApplication.Status.DRAFT:
             raise ApplicationNotSubmittableError()
@@ -101,8 +95,6 @@ def submit_application(*, user, application_id):
         if not result.valid:
             raise ValidationFailedError(result.errors)
 
-<<<<<<< HEAD
-=======
         try:
             check_workflow_ready(app)
         except WorkflowUnavailableError as exc:
@@ -117,7 +109,6 @@ def submit_application(*, user, application_id):
                 ]
             )
 
->>>>>>> feature/plans-teams
         snapshot = build_rules_snapshot(result.context)
 
         app.working_days = result.working_days
@@ -178,20 +169,6 @@ def submit_application(*, user, application_id):
                 },
             ),
         )
-
-        # Unit 16: route the submitted application through its workflow inside
-        # the same transaction (invariants 12.3 and 12.7). This snapshots the
-        # ApplicationStage rows and moves the status to ``pending``; a missing
-        # or invalid workflow makes the whole submission fail cleanly.
-        from workflows.assignment import assign_workflow
-
-        assign_workflow(app, actor=user)
-
-        # Unit 17: write the immutable revision-1 snapshot at submission. The
-        # ``changes`` field stays None (there is no previous revision to diff).
-        from .resubmission import create_revision
-
-        create_revision(app, user)
 
         transaction.on_commit(
             lambda: leave_application_submitted.send(

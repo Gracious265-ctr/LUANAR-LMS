@@ -14,7 +14,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/dashboard";
   // Set by the account page after a successful change, which signs the caller
   // out here. Without it this screen looks like an unexplained logout; the
   // point of a password change is that somebody watching for the consequences
@@ -46,7 +45,7 @@ function LoginForm() {
         return;
       }
 
-      router.push(redirect);
+      router.push("/");
       router.refresh();
     } catch {
       setError("An error occurred. Please try again.");

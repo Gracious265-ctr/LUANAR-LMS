@@ -45,7 +45,6 @@ class ValidationContext:
     calendar_days: int | None = None
     available_balance: Decimal | None = None
     balance_after_if_approved: Decimal | None = None
-    exclude_application_id: object | None = None
 
 
 @dataclass

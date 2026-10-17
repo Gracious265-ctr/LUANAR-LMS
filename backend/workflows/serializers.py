@@ -3,13 +3,9 @@ from django.db.models import Count, F
 from django.utils.text import slugify
 from rest_framework import serializers
 
-<<<<<<< HEAD
-from audit.serializers import AuditedModelSerializer
-=======
 from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from audit.services import changed_fields, record_audit
->>>>>>> feature/plans-teams
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
@@ -301,22 +297,6 @@ class SectionSerializer(serializers.ModelSerializer):
         }
 
 
-<<<<<<< HEAD
-class WorkflowSerializer(AuditedModelSerializer):
-    """HR-facing serializer for approval workflows and their ordered stages."""
-
-    audit_prefix = "workflow"
-    audit_fields = [
-        "name",
-        "employee_category",
-        "department",
-        "effective_from",
-        "is_active",
-        "state",
-    ]
-
-    stages = WorkflowStageSerializer(many=True)
-=======
 class WorkflowSerializer(serializers.ModelSerializer):
     """A workflow, its owning team, and every stage it is made of.
 
@@ -329,7 +309,6 @@ class WorkflowSerializer(serializers.ModelSerializer):
     """
 
     sections = SectionSerializer(many=True, read_only=True)
->>>>>>> feature/plans-teams
     state = serializers.CharField(read_only=True)
     team_name = serializers.CharField(source="team.name", read_only=True)
     is_routing = serializers.SerializerMethodField()
@@ -359,25 +338,10 @@ class WorkflowSerializer(serializers.ModelSerializer):
             "sections",
         ]
 
-<<<<<<< HEAD
-    def _audit_snapshot(self, instance: Workflow) -> dict:
-        data = {field: getattr(instance, field) for field in self.audit_fields}
-        data["stages"] = [
-            stage.approver_role
-            for stage in instance.stages.order_by("order").all()
-        ]
-        return data
-
-    def _value(self, attrs: dict, field: str):
-        if field in attrs:
-            return attrs[field]
-        return getattr(self.instance, field, None)
-=======
     def get_is_routing(self, instance) -> bool:
         """True when this is the workflow the owning team actually routes."""
         team = instance.team
         return team is not None and team.workflow_id == instance.pk
->>>>>>> feature/plans-teams
 
     def get_section_count(self, instance) -> int:
         return instance.sections.count()
@@ -405,68 +369,6 @@ class WorkflowSerializer(serializers.ModelSerializer):
             for row in rows
         ]
 
-<<<<<<< HEAD
-        queryset = Workflow.objects.all()
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.filter(name=name).exists():
-            raise serializers.ValidationError(
-                {"name": "A workflow with this name already exists."}
-            )
-
-        effective_from = self._value(attrs, "effective_from")
-        if effective_from is not None and self._effective_is_active(attrs):
-            self._validate_activation(
-                normalized_stages,
-                (attrs["employee_category"], attrs["department"]),
-            )
-
-        return attrs
-
-    def _validate_activation(
-        self, stages: list[dict], scope: tuple[str, str]
-    ) -> None:
-        workflow_pk = self.instance.pk if self.instance is not None else None
-        issues = validate_workflow_for_activation(workflow_pk, scope, stages)
-        if not issues:
-            return
-        field_errors: dict[str, list[str]] = {}
-        details: list[str] = []
-        for issue in issues:
-            if issue.field is None:
-                details.append(issue.message)
-            else:
-                field_errors.setdefault(issue.field, []).append(issue.message)
-        errors: dict[str, object] = dict(field_errors)
-        if details:
-            errors["detail"] = " ".join(details)
-        raise serializers.ValidationError(errors)
-
-    def create(self, validated_data: dict) -> Workflow:
-        stages = validated_data.pop("stages", [])
-        with transaction.atomic():
-            workflow = Workflow.objects.create(**validated_data)
-            self._replace_stages(workflow, stages)
-            self._audit_after_create(workflow)
-        return workflow
-
-    def update(self, instance, validated_data: dict) -> Workflow:
-        stages = validated_data.pop("stages", [])
-        before = self._audit_snapshot(instance)
-        with transaction.atomic():
-            instance = super(AuditedModelSerializer, self).update(
-                instance, validated_data
-            )
-            self._replace_stages(instance, stages)
-            self._audit_after_update(instance, before)
-        return instance
-
-    def _replace_stages(self, workflow: Workflow, stages: list[dict]) -> None:
-        workflow.stages.all().delete()
-        for stage in normalize_stage_sequence(stages):
-            WorkflowStage.objects.create(workflow=workflow, **stage)
-=======
->>>>>>> feature/plans-teams
 
 
 class DelegationSerializer(serializers.ModelSerializer):

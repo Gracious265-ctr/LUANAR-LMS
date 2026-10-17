@@ -1,7 +1,5 @@
 # Unit 17 — Rejection, Correction, and Resubmission
 
-read `context/AGENTS.md` before starting.
-
 ## Goal
 
 Let an employee whose application was **rejected** or **returned for correction** read the approver's comment, edit the application (including its documents), and resubmit it under the **same reference number** so it returns to the **same stage and approver** — where the approver sees exactly what changed before deciding again.

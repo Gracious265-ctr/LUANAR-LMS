@@ -16,7 +16,6 @@ from leave.providers.base import (
     EmployeeInfo,
     EligibilityRule,
     FinancialYear,
-    LeaveBalance,
     LeaveTypeRules,
 )
 
@@ -47,22 +46,6 @@ def make_user(username="employee@test.luanar", **kwargs):
     return create_user_with_role(
         username, role=kwargs.pop("role"), password=kwargs.pop("password", "testpass123"), **kwargs
     )
-
-
-def make_approver_chain(
-    roles=("supervisor", "hod", "dean", "registrar", "dvc"),
-) -> dict[str, object]:
-    """Create the active, seeded approver users the fixture workflow provider
-    resolves stages to (Unit 16).
-
-    Submission now routes applications through ``FixtureWorkflowProvider``,
-    which binds each stage to the first active ``User`` holding that role, so
-    Unit 14 submit tests must seed these users. Returns ``{role: user}``.
-    """
-    users = {}
-    for role in roles:
-        users[role] = make_user(username=f"{role}@test.luanar", role=role)
-    return users
 
 
 def _leave_types():
@@ -196,13 +179,6 @@ class StubRulesProvider:
     def get_available_balance(self, employee_id: int, financial_year_label: str):
         return self.balances.get(
             (employee_id, financial_year_label), self.default_balance
-        )
-
-    def get_leave_balance(self, employee_id: int, financial_year_label: str):
-        return LeaveBalance(
-            entitlement=int(self.default_balance),
-            used=0,
-            available=int(self.default_balance),
         )
 
 
@@ -495,9 +471,6 @@ class StubProviderMixin:
             mock.patch("leave.validation.pipeline.get_provider", return_value=stub),
             mock.patch("leave.validation.pipeline.get_today", return_value=today),
             mock.patch("leave.providers.get_provider", return_value=stub),
-<<<<<<< HEAD
-            mock.patch("workflows.approvals_serializers.get_provider", return_value=stub),
-=======
             # Unit 18 keeps its own clock seam and the HTTP views never pass a
             # ``today``, so without these two the suite reads the wall clock.
             mock.patch("leave.cancellations.services.get_today", return_value=today),
@@ -508,7 +481,6 @@ class StubProviderMixin:
             ),
             mock.patch("leave.cancellations.providers.get_today", return_value=today),
             mock.patch("leave.cancellations.services.get_today", return_value=today),
->>>>>>> feature/plans-teams
         ]
         for patcher in patchers:
             patcher.start()

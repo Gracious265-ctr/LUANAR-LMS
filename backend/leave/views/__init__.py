@@ -1,25 +1,16 @@
 import logging
 from datetime import date, datetime
 
-<<<<<<< HEAD
-from django.conf import settings
-from django.http import FileResponse, Http404
-=======
 from django.http import Http404
->>>>>>> feature/plans-teams
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from audit.validation import positive_int
 
 from users.permissions import IsHRRole
-
-from documents.models import ApprovedLeaveDocument
-from workflows.policies import can_view_approved_document
 
 from ..models import (
     FinancialYear,
@@ -39,11 +30,6 @@ from ..serializers import (
     LeaveTypeSerializer,
     PublicHolidaySerializer,
 )
-<<<<<<< HEAD
-from ..services import documents, normalize_grade, resolve_grade_entitlement
-from ..services.working_days import calculate_working_days
-from ..storage import get_storage_backend
-=======
 from ..services import (
     leave_types_available_to,
     normalize_grade,
@@ -52,7 +38,6 @@ from ..services import (
 from ..services.storage import delete_document
 from ..services.working_days import calculate_working_days, holidays_in_range
 from .documents import SupportingDocumentViewSet
->>>>>>> feature/plans-teams
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +258,11 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if instance.status != LeaveApplication.Status.DRAFT:
             raise ValidationError("Submitted applications cannot be deleted.")
-        documents.delete_draft_documents(instance)
+        for doc in instance.documents.all():
+            try:
+                delete_document(doc.file_path)
+            except Exception:
+                logger.exception("Failed to delete document %s from storage", doc.id)
         instance.delete()
 
     @action(detail=False, methods=["post"], url_path="preview-days")
@@ -294,174 +283,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         days = calculate_working_days(start, end)
-<<<<<<< HEAD
-        return Response({"days": days})
-
-    @action(detail=True, methods=["get"], url_path="approved-document")
-    def approved_document(self, request, *args, **kwargs):
-        """Stream the official approved-leave PDF for this application.
-
-        Visible to the employee, workflow members and HR only (Unit 23);
-        anything else is 404 so existence is never leaked. Mirrors the Unit 19
-        ``content`` action — the application is resolved directly rather than
-        through ``get_object`` so the ``IsOwner`` scoping never blocks
-        approvers and HR.
-        """
-        application = LeaveApplication.objects.filter(id=self.kwargs["pk"]).first()
-        if (
-            application is None
-            or not can_view_approved_document(request.user, application)
-        ):
-            raise Http404(
-                "No approved document matches the given query."
-            )
-        document = ApprovedLeaveDocument.objects.filter(
-            application=application
-        ).first()
-        if document is None:
-            raise Http404("No approved document matches the given query.")
-        stream = get_storage_backend().open(document.file_path)
-        return FileResponse(
-            stream,
-            content_type=document.content_type,
-            as_attachment=bool(request.query_params.get("download")),
-            filename=document.file_name,
-        )
-
-
-class LeaveDocumentConfigView(APIView):
-    """Server-driven upload limits for the frontend (max size + allowed types)."""
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        return Response(
-            {
-                "max_size_bytes": settings.LEAVE_DOCUMENT_MAX_SIZE_BYTES,
-                "allowed_content_types": settings.LEAVE_DOCUMENT_ALLOWED_TYPES,
-            }
-        )
-
-
-class SupportingDocumentViewSet(viewsets.ModelViewSet):
-    """Supporting-document lifecycle (Unit 19), backed by the service module.
-
-    HTTP verbs are list/retrieve/create/destroy plus the ``replace``, ``content``
-    and ``history`` actions. Ownership and the status gate are enforced in the
-    service; retired documents never appear in the default queryset or the
-    ``content`` endpoint.
-    """
-
-    serializer_class = SupportingDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsOwner]
-    parser_classes = [MultiPartParser, FormParser]
-    http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def get_queryset(self):
-        owned = LeaveApplication.objects.filter(
-            id=self.kwargs["application_pk"], employee=self.request.user
-        ).exists()
-        if not owned:
-            raise Http404
-        return documents.active_documents_queryset(self.kwargs["application_pk"])
-
-    def _document_error_response(self, exc):
-        if exc.code == "document_read_only":
-            return Response(
-                {"code": exc.code, "detail": exc.message},
-                status=status.HTTP_409_CONFLICT,
-            )
-        return Response(
-            {"field": exc.field, "code": exc.code, "message": exc.message},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            document = documents.add_document(
-                application_id=self.kwargs["application_pk"],
-                actor=request.user,
-                file=request.FILES.get("file"),
-            )
-        except documents.ApplicationNotFoundError:
-            raise Http404
-        except documents.DocumentError as exc:
-            return self._document_error_response(exc)
-        documents.set_content_url(document, request)
-        serializer = self.get_serializer(document)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        try:
-            documents.remove_document(
-                application_id=self.kwargs["application_pk"],
-                document_id=instance.id,
-                actor=request.user,
-            )
-        except documents.DocumentError as exc:
-            return self._document_error_response(exc)
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    @action(detail=True, methods=["post"], url_path="replace")
-    def replace_document(self, request, *args, **kwargs):
-        try:
-            document = documents.replace_document(
-                application_id=self.kwargs["application_pk"],
-                document_id=self.kwargs["pk"],
-                actor=request.user,
-                file=request.FILES.get("file"),
-            )
-        except documents.ApplicationNotFoundError:
-            raise Http404
-        except documents.DocumentNotFoundError:
-            raise Http404
-        except documents.DocumentError as exc:
-            return self._document_error_response(exc)
-        documents.set_content_url(document, request)
-        return Response(SupportingDocumentSerializer(document).data)
-
-    @action(detail=True, methods=["get"], url_path="content")
-    def content(self, request, *args, **kwargs):
-        application = LeaveApplication.objects.filter(
-            id=self.kwargs["application_pk"]
-        ).first()
-        if application is None or not documents.can_view_content(
-            request.user, application
-        ):
-            raise Http404(
-                "No supporting document matches the given query."
-            )
-        document = (
-            documents.active_documents_queryset(self.kwargs["application_pk"])
-            .filter(id=self.kwargs["pk"])
-            .first()
-        )
-        if document is None:
-            raise Http404("No supporting document matches the given query.")
-        stream, content_type, file_name = documents.get_document_content(document)
-        return FileResponse(
-            stream,
-            content_type=content_type,
-            as_attachment=bool(request.query_params.get("download")),
-            filename=file_name,
-        )
-
-    @action(detail=False, methods=["get"], url_path="history")
-    def history(self, request, *args, **kwargs):
-        try:
-            payload = documents.get_document_history(
-                self.kwargs["application_pk"], request.user
-            )
-        except documents.ApplicationNotFoundError:
-            raise Http404
-        return Response(payload)
-=======
         # Weekends and configured public holidays are excluded; the count says
         # how many public holidays were dropped so the UI can explain the number.
         holidays = holidays_in_range(start, end) if start <= end else {}
         return Response({"days": days, "holidays_excluded": len(holidays)})
->>>>>>> feature/plans-teams

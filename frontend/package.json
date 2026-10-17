@@ -9,11 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-<<<<<<< HEAD
-    "test:changed": "vitest run --changed"
-=======
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json"
->>>>>>> feature/plans-teams
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.23",

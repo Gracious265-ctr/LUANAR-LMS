@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-import type { SupportingDocument } from "@/lib/documents/types";
-
-export type { SupportingDocument } from "@/lib/documents/types";
-=======
 export interface SupportingDocument {
   id: string;
   file_url: string;
@@ -16,7 +11,6 @@ export interface SupportingDocument {
   retired_by: { id: number; name: string } | null;
   replaced_by: { id: string; file_name: string } | null;
 }
->>>>>>> feature/plans-teams
 
 export interface LeaveApplication {
   id: string;
@@ -121,8 +115,6 @@ export async function deleteLeaveApplication(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete application");
 }
-<<<<<<< HEAD
-=======
 
 export async function uploadDocument(
   applicationId: string,
@@ -189,4 +181,3 @@ export async function replaceDocument(
   const data = await res.json();
   return data.document;
 }
->>>>>>> feature/plans-teams

@@ -1,8 +1,5 @@
 import { Calendar, ShieldCheck, Building2, FileStack, Users } from "lucide-react";
 
-// NOTE: routes currently point at the pre-restructure pages under `/dashboard`
-// because the module pages (`/leave`, `/approvals`, ...) have not been moved
-// yet. Swap each `route` to its module root once that module's pages land.
 export const APPS_REGISTRY = {
   leave: {
     name: "Leave Applications",
@@ -26,7 +23,7 @@ export const APPS_REGISTRY = {
     name: "Documents",
     description: "Manage supporting documents",
     icon: FileStack,
-    route: "/dashboard",
+    route: "/dashboard/hr-admin/leave-document-template",
   },
   "hr-admin": {
     name: "HR Administration",

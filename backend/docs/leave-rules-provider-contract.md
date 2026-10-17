@@ -1,22 +1,11 @@
 # `RulesProvider` contract (Unit 20 — swapped)
 
 Validators, submission and reference generation depend on
-<<<<<<< HEAD
-`leave.providers.base.RulesProvider` (a `Protocol`). **Unit 20 implements the
-contract** with `DatabaseRulesProvider` (`leave/providers/database.py`),
-backed by the HR-track models from Units 2–5. It is wired in via
-`LEAVE_RULES_PROVIDER` in `config/settings/base.py`. `FixtureRulesProvider`
-(`leave/providers/fixture.py`) remains as the reference/placeholder
-implementation used by heritage tests; `StubRulesProvider`
-(`leave/tests/stubs.py`) remains the injectable, deterministic provider for
-isolated unit tests.
-=======
 `leave.providers.base.RulesProvider` (a `Protocol`). Since Unit 20 the
 default implementation is `DatabaseRulesProvider`
 (`leave/providers/database.py`), backed by the real HR-track models from
 Units 2–5. Nothing in `leave/` imports those models directly (decision D1);
 the swap is one settings change.
->>>>>>> feature/plans-teams
 
 `get_provider()` in `leave/providers/__init__.py` instantiates the class
 pointed to by the `LEAVE_RULES_PROVIDER` setting (a dotted path).
@@ -100,24 +89,6 @@ for the given financial year. Used only by the `balance` check, which fires
   employee's grade plus the ledger net
   (`LeaveBalanceTransaction` restorations minus deductions for that financial
   year), clamped at zero. Returns `0` when the profile is missing.
-
-```python
-def get_leave_balance(self, employee_id: int, financial_year_label: str) -> LeaveBalance
-```
-
-Read-only annual-leave balances for approvers (Unit 16): `LeaveBalance`
-`{entitlement, used, available}`. The approvals review payload renders this
-block; no approver action ever mutates it. Must return zeros for employees
-without an entitlement. The fixture implements it as entitlement-only; the stub
-returns the current default balance. Implementations raise
-`leave.providers.base.LeaveBalanceUnavailableError` when the balance cannot be
-resolved at all (as opposed to a legitimately zero balance) — the approvals
-API renders that case as an explicit unknown (`null` fields), while any other
-exception is treated as a bug and propagates.
-
-- **Real models:** the entitlement + leave-day ledger for the employee and
-  financial year (Unit 5), same values as `get_available_balance` split into
-  `entitlement`, `used` and `available`.
 
 ## Seeing it in action
 

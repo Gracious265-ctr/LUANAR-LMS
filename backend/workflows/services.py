@@ -10,25 +10,12 @@ from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 from django.utils.text import slugify
 
-<<<<<<< HEAD
-from audit.services import record_config_change
-=======
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
->>>>>>> feature/plans-teams
 from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import EmployeeProfile, User
 
-<<<<<<< HEAD
-from .events import (
-    DelegationEvent,
-    ReassignmentEvent,
-    emit_delegation_event,
-    emit_reassignment_event,
-)
-from .models import APPROVER_ROLE_CODES, Delegation, Reassignment, Workflow
-=======
 from .models import (
     ApplicationStage,
     ApplicationStageApprover,
@@ -56,7 +43,6 @@ class WorkflowAssignmentError(Exception):
     def __init__(self, messages: list[str]):
         self.messages = messages
         super().__init__("; ".join(messages))
->>>>>>> feature/plans-teams
 
 
 class StageSequenceError(ValueError):
@@ -908,32 +894,6 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
-<<<<<<< HEAD
-        record_config_change(
-            actor=actor,
-            action="delegation.approved",
-            target=delegation,
-            before={"status": Delegation.Status.REQUESTED, "delegate": None},
-            after={
-                "status": delegation.status,
-                "delegate": delegate.get_full_name() if delegate else "",
-            },
-            reason=reason,
-            prev_state=Delegation.Status.REQUESTED,
-            new_state=delegation.status,
-        )
-        transaction.on_commit(
-            lambda: emit_delegation_event(
-                DelegationEvent(
-                    event_name="delegation.approved",
-                    delegation_id=str(delegation.id),
-                    approver_user_id=delegation.approver_id,
-                    delegate_user_id=delegate.pk,
-                    occurred_at=timezone.now(),
-                )
-            )
-        )
-=======
         _record_delegation_audit(
             delegation,
             action=AuditEntry.Action.APPROVED,
@@ -941,7 +901,6 @@ def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
         notify_delegation(delegation.pk, DELEGATION_APPROVED)
->>>>>>> feature/plans-teams
     return delegation
 
 
@@ -973,29 +932,6 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
-<<<<<<< HEAD
-        record_config_change(
-            actor=actor,
-            action="delegation.rejected",
-            target=delegation,
-            before={"status": Delegation.Status.REQUESTED},
-            after={"status": delegation.status},
-            reason=reason,
-            prev_state=Delegation.Status.REQUESTED,
-            new_state=delegation.status,
-        )
-        transaction.on_commit(
-            lambda: emit_delegation_event(
-                DelegationEvent(
-                    event_name="delegation.rejected",
-                    delegation_id=str(delegation.id),
-                    approver_user_id=delegation.approver_id,
-                    delegate_user_id=None,
-                    occurred_at=timezone.now(),
-                )
-            )
-        )
-=======
         _record_delegation_audit(
             delegation,
             action=AuditEntry.Action.REJECTED,
@@ -1003,7 +939,6 @@ def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
         )
         notify_delegation(delegation.pk, DELEGATION_REJECTED)
->>>>>>> feature/plans-teams
     return delegation
 
 
@@ -1044,29 +979,6 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
                 "updated_at",
             ]
         )
-<<<<<<< HEAD
-        record_config_change(
-            actor=actor,
-            action="delegation.cancelled",
-            target=delegation,
-            before={"status": Delegation.Status.APPROVED},
-            after={"status": delegation.status},
-            reason=reason,
-            prev_state=Delegation.Status.APPROVED,
-            new_state=delegation.status,
-        )
-        transaction.on_commit(
-            lambda: emit_delegation_event(
-                DelegationEvent(
-                    event_name="delegation.cancelled",
-                    delegation_id=str(delegation.id),
-                    approver_user_id=delegation.approver_id,
-                    delegate_user_id=delegation.delegate_id,
-                    occurred_at=timezone.now(),
-                )
-            )
-        )
-=======
         _record_delegation_audit(
             delegation,
             action=AuditEntry.Action.CANCELLED,
@@ -1074,7 +986,6 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
             before={"status": Delegation.Status.APPROVED},
         )
         notify_delegation(delegation.pk, DELEGATION_CANCELLED)
->>>>>>> feature/plans-teams
     return delegation
 
 
@@ -1194,34 +1105,6 @@ def reassign_application(
         )
         application.current_approver = to_approver
         application.save(update_fields=["current_approver", "updated_at"])
-<<<<<<< HEAD
-        record_config_change(
-            actor=actor,
-            action="application.reassigned",
-            target=application,
-            before={
-                "current_approver": (
-                    reassignment.from_approver.get_full_name()
-                    if reassignment.from_approver
-                    else ""
-                )
-            },
-            after={"current_approver": to_approver.get_full_name()},
-            reason=reason,
-        )
-        transaction.on_commit(
-            lambda: emit_reassignment_event(
-                ReassignmentEvent(
-                    reassignment_id=str(reassignment.id),
-                    application_id=str(application.id),
-                    from_approver_user_id=reassignment.from_approver_id,
-                    to_approver_user_id=to_approver.pk,
-                    employee_user_id=application.employee_id,
-                    occurred_at=timezone.now(),
-                )
-            )
-        )
-=======
         # Authority is read from the stage's eligibility snapshot, so the
         # replacement has to be added to it. ``get_or_create`` keeps this
         # idempotent for a second HR intervention that picks the same person.
@@ -1249,7 +1132,6 @@ def reassign_application(
         from notifications.reassignments import notify_reassignment
 
         notify_reassignment(reassignment.pk)
->>>>>>> feature/plans-teams
     return reassignment
 
 

@@ -14,13 +14,9 @@ import {
   Home,
   KeyRound,
   LogOut,
-<<<<<<< HEAD
-  Settings,
-=======
   Menu,
   NotebookTabs,
   ShieldCheck,
->>>>>>> feature/plans-teams
   Tags,
   User,
   UserCheck,
@@ -34,10 +30,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { cn } from "@/lib/utils";
 
-<<<<<<< HEAD
-import { CapabilitiesProvider } from "@/lib/approvals/capabilities-context";
-import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
-=======
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 import { PlansNavItem } from "@/components/plans/plans-nav-item";
 import { Button } from "@/components/ui/button";
@@ -52,7 +44,6 @@ import {
   DialogSurface,
   DialogTitle,
 } from "@/components/ui/dialog";
->>>>>>> feature/plans-teams
 
 interface User {
   id: number;
@@ -80,10 +71,6 @@ const ROLE_LABELS: Record<string, string> = {
   hr: "Human Resources",
 };
 
-<<<<<<< HEAD
-const HOD_AND_ABOVE = ["hod", "dean", "registrar", "dvc"];
-=======
->>>>>>> feature/plans-teams
 const HR_ROLE = "hr";
 
 const NAV_ID = "dashboard-nav";
@@ -106,15 +93,11 @@ export function DashboardShell({
   const router = useRouter();
   const isMobile = useIsMobile();
 
-<<<<<<< HEAD
-  const showDepartment = HOD_AND_ABOVE.includes(user.role);
-=======
   // Whether the approver desk is available comes from the server, not from the
   // caller's system role: an approver position is held as a team membership or
   // an institution-wide holding, and either can belong to an account whose role
   // reads `employee`. The layout resolves it while rendering, so the sidebar is
   // correct in the first paint instead of appearing after hydration.
->>>>>>> feature/plans-teams
   const showHR = user.role === HR_ROLE;
   const showCover = isApprover;
   const showAdmin = user.is_superuser === true;
@@ -154,36 +137,17 @@ export function DashboardShell({
   );
 
   return (
-<<<<<<< HEAD
-    <CapabilitiesProvider>
-      <div className="flex h-screen">
-        <div className="flex w-full bg-surface-page text-text-primary">
-=======
     <div className="flex h-screen">
       <div className="flex w-full bg-surface-page text-text-primary">
         {/* The rail is hidden on a phone rather than rendered narrow: a 64px
             column of icons cannot be labelled, so it would need a second set of
             accessible names for no gain. The drawer carries the same nav. */}
         <div className={cn("hidden shrink-0 md:block", isMobile && "md:hidden")}>
->>>>>>> feature/plans-teams
           <Sidebar
             open={sidebarOpen}
             setOpen={setSidebarOpen}
             currentPath={pathname}
             user={user}
-<<<<<<< HEAD
-            showDepartment={showDepartment}
-            showHR={showHR}
-          />
-
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header user={user} onLogout={handleLogout} />
-            <main className="flex-1 overflow-auto p-6">{children}</main>
-          </div>
-        </div>
-      </div>
-    </CapabilitiesProvider>
-=======
             isApprover={isApprover}
             pendingApprovals={pendingApprovals}
             planPendingConfirmations={planPendingConfirmations}
@@ -210,7 +174,6 @@ export function DashboardShell({
           viewport, so it sits outside the scroll container. */}
       <Toaster />
     </div>
->>>>>>> feature/plans-teams
   );
 }
 
@@ -268,14 +231,10 @@ const Sidebar = memo(function Sidebar({
   setOpen,
   currentPath,
   user,
-<<<<<<< HEAD
-  showDepartment,
-=======
   isApprover,
   pendingApprovals,
   planPendingConfirmations,
   showCover,
->>>>>>> feature/plans-teams
   showHR,
   showAdmin,
 }: {
@@ -283,14 +242,10 @@ const Sidebar = memo(function Sidebar({
   setOpen: (v: boolean) => void;
   currentPath: string;
   user: User;
-<<<<<<< HEAD
-  showDepartment: boolean;
-=======
   isApprover: boolean;
   pendingApprovals: number;
   planPendingConfirmations?: number;
   showCover: boolean;
->>>>>>> feature/plans-teams
   showHR: boolean;
   showAdmin: boolean;
 }) {
@@ -401,17 +356,6 @@ const NavLinks = memo(function NavLinks({
           currentPath={currentPath}
           open={open}
         />
-<<<<<<< HEAD
-        <Option
-          Icon={Calendar}
-          title="New Application"
-          href="/dashboard/leave/new"
-          currentPath={currentPath}
-          open={open}
-        />
-        <ApprovalsNavItem open={open} currentPath={currentPath} />
-        {showDepartment && (
-=======
       )}
       {showHR && (
         <>
@@ -462,7 +406,6 @@ const NavLinks = memo(function NavLinks({
             currentPath={currentPath}
             open={open}
           />
->>>>>>> feature/plans-teams
           <Option
             Icon={Users}
             title="Teams"
@@ -470,98 +413,6 @@ const NavLinks = memo(function NavLinks({
             currentPath={currentPath}
             open={open}
           />
-<<<<<<< HEAD
-        )}
-        {showHR && (
-          <>
-            <Option
-              Icon={Users}
-              title="HR Administration"
-              href="/dashboard/hr-admin"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={Users}
-              title="Employees"
-              href="/dashboard/hr-admin/employees"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={CalendarRange}
-              title="Entitlements"
-              href="/dashboard/hr-admin/entitlements"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={ClipboardList}
-              title="Leave Rules"
-              href="/dashboard/hr-admin/leave-rules"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={Workflow}
-              title="Workflows"
-              href="/dashboard/hr-admin/workflows"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={Tags}
-              title="Leave Types"
-              href="/dashboard/hr-admin/leave-types"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={CalendarDays}
-              title="Calendar"
-              href="/dashboard/hr-admin/calendar"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={UserCheck}
-              title="Delegations"
-              href="/dashboard/hr-admin/delegations"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={ArrowLeftRight}
-              title="Reassignments"
-              href="/dashboard/hr-admin/reassignments"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={FileText}
-              title="Document Template"
-              href="/dashboard/hr-admin/leave-document-template"
-              currentPath={currentPath}
-              open={open}
-            />
-            <Option
-              Icon={History}
-              title="Audit"
-              href="/dashboard/hr-admin/audit"
-              currentPath={currentPath}
-              open={open}
-            />
-          </>
-        )}
-      </div>
-
-      {open && (
-        <div className="border-t border-border-default pt-4 space-y-1">
-          <div className="px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide">
-            Account
-          </div>
-=======
->>>>>>> feature/plans-teams
           <Option
             Icon={UserCog}
             title="Roles"

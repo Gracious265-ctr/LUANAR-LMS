@@ -1,7 +1,6 @@
 import { ArrowLeft, Clock } from "lucide-react";
 import Link from "next/link";
 
-import { CancelApplicationButton } from "@/components/cancellation/CancelApplicationButton";
 import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
@@ -35,26 +34,13 @@ export function TrackingHeader({
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           My applications
         </Link>
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex items-center gap-3">
           {lastRefreshed && (
             <p className="hidden text-xs text-text-muted sm:block">
               Last refreshed {formatDateTime(lastRefreshed.toISOString())}
             </p>
           )}
-<<<<<<< HEAD
-          <CancelApplicationButton
-            application={application}
-            eligibility={{
-              cancellation_action: data.cancellation_action,
-              cancellation_blocked_reason: data.cancellation_blocked_reason,
-              estimated_restoration_days: data.estimated_restoration_days,
-            }}
-            onSuccess={onRefresh}
-          />
-          <button
-=======
           <Button
->>>>>>> feature/plans-teams
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
@@ -73,16 +59,10 @@ export function TrackingHeader({
         </h1>
         <StatusBadge status={status} />
         {data.has_open_cancellation_request && (
-<<<<<<< HEAD
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-status-pending-subtle px-3 py-1 text-xs font-semibold text-status-pending">
-            Cancellation requested
-          </span>
-=======
           <Badge tone="pending">
             <Clock className="h-3.5 w-3.5" aria-hidden="true" />
             Cancellation requested
           </Badge>
->>>>>>> feature/plans-teams
         )}
       </div>
 
@@ -99,19 +79,10 @@ export function TrackingHeader({
             {formatDateTime(application.submitted_at)}
           </time>
         </p>
-<<<<<<< HEAD
-        {status === "cancelled" && data.cancelled_at && (
-          <p className="text-text-secondary">
-            Cancelled{" "}
-            <time dateTime={data.cancelled_at}>
-              {formatDateTime(data.cancelled_at)}
-            </time>
-=======
         {data.cancelled_at && (
           <p className={STATUS_TEXT.cancelled}>
             Cancelled on{" "}
             <time dateTime={data.cancelled_at}>{formatDateTime(data.cancelled_at)}</time>
->>>>>>> feature/plans-teams
           </p>
         )}
       </div>

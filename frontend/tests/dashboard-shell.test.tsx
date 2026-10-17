@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-=======
 import {
   act,
   fireEvent,
@@ -11,14 +7,8 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
->>>>>>> feature/plans-teams
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { fetchCapabilities } from "@/lib/approvals/service";
-
-vi.mock("@/lib/approvals/service", () => ({
-  fetchCapabilities: vi.fn(),
-}));
 
 /** The route the mocked `usePathname` reports; tests move it to assert that a
  *  navigation closes the drawer. */
@@ -56,14 +46,6 @@ const mockApproverUser = {
   full_name: "Test Approver",
 };
 
-<<<<<<< HEAD
-const employeeCapabilities = { is_approver: false, pending_count: 0 };
-const approverCapabilities = { is_approver: true, pending_count: 3 };
-
-function renderShell(user: typeof mockUser) {
-  return render(
-    <DashboardShell user={user}>
-=======
 const mockHRUser = {
   id: 3,
   email: "hr@test.luanar",
@@ -88,20 +70,11 @@ function renderShell(
       isApprover={approver.isApprover}
       pendingApprovals={approver.pendingApprovals ?? 0}
     >
->>>>>>> feature/plans-teams
       <div>Test content</div>
     </DashboardShell>
   );
 }
 
-<<<<<<< HEAD
-beforeEach(() => {
-  vi.clearAllMocks();
-  vi.mocked(fetchCapabilities).mockResolvedValue(employeeCapabilities);
-});
-
-=======
->>>>>>> feature/plans-teams
 describe("DashboardShell", () => {
   it("renders the user's name and role", () => {
     renderShell(mockUser);
@@ -118,10 +91,6 @@ describe("DashboardShell", () => {
     expect(screen.getByText("New Application")).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  it("does not show Approvals when the user is not an approver", async () => {
-    vi.mocked(fetchCapabilities).mockResolvedValue(employeeCapabilities);
-=======
   it("offers My Account to every role, since it is nobody's job", () => {
     // Not inside the HR group: this is the one destination that does not depend
     // on what the person can do, so hiding it from an ordinary employee would
@@ -143,32 +112,17 @@ describe("DashboardShell", () => {
   });
 
   it("hides Approvals from a caller the server does not call an approver", () => {
->>>>>>> feature/plans-teams
     renderShell(mockUser);
 
-    await waitFor(() => {
-      expect(fetchCapabilities).toHaveBeenCalled();
-    });
-    expect(screen.queryByRole("link", { name: /approvals/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Approvals")).not.toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  it("shows Approvals with the pending count for a role with capacity", async () => {
-    vi.mocked(fetchCapabilities).mockResolvedValue(approverCapabilities);
-    renderShell(mockApproverUser);
-=======
   it("shows Approvals to an approver whose account role is plain employee", () => {
     renderShell(mockApproverUser, { isApprover: true });
->>>>>>> feature/plans-teams
 
-    const navItem = await screen.findByRole("link", { name: /approvals/i });
-    expect(navItem).toBeInTheDocument();
     expect(screen.getByText("Approvals")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-=======
   it("badges Approvals with the pending count the layout resolved", () => {
     renderShell(mockApproverUser, { isApprover: true, pendingApprovals: 4 });
 
@@ -222,17 +176,12 @@ describe("DashboardShell", () => {
     );
   });
 
->>>>>>> feature/plans-teams
   it("renders a sign-out control", () => {
     renderShell(mockUser);
 
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  it("does not render a theme toggle", () => {
-    renderShell(mockUser);
-=======
   it("offers a theme toggle that repaints the document and persists the choice", async () => {
     renderShell(mockUser);
 
@@ -415,7 +364,6 @@ describe("DashboardShell mobile drawer", () => {
         <div>Test content</div>
       </DashboardShell>
     );
->>>>>>> feature/plans-teams
 
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();

@@ -1,33 +1,5 @@
 "use client";
 
-<<<<<<< HEAD
-import Link from "next/link";
-import { ClipboardCheck } from "lucide-react";
-
-import { cn } from "@/lib/utils";
-
-import { useCapabilities } from "@/lib/approvals/capabilities-context";
-
-export function ApprovalsNavItem({
-  open,
-  currentPath,
-}: {
-  open: boolean;
-  currentPath: string;
-}) {
-  const { capabilities } = useCapabilities();
-
-  if (!capabilities?.is_approver) return null;
-
-  const isSelected =
-    currentPath === "/approvals" || currentPath.startsWith("/approvals/");
-  const count = capabilities.pending_count;
-
-  return (
-    <Link
-      href="/approvals"
-      aria-label={`Approvals${count > 0 ? `, ${count} pending` : ""}`}
-=======
 import { ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -67,7 +39,6 @@ export function ApprovalsNavItem({
       // Collapsed, the label span is not rendered, so the icon alone would
       // leave the link with no accessible name.
       aria-label="Approvals"
->>>>>>> feature/plans-teams
       className={cn(
         "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
         isSelected
@@ -75,25 +46,6 @@ export function ApprovalsNavItem({
           : "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
       )}
     >
-<<<<<<< HEAD
-      <div className="grid h-full w-12 shrink-0 place-content-center">
-        <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
-      </div>
-
-      {open && (
-        <>
-          <span className="text-sm font-medium">Approvals</span>
-          {count > 0 && (
-            <span
-              className={cn(
-                "ml-auto mr-3 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-brand-primary px-2 text-xs font-semibold text-brand-primary-foreground"
-              )}
-            >
-              {count}
-            </span>
-          )}
-        </>
-=======
       <div className="grid h-full w-12 place-content-center">
         <ClipboardCheck className="h-4 w-4" />
       </div>
@@ -114,7 +66,6 @@ export function ApprovalsNavItem({
         >
           {pendingCount > 99 ? "99+" : pendingCount}
         </span>
->>>>>>> feature/plans-teams
       )}
     </Link>
   );

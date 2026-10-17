@@ -13,20 +13,15 @@ from audit.services import changed_fields, record_audit
 from rest_framework import permissions, response, status
 from rest_framework.views import APIView
 
-from audit.services import record_config_change
 from users.permissions import IsHRRole
 
 from .models import ApprovedLeaveDocument
 from .serializers import LeaveDocumentTemplateSerializer
 from .services import get_template
 
-<<<<<<< HEAD
-TEMPLATE_AUDIT_FIELDS = (
-=======
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_FIELDS = (
->>>>>>> feature/plans-teams
     "title",
     "header",
     "intro",
@@ -36,16 +31,6 @@ _TEMPLATE_FIELDS = (
     "footer",
 )
 
-<<<<<<< HEAD
-
-def _template_snapshot(template) -> dict:
-    return {
-        field: getattr(template, field, None)
-        for field in TEMPLATE_AUDIT_FIELDS
-    }
-
-=======
->>>>>>> feature/plans-teams
 
 class LeaveDocumentTemplateView(APIView):
     """HR-only access to the single official leave-document template.
@@ -67,26 +52,12 @@ class LeaveDocumentTemplateView(APIView):
 
     def patch(self, request):
         template = get_template()
-<<<<<<< HEAD
-        before = _template_snapshot(template)
-=======
         before = {field: getattr(template, field) for field in _TEMPLATE_FIELDS}
->>>>>>> feature/plans-teams
         serializer = LeaveDocumentTemplateSerializer(
             template, data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-<<<<<<< HEAD
-        record_config_change(
-            actor=request.user,
-            action="document_template.updated",
-            target=template,
-            before=before,
-            after=_template_snapshot(template),
-        )
-        return response.Response(serializer.data, status=status.HTTP_200_OK)
-=======
         after = {field: getattr(template, field) for field in _TEMPLATE_FIELDS}
         record_audit(
             actor=request.user,
@@ -218,4 +189,3 @@ class HRAApprovedLeaveDocumentView(ApprovedLeaveDocumentView):
 
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
 
->>>>>>> feature/plans-teams

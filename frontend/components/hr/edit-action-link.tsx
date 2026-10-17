@@ -1,30 +1,20 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 
-<<<<<<< HEAD
-=======
 const EDIT_BUTTON_STYLES =
   "inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-button-secondary text-text-secondary transition-colors hover:bg-button-secondary-hover hover:text-text-primary";
 
->>>>>>> feature/plans-teams
 export function EditActionLink({ href }: { href: string }) {
   return (
     <Link
       href={href}
       aria-label="Edit"
       title="Edit record"
-<<<<<<< HEAD
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-default bg-button-secondary text-text-secondary transition-colors hover:bg-button-secondary-hover hover:text-text-primary"
-=======
       className={EDIT_BUTTON_STYLES}
->>>>>>> feature/plans-teams
     >
       <Pencil className="h-4 w-4" />
     </Link>
   );
-<<<<<<< HEAD
-}
-=======
 }
 
 /**
@@ -55,4 +45,3 @@ export function EditIconButton({
     </button>
   );
 }
->>>>>>> feature/plans-teams

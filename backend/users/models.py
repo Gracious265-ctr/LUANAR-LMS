@@ -71,11 +71,6 @@ class EmployeeProfile(models.Model):
         help_text="Used by the eligibility engine (gender-based leave rules).",
     )
     grade = models.CharField(max_length=20, blank=True)
-    gender = models.CharField(
-        max_length=1,
-        choices=Gender.choices,
-        blank=True,
-    )
     appointment_date = models.DateField(null=True, blank=True)
     team = models.ForeignKey(
         "workflows.Team",

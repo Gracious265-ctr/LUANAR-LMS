@@ -60,15 +60,11 @@ export const LeaveApplicationForm = forwardRef<
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
-<<<<<<< HEAD
-  const [documents, setDocuments] = useState<SupportingDocument[]>([]);
-=======
   const [status, setStatus] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SupportingDocument[]>([]);
 const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
->>>>>>> feature/plans-teams
   const [initialLoaded, setInitialLoaded] = useState(
     () => !(mode === "edit" && applicationId)
   );

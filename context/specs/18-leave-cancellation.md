@@ -1,7 +1,5 @@
 # Unit 18 — Leave Cancellation
 
-read `context/AGENTS.md` before starting.
-
 **Depends on:** Unit 16 (Approver Review and Decision), Unit 14 (Leave Validation and Submission, including its balance logic)
 **Connected to Units 2–11:** not until Unit 20. This unit builds against swappable providers with fixture implementations (see §3.2 and §3.3).
 

@@ -8,10 +8,6 @@ Ownership and gating:
 - draft         -> 409 ``application_not_submitted``
 - unknown id    -> 404
 - non-GET       -> 405
-<<<<<<< HEAD
-- three queries: application, revisions (resubmission history) and decisions
-  (Unit 17 additive; the fixture provider itself does no DB access)
-=======
 - the whole owner request runs in a bounded number of queries
 
 Since Unit 21 the endpoint runs on the real ``DatabaseTrackingProvider``, whose
@@ -19,7 +15,6 @@ payload derives from the ``ApplicationStage``/``ApprovalDecision``/audit rows
 created by the real submission, decision and resubmission services. The
 scenario tests therefore build that state through the services rather than
 pre-baked fixtures.
->>>>>>> feature/plans-teams
 """
 
 from datetime import timedelta
@@ -29,9 +24,6 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-<<<<<<< HEAD
-from leave.models import ApplicationRevision, LeaveApplication, LeaveType
-=======
 from audit.models import AuditEntry
 from leave.models import LeaveApplication, SupportingDocument
 from leave.services.resubmission import resubmit_application
@@ -39,7 +31,6 @@ from leave.services.submission import submit_application
 from workflows.models import ApprovalDecision
 from workflows.testing import create_user_with_role
 from workflows.services import decide
->>>>>>> feature/plans-teams
 
 from .stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 
@@ -218,16 +209,6 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             response = getattr(self.client, method)(self.url(app.id))
             self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-<<<<<<< HEAD
-    def test_only_one_query_for_owner_request(self):
-        # Unit 17 additive data: the endpoint now also reads the application's
-        # real revisions (resubmission history) and decisions, so the fixture
-        # provider query count grows from 1 to 3. Unit 18 adds a live
-        # cancellation-request check (4). The provider itself still performs no
-        # database access.
-        app = self.make_app()
-        with self.assertNumQueries(4):
-=======
     def test_owner_request_runs_a_bounded_number_of_queries(self):
         # 12, not the 11 the pre-section display needed: one query reads the
         # open stage's eligibility snapshot, which is where a section's authority
@@ -235,7 +216,6 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         # the bound stays flat as chains grow.
         app = self.make_submitted()
         with self.assertNumQueries(12):
->>>>>>> feature/plans-teams
             response = self.client.get(self.url(app.id))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -332,20 +312,6 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         self.assertIsNone(response.data["rejection"])
 
     def test_outcomes_are_null_after_resubmission(self):
-<<<<<<< HEAD
-        app = self.make_app(reference_number="LV-2026-27-900007")
-        leave_type = LeaveType.objects.create(name="Annual Leave", code="annual")
-        ApplicationRevision.objects.create(
-            application=app,
-            revision_number=2,
-            leave_type=leave_type,
-            leave_type_name="Annual Leave",
-            start_date=app.start_date,
-            end_date=app.end_date,
-            working_days=app.working_days,
-            reason=app.reason,
-        )
-=======
         app = self.make_submitted()
         self.approve(app, self.supervisor)
         decide(
@@ -356,21 +322,10 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             expected_version=1,
         )
         resubmit_application(user=self.owner, application_id=app.pk)
->>>>>>> feature/plans-teams
         response = self.client.get(self.url(app.id))
         self.assertIsNone(response.data["rejection"])
         self.assertIsNone(response.data["correction"])
         self.assertEqual(response.data["resubmission"]["count"], 1)
-<<<<<<< HEAD
-        self.assertEqual(response.data["submission_cycle"], 1)
-        self.assertEqual(
-            response.data["resubmission"]["last_resubmitted_at"],
-            response.data["resubmissions"][0]["resubmitted_at"],
-        )
-        self.assertEqual(response.data["resubmissions"][0]["cycle"], 2)
-        self.assertFalse(response.data["resubmission"]["can_resubmit"])
-        self.assertFalse(response.data["resubmission"]["can_resubmit"])
-=======
         audit_row = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.APPLICATION,
             target_id=str(app.pk),
@@ -381,4 +336,3 @@ class TrackingOwnershipTests(TrackingEndpointTests):
             self.z(audit_row.created_at),
         )
         self.assertFalse(response.data["resubmission"]["can_resubmit"])
->>>>>>> feature/plans-teams

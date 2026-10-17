@@ -60,11 +60,7 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.18.1" },
     { name = "djangorestframework-simplejwt", specifier = ">=5.5.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.5" },
-<<<<<<< HEAD
-    { name = "reportlab", specifier = ">=5.0.1" },
-=======
     { name = "reportlab", specifier = ">=4.4.0" },
->>>>>>> feature/plans-teams
     { name = "supabase", specifier = ">=2.31.0" },
 ]
 
@@ -266,8 +262,6 @@ wheels = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
 name = "croniter"
 version = "6.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -280,7 +274,6 @@ wheels = [
 ]
 
 [[package]]
->>>>>>> feature/plans-teams
 name = "cryptography"
 version = "50.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -989,8 +982,6 @@ wheels = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1000,7 +991,6 @@ wheels = [
 ]
 
 [[package]]
->>>>>>> feature/plans-teams
 name = "sqlparse"
 version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }

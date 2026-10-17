@@ -1,23 +1,5 @@
 import { ACTION_LABELS } from "@/lib/audit";
 import type { AuditEntry } from "@/lib/audit";
-<<<<<<< HEAD
-
-export function auditActionTone(action: string): string {
-  if (action.endsWith(".approved")) {
-    return "bg-brand-secondary-subtle text-brand-secondary";
-  }
-  if (action.endsWith(".rejected") || action.endsWith(".cancelled")) {
-    return "bg-status-rejected-subtle text-status-rejected";
-  }
-  if (
-    action.endsWith(".submitted") ||
-    action.endsWith(".reassigned") ||
-    action.endsWith(".resubmitted")
-  ) {
-    return "bg-brand-primary-subtle text-brand-primary";
-  }
-  return "bg-surface-muted text-text-muted";
-=======
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 
 export function auditActionTone(action: string): BadgeTone {
@@ -38,29 +20,10 @@ export function auditActionTone(action: string): BadgeTone {
     default:
       return "muted";
   }
->>>>>>> feature/plans-teams
 }
 
 export function AuditActionPill({ action }: { action: string }) {
   return (
-<<<<<<< HEAD
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${auditActionTone(action)}`}
-    >
-      {ACTION_LABELS[action] || action}
-    </span>
-  );
-}
-
-export function formatAuditValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.length > 0
-      ? value
-          .map((item) =>
-            typeof item === "string" ? item : JSON.stringify(item)
-          )
-          .join(", ")
-=======
     <Badge
       size="sm"
       tone={auditActionTone(action)}
@@ -180,18 +143,11 @@ export function formatAuditValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value.length > 0
       ? value.map((item) => formatAuditValue(item)).join(", ")
->>>>>>> feature/plans-teams
       : "none";
   }
   if (value === null || value === undefined) {
     return "none";
   }
-<<<<<<< HEAD
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
-=======
   if (typeof value === "boolean") {
     return value ? "Yes" : "No";
   }
@@ -238,41 +194,23 @@ function auditChangesValue(value: unknown, field: string): string {
     return formatBytes(value as number | string);
   }
   return formatAuditValue(value);
->>>>>>> feature/plans-teams
 }
 
 /** Edit-page route for a target the HR UI can change, or null when read-only. */
 export function auditEditHref(entry: AuditEntry): string | null {
   switch (entry.target_type) {
-<<<<<<< HEAD
-    case "workflow":
-      return `/dashboard/hr-admin/workflows/${entry.target_id}/edit`;
-=======
     case "team":
       return `/dashboard/hr-admin/teams/${entry.target_id}`;
->>>>>>> feature/plans-teams
     case "leavetype":
       return `/dashboard/hr-admin/leave-types/${entry.target_id}/edit`;
     case "leaverule":
       return `/dashboard/hr-admin/leave-rules/${entry.target_id}/edit`;
-<<<<<<< HEAD
-    case "gradeentitlement":
-=======
     case "entitlement":
->>>>>>> feature/plans-teams
       return `/dashboard/hr-admin/entitlements/${entry.target_id}/edit`;
     case "financialyear":
       return `/dashboard/hr-admin/calendar/financial-years/${entry.target_id}/edit`;
     case "publicholiday":
       return `/dashboard/hr-admin/calendar/holidays/${entry.target_id}/edit`;
-<<<<<<< HEAD
-    case "employeeprofile":
-      return `/dashboard/hr-admin/employees/${entry.target_id}`;
-    case "leavedocumenttemplate":
-      return "/dashboard/hr-admin/leave-document-template";
-    case "leaveapplication":
-      return `/dashboard/hr-admin/audit/applications/${entry.target_id}`;
-=======
     case "employee":
       return `/dashboard/hr-admin/employees/${entry.target_id}`;
     case "document-template":
@@ -281,43 +219,11 @@ export function auditEditHref(entry: AuditEntry): string | null {
     // to the HR sweep: the entry names one plan, not the list.
     case "plan":
       return `/dashboard/plans/${entry.target_id}`;
->>>>>>> feature/plans-teams
     default:
       return null;
   }
 }
 
-<<<<<<< HEAD
-/** A short, human-readable summary of an entry's changed fields (or reason). */
-export function auditChangesText(entry: AuditEntry): string {
-  const reason = entry.reason || entry.new_state || "";
-  if (!entry.detail) {
-    return reason || "\u2014";
-  }
-  const after = entry.detail.after;
-  const changes = Object.keys(after);
-  if (changes.length === 0) {
-    return reason || "\u2014";
-  }
-  const before = entry.detail.before ?? {};
-  const parts = changes.map((field) => {
-    const oldValue = before[field];
-    const newValue = after[field];
-    const display =
-      oldValue !== undefined
-        ? `${formatAuditValue(oldValue)} \u2192 ${formatAuditValue(newValue)}`
-        : formatAuditValue(newValue);
-    return `${field}: ${display}`;
-  });
-  if (reason) {
-    parts.push(`Reason: ${reason}`);
-  }
-  if (parts.length <= 2) {
-    return parts.join(", ");
-  }
-  return parts.slice(0, 2).join(", ") + ` (+${parts.length - 2} more)`;
-}
-=======
 const MAX_PAIRS = 2;
 /** Keeps one fat value (a JSON blob in a flat payload) from wrecking the cell. */
 const MAX_VALUE_CHARS = 80;
@@ -426,4 +332,3 @@ export function auditChangesText(entry: AuditEntry): string {
   }
   return joinPairs(parts);
 }
->>>>>>> feature/plans-teams

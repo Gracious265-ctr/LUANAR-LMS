@@ -3,12 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
-<<<<<<< HEAD
-import { CancellationCard } from "@/components/cancellation/CancellationCard";
-=======
 import { CancellationSection } from "@/components/cancellations/cancellation-section";
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
->>>>>>> feature/plans-teams
 import { fetchTracking } from "@/lib/tracking/service";
 import type { TrackingResult } from "@/lib/tracking/types";
 
@@ -138,11 +134,6 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
       )}
 
       <CurrentStatusCard data={data} />
-
-      <CancellationCard
-        applicationId={data.application.id}
-        refreshSignal={lastRefreshed}
-      />
 
       <div className="flex flex-col gap-6 lg:flex-row-reverse">
         <div className="space-y-6 lg:w-1/3">

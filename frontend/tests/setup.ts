@@ -25,13 +25,6 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-<<<<<<< HEAD
-if (typeof window !== "undefined") {
-  Object.defineProperty(window, "matchMedia", {
-    writable: true,
-    value: (query: string) => ({
-      matches: false,
-=======
 let narrow = false;
 const listeners = new Set<(event: { matches: boolean }) => void>();
 
@@ -45,18 +38,10 @@ Object.defineProperty(window, "matchMedia", {
         // desktop baseline other tests are written against is preserved.
         return query.includes("max-width") ? narrow : false;
       },
->>>>>>> feature/plans-teams
       media: query,
       onchange: null,
       addListener: () => {},
       removeListener: () => {},
-<<<<<<< HEAD
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    }),
-  });
-=======
       addEventListener: (
         _: string,
         listener: (event: { matches: boolean }) => void,
@@ -119,5 +104,4 @@ if (!("ResizeObserver" in window)) {
   }
   Object.defineProperty(window, "ResizeObserver", { writable: true, value: ResizeObserver });
   Object.defineProperty(globalThis, "ResizeObserver", { writable: true, value: ResizeObserver });
->>>>>>> feature/plans-teams
 }

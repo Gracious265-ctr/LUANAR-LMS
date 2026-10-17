@@ -8,9 +8,6 @@ the context key supplied by the view.
 
 from rest_framework import serializers
 
-<<<<<<< HEAD
-from .contracts import _iso
-=======
 from ..services.storage import safe_signed_document_url
 
 
@@ -34,7 +31,6 @@ class TrackedDocumentSerializer(serializers.Serializer):
             "file_url": file_url,
             "uploaded_at": _iso(document.uploaded_at),
         }
->>>>>>> feature/plans-teams
 
 
 class TrackedApproverSerializer(serializers.Serializer):
@@ -149,7 +145,6 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             ),
             "status": workflow.status,
             "approved_at": _iso(workflow.approved_at),
-            "submission_cycle": workflow.submission_cycle,
             "current_stage": workflow.current_stage,
             "stages": [
                 TrackedStageSerializer().to_representation(stage)
@@ -158,25 +153,6 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "events": [
                 TrackedEventSerializer().to_representation(event)
                 for event in workflow.events
-            ],
-            "decisions": [
-                {
-                    "cycle": decision["cycle"],
-                    "stage_order": decision["stage_order"],
-                    "role_label": decision["role_label"],
-                    "approver_name": decision["approver_name"],
-                    "action": decision["action"],
-                    "comment": decision["comment"],
-                    "decided_at": _iso(decision["decided_at"]),
-                }
-                for decision in workflow.decisions
-            ],
-            "resubmissions": [
-                {
-                    "cycle": item["cycle"],
-                    "resubmitted_at": _iso(item["resubmitted_at"]),
-                }
-                for item in workflow.resubmissions
             ],
             "rejection": (
                 TrackedOutcomeSerializer(context={"outcome_key": "reason"}).to_representation(
@@ -195,20 +171,6 @@ class WorkflowTrackingSerializer(serializers.Serializer):
             "resubmission": ResubmissionInfoSerializer().to_representation(
                 workflow.resubmission
             ),
-<<<<<<< HEAD
-            "cancellation_action": workflow.cancellation_action,
-            "cancellation_blocked_reason": workflow.cancellation_blocked_reason,
-            "has_open_cancellation_request": workflow.has_open_cancellation_request,
-            "latest_cancellation": workflow.latest_cancellation,
-            "cancelled_at": _iso(workflow.cancelled_at),
-            "estimated_restoration_days": (
-                str(workflow.estimated_restoration_days)
-                if workflow.estimated_restoration_days is not None
-                else None
-            ),
-            "restoration_financial_year": workflow.restoration_financial_year,
-        }
-=======
             "documents": [
                 TrackedDocumentSerializer().to_representation(document)
                 for document in payload.application.documents.all()
@@ -228,4 +190,3 @@ def _iso(value):
     if not value:
         return None
     return value.isoformat().replace("+00:00", "Z")
->>>>>>> feature/plans-teams

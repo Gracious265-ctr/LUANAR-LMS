@@ -3,12 +3,6 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet
 
-<<<<<<< HEAD
-from audit.admin import AuditedModelAdmin
-
-from .models import Delegation, Reassignment, Workflow, WorkflowStage
-from .services import validate_workflow_for_activation
-=======
 from .models import (
     ApproverRole,
     Campus,
@@ -23,7 +17,6 @@ from .models import (
     Workflow,
 )
 from .services import approver_role_codes_for, ensure_role_not_in_use
->>>>>>> feature/plans-teams
 
 
 class SectionForm(forms.ModelForm):
@@ -123,9 +116,6 @@ class WorkflowAdminForm(forms.ModelForm):
 
 
 @admin.register(Workflow)
-<<<<<<< HEAD
-class WorkflowAdmin(AuditedModelAdmin):
-=======
 class WorkflowAdmin(admin.ModelAdmin):
     """Read-only inspector. A chain is written through its team.
 
@@ -137,7 +127,6 @@ class WorkflowAdmin(admin.ModelAdmin):
     chain rules out everywhere else.
     """
 
->>>>>>> feature/plans-teams
     form = WorkflowAdminForm
     list_display = (
         "name",

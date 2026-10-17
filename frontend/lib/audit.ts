@@ -3,25 +3,12 @@ import type { Reassignment } from "./reassignments";
 
 export interface AuditEntry {
   id: number;
-<<<<<<< HEAD
-  actor: number;
-=======
   actor: number | null;
->>>>>>> feature/plans-teams
   actor_name: string;
   action: string;
   target_type: string;
   target_id: string;
   target_summary: string;
-<<<<<<< HEAD
-  detail: {
-    before: Record<string, unknown> | null;
-    after: Record<string, unknown>;
-  } | null;
-  reason: string;
-  prev_state: string;
-  new_state: string;
-=======
   /**
    * Free-form JSON. Configuration and state changes write a
    * `{"before": {...}, "after": {...}}` diff, but other actions write a flat
@@ -30,17 +17,13 @@ export interface AuditEntry {
    */
   detail: Record<string, unknown> | null;
   reason: string;
->>>>>>> feature/plans-teams
   created_at: string;
 }
 
 export interface FinalizedApplication {
   id: string;
   reference_number: string;
-<<<<<<< HEAD
-=======
   status: string;
->>>>>>> feature/plans-teams
   employee: number;
   employee_name: string;
   leave_type_name: string;
@@ -55,10 +38,6 @@ export interface FinalizedApplication {
 
 export interface SupportingDocument {
   id: string;
-<<<<<<< HEAD
-  file_path: string;
-=======
->>>>>>> feature/plans-teams
   file_url: string;
   file_name: string;
   file_size: number;
@@ -86,66 +65,6 @@ export interface FinalizedListResponse {
   results: FinalizedApplication[];
 }
 
-<<<<<<< HEAD
-/**
- * Human labels for the immutable action codes the audit trail records
- * (dotted codes from the backend, e.g. `leave_application.submitted` or
- * `employee.updated`). Unknown codes fall back to their raw value.
- */
-export const ACTION_LABELS: Record<string, string> = {
-  "leave_application.submitted": "Submitted",
-  "leave_application.changes_saved": "Changes saved",
-  "leave_application.approved": "Approved",
-  "leave_application.approve": "Approved",
-  "leave_application.rejected": "Rejected",
-  "leave_application.reject": "Rejected",
-  "leave_application.pending_revision": "Pending revision",
-  "leave_application.returned": "Returned",
-  "leave_application.return_for_correction": "Returned for correction",
-  "leave_application.workflow_assigned": "Workflow assigned",
-  application_resubmitted: "Resubmitted",
-  resubmit: "Resubmitted",
-  document_uploaded: "Document uploaded",
-  document_removed: "Document removed",
-  document_replaced: "Document replaced",
-  cancellation_requested: "Cancellation requested",
-  "cancellation.withdrawn": "Withdrawn",
-  "cancellation.requested": "Cancellation requested",
-  "cancellation.stage_approved": "Cancellation stage approved",
-  "cancellation.approved": "Cancellation approved",
-  "cancellation.rejected": "Cancellation rejected",
-  "balance.restored": "Balance restored",
-  "balance.deducted": "Days deducted from balance",
-  "approved_document.generated": "Approval document generated",
-  "employee.created": "Employee created",
-  "employee.updated": "Employee updated",
-  "grade_entitlement.created": "Entitlement created",
-  "grade_entitlement.updated": "Entitlement updated",
-  "leave_type.created": "Leave type created",
-  "leave_type.updated": "Leave type updated",
-  "leave_rule.created": "Leave rule created",
-  "leave_rule.updated": "Leave rule updated",
-  "financial_year.created": "Financial year created",
-  "financial_year.updated": "Financial year updated",
-  "public_holiday.created": "Holiday created",
-  "public_holiday.updated": "Holiday updated",
-  "workflow.created": "Workflow created",
-  "workflow.updated": "Workflow updated",
-  "delegation.approved": "Delegation approved",
-  "delegation.rejected": "Delegation rejected",
-  "delegation.cancelled": "Delegation cancelled",
-  "application.reassigned": "Reassigned",
-  "document_template.updated": "Template updated",
-};
-
-/**
- * Labels for the Django content-type model names surfaced as the audit
- * target (e.g. `employeeprofile`, `leavedocumenttemplate`).
- */
-export const TARGET_TYPE_LABELS: Record<string, string> = {
-  employeeprofile: "Employee",
-  gradeentitlement: "Entitlement",
-=======
 export const ACTION_LABELS: Record<string, string> = {
   created: "Created",
   updated: "Updated",
@@ -166,21 +85,10 @@ export const ACTION_LABELS: Record<string, string> = {
 export const TARGET_TYPE_LABELS: Record<string, string> = {
   employee: "Employee",
   entitlement: "Entitlement",
->>>>>>> feature/plans-teams
   leavetype: "Leave type",
   leaverule: "Leave rule",
   financialyear: "Financial year",
   publicholiday: "Public holiday",
-<<<<<<< HEAD
-  workflow: "Workflow",
-  delegation: "Delegation",
-  reassignment: "Reassignment",
-  leavedocumenttemplate: "Document template",
-  leaveapplication: "Application",
-  supportingdocument: "Document",
-  approvaldecision: "Decision",
-  cancellationrequest: "Cancellation",
-=======
   team: "Team",
   // A chain has no screen of its own: it is written and read through the team
   // that owns it, so its audit entries stay history rather than a link.
@@ -190,7 +98,6 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   "document-template": "Document template",
   application: "Application",
   plan: "Leave day plan",
->>>>>>> feature/plans-teams
 };
 
 export async function listAuditEntries(options: {

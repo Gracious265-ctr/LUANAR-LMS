@@ -1,17 +1,12 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
-from django.db import transaction
 from rest_framework import serializers
 
-<<<<<<< HEAD
-from audit.serializers import AuditedModelSerializer
-=======
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
 from workflows.models import Team
 from workflows.services import approver_role_codes_for
->>>>>>> feature/plans-teams
 
 from .models import EmployeeProfile
 from .services import request_password_set
@@ -163,9 +158,6 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
-<<<<<<< HEAD
-class EmployeeSerializer(AuditedModelSerializer):
-=======
 class PasswordSetRequestSerializer(serializers.Serializer):
     """Serializer for the "I have no password" request.
 
@@ -225,10 +217,7 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
 class EmployeeSerializer(serializers.ModelSerializer):
->>>>>>> feature/plans-teams
     """HR-facing serializer for employee records and their linked account."""
-
-    audit_prefix = "employee"
 
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email")
@@ -312,21 +301,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
         return value
 
-<<<<<<< HEAD
-    def _audit_snapshot(self, instance: EmployeeProfile) -> dict:
-        user = instance.user
-        return {
-            "email": user.email,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "is_active": user.is_active,
-            "designation": instance.designation,
-            "department": instance.department,
-            "category": instance.category,
-            "grade": instance.grade,
-            "appointment_date": instance.appointment_date,
-        }
-=======
     def validate(self, attrs: dict) -> dict:
         """Stop the directory from granting system access.
 
@@ -363,7 +337,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "from the workflow stage HR appoints them to, and an HR account is "
             "created by an administrator."
         )
->>>>>>> feature/plans-teams
 
     def create(self, validated_data: dict) -> EmployeeProfile:
         user_data = validated_data.pop("user", {})
@@ -381,25 +354,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
                     email=email,
                     first_name=user_data.get("first_name", ""),
                     last_name=user_data.get("last_name", ""),
-<<<<<<< HEAD
-                    role=User.Role.EMPLOYEE,
-                    is_active=user_data.get("is_active", True),
-                )
-=======
                     role=role,
                     is_active=user_data.get("is_active", True),
                 )
                 # HR is not told this person's password. The account is issued
                 # without a usable one and a set-password link is mailed to the
                 # address on file; see the module docstring in services.py.
->>>>>>> feature/plans-teams
                 user.set_unusable_password()
                 user.save()
 
             instance = EmployeeProfile.objects.create(user=user, **validated_data)
-<<<<<<< HEAD
-            self._audit_after_create(instance)
-=======
             self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
 
             # A new account cannot sign in until someone sets its password, and
@@ -410,14 +374,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
             # them a reset link.
             if not user.has_usable_password():
                 request_password_set(user.email, actor=current_actor(self))
->>>>>>> feature/plans-teams
         return instance
 
     def update(self, instance: EmployeeProfile, validated_data: dict) -> EmployeeProfile:
         before = self._snapshot(instance)
         user_data = validated_data.pop("user", {})
         user = instance.user
-        before = self._audit_snapshot(instance)
 
         with transaction.atomic():
             if "email" in user_data:
@@ -425,19 +387,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 user.username = user_data["email"]
 
             for field in ("first_name", "last_name", "is_active"):
-<<<<<<< HEAD
-                if field in user_data:
-                    setattr(user, field, user_data[field])
-
-            user.save()
-
-            for attr, value in validated_data.items():
-                setattr(instance, attr, value)
-            instance.save()
-
-            self._audit_after_update(instance, before)
-        return instance
-=======
                 # ``is_active`` is checked against the submitted data as well as
                 # the validated data: DRF fills the key in for form-encoded
                 # requests, and a PATCH that never mentioned it must not change
@@ -505,4 +454,3 @@ class EmployeeSerializer(serializers.ModelSerializer):
             target_summary=instance.user.get_full_name(),
             detail=detail,
         )
->>>>>>> feature/plans-teams

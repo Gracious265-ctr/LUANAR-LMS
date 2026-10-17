@@ -95,11 +95,5 @@
     "can_resubmit": false,
     "returns_to_stage": null
   },
-<<<<<<< HEAD
-  "submission_cycle": 1,
-  "decisions": [],
-  "resubmissions": []
-=======
   "documents": []
->>>>>>> feature/plans-teams
 }

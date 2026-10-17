@@ -14,14 +14,6 @@ shape, not on these classes.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
-
-
-def _iso(value):
-    """Render a datetime as a UTC ``Z``-suffixed ISO string (or ``None``)."""
-    if not value:
-        return None
-    return value.isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -101,14 +93,6 @@ class WorkflowTracking:
     correction_required | cancelled``. ``stages`` are ascending by ``order``;
     ``events`` are newest first. ``rejection``/``correction`` are non-null only
     in their respective statuses and both reset to ``None`` once resubmitted.
-
-    Unit 17 additions (additive): ``submission_cycle`` is the application's
-    current cycle (1 = original submission); ``resubmissions`` lists each
-    resubmission as ``{cycle, resubmitted_at}`` (newest last); ``decisions``
-    are the real ``ApprovalDecision`` rows grouped by cycle. ``can_resubmit``
-    is computed by the service from the real application status.
-
-    Unit 18 additions (additive): cancellation fields.
     """
 
     status: str
@@ -123,18 +107,6 @@ class WorkflowTracking:
             count=0, last_resubmitted_at=None, can_resubmit=False
         )
     )
-<<<<<<< HEAD
-    submission_cycle: int = 1
-    resubmissions: tuple[dict, ...] = field(default_factory=tuple)
-    decisions: tuple[dict, ...] = field(default_factory=tuple)
-    cancellation_action: str | None = None
-    cancellation_blocked_reason: str | None = None
-    has_open_cancellation_request: bool = False
-    latest_cancellation: dict | None = None
-    cancelled_at: datetime | None = None
-    estimated_restoration_days: Decimal | None = None
-    restoration_financial_year: str | None = None
-=======
     # Unit 18 additions: cancellation state appended to the same payload so
     # existing consumers keep working unchanged.
     cancelled_at: datetime | None = None
@@ -142,4 +114,3 @@ class WorkflowTracking:
     cancellation_blocked_reason: str | None = None
     has_open_cancellation_request: bool = False
     latest_cancellation: dict | None = None
->>>>>>> feature/plans-teams

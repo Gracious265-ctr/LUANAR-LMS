@@ -9,19 +9,10 @@ vi.mock("@/lib/tracking/service", () => ({
   fetchTracking: vi.fn(),
 }));
 
-<<<<<<< HEAD
-vi.mock("@/lib/cancellation/service", () => ({
-  fetchCancellations: vi.fn(),
-}));
-
-import { fetchCancellations } from "@/lib/cancellation/service";
-
-=======
 vi.mock("@/lib/leave-api", () => ({
   listDocuments: vi.fn(),
 }));
 
->>>>>>> feature/plans-teams
 import approved from "@/lib/tracking/__fixtures__/approved.json";
 import cancelled from "@/lib/tracking/__fixtures__/cancelled.json";
 import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correction_required_at_stage_3.json";
@@ -79,11 +70,7 @@ const stepCount = () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-<<<<<<< HEAD
-  vi.mocked(fetchCancellations).mockResolvedValue([]);
-=======
   vi.mocked(listDocuments).mockResolvedValue([]);
->>>>>>> feature/plans-teams
 });
 
 describe("TrackingView · header", () => {
@@ -260,7 +247,7 @@ describe("TrackingView · rejected", () => {
     ).toBeInTheDocument();
 
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
-    expect(link).toHaveAttribute("href", "/applications/app-rejected/edit");
+    expect(link).toHaveAttribute("href", "/dashboard/leave/app-rejected/edit");
   });
 
   it("hides the resubmit button when can_resubmit is false", async () => {
@@ -289,7 +276,7 @@ describe("TrackingView · correction", () => {
     expect(panel.getByText("Stage 3 · Registrar")).toBeInTheDocument();
     expect(panel.getByText("Dr. Joyce Phiri")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
-    expect(link).toHaveAttribute("href", "/applications/app-correction/edit");
+    expect(link).toHaveAttribute("href", "/dashboard/leave/app-correction/edit");
   });
 });
 

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "plans",
     "documents",
     "audit",
+    "launcher",
 ]
 
 MIDDLEWARE = [
@@ -95,15 +96,9 @@ USE_I18N = True
 USE_TZ = True
 
 # Leave validation (Unit 14). The rules provider is the single source of
-<<<<<<< HEAD
-# leave-type rules, employees, financial years, public holidays and balances;
-# the database provider backs it with the real HR-track models (Unit 20, see
-# docs/leave-rules-provider-contract.md).
-=======
 # leave-type rules, employees, financial years, public holidays and balances.
 # Since Unit 20 it is backed by the real HR-track tables
 # (DatabaseRulesProvider); see docs/leave-rules-provider-contract.md.
->>>>>>> feature/plans-teams
 LEAVE_RULES_PROVIDER = "leave.providers.database.DatabaseRulesProvider"
 LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
 
@@ -123,11 +118,6 @@ WORKFLOW_PROVIDER = "workflows.providers.DatabaseWorkflowProvider"
 LEAVE_BALANCE_PROVIDER = (
     "leave.cancellations.providers.LedgerBalanceProvider"
 )
-
-# Approval workflow provider (Unit 16). Swappable so the real Unit 6 workflow
-# backend can drop in at Unit 20 without touching the decision service (see
-# docs/leave-rules-provider-contract.md for the handoff pattern).
-WORKFLOW_PROVIDER = "workflows.fixture_provider.FixtureWorkflowProvider"
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -193,28 +183,6 @@ Q_CLUSTER = {
     "orm": "default",
 }
 
-<<<<<<< HEAD
-# Email (Unit 22). SMTP settings come entirely from the environment; the
-# development default is Google SMTP, replaced by the institutional LUANAR
-# SMTP server through .env without any code change. Tests keep a locmem
-# backend (config/settings/test.py) so nothing here can send real mail.
-EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.gmail.com")
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
-EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
-DEFAULT_FROM_EMAIL = env(
-    "DEFAULT_FROM_EMAIL", default="LUANAR Leave <noreply@luanar.ac.mw>"
-)
-
-# Notifications (Unit 22). Domain events (submit/approval/cancellation/
-# delegation/reassignment) are routed through a lightweight dispatcher that is
-# "on" by default; tests set it to "off" so the rest of the suite stays
-# hermetic and the notification tests enable it explicitly with
-# override_settings.
-NOTIFICATION_DISPATCHER = env("NOTIFICATION_DISPATCHER", default="on")
-=======
 # Email. Google SMTP during development and testing, replaceable with the
 # LUANAR institutional relay through ``.env`` alone: the transport is selected
 # here rather than hard-coded, so a tree with no credentials still prints to the
@@ -263,33 +231,9 @@ FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 PASSWORD_SET_TOKEN_LIFETIME_HOURS = env.int(
     "PASSWORD_SET_TOKEN_LIFETIME_HOURS", default=72
 )
->>>>>>> feature/plans-teams
 
 # Supabase Storage
 SUPABASE_URL = env("SUPABASE_URL", default="")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", default="")
 SUPABASE_BUCKET = env("SUPABASE_BUCKET", default="leave-documents")
 SUPABASE_SIGNED_URL_EXPIRY = env.int("SUPABASE_SIGNED_URL_EXPIRY", default=3600)
-
-# Leave document storage (Unit 19). Storage is abstracted; the dev backend
-# writes to local disk so uploads/downloads work without Supabase credentials,
-# and the production storage technology stays replaceable per architecture.md.
-LEAVE_STORAGE_BACKEND = "leave.storage.development.DevelopmentStorageBackend"
-LEAVE_STORAGE_ROOT = Path(BASE_DIR.parent, "storage")
-LEAVE_DOCUMENT_MAX_SIZE_BYTES = 10 * 1024 * 1024
-LEAVE_DOCUMENT_ALLOWED_TYPES = (
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-)
-
-# Approval finalisation (Unit 23). Each finally-approved leave application
-# triggers the annual balance deduction and the official approved-leave PDF.
-# This is "on" by default; the test settings turn it "off" so the rest of the
-# suite stays hermetic, and the Unit 23 tests enable it explicitly with
-# override_settings.
-APPROVAL_FINALISATION = env("APPROVAL_FINALISATION", default="on")

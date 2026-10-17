@@ -1,25 +1,5 @@
 "use client";
 
-<<<<<<< HEAD
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useDropzone } from "react-dropzone";
-import { Download, FileText, RefreshCw, Trash2, Upload } from "lucide-react";
-
-import { cn } from "@/lib/utils";
-import { formatFileSize } from "@/lib/documents/config";
-import {
-  DocumentRequestError,
-  documentContentUrl,
-  getDocumentConfig,
-  removeDocument,
-  replaceDocument,
-  uploadDocument,
-} from "@/lib/documents/service";
-import type {
-  DocumentUploadConfig,
-  SupportingDocument,
-} from "@/lib/documents/types";
-=======
 import { useCallback, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { FileText, FileX, RefreshCw, Trash2, Upload } from "lucide-react";
@@ -45,19 +25,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
->>>>>>> feature/plans-teams
 
 interface SupportingDocumentsUploaderProps {
   applicationId: string | null;
   documents: SupportingDocument[];
-<<<<<<< HEAD
-  disabled?: boolean;
-  mode?: "editable" | "readonly";
-=======
   editable?: boolean;
   /** Offer per-row Replace (true on a ``correction_required`` application only). */
   canReplace?: boolean;
->>>>>>> feature/plans-teams
   onDocumentsChange: (docs: SupportingDocument[]) => void;
   onEnsureDraft?: () => Promise<string | null>;
 }
@@ -65,58 +39,12 @@ interface SupportingDocumentsUploaderProps {
 export function SupportingDocumentsUploader({
   applicationId,
   documents,
-<<<<<<< HEAD
-  disabled,
-  mode = "editable",
-=======
   editable = true,
   canReplace = false,
->>>>>>> feature/plans-teams
   onDocumentsChange,
   onEnsureDraft,
 }: SupportingDocumentsUploaderProps) {
   const [uploading, setUploading] = useState(false);
-<<<<<<< HEAD
-  const [replacingId, setReplacingId] = useState<string | null>(null);
-  const [config, setConfig] = useState<DocumentUploadConfig | null>(null);
-  const [readOnlyMessage, setReadOnlyMessage] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const replaceInputs = useRef<Record<string, HTMLInputElement | null>>({});
-
-  const isEditable = !disabled && mode === "editable";
-
-  useEffect(() => {
-    let active = true;
-    getDocumentConfig().then((value) => {
-      if (active) setConfig(value);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const applyUpload = useCallback(
-    async (id: string, file: File) => {
-      setUploading(true);
-      setReadOnlyMessage(null);
-      setUploadError(null);
-      try {
-        const doc = await uploadDocument(id, file);
-        onDocumentsChange([...documents, doc]);
-      } catch (err) {
-        if (err instanceof DocumentRequestError && err.status === 409) {
-          setReadOnlyMessage(err.message);
-        } else {
-          setUploadError(
-            err instanceof Error ? err.message : "The upload could not be completed."
-          );
-        }
-      } finally {
-        setUploading(false);
-      }
-    },
-    [documents, onDocumentsChange]
-=======
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] =
@@ -129,7 +57,6 @@ export function SupportingDocumentsUploader({
       onDocumentsChange(await listDocuments(applicationIdToFetch));
     },
     [onDocumentsChange]
->>>>>>> feature/plans-teams
   );
 
   const onDrop = useCallback(
@@ -139,14 +66,6 @@ export function SupportingDocumentsUploader({
       if (!id && onEnsureDraft) {
         id = await onEnsureDraft();
       }
-<<<<<<< HEAD
-      if (!id) return;
-      for (const file of acceptedFiles) {
-        await applyUpload(id, file);
-      }
-    },
-    [applicationId, onEnsureDraft, applyUpload]
-=======
       if (!id) {
         setError("Could not create a draft to attach the document. Please try again.");
         return;
@@ -201,38 +120,10 @@ export function SupportingDocumentsUploader({
       }
     },
     [applicationId, documents, onEnsureDraft, onDocumentsChange, refresh, showToast]
->>>>>>> feature/plans-teams
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-<<<<<<< HEAD
-    disabled: !isEditable || uploading,
-    accept: config
-      ? Object.fromEntries(config.allowed_content_types.map((type) => [type, []]))
-      : undefined,
-  });
-
-  const handleRemove = useCallback(
-    async (docId: string) => {
-      if (!applicationId || !isEditable) return;
-      setReadOnlyMessage(null);
-      setUploadError(null);
-      try {
-        await removeDocument(applicationId, docId);
-        onDocumentsChange(documents.filter((d) => d.id !== docId));
-      } catch (err) {
-        if (err instanceof DocumentRequestError && err.status === 409) {
-          setReadOnlyMessage(err.message);
-        } else {
-          setUploadError(
-            err instanceof Error ? err.message : "The document could not be removed."
-          );
-        }
-      }
-    },
-    [applicationId, documents, isEditable, onDocumentsChange]
-=======
     disabled: !editable || uploading,
   });
 
@@ -296,34 +187,13 @@ export function SupportingDocumentsUploader({
       }
     },
     [applicationId, busyId, documents, onDocumentsChange, refresh, showToast]
->>>>>>> feature/plans-teams
   );
 
-  const handleReplace = useCallback(
-    async (docId: string, file: File) => {
-      if (!applicationId || !isEditable) return;
-      setReplacingId(docId);
-      setReadOnlyMessage(null);
-      setUploadError(null);
-      try {
-        const replacement = await replaceDocument(applicationId, docId, file);
-        onDocumentsChange(
-          documents.map((d) => (d.id === docId ? replacement : d))
-        );
-      } catch (err) {
-        if (err instanceof DocumentRequestError && err.status === 409) {
-          setReadOnlyMessage(err.message);
-        } else {
-          setUploadError(
-            err instanceof Error ? err.message : "The document could not be replaced."
-          );
-        }
-      } finally {
-        setReplacingId(null);
-      }
-    },
-    [applicationId, documents, isEditable, onDocumentsChange]
-  );
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
     <div>
@@ -331,11 +201,7 @@ export function SupportingDocumentsUploader({
         Supporting Documents
       </label>
 
-<<<<<<< HEAD
-      {isEditable && (
-=======
       {editable && (
->>>>>>> feature/plans-teams
         <div
           {...getRootProps()}
           className={cn(
@@ -353,31 +219,16 @@ export function SupportingDocumentsUploader({
               : "Drag & drop files here, or click to select"}
           </p>
           <p className="text-xs text-text-muted mt-1">
-            Max file size: {formatFileSize(config?.max_size_bytes ?? 10 * 1024 * 1024)}
+            Max file size: 10MB
           </p>
         </div>
       )}
 
-<<<<<<< HEAD
-      {readOnlyMessage && (
-        <p
-          role="alert"
-          className="mt-3 rounded-lg border border-border-warning bg-status-pending-subtle p-3 text-sm text-status-pending"
-        >
-          {readOnlyMessage}
-        </p>
-      )}
-
-      {uploadError && (
-        <p role="alert" className="mt-3 text-sm text-status-rejected">
-          {uploadError}
-=======
       {canReplace && editable && documents.length > 0 && (
         <p className="mt-2 text-xs text-text-muted">
           This application was returned for correction. Replace a document to
           submit a corrected copy — the previous version stays in your history
           for the approvers to compare.
->>>>>>> feature/plans-teams
         </p>
       )}
 
@@ -399,59 +250,6 @@ export function SupportingDocumentsUploader({
                   </p>
                 </div>
               </div>
-<<<<<<< HEAD
-              <div className="flex items-center gap-1 shrink-0">
-                {applicationId && (
-                  <a
-                    href={documentContentUrl(applicationId, doc.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Open ${doc.file_name}`}
-                    className="p-1 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
-                )}
-                {isEditable && (
-                  <>
-                    <input
-                      ref={(node) => {
-                        replaceInputs.current[doc.id] = node;
-                      }}
-                      type="file"
-                      hidden
-                      aria-label={`Replace ${doc.file_name}`}
-                      onClick={(event) => {
-                        event.currentTarget.value = "";
-                      }}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) handleReplace(doc.id, file);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => replaceInputs.current[doc.id]?.click()}
-                      disabled={replacingId === doc.id}
-                      aria-label={`Replace ${doc.file_name}`}
-                      className="p-1 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw
-                        className={cn("h-4 w-4", replacingId === doc.id && "animate-spin")}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(doc.id)}
-                      aria-label={`Remove ${doc.file_name}`}
-                      className="p-1 rounded hover:bg-surface-hover text-text-muted hover:text-status-rejected transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
-              </div>
-=======
               {editable && (
                 <div className="flex items-center gap-1 shrink-0">
                   {canReplace && (
@@ -493,21 +291,11 @@ export function SupportingDocumentsUploader({
                   </Button>
                 </div>
               )}
->>>>>>> feature/plans-teams
             </div>
           ))}
         </div>
       )}
 
-<<<<<<< HEAD
-      {documents.length === 0 && (
-        <p className="mt-3 text-sm text-text-muted">
-          {isEditable
-            ? "No supporting documents yet."
-            : "No supporting documents available."}
-        </p>
-      )}
-=======
       {!editable && documents.length === 0 && (
         <EmptyState
           className="py-6"
@@ -556,7 +344,6 @@ export function SupportingDocumentsUploader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
->>>>>>> feature/plans-teams
     </div>
   );
 }

@@ -1,19 +1,4 @@
 import type { ApplicationDetail } from "@/lib/audit";
-<<<<<<< HEAD
-import type { TimelineEntry } from "@/lib/leave-history";
-import { TimelineView } from "@/components/leave/timeline-view";
-
-export function ApplicationHistoryView({
-  application,
-  entries = [],
-}: {
-  application: ApplicationDetail;
-  entries?: TimelineEntry[];
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-=======
 import { ApprovedDocumentCard } from "@/components/documents/approved-document-card";
 import { AuditActionPill, auditChangesText } from "./audit-meta";
 import { Card } from "@/components/ui/card";
@@ -26,7 +11,6 @@ export function ApplicationHistoryView({
   return (
     <div className="space-y-6">
       <Card>
->>>>>>> feature/plans-teams
         <h3 className="text-lg font-semibold text-text-primary">
           Application summary
         </h3>
@@ -69,15 +53,9 @@ export function ApplicationHistoryView({
             <span className="text-text-secondary">{application.reason}</span>
           </div>
         )}
-<<<<<<< HEAD
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-=======
       </Card>
 
       <Card>
->>>>>>> feature/plans-teams
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Documents
         </h3>
@@ -90,11 +68,7 @@ export function ApplicationHistoryView({
             {application.documents.map((doc) => (
               <li
                 key={doc.id}
-<<<<<<< HEAD
-                className="flex items-center justify-between rounded-md border border-border-default px-4 py-3"
-=======
                 className="flex items-center justify-between rounded-lg border border-border-default px-4 py-3"
->>>>>>> feature/plans-teams
               >
                 <div>
                   <div className="font-medium text-text-primary">
@@ -117,16 +91,6 @@ export function ApplicationHistoryView({
             ))}
           </ul>
         )}
-<<<<<<< HEAD
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          Timeline
-        </h3>
-        <TimelineView entries={entries} />
-      </div>
-=======
       </Card>
 
       {application.status === "approved" && (
@@ -194,7 +158,6 @@ export function ApplicationHistoryView({
           </ol>
         )}
       </Card>
->>>>>>> feature/plans-teams
     </div>
   );
 }

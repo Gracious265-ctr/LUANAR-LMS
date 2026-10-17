@@ -14,13 +14,8 @@ def count_supporting_documents(application) -> int:
     """Return the number of active documents on an application.
 
     Thin wrapper over the Unit 13 ``SupportingDocument`` relation so a model
-<<<<<<< HEAD
-    or manager rename touches exactly one function. Retired documents (Unit 19)
-    never satisfy ``DOCUMENT_REQUIRED``.
-=======
     or manager rename touches exactly one function. Retired rows (Unit 17)
     no longer count towards the requirement.
->>>>>>> feature/plans-teams
     """
     return application.documents.filter(status="active").count()
 

@@ -116,7 +116,7 @@ describe("SubmittedClient", () => {
     vi.clearAllMocks();
     vi.mocked(getLeaveApplication).mockResolvedValue(makeApplication());
     vi.mocked(getLeaveTypes).mockResolvedValue([
-      { id: 1, code: "annual", name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
+      { id: 1, name: "Annual Leave", requiresDocuments: false, maxDurationDays: 30 },
     ]);
     replaceMock.mockClear();
   });

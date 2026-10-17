@@ -12,7 +12,7 @@ from datetime import date
 
 from django.test import TestCase
 from rest_framework import status
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User

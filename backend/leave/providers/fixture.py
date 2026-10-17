@@ -8,40 +8,8 @@ submission run against its data until the HR-track models are merged. See
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q, Sum
-
 from . import fixture_data as data
-from .base import EmployeeInfo, LeaveBalance
-
-
-def _ledger_net_used(employee_id: int, financial_year_label: str) -> Decimal:
-    """Net days deducted in ``financial_year_label`` (section 3.3).
-
-    Computed from the append-only ledger as sum(deductions) - sum(restorations)
-    for the employee and financial year. Returns 0 when no ledger rows exist,
-    which keep the legacy caller behaviour for untouched databases.
-    """
-    from leave.models import LeaveBalanceTransaction
-
-    row = (
-        LeaveBalanceTransaction.objects.filter(
-            employee_id=employee_id,
-            financial_year=financial_year_label,
-        )
-        .aggregate(
-            deducted=Sum(
-                "days",
-                filter=Q(type=LeaveBalanceTransaction.Type.DEDUCTION),
-            ),
-            restored=Sum(
-                "days",
-                filter=Q(type=LeaveBalanceTransaction.Type.RESTORATION),
-            ),
-        )
-    )
-    deducted = row["deducted"] or Decimal("0")
-    restored = row["restored"] or Decimal("0")
-    return deducted - restored
+from .base import EmployeeInfo
 
 
 def _entitlement_days(grade: str) -> int:
@@ -118,39 +86,6 @@ class FixtureRulesProvider:
         }
 
     def get_available_balance(self, employee_id: int, financial_year_label: str):
-<<<<<<< HEAD
-        grade = self._grade_for(employee_id)
-        net_used = _ledger_net_used(employee_id, financial_year_label)
-        return Decimal(_entitlement_days(grade)) - net_used
-
-    def get_leave_balance(self, employee_id: int, financial_year_label: str):
-        grade = self._grade_for(employee_id)
-        entitlement = Decimal(_entitlement_days(grade))
-        net_used = _ledger_net_used(employee_id, financial_year_label)
-        return LeaveBalance(
-            entitlement=entitlement,
-            used=net_used,
-            available=entitlement - net_used,
-        )
-
-    def _grade_for(self, employee_id: int) -> str:
-        """Resolve an employee's current grade without per-instance caching.
-
-        The approvals detail payload (Unit 16) asks for the live balance of any
-        employee, on a fresh provider instance, so it cannot rely on the
-        ``_grades`` cache primed by a prior ``get_employee_for_user`` call.
-        """
-        from users.models import User
-
-        user = User.objects.filter(id=employee_id).first()
-        if user is None:
-            return ""
-        profile = getattr(user, "employee_profile", None)
-        if profile is not None and profile.grade:
-            return profile.grade.strip().upper()
-        row = data.EMPLOYEES.get(user.username)
-        return row["grade"] if row else ""
-=======
         grade = self._grades.get(employee_id, "")
         net = Decimal(_entitlement_days(grade)) + _ledger_net(
             employee_id, financial_year_label
@@ -189,4 +124,3 @@ def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
     restored = delta["restoration"] or Decimal(0)
     deducted = delta["deduction"] or Decimal(0)
     return Decimal(restored) - Decimal(deducted)
->>>>>>> feature/plans-teams

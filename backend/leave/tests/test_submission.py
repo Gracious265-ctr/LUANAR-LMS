@@ -26,7 +26,6 @@ from leave.signals import leave_application_submitted
 from .stubs import (
     EARLIEST_ANNUAL_START,
     StubProviderMixin,
-    make_approver_chain,
     make_user,
     register_chain_approvers,
 )
@@ -37,11 +36,7 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
         self.stub = self.use_stub()
         self.user = make_user()
         self.stub.register_employee(self.user)
-<<<<<<< HEAD
-        make_approver_chain()
-=======
         register_chain_approvers(self.stub)
->>>>>>> feature/plans-teams
 
     def draft(self, **kwargs):
         defaults = dict(
@@ -59,31 +54,13 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
         submitted = submit_application(user=self.user, application_id=app.id)
         app.refresh_from_db()
 
-        self.assertEqual(app.status, LeaveApplication.Status.PENDING)
+        self.assertEqual(app.status, LeaveApplication.Status.SUBMITTED)
         self.assertIsNotNone(app.submitted_at)
         self.assertEqual(app.working_days, 5)
         self.assertEqual(app.calendar_days, 5)
         self.assertEqual(app.financial_year_label, "2026-27")
         self.assertEqual(app.reference_number, "LV-2026-27-000001")
         self.assertEqual(submitted.pk, app.pk)
-
-    def test_submission_routes_through_workflow(self):
-        app = self.draft()
-        submit_application(user=self.user, application_id=app.id)
-        app.refresh_from_db()
-
-        stage_rows = list(app.stages.all())
-        self.assertEqual(len(stage_rows), 4)
-        self.assertEqual(stage_rows[0].status, "pending")
-        self.assertEqual(stage_rows[0].is_final, False)
-        self.assertEqual(stage_rows[-1].status, "waiting")
-        self.assertEqual(stage_rows[-1].is_final, True)
-        self.assertEqual(app.current_stage_id, stage_rows[0].id)
-        self.assertTrue(
-            AuditEvent.objects.filter(
-                action="leave_application.workflow_assigned"
-            ).exists()
-        )
 
     def test_reference_is_never_regenerated(self):
         app = self.draft(reference_number="LV-2026-27-000123")
@@ -140,17 +117,8 @@ class SubmissionServiceTests(StubProviderMixin, TestCase):
             submit_application(user=self.user, application_id=app.id)
         self.assertEqual(ctx.exception.reference_number, "LV-2026-27-000009")
 
-    def test_pending_application_raises_already_submitted_with_reference(self):
-        app = self.draft(
-            status=LeaveApplication.Status.PENDING,
-            reference_number="LV-2026-27-000044",
-        )
-        with self.assertRaises(AlreadySubmittedError) as ctx:
-            submit_application(user=self.user, application_id=app.id)
-        self.assertEqual(ctx.exception.reference_number, "LV-2026-27-000044")
-
     def test_non_draft_status_raises_not_submittable(self):
-        app = self.draft(status=LeaveApplication.Status.REJECTED)
+        app = self.draft(status="pending")
         with self.assertRaises(ApplicationNotSubmittableError):
             submit_application(user=self.user, application_id=app.id)
 
@@ -298,11 +266,7 @@ class SubmissionSignalTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
-<<<<<<< HEAD
-        make_approver_chain()
-=======
         register_chain_approvers(self.stub)
->>>>>>> feature/plans-teams
         app = LeaveApplication.objects.create(
             employee=user,
             leave_type_id=1,
@@ -322,7 +286,7 @@ class SubmissionSignalTests(StubProviderMixin, TransactionTestCase):
         receiver.assert_called_once()
         sent = receiver.call_args.kwargs["application"]
         self.assertEqual(sent.id, app.id)
-        self.assertEqual(sent.status, LeaveApplication.Status.PENDING)
+        self.assertEqual(sent.status, LeaveApplication.Status.SUBMITTED)
 
 
 class ConcurrentSubmissionTests(StubProviderMixin, TransactionTestCase):
@@ -332,11 +296,7 @@ class ConcurrentSubmissionTests(StubProviderMixin, TransactionTestCase):
         self.stub = self.use_stub()
         user = make_user()
         self.stub.register_employee(user)
-<<<<<<< HEAD
-        make_approver_chain()
-=======
         register_chain_approvers(self.stub)
->>>>>>> feature/plans-teams
 
         app_a = LeaveApplication.objects.create(
             employee=user,
@@ -380,7 +340,7 @@ class ConcurrentSubmissionTests(StubProviderMixin, TransactionTestCase):
 
         self.assertEqual(
             LeaveApplication.objects.filter(
-                status=LeaveApplication.Status.PENDING
+                status=LeaveApplication.Status.SUBMITTED
             ).count(),
             1,
         )

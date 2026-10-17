@@ -23,7 +23,7 @@ export function AppCard({ keyName, badge }: AppCardProps) {
   return (
     <Link href={app.route} className="block">
       <Card className="hover:shadow-md transition-shadow">
-        <p className="p-6 flex items-start gap-4">
+        <div className="p-6 flex items-start gap-4">
           <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary">
             <Icon className="w-5 h-5" />
           </div>
@@ -38,7 +38,7 @@ export function AppCard({ keyName, badge }: AppCardProps) {
             </div>
             <p className="text-sm text-muted-foreground mt-1">{app.description}</p>
           </div>
-        </p>
+        </div>
       </Card>
     </Link>
   );

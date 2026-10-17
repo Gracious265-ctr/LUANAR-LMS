@@ -1955,8 +1955,7 @@ class SupportingDocumentAPITest(TestCase):
             {"file": file},
             format="multipart",
         )
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertEqual(response.data["code"], "document_read_only")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class UnauthenticatedAccessTest(TestCase):

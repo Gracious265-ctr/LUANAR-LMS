@@ -2,39 +2,6 @@ from django.conf import settings
 from django.db import models
 
 
-<<<<<<< HEAD
-class ImmutableAuditQuerySet(models.QuerySet):
-    """QuerySet where bulk writes on the append-only table are impossible."""
-
-    def update(self, *args, **kwargs):
-        raise RuntimeError("Audit events are immutable.")
-
-    def delete(self):
-        raise RuntimeError("Audit events are immutable.")
-
-
-class AuditEventManager(models.Manager):
-    """Manager that makes bulk writes on an append-only table impossible."""
-
-    def get_queryset(self):
-        return ImmutableAuditQuerySet(self.model, using=self._db)
-
-    def update(self, *args, **kwargs):
-        raise RuntimeError("Audit events are immutable.")
-
-    def delete(self):
-        raise RuntimeError("Audit events are immutable.")
-
-
-class AuditEvent(models.Model):
-    """An immutable, append-only record of a state change in the LMS.
-
-    Used by Unit 14 submission and later units (approvals, reassignments,
-    corrections) to write a thin history trail: what changed, by whom, from
-    which state to which, with a small metadata payload. Rows are never
-    updated or deleted through the ORM (Unit 24); a parent row's database
-    cascade still removes an event when the parent genuinely goes away.
-=======
 class AuditEntryLockedError(Exception):
     """Raised on any attempt to update or delete an ``AuditEntry``."""
 
@@ -65,7 +32,6 @@ class AuditEntry(models.Model):
     reassignment reason. Entries are append-only and HR-read-only; they are
     written through :func:`audit.services.record_audit` from the same code that
     owns each action so a failed action never leaves a phantom entry.
->>>>>>> feature/plans-teams
     """
 
     class Action(models.TextChoices):
@@ -172,40 +138,15 @@ class AuditEntry(models.Model):
         default="",
         help_text="Optional reason recorded for decisions and reassignments.",
     )
-<<<<<<< HEAD
-    object_id = models.CharField(max_length=100, null=True, blank=True)
-    content_object = GenericForeignKey("content_type", "object_id")
-
-    prev_state = models.CharField(max_length=50, blank=True, default="")
-    new_state = models.CharField(max_length=50, blank=True, default="")
-    metadata = models.JSONField(default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    objects = AuditEventManager()
-=======
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = AuditEntryManager()
->>>>>>> feature/plans-teams
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-<<<<<<< HEAD
-            models.Index(fields=["content_type", "object_id"], name="audit_target_idx"),
-        ]
-
-    def save(self, *args, **kwargs):
-        if not self._state.adding:
-            raise RuntimeError("Audit events are immutable.")
-        return super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        raise RuntimeError("Audit events are immutable.")
-=======
             models.Index(fields=["target_type", "target_id"], name="auditentry_target_idx"),
         ]
->>>>>>> feature/plans-teams
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} {self.target_type} {self.target_id}"

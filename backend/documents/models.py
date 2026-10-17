@@ -23,34 +23,6 @@ class ApprovedLeaveDocumentManager(
     """Manager enforcing that a ``ready`` document is never rewritten."""
 
 
-class ApprovedLeaveDocument(models.Model):
-    """The official approved-leave document PDF for one application (Unit 23).
-
-    Exactly one document per application: a later finalisation of the same
-    application replaces the stored file and refreshes this row, it never
-    creates a second row. The PDF bytes live in the Unit 19 storage backend
-    (never in the database); this row is the metadata + access key.
-    """
-
-    application = models.OneToOneField(
-        "leave.LeaveApplication",
-        on_delete=models.CASCADE,
-        related_name="approved_leave_document",
-    )
-    file_path = models.CharField(max_length=512)
-    file_name = models.CharField(max_length=255)
-    file_size = models.PositiveIntegerField()
-    content_type = models.CharField(max_length=100)
-    generated_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-generated_at"]
-
-    def __str__(self) -> str:
-        ref = self.application.reference_number or self.application_id
-        return f"ApprovedLeaveDocument({ref} - {self.file_name})"
-
-
 class LeaveDocumentTemplate(models.Model):
     """The single official approved-leave document template.
 
