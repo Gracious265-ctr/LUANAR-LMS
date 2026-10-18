@@ -164,7 +164,7 @@ describe("TeamForm", () => {
       "effective_to",
       "name",
     ]);
-    expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/teams/4?tab=members");
+    expect(push).toHaveBeenCalledWith("/dashboard/teams/4?tab=members");
     expect(refresh).toHaveBeenCalled();
   });
 
@@ -300,7 +300,7 @@ describe("TeamForm", () => {
       )
     );
     expect(createTeam).not.toHaveBeenCalled();
-    expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/teams/4");
+    expect(push).toHaveBeenCalledWith("/dashboard/teams/4");
   });
 
   it("reorders the steps by what is shown rather than by the order they were added", async () => {

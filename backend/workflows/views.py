@@ -64,8 +64,8 @@ from .services import (
     create_campus,
     acting_approver_map,
     approve_delegation,
-    activate_team,
     cancel_delegation,
+    clear_team_manager,
     deactivate_approver_role,
     deactivate_team,
     is_approver_user,
@@ -76,6 +76,8 @@ from .services import (
     remove_team_member,
     remove_team_role_assignment,
     remove_workflow_member,
+    route_team,
+    set_team_manager,
     team_member_summaries,
     validate_team,
     workflow_member_pool,
@@ -618,6 +620,36 @@ class TeamRoleAssignmentViewSet(
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["post"], url_path="set-manager")
+    def set_manager(self, request, *args, **kwargs):
+        """Designate a team-wide holding as its team's manager.
+
+        Clears the flag from any other holder on the team, so a team always has
+        at most one manager.
+        """
+        try:
+            assignment = set_team_manager(
+                assignment=self.get_object(), actor=request.user
+            )
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(self.get_serializer(assignment).data)
+
+    @action(detail=True, methods=["post"], url_path="clear-manager")
+    def clear_manager(self, request, *args, **kwargs):
+        """Remove the manager designation from a team-wide holding."""
+        try:
+            assignment = clear_team_manager(
+                assignment=self.get_object(), actor=request.user
+            )
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(self.get_serializer(assignment).data)
+
 
 class CampusRoleAssignmentViewSet(
     mixins.ListModelMixin,
@@ -684,19 +716,19 @@ class TeamViewSet(
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet
 ):
-    """HR-only CRUD for teams, plus their lifecycle actions (no hard delete).
+    """HR-only CRUD for teams, plus their routing and retirement actions.
 
     A team is created in one pass, optionally with its whole approval chain, and
-    put into force by a separate validated action. Members are edited through
-    :class:`SectionMemberViewSet` (approver periods), the members actions on
-    this viewset (normal team membership), and the workflow member actions —
-    each add/remove is its own atomic, audited action instead of a whole-team
-    overwrite.
+    is in force the moment it is created — there is no separate activation step.
+    Members are edited through :class:`SectionMemberViewSet` (approver periods),
+    the members actions on this viewset (normal team membership), and the
+    workflow member actions — each add/remove is its own atomic, audited action
+    instead of a whole-team overwrite.
 
     ``status`` is a three-state lifecycle, not a flag, so the list defaults to
-    the teams that are actually in force plus the drafts HR is still working on
-    (``?status=active``, ``?status=draft``, or ``?include_inactive=1`` for
-    everything) rather than hiding the half-built ones HR most needs to see.
+    the teams that are actually in force (``?status=active``, ``?status=draft``,
+    or ``?include_inactive=1`` for everything) rather than hiding the retired
+    ones.
     """
 
     serializer_class = TeamSerializer
@@ -1015,7 +1047,7 @@ class TeamViewSet(
         serializer.is_valid(raise_exception=True)
         try:
             team = serializer.save()
-        except TeamActionError as exc:
+        except (TeamActionError, RoleActionError) as exc:
             return Response(
                 {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
             )
@@ -1036,7 +1068,7 @@ class TeamViewSet(
         serializer.is_valid(raise_exception=True)
         try:
             team = serializer.save()
-        except TeamActionError as exc:
+        except (TeamActionError, RoleActionError) as exc:
             return Response(
                 {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
             )
@@ -1044,48 +1076,49 @@ class TeamViewSet(
             TeamSerializer(team, context=self.get_serializer_context()).data
         )
 
+    @action(detail=True, methods=["post"], url_path="route")
+    def route(self, request, *args, **kwargs):
+        """Point this team at one of the chains it owns.
+
+        Routing is a decision about *which* of the team's chains is in force. The
+        workflow named must be one the team already owns, so this can only choose
+        among the team's own chains — never borrow another team's.
+        """
+        team = self.get_object()
+        workflow_id = request.data.get("workflow")
+        workflow = None
+        if workflow_id not in (None, ""):
+            try:
+                workflow_pk = positive_int(workflow_id, "workflow")
+            except ValidationError:
+                return Response(
+                    {"workflow": ["That workflow is missing or is not this team's."]},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            workflow = Workflow.objects.filter(pk=workflow_pk, team=team).first()
+        try:
+            routed = route_team(team=team, actor=request.user, workflow=workflow)
+        except TeamActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            TeamSerializer(routed, context=self.get_serializer_context()).data
+        )
+
     @action(detail=True, methods=["post"], url_path="validate")
     def validate_configuration(self, request, *args, **kwargs):
-        """Report whether this team could be activated, without changing it.
+        """Report whether this team's configuration can route, without changing it.
 
         Side-effect free and available at any status, so HR can check a team that
-        is already in force and find out which step has lost its approver — the
-        question that otherwise only surfaces as a refused submission from the
-        employee. The same function gates the activate action, so the answer here
-        is exactly the answer activation would give.
+        is in force and find out which step has lost its approver — the question
+        that otherwise only surfaces as a refused submission from the employee.
+        A chainless team reports its missing workflow here rather than failing
+        silently at submission.
         """
         team = self.get_object()
         readiness = validate_team(team)
         return Response(TeamReadinessSerializer(readiness).data)
-
-    @action(detail=True, methods=["post"], url_path="activate")
-    def activate(self, request, *args, **kwargs):
-        """Put a draft team into force, refusing a team that cannot route.
-
-        A refusal is a 400 carrying the full list of issues rather than the first
-        one, and the team stays a draft: the configuration HR wrote is intact and
-        every problem is named, so this is a to-do list and not a dead end.
-        """
-        team = self.get_object()
-        try:
-            activated = activate_team(team=team, actor=request.user)
-        except TeamActionError as exc:
-            payload: dict = {exc.field: [exc.message]}
-            if exc.issues:
-                payload["issues"] = [
-                    {
-                        "code": issue.code,
-                        "field": issue.field,
-                        "message": issue.message,
-                        "section": issue.section,
-                        "approver_role": issue.approver_role,
-                    }
-                    for issue in exc.issues
-                ]
-            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
-        return Response(
-            TeamSerializer(activated, context=self.get_serializer_context()).data
-        )
 
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, *args, **kwargs):

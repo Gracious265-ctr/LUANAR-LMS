@@ -286,12 +286,11 @@ class TeamAPITests(ConfigurationAPIBase):
     def test_a_team_may_not_point_at_an_existing_chain(self):
         """A chain is never picked from a list to be routed through.
 
-        ``workflow`` is writable now — a team points at the chain it owns, so
-        that switching a team to its replacement chain is a real, recorded
-        decision — but only at a chain the team already owns. Naming somebody
-        else's chain would strand every application inside it at a step nobody
-        staffs for them, so it is refused rather than quietly ignored, and the
-        team is not half-created on the way.
+        ``workflow`` is read-only on the team write: routing is the ``route``
+        action's decision, and the chain named must be one the team already
+        owns. A client that sends ``workflow`` on a create is refused rather
+        than quietly ignored, so it learns the boundary instead of believing it
+        pointed the team somewhere, and the team is not half-created on the way.
         """
         other = self.create_team(name="Other team")
         response = self.client.post(
@@ -309,8 +308,8 @@ class TeamAPITests(ConfigurationAPIBase):
         The team's identity is the first thing HR knows and the second page is
         where the approval steps get described, so refusing to save the identity
         would mean holding the whole thing in the browser until the last step was
-        answered. The team lands as a draft with no chain, and a draft routes
-        nothing, so the window cannot be reached in production.
+        answered. The team lands in force with no chain, and it routes nothing
+        purely because there is nothing to route through.
         """
         response = self.client.post(
             TEAMS_URL,
@@ -320,25 +319,23 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         team = Team.objects.get(name="Chainless team")
         self.assertIsNone(team.workflow_id)
-        self.assertEqual(team.status, Team.Status.DRAFT)
+        self.assertEqual(team.status, Team.Status.ACTIVE)
         self.assertEqual(response.data["sections"], [])  # type: ignore[index]
 
-    def test_a_chainless_draft_team_cannot_be_activated(self):
-        """A draft team with no chain is refused activation, naming the chain.
+    def test_a_chainless_team_reports_its_missing_workflow(self):
+        """A chainless team is in force but cannot route — and says why.
 
-        The rule is what makes the previous test safe: a team can exist without
-        a chain, but cannot be put into force without one.
+        A team is in force from creation, so there is no activation to refuse.
+        Validation is the standing check that names the missing chain, rather
+        than letting the gap surface as a refused submission from the employee.
         """
         created = self.client.post(
             TEAMS_URL,
             {"name": "Chainless team"},
             format="json",
         ).data
-        response = self.client.post(f"{TEAMS_URL}{created['id']}/activate/")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            Team.objects.get(pk=created["id"]).status, Team.Status.DRAFT
-        )
+        response = self.client.post(f"{TEAMS_URL}{created['id']}/validate/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         codes = [issue["code"] for issue in response.data["issues"]]
         self.assertIn("workflow_missing", codes)
 
@@ -454,33 +451,35 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertEqual(row["sections"][0]["approver"]["id"], approver.pk)
         self.assertIsNone(row["sections"][1]["approver"])
 
-    def test_a_new_team_starts_as_a_draft(self):
-        """Created is not in force.
+    def test_a_new_team_is_in_force_when_created(self):
+        """Created is in force.
 
-        A team appears the moment HR names it, and only starts affecting real
-        applications when it is activated. A boolean could not have said this:
-        a team being built looked exactly like a team in service.
+        Creating a team *is* the decision to put it in force, so a team routes
+        as soon as it owns a chain and routes nothing before then purely because
+        there is nothing to route through. HR is not asked to confirm a second
+        time.
         """
         team = self.create_team()
-        self.assertEqual(team["status"], Team.Status.DRAFT)
-        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT)
+        self.assertEqual(team["status"], Team.Status.ACTIVE)
+        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.ACTIVE)
 
     def test_status_cannot_be_set_by_a_write(self):
-        """Lifecycle moves go through their own validated actions.
+        """Lifecycle moves go through their own audited actions.
 
-        A PATCH that could flip a team to active would be a team put in force
-        without a validation record and without the refusal that validation
-        exists to give.
+        A team is put in force by creating it and retired through the
+        ``deactivate`` action, so a PATCH that could flip ``status`` would be a
+        change made without an audit entry. The field is read-only, so the write
+        is ignored.
         """
         team = self.create_team()
         response = self.client.patch(
             f"{TEAMS_URL}{team['id']}/",
-            {"status": Team.Status.ACTIVE},
+            {"status": Team.Status.INACTIVE},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT
+            Team.objects.get(pk=team["id"]).status, Team.Status.ACTIVE
         )
 
     def test_retired_teams_are_hidden_by_default(self):
@@ -504,16 +503,16 @@ class TeamAPITests(ConfigurationAPIBase):
         )
 
     def test_the_list_can_be_filtered_to_one_status(self):
-        self.create_team(name="Draft team")
         self.create_team(name="Live team", roles=("dean",))
-        Team.objects.filter(name="Live team").update(status=Team.Status.ACTIVE)
+        self.create_team(name="Retired team")
+        Team.objects.filter(name="Retired team").update(status=Team.Status.INACTIVE)
         response = self.client.get(f"{TEAMS_URL}?status=active")
         self.assertEqual(
             [r["name"] for r in response.data["results"]], ["Live team"]
         )
-        response = self.client.get(f"{TEAMS_URL}?status=draft")
+        response = self.client.get(f"{TEAMS_URL}?status=inactive")
         self.assertEqual(
-            [r["name"] for r in response.data["results"]], ["Draft team"]
+            [r["name"] for r in response.data["results"]], ["Retired team"]
         )
 
     def test_an_unknown_status_filter_is_a_clean_error(self):

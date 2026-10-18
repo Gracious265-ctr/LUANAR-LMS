@@ -44,6 +44,14 @@ def list_item(application: LeaveApplication, user) -> dict:
         "status": derived_status(application),
         "submission_cycle": application.submission_cycle,
         "is_resubmission": application.submission_cycle > 1,
+        # The pending stage's optimistic-lock version, surfaced so a bulk
+        # approval can be built from the list without opening each application
+        # (spec 5). Null when the application has left the chain.
+        "stage_version": (
+            application.current_stage.decision_version
+            if application.current_stage_id is not None
+            else None
+        ),
         "my_decision": (
             {
                 "action": decision.action,

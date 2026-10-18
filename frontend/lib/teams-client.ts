@@ -82,21 +82,16 @@ export async function updateTeam(
 }
 
 /**
- * Asks the backend whether the team could be put into force, and what stands in
+ * Asks the backend whether the team can route applications, and what stands in
  * the way. The answer is a *list*, not a yes/no, because a chain with three
  * unstaffed steps should take HR one pass rather than three round trips.
+ *
+ * A team is in force from creation, so this is a standing check rather than a
+ * gate before an activation: it is how HR finds the step that has lost its
+ * approver since the chain was written.
  */
 export async function validateTeam(id: number | string): Promise<TeamReadiness> {
   return send<TeamReadiness>(`/api/hr/teams/${id}/validate`, "POST");
-}
-
-/**
- * Puts a team into force. Refused, with the same issue list, if the team is not
- * ready — so the caller has one place to read a refusal from and no way to
- * force a broken chain on.
- */
-export async function activateTeam(id: number | string): Promise<Team> {
-  return send<Team>(`/api/hr/teams/${id}/activate`, "POST");
 }
 
 /**
@@ -120,7 +115,7 @@ export async function routeTeamThrough(
   teamId: number | string,
   workflowId: number | string | null
 ): Promise<Team> {
-  return send<Team>(`/api/hr/teams/${teamId}`, "PATCH", {
+  return send<Team>(`/api/hr/teams/${teamId}/route`, "POST", {
     workflow: workflowId,
   });
 }

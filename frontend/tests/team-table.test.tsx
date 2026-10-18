@@ -85,7 +85,7 @@ describe("TeamTable", () => {
 
     expect(
       screen.getByRole("link", { name: "Registry" })
-    ).toHaveAttribute("href", "/dashboard/hr-admin/teams/7");
+    ).toHaveAttribute("href", "/dashboard/teams/7");
   });
 
   it("invites a first team instead of rendering an empty table", () => {

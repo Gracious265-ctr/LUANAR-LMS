@@ -53,7 +53,7 @@ export default async function TeamWorkflowsPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}`}
+          href={`/dashboard/teams/${team.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -71,7 +71,7 @@ export default async function TeamWorkflowsPage({
             </p>
           </div>
           <Link
-            href={`/dashboard/hr-admin/teams/${team.id}/workflows/new`}
+            href={`/dashboard/teams/${team.id}/workflows/new`}
             className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
           >
             <Plus className="h-4 w-4" />
@@ -104,7 +104,7 @@ export default async function TeamWorkflowsPage({
               >
                 <div>
                   <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}`}
+                    href={`/dashboard/teams/${team.id}/workflows/${workflow.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     {workflow.name}
@@ -128,7 +128,7 @@ export default async function TeamWorkflowsPage({
                     {workflow.is_routing ? "Routing" : "Standby"}
                   </span>
                   <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}/edit`}
+                    href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
                     className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     Edit steps

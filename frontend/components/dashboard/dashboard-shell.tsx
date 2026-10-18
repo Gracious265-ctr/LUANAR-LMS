@@ -351,6 +351,18 @@ const NavLinks = memo(function NavLinks({
         isApprover={isApprover}
         pendingCount={pendingApprovals}
       />
+      {/* Teams is its own module now, not a page under HR Administration:
+          HR reaches it from the rail beside the other top-level apps, and it
+          owns its own route at ``/dashboard/teams``. */}
+      {showHR && (
+        <Option
+          Icon={Users}
+          title="Teams"
+          href="/dashboard/teams"
+          currentPath={currentPath}
+          open={open}
+        />
+      )}
       {showCover && (
         <Option
           Icon={UserCheck}
@@ -428,13 +440,6 @@ const NavLinks = memo(function NavLinks({
             Icon={SlidersHorizontal}
             title="Leave Types"
             href="/leave-config"
-            currentPath={currentPath}
-            open={open}
-          />
-          <Option
-            Icon={Users}
-            title="Teams"
-            href="/dashboard/hr-admin/teams"
             currentPath={currentPath}
             open={open}
           />

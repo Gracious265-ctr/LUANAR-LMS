@@ -18,9 +18,10 @@ This command builds the smallest configuration that routes end to end:
   Leave type and the grade band that offers it) so an employee can plan and
   apply, not just be routed.
 
-The team is created and activated through the same services HR's screens call
-(:func:`workflows.services.create_team`, :func:`activate_team`), so the seed
-cannot build a graph the product would refuse — it either validates or it fails.
+The team is created through the same service HR's screens call
+(:func:`workflows.services.create_team`), so the seed cannot build a graph the
+product would refuse — it either validates or it fails. Creating a team puts it
+in force, so there is no separate activation step.
 
 Idempotent on natural keys: re-running tops the roster and the leave config up
 and leaves an already-built team alone, so it is safe to run against a database
@@ -39,7 +40,6 @@ from leave_config.models import LeaveType
 from users.models import EmployeeProfile
 from workflows.models import ApproverRole, Team
 from workflows.services import (
-    activate_team,
     assign_workflow_member,
     create_role_assignment,
     create_team,
@@ -281,12 +281,6 @@ class Command(BaseCommand):
         return team
 
     def _staff_team(self, *, team, employees, actor) -> None:
-        if team.status != Team.Status.ACTIVE:
-            activate_team(team=team, actor=actor)
-            # activate_team locks and returns its own instance rather than
-            # mutating the one passed in, so refresh to report the real status.
-            team.refresh_from_db()
-
         workflow = team.workflow
         if workflow is None:
             raise CommandError(f"Team {team.name} has no workflow to staff.")

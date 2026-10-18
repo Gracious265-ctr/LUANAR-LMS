@@ -699,12 +699,11 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
         self._legacy_state()
         self.latest()
 
-        from django.apps import apps  # noqa: PLC0415
-
         module = import_module(
             "workflows.migrations.0023_institution_wide_final_approval"
         )
-        module.flag_institution_wide_roles(apps, None)
+        historical_apps = self.state(("workflows", "0022_team_workflow_optional"))
+        module.flag_institution_wide_roles(historical_apps, None)
 
         self.assertEqual(self._read()["holdings"], 1)
 

@@ -157,17 +157,17 @@ class EndToEndBase(StubProviderMixin, TestCase):
             deliver_notification(row.pk)
 
     def hr_creates_team(self, roles, approvers):
-        """HR configures the team and its chain, then puts it into force.
+        """HR configures the team and its chain, which puts it into force.
 
         This is the whole configuration sequence as the product now asks for it:
         one request describes the team *and* the approval steps it follows,
         because a chain is not a thing HR creates apart from a team. Each step
-        names one approver, and the team they belong to is what scopes them. The
-        team is then activated — a validated step, so a configuration still being
-        built cannot affect anyone's application.
+        names one approver, and the team they belong to is what scopes them.
+        Creating the team *is* putting it into force — there is no second
+        confirmation — so it routes as soon as it owns a chain.
 
-        Going through the real endpoints keeps the journey honest: an
-        activation the API refuses fails this test rather than being papered
+        Going through the real endpoints keeps the journey honest: a
+        configuration the API refuses fails this test rather than being papered
         over in a fixture.
         """
         self.client.force_authenticate(user=self.hr)
@@ -191,12 +191,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data["status"], "draft")
-
-        activated = self.client.post(
-            f"/api/v1/teams/{response.data['id']}/activate/", format="json"
-        )
-        self.assertEqual(activated.status_code, 200, activated.data)
+        self.assertEqual(response.data["status"], "active")
         return response.data
 
     def place_approvers_on_team(self):

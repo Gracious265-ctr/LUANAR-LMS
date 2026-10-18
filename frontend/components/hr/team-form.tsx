@@ -447,8 +447,8 @@ interface TeamDetails {
         // it is a chain, so a new team's workflow is configured from its page.
         router.push(
           team
-            ? `/dashboard/hr-admin/teams/${team.id}`
-            : `/dashboard/hr-admin/teams/${saved.id}?tab=members`
+            ? `/dashboard/teams/${team.id}`
+            : `/dashboard/teams/${saved.id}?tab=members`
         );
         router.refresh();
       }
@@ -481,8 +481,8 @@ interface TeamDetails {
   }
 
   const backHref = team
-    ? `/dashboard/hr-admin/teams/${team.id}`
-    : "/dashboard/hr-admin/teams";
+    ? `/dashboard/teams/${team.id}`
+    : "/dashboard/teams";
 
   if (page === 1 || !team) {
     return (

@@ -123,7 +123,7 @@ export function TeamsSection({
         targetKey={overlay.target}
         size="lg"
         title="New team"
-        description="A team starts as a draft and routes nothing until it is validated and activated. Name each step and choose at least one person to start on it."
+        description="A team is in force from the moment it is created, but routes nothing until it owns an approval chain. Name each step and choose at least one person to start on it."
         onOpenChange={(open) => {
           if (!open) overlay.close();
         }}

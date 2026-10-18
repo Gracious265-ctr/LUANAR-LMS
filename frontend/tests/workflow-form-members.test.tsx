@@ -100,6 +100,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     team: 4,
     team_name: "Bunda College Faculty",
     effective_from: null,
+    effective_to: null,
     is_active: true,
     state: "standby",
     is_routing: false,
@@ -108,6 +109,13 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     members: [],
     ...overrides,
   };
+}
+
+/** A chain carries its own name; the form refuses a blank one on save. */
+function fillName(value = "Academic approval") {
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value },
+  });
 }
 
 beforeEach(() => {
@@ -199,6 +207,7 @@ describe("WorkflowForm members section", () => {
     );
     expect(screen.getByText(/On this chain/)).toBeInTheDocument();
 
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>
@@ -237,6 +246,7 @@ describe("WorkflowForm approver picker", () => {
       screen.getByRole("combobox", { name: /approver/i }),
       { target: { value: "32" } }
     );
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>
@@ -352,6 +362,7 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
       screen.queryByRole("combobox", { name: "Approver" })
     ).not.toBeInTheDocument();
 
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>

@@ -7,6 +7,7 @@ from .approval_views import (
     ApprovalDocumentDownloadView,
     ApprovalListAPIView,
     ApprovalsCapabilitiesView,
+    BulkApprovalDecisionAPIView,
     CancellationDecisionAPIView,
     CancellationDetailAPIView,
     CancellationListAPIView,
@@ -69,6 +70,13 @@ urlpatterns = [
         name="cancellations-decision",
     ),
     path("approvals/", ApprovalListAPIView.as_view()),
+    # Registered before the ``<str:pk>`` routes so "bulk-decision" is not
+    # parsed as an application id.
+    path(
+        "approvals/bulk-decision/",
+        BulkApprovalDecisionAPIView.as_view(),
+        name="approvals-bulk-decision",
+    ),
     path("approvals/<str:pk>/", ApprovalDetailAPIView.as_view()),
     path("approvals/<str:pk>/decision/", ApprovalDecisionAPIView.as_view()),
     path(

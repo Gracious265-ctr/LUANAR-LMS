@@ -41,7 +41,7 @@ export interface TeamReadinessIssue {
   approver_role: string | null;
 }
 
-/** The answer to "can this team be activated, and if not, why not?". */
+/** The answer to "can this team route, and if not, why not?". */
 export interface TeamReadiness {
   team: string;
   status: TeamStatus | string;

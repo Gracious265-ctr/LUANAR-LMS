@@ -237,7 +237,7 @@ class LeaveApplication(models.Model):
     # The stage the application is currently parked at. Written by the workflow
     # assignment/approval services; null for drafts and finalised applications.
     current_stage = models.ForeignKey(
-        "workflows.ApplicationStage",
+        "approvals.ApplicationStage",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

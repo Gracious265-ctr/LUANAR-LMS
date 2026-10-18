@@ -85,7 +85,7 @@ export function CampusTable({
                       {atCampus.map((team) => (
                         <li key={team.id} className="text-xs">
                           <Link
-                            href={`/dashboard/hr-admin/teams/${team.id}`}
+                            href={`/dashboard/teams/${team.id}`}
                             className="text-text-secondary hover:text-brand-primary"
                           >
                             {team.name}

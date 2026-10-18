@@ -51,7 +51,6 @@ from .models import (
 from .providers import DatabaseWorkflowProvider, WorkflowConfigError
 from .services import (
     TeamActionError,
-    activate_team,
     add_section_member,
     create_team,
     deactivate_team,
@@ -178,9 +177,13 @@ class TeamConfigurationBase(TestCase):
         return response.data
 
     def activate(self, team_id: int) -> dict:
-        response = self.client.post(f"{TEAMS_URL}{team_id}/activate/", format="json")
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        return response.data
+        """Return the team, which is in force from creation.
+
+        A team is put in force by creating it, so there is no activation step to
+        take. Kept as a named helper because the routing tests read as "the team
+        is live" at this point, and that is still true.
+        """
+        return self.read(team_id)
 
     def read(self, team_id: int) -> dict:
         response = self.client.get(f"{TEAMS_URL}{team_id}/")
@@ -194,8 +197,9 @@ class TeamConfigurationBase(TestCase):
         )
         # Writing the profile caches it on the user instance, holding on to the
         # Team object the caller passed — which may be a read taken before the
-        # team was activated. Dropping the cache means the routing assertions
-        # below are reading what is in the database, not what the test remembers.
+        # team's chain was written. Dropping the cache means the routing
+        # assertions below are reading what is in the database, not what the
+        # test remembers.
         self.employee.refresh_from_db()
 
     def use_real_workflow_provider(self):
@@ -218,7 +222,7 @@ class TeamCreationTests(TeamConfigurationBase):
 
     def test_a_team_is_created_with_its_workflow_sections_and_approvers(self):
         team = self.create_team()
-        self.assertEqual(team["status"], Team.Status.DRAFT)
+        self.assertEqual(team["status"], Team.Status.ACTIVE)
         self.assertTrue(team["workflow_name"])
 
         stored = Team.objects.get(pk=team["id"])
@@ -297,8 +301,9 @@ class TeamCreationTests(TeamConfigurationBase):
 
         A team is named before anybody knows which posts it needs to route
         through, so refusing a team with no chain would force HR to know the
-        answer up front. It is saved as a draft, and activation is what refuses a
-        chainless team \u2014 that check lives in TeamValidationTests.
+        answer up front. It is saved in force but chainless, routing nothing
+        until it owns a chain \u2014 validation names the gap, which lives in
+        TeamValidationTests.
         """
         response = self.client.post(
             TEAMS_URL,
@@ -306,7 +311,7 @@ class TeamCreationTests(TeamConfigurationBase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(response.data["status"], Team.Status.DRAFT)
+        self.assertEqual(response.data["status"], Team.Status.ACTIVE)
         self.assertIsNone(response.data["workflow"])
         self.assertEqual(response.data["sections"], [])
         self.assertEqual(response.data["members"], [])
@@ -762,8 +767,9 @@ class TeamChainEditingTests(TeamConfigurationBase):
     def test_editing_the_steps_does_not_change_the_status(self):
         """Chain edits are configuration, not lifecycle.
 
-        A team is put in force by activating it, so a form save that happens to
-        include a steps change must not quietly do that too.
+        A team is put in force by creating it and retired only through its own
+        action, so a form save that happens to include a steps change must not
+        quietly retire or revive the team.
         """
         team = self.create_team()
         self.client.patch(
@@ -772,11 +778,11 @@ class TeamChainEditingTests(TeamConfigurationBase):
                 "new_workflow": {
                     "sections": [{"name": "Step", "approver_role": "supervisor"}]
                 },
-                "status": Team.Status.ACTIVE,
+                "status": Team.Status.INACTIVE,
             },
             format="json",
         )
-        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT)
+        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.ACTIVE)
 
     def test_an_empty_step_list_is_refused_on_edit(self):
         """A team whose steps were all deleted would route nothing."""
@@ -1168,55 +1174,50 @@ class TeamValidationTests(TeamConfigurationBase):
             .exists()
         )
 
-    def test_an_approver_cannot_validate_or_activate(self):
+    def test_an_approver_cannot_validate_or_retire(self):
         """Approver status is not administrative authority.
 
-        Somebody who can act on a step is not thereby allowed to put teams in
-        force; only HR is.
+        Somebody who can act on a step is not thereby allowed to inspect a
+        team's readiness or take it out of service; only HR is.
         """
         team = self.create_team()
         self.client.force_authenticate(self.supervisor)
-        for url in ("validate", "activate", "deactivate"):
+        for url in ("validate", "deactivate"):
             response = self.client.post(f"{TEAMS_URL}{team['id']}/{url}/", format="json")
             self.assertEqual(
                 response.status_code, status.HTTP_403_FORBIDDEN, url
             )
 
 
-class TeamActivationTests(TeamConfigurationBase):
-    """Putting a team into force, and taking it back out."""
+class TeamLifecycleTests(TeamConfigurationBase):
+    """A team is in force from creation; retiring takes it back out."""
 
-    def test_activating_a_valid_team_puts_it_in_force(self):
+    def test_a_created_team_is_in_force(self):
         team = self.create_team()
-        activated = self.activate(team["id"])
-        self.assertEqual(activated["status"], Team.Status.ACTIVE)
+        stored = Team.objects.get(pk=team["id"])
+        self.assertEqual(stored.status, Team.Status.ACTIVE)
 
-    def test_activating_dates_the_workflow_it_starts_routing(self):
-        """A chain with no start date reads as a draft while it is demonstrably live.
+    def test_creating_a_team_dates_the_workflow_it_routes_through(self):
+        """A chain is dated when it is written, so it agrees with the team.
 
-        The team being in force is the decision; dating the chain is what stops
-        the two disagreeing about whether this approval path applies.
+        The team is in force the moment it is created; dating the chain it owns
+        in the same transaction is what stops the two disagreeing about whether
+        this approval path applies.
         """
         team = self.create_team()
         stored = Team.objects.get(pk=team["id"])
-        self.assertIsNone(stored.workflow.effective_from)
-        self.activate(team["id"])
-        stored.refresh_from_db()
         self.assertEqual(stored.workflow.effective_from, timezone.localdate())
 
-    def test_activating_does_not_overwrite_a_workflow_date(self):
-        team = self.create_team()
-        stored = Team.objects.get(pk=team["id"])
-        stored.workflow.effective_from = timezone.localdate() - timedelta(days=5)
-        stored.workflow.save(update_fields=["effective_from"])
-        self.activate(team["id"])
-        self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.effective_from,
-            timezone.localdate() - timedelta(days=5),
-        )
-
     def test_a_draft_team_does_not_route(self):
+        """A legacy draft team routes nothing.
+
+        Teams are in force from creation, so a draft is only reachable as a
+        legacy row. The provider still refuses to route one, which is what keeps
+        an older half-configured team from stranding an application.
+        """
         team = Team.objects.get(pk=self.create_team()["id"])
+        Team.objects.filter(pk=team.pk).update(status=Team.Status.DRAFT)
+        team.refresh_from_db()
         self.place_employee(team)
         with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
@@ -1224,7 +1225,7 @@ class TeamActivationTests(TeamConfigurationBase):
             )
         self.assertIn("still being set up", str(ctx.exception))
 
-    def test_an_unstaffed_team_cannot_be_activated(self):
+    def test_an_unstaffed_team_is_reported_unready(self):
         team = self.create_team(
             name="Unstaffed team",
             new_workflow={
@@ -1233,15 +1234,12 @@ class TeamActivationTests(TeamConfigurationBase):
                 ]
             },
         )
-        response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/activate/", format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            Team.objects.get(pk=team["id"]).status, Team.Status.DRAFT
-        )
+        stored = Team.objects.get(pk=team["id"])
+        readiness = validate_team(stored)
+        self.assertFalse(readiness.ready)
+        self.assertEqual(readiness.issues[0].code, "no_approver")
 
-    def test_a_refused_activation_returns_every_problem(self):
+    def test_validation_returns_every_problem(self):
         team = self.create_team(
             name="Two gaps",
             new_workflow={
@@ -1252,17 +1250,17 @@ class TeamActivationTests(TeamConfigurationBase):
             },
         )
         response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/activate/", format="json"
+            f"{TEAMS_URL}{team['id']}/validate/", format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["issues"]), 2)
-        self.assertIn("status", response.data)
+        self.assertFalse(response.data["ready"])
 
-    def test_a_refused_activation_keeps_the_configuration(self):
-        """A refusal is a to-do list, not a discarded draft.
+    def test_an_unready_team_keeps_its_configuration(self):
+        """Readiness is a to-do list, not a reason to discard what HR wrote.
 
-        Throwing away what HR wrote because one step was unstaffed would make
-        every failed activation a restart.
+        The team is in force and its chain is intact; validation names the gap
+        rather than throwing the configuration away.
         """
         team = self.create_team(
             name="Unstaffed team",
@@ -1272,89 +1270,39 @@ class TeamActivationTests(TeamConfigurationBase):
                 ]
             },
         )
-        self.client.post(f"{TEAMS_URL}{team['id']}/activate/", format="json")
+        self.client.post(f"{TEAMS_URL}{team['id']}/validate/", format="json")
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(stored.workflow.sections.count(), 1)
+        self.assertEqual(stored.status, Team.Status.ACTIVE)
 
-    def test_activating_is_audited(self):
+    def test_creating_a_team_is_audited(self):
         team = self.create_team()
-        self.activate(team["id"])
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.TEAM,
             target_id=str(team["id"]),
-            action=AuditEntry.Action.ACTIVATED,
+            action=AuditEntry.Action.CREATED,
         )
         self.assertEqual(entry.actor, self.hr)
         self.assertEqual(entry.detail["after"]["status"], Team.Status.ACTIVE)
 
-    def test_a_refused_activation_leaves_no_audit_entry(self):
-        """A failed action must not leave a phantom record of having happened."""
-        team = self.create_team(
-            name="Unstaffed team",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"}
-                ]
-            },
-        )
-        self.client.post(f"{TEAMS_URL}{team['id']}/activate/", format="json")
-        self.assertFalse(
-            AuditEntry.objects.filter(
-                target_type=AuditEntry.TargetType.TEAM,
-                target_id=str(team["id"]),
-                action=AuditEntry.Action.ACTIVATED,
-            ).exists()
-        )
-
-    def test_activating_twice_is_harmless(self):
+    def test_there_is_no_activation_action(self):
+        """Putting a team in force is creating it; there is no second step."""
         team = self.create_team()
-        self.activate(team["id"])
-        self.activate(team["id"])
-        self.assertEqual(
-            AuditEntry.objects.filter(
-                target_type=AuditEntry.TargetType.TEAM,
-                target_id=str(team["id"]),
-                action=AuditEntry.Action.ACTIVATED,
-            ).count(),
-            1,
+        response = self.client.post(
+            f"{TEAMS_URL}{team['id']}/activate/", format="json"
         )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retiring_stops_new_submissions(self):
         team = self.create_team()
-        self.activate(team["id"])
         response = self.client.post(
             f"{TEAMS_URL}{team['id']}/deactivate/", format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], Team.Status.INACTIVE)
 
-    def test_a_retired_team_cannot_be_reactivated(self):
-        """Retiring ends the team; bringing it back means creating it again.
-
-        A configuration that was abandoned — a chain half-swapped, people moved
-        elsewhere — should not be able to come back into service by a single
-        action, because nothing has re-checked it since.
-        """
-        team = self.create_team()
-        self.activate(team["id"])
-        self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
-        response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/activate/", format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("status", response.data)
-
-    def test_a_draft_team_cannot_be_retired(self):
-        team = self.create_team()
-        response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/deactivate/", format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("status", response.data)
-
     def test_retiring_is_audited(self):
         team = self.create_team()
-        self.activate(team["id"])
         self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.TEAM,
@@ -1365,15 +1313,15 @@ class TeamActivationTests(TeamConfigurationBase):
 
     def test_a_team_is_never_hard_deleted(self):
         team = self.create_team()
-        self.activate(team["id"])
         self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
         self.assertTrue(Team.objects.filter(pk=team["id"]).exists())
 
-    def test_the_service_refuses_an_invalid_activation_too(self):
-        """The action is guarded in the service, not only at the API edge.
+    def test_the_service_reports_an_unready_team_too(self):
+        """Readiness is decided in the service, not only at the API edge.
 
         Otherwise a caller reaching the service directly — the admin, a future
-        caller, a management command — could put an unstaffed team in force.
+        caller, a management command — would have to reconstruct the rule by
+        hand instead of asking :func:`validate_team` the same question.
         """
         team = self.create_team(
             name="Unstaffed team",
@@ -1384,20 +1332,20 @@ class TeamActivationTests(TeamConfigurationBase):
             },
         )
         stored = Team.objects.get(pk=team["id"])
-        with self.assertRaises(TeamActionError) as ctx:
-            activate_team(team=stored, actor=self.hr)
-        stored.refresh_from_db()
-        self.assertEqual(stored.status, Team.Status.DRAFT)
-        self.assertEqual(ctx.exception.issues[0].code, "no_approver")
+        readiness = validate_team(stored)
+        self.assertFalse(readiness.ready)
+        self.assertEqual(readiness.issues[0].code, "no_approver")
 
-    def test_the_service_refuses_to_retire_a_draft(self):
+    def test_retiring_a_retired_team_is_a_no_op(self):
         team = Team.objects.get(pk=self.create_team()["id"])
-        with self.assertRaises(TeamActionError):
-            deactivate_team(team=team, actor=self.hr)
+        deactivate_team(team=team, actor=self.hr)
+        team.refresh_from_db()
+        self.assertEqual(team.status, Team.Status.INACTIVE)
+        again = deactivate_team(team=team, actor=self.hr)
+        self.assertEqual(again.status, Team.Status.INACTIVE)
 
-    def test_an_activated_team_routes_its_employees(self):
+    def test_a_live_team_routes_its_employees(self):
         team = self.create_team()
-        self.activate(team["id"])
         stored = Team.objects.get(pk=team["id"])
         self.place_employee(stored)
         definitions = DatabaseWorkflowProvider().get_stage_definitions(
@@ -1415,7 +1363,7 @@ class TeamDetailsTests(TeamConfigurationBase):
         # A campus is optional and reporting-only: scoping approvals is the
         # team's own membership, so a team need not name one.
         self.assertIsNone(row["campus"])
-        self.assertEqual(row["status"], Team.Status.DRAFT)
+        self.assertEqual(row["status"], Team.Status.ACTIVE)
         self.assertEqual(row["effective_from"], "2026-01-01")
         self.assertTrue(row["is_effective"])
 
@@ -1911,10 +1859,13 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
 
         ``workflow_unavailable`` at submission is the whole reason a draft team
         is harmless: the employee is told to ask HR, not handed a chain that
-        stalls at a step with nobody on it.
+        stalls at a step with nobody on it. Teams are in force from creation, so
+        a draft is only reachable as a legacy row.
         """
-        team = self.create_team()
-        self.place_employee(Team.objects.get(pk=team["id"]))
+        team = Team.objects.get(pk=self.create_team()["id"])
+        Team.objects.filter(pk=team.pk).update(status=Team.Status.DRAFT)
+        team.refresh_from_db()
+        self.place_employee(team)
         with self.assertRaises(ValidationFailedError) as ctx:
             self.submit()
         self.assertEqual(

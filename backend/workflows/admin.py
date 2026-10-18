@@ -322,11 +322,10 @@ class CampusAdmin(admin.ModelAdmin):
 class TeamAdmin(admin.ModelAdmin):
     """Deliberately not a lifecycle editor.
 
-    Switching a team between draft, active and inactive is a *decision* about
-    real applications, so it goes through ``workflows.services.activate_team`` /
-    ``deactivate_team``: validated, refused when the configuration cannot support
-    it, and audited as its own event. An admin form that just wrote ``status``
-    would be a way around all three, so the field is read-only here and the
+    Retiring a team is a *decision* about real applications, so it goes through
+    ``workflows.services.deactivate_team``: audited as its own event. A team is
+    put in force by creating it. An admin form that just wrote ``status`` would
+    be a way around the audit trail, so the field is read-only here and the
     buttons are the API's actions.
     """
 

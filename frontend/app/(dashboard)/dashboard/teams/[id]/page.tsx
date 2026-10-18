@@ -145,7 +145,7 @@ export default async function TeamPage({
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/hr-admin/teams"
+          href="/dashboard/teams"
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -183,13 +183,13 @@ export default async function TeamPage({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={`/dashboard/hr-admin/teams/${team.id}/workflows`}
+              href={`/dashboard/teams/${team.id}/workflows`}
               className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
             >
               Workflows
             </Link>
             <Link
-              href={`/dashboard/hr-admin/teams/${team.id}/edit`}
+              href={`/dashboard/teams/${team.id}/edit`}
               className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
             >
               <Pencil className="h-4 w-4" />
@@ -209,8 +209,8 @@ export default async function TeamPage({
             key={candidate.value}
             href={
               candidate.value === "overview"
-                ? `/dashboard/hr-admin/teams/${team.id}`
-                : `/dashboard/hr-admin/teams/${team.id}?tab=${candidate.value}`
+                ? `/dashboard/teams/${team.id}`
+                : `/dashboard/teams/${team.id}?tab=${candidate.value}`
             }
             aria-current={tab === candidate.value ? "page" : undefined}
             className={`rounded-full px-3 py-1 text-xs font-medium ${
@@ -281,7 +281,7 @@ export default async function TeamPage({
                 Chains this team owns
               </h3>
               <Link
-                href={`/dashboard/hr-admin/teams/${team.id}/workflows/new`}
+                href={`/dashboard/teams/${team.id}/workflows/new`}
                 className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
               >
                 New workflow
@@ -301,7 +301,7 @@ export default async function TeamPage({
                   >
                     <div>
                       <Link
-                        href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}`}
+                        href={`/dashboard/teams/${team.id}/workflows/${workflow.id}`}
                         className="font-medium text-brand-primary hover:text-brand-primary-hover"
                       >
                         {workflow.name}

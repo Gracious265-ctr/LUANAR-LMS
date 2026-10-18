@@ -44,6 +44,7 @@ from .approval_payloads import (
 from .models import ApplicationStage, ApprovalDecision
 from .policies import get_view_access
 from .services import (
+    ApprovalConflictError,
     ApprovalNotFoundError,
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
@@ -232,6 +233,25 @@ class ApprovalDecisionAPIView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        except ApprovalConflictError as exc:
+            conflict = exc.conflict
+            return Response(
+                {
+                    "error": (
+                        "Approving this application would leave the team "
+                        "over-subscribed on "
+                        f"{conflict.day.isoformat()}."
+                    ),
+                    "reason": "team_conflict",
+                    "conflict": {
+                        "day": conflict.day.isoformat(),
+                        "out_count": conflict.out_count,
+                        "team_size": conflict.team_size,
+                        "threshold": conflict.threshold,
+                    },
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         except SelfApprovalBlockedError as exc:
             # The approval would have to go to the applicant themself. The
             # decision is rolled back; HR must correct the workflow.
@@ -253,6 +273,124 @@ class ApprovalDecisionAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(briefing_blocks(app, request.user))
+
+
+#: A batch approval is capped so one mis-click cannot sweep a whole queue.
+BULK_APPROVAL_LIMIT = 25
+
+
+class BulkDecisionItemSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    stage_version = serializers.IntegerField(min_value=1)
+
+
+class BulkApprovalInputSerializer(serializers.Serializer):
+    """The batch decision body (spec 5): approve-only, capped, no dupes.
+
+    Reject and return-for-correction need a per-item comment, so they stay
+    one-at-a-time and are not accepted here.
+    """
+
+    action = serializers.ChoiceField(choices=[("approve", "approve")])
+    comment = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        default="",
+        trim_whitespace=True,
+    )
+    items = BulkDecisionItemSerializer(many=True)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("Select at least one application.")
+        if len(value) > BULK_APPROVAL_LIMIT:
+            raise serializers.ValidationError(
+                f"Approve at most {BULK_APPROVAL_LIMIT} applications at once."
+            )
+        ids = [str(item["id"]) for item in value]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError(
+                "Remove duplicate applications from the selection."
+            )
+        return value
+
+
+class BulkApprovalDecisionAPIView(APIView):
+    """Approve up to 25 applications in one request (UI/UX Phase 2, spec 3.11).
+
+    Every item runs through the same locked :func:`~workflows.services.decide`
+    path — its own transaction and its own audit row — so partial success is
+    expected. The response reports each item's outcome and the totals; a single
+    bad item never discards the successes around it.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, _ApproverOnly]
+
+    def post(self, request):
+        serializer = BulkApprovalInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        results = []
+        approved = 0
+        failed = 0
+        for item in data["items"]:
+            item_id = str(item["id"])
+            try:
+                decide(
+                    application_id=item["id"],
+                    actor=request.user,
+                    action=data["action"],
+                    comment=data.get("comment") or "",
+                    expected_version=item["stage_version"],
+                )
+            except ApprovalNotFoundError:
+                results.append(
+                    {"id": item_id, "status": "failed", "reason": "not_found"}
+                )
+                failed += 1
+            except ApprovalStageChangedError:
+                results.append(
+                    {"id": item_id, "status": "failed", "reason": "stage_changed"}
+                )
+                failed += 1
+            except ApprovalConflictError:
+                results.append(
+                    {"id": item_id, "status": "failed", "reason": "team_conflict"}
+                )
+                failed += 1
+            except SelfApprovalBlockedError:
+                results.append(
+                    {
+                        "id": item_id,
+                        "status": "failed",
+                        "reason": "workflow_unavailable",
+                    }
+                )
+                failed += 1
+            except ApprovalNotAllowedError as exc:
+                results.append(
+                    {"id": item_id, "status": "failed", "reason": exc.reason}
+                )
+                failed += 1
+            except ApprovalValidationError:
+                results.append(
+                    {"id": item_id, "status": "failed", "reason": "validation"}
+                )
+                failed += 1
+            else:
+                results.append({"id": item_id, "status": "approved"})
+                approved += 1
+
+        return Response(
+            {
+                "results": results,
+                "approved": approved,
+                "failed": failed,
+                "limit": BULK_APPROVAL_LIMIT,
+            }
+        )
 
 
 class ApprovalDocumentDownloadView(APIView):

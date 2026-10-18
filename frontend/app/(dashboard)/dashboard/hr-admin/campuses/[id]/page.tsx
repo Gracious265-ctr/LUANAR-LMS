@@ -186,7 +186,7 @@ export default async function CampusPage({
               >
                 <div>
                   <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}`}
+                    href={`/dashboard/teams/${team.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     {team.name}

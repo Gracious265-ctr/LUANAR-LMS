@@ -86,7 +86,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/teams"
+            href="/dashboard/teams"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">

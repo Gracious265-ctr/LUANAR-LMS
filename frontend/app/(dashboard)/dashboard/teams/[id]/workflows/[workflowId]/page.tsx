@@ -57,7 +57,7 @@ export default async function WorkflowDetailPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}/workflows`}
+          href={`/dashboard/teams/${team.id}/workflows`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -87,7 +87,7 @@ export default async function WorkflowDetailPage({
             </p>
           </div>
           <Link
-            href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}/edit`}
+            href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
             className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             <Pencil className="h-4 w-4" />
@@ -106,7 +106,7 @@ export default async function WorkflowDetailPage({
         {workflow.sections.length === 0 ? (
           <p className="mt-3 text-sm text-text-muted">
             No steps yet. A chain with no steps cannot be routed through, and
-            the team cannot be activated while it owns only this.
+            the team cannot route applications while it owns only this.
           </p>
         ) : (
           <ol className="mt-4 space-y-3">

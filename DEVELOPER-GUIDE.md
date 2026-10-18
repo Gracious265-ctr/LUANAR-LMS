@@ -61,7 +61,10 @@ database directly; it always goes through the Django API.
 | `backend/users` | User accounts, roles/permissions, login (JWT tokens) |
 | `backend/leave` | The core leave domain: employees, grade entitlements, financial years, holidays, applications, validation, submission, resubmission, cancellation, supporting documents, tracking, document storage |
 | `backend/leave_config` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_config/services.py` |
-| `backend/workflows` | Approval workflows: stages, decisions, delegation, reassignment |
+| `backend/organisation` | The **approver registry and org scoping**: `ApproverRole`, `Campus`, and the institution-wide (`RoleAssignment`) and campus-wide (`CampusRoleAssignment`) role holdings. (Split out of `workflows`; the `workflows.models` re-export shim keeps historical imports working.) |
+| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping) and `TeamRoleAssignment` (team-wide role holders, including the designated team manager). (Split out of `workflows`.) |
+| `backend/approvals` | The **approval engine's data**: `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`, `Delegation`, `Reassignment`. (Split out of `workflows`.) |
+| `backend/workflows` | Approval **chains**: `Workflow`, `Section`, `SectionMember`, `WorkflowMember`. Teams are **active on creation** (no activation action), and a chain carries its own required name with an `effective_from`/`effective_to` window defaulting to the current academic year |
 | `backend/documents` | The official approved-leave **PDF** generator + template |
 | `backend/notifications` | Notification outbox + email sending (composers write rows, `tasks.py` sends them via django-q2) |
 | `backend/audit` | The immutable **AuditEvent** trail + HR audit view |

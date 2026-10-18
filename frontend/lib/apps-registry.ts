@@ -28,10 +28,10 @@ export const APPS_REGISTRY = {
     route: "/dashboard/approvals",
   },
   org: {
-    name: "Organization",
-    description: "Manage units, approvers, and teams",
+    name: "Teams",
+    description: "Manage teams and their approval chains",
     icon: Building2,
-    route: "/dashboard/hr-admin/teams",
+    route: "/dashboard/teams",
   },
   documents: {
     name: "Documents",

@@ -38,6 +38,9 @@ INSTALLED_APPS = [
     # Local apps
     "users",
     "leave",
+    "organisation",
+    "teams",
+    "approvals",
     "workflows",
     "notifications",
     "plans",

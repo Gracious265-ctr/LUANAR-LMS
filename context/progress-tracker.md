@@ -4,6 +4,20 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Teams module split + Team-Manager redesign + Phase-2 extras — DONE (2026-10-18)**
+  — the monolithic `backend/workflows` is split into four apps (`organisation`,
+  `teams`, `approvals`, slim `workflows`) using `SeparateDatabaseAndState`
+  migrations so the shared `workflows_*` tables are relabelled, never rewritten;
+  the `workflows.models` re-export shim keeps historical imports working while
+  the service/view/serializer code move is deferred. On top of the split, the
+  **team-manager redesign** lands (teams active on creation, chain name required,
+  `Workflow.effective_to` scoped to the academic year, designated team manager)
+  and the two **Phase-2 extras** (batch approve endpoint; the over-subscription
+  guard `leave/conflicts.py` → `409 team_conflict`). The frontend teams module
+  moves to its own `/dashboard/teams` route with the launcher "Organization" tile
+  renamed to **Teams**. See "Completed (Teams Split + Team-Manager + Phase-2
+  Extras) (2026-10-18)" at the end of this file.
+
 - **Unit — External Organization Data Provider — DONE (2026-10-18)** — refinement
   unit `context/refinement/05-org-data-provider.md`. Introduces the
   organisation data-provider seam: `directory` app (provider ABC + dataclasses,
@@ -5918,3 +5932,131 @@ rows for the registry, the leave-types/leave-rules retirement, and the
 frontend module), `context/architecture.md` (backend tree + §10 configuration
 ownership paragraph), `context/refinement/04-leave-plans-app.md`
 (`plan_notice_days` → the single `notice_days`).
+
+---
+
+## Completed (Teams Split + Team-Manager + Phase-2 Extras) (2026-10-18)
+
+Builds on `development` (tip `5c37042`); nothing pushed.
+
+### Stage 1 — Split `backend/workflows` into four apps
+
+The monolithic `backend/workflows` is split by **relabel**, not by moving tables:
+every moved model keeps its original `Meta.db_table` (`workflows_<model>`), so the
+migration is `SeparateDatabaseAndState` with empty `database_operations` and the
+real `CreateModel`/`DeleteModel`/`AlterField` in `state_operations`. No data
+migration and no DDL.
+
+* `organisation/` — `ApproverRole`, `Campus`, `RoleAssignment`, `CampusRoleAssignment`
+* `teams/` — `Team`, `TeamRoleAssignment`
+* `approvals/` — `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`,
+  `Delegation`, `Reassignment`
+* `workflows/` (slim) — `Workflow`, `Section`, `SectionMember`, `WorkflowMember`
+
+Migrations authored:
+
+* `organisation/0001_initial`, `teams/0001_initial`, `approvals/0001_initial` — state-only.
+* `workflows/0031_remove_applicationstage_idx_stage_approver_status_and_more` — the
+  `DeleteModel`s for the moved models plus the cross-app `AlterField`s
+  (`Workflow.team → teams.Team`, `Section.approver_role → organisation.ApproverRole`,
+  `WorkflowMember.team → teams.Team`); state-only.
+* Cross-app FK re-points: `leave/0023` (`current_stage → approvals.ApplicationStage`),
+  `notifications/0006` (`delegation`/`reassignment → approvals.*`),
+  `users/0012` (`team → teams.Team`); all state-only.
+* Dependency graph is acyclic: `workflows/0030 → organisation/0001 → teams/0001 →
+  {approvals/0001 → leave/0023, notifications/0006, users/0012} → workflows/0031`.
+
+Code move **deferred by decision**: `services.py`, `views.py`, `serializers.py`,
+`admin.py`, `policies.py`, `providers.py`, `events.py`, `approval_views.py`,
+`approval_payloads.py` remain in `workflows/`, and a transitional re-export shim at
+the foot of `workflows/models.py` re-exports the moved classes so the ~72 historical
+`workflows.models`/`from .models import` sites keep working. (Their later move is a
+mechanical follow-up that cannot change the schema.)
+
+`workflows/tests_migrations.py::InstitutionWideFinalApprovalMigrationTests.
+test_running_twice_does_not_duplicate_the_holding` was updated to call the historical
+`flag_institution_wide_roles` with a **historical** project state
+(`self.state(("workflows", "0022_team_workflow_optional"))`) rather than the live app
+registry, which no longer has `workflows.ApproverRole`.
+
+### Stage 2 — Team-manager redesign (behaviour)
+
+* `create_team` forces `status = ACTIVE`; `update_team` ignores `status`. `draft` is
+  retained as a **legacy-only** enum value so old rows still render and can be retired.
+* `activate_team` removed (service + `POST /teams/<id>/activate/` + frontend proxy +
+  UI button). `validate_team` is a standing readiness report, not an activation gate.
+  `POST /teams/<id>/route/` routes a team through one of its own chains.
+* `TeamRoleAssignment.is_team_manager` + `teamroleassignment_one_manager_per_team`
+  (one manager per team); `set_team_manager`/`clear_team_manager`; team-management
+  authority `_require_can_manage_team` (HR/superuser or the designated manager).
+* `create_workflow` requires a non-blank `name`; defaults `effective_from = today`,
+  `effective_to = academic_calendar_end()` (active financial year's `end_date`, `None`
+  when unconfigured). `Workflow.effective_to` + `workflow_effective_window_ordered`
+  `CheckConstraint`; `Workflow.state` returns `"inactive"` past expiry; `is_effective`.
+
+### Stage 3 — Phase-2 extras
+
+* **Batch approve** — `POST /api/v1/approvals/bulk-decision/`
+  (`BulkApprovalDecisionAPIView`), approve-only, capped at 25, duplicate-rejecting,
+  partial success per item (reuses the locked `decide` path). The approvals list row
+  now carries `stage_version` so a batch can be built without opening each item.
+* **Over-subscription guard** — `backend/leave/conflicts.py` (`TeamConflict`,
+  `conflict_threshold`, `find_team_conflict`; cap = `max(1, ceil(0.3 × active team
+  size))`) plus `ApprovalConflictError` in `workflows/services.py`, raised inside
+  `decide` for an `approve` that would over-subscribe the applicant's team on any day
+  → `409 {"reason": "team_conflict", "conflict": {...}}`, and reported per-item by the
+  batch endpoint. `reject`/`return_for_correction` are never blocked.
+
+### Stage 4 — Frontend
+
+* The teams module moved from `app/(dashboard)/dashboard/hr-admin/teams` to its own
+  top-level route `app/(dashboard)/dashboard/teams`; all internal links rewritten
+  (`/dashboard/hr-admin/teams` → `/dashboard/teams`, ~20 files).
+* Launcher `lib/apps-registry.ts` `org` tile renamed **"Organization" → "Teams"**
+  (description "Manage teams and their approval chains", route `/dashboard/teams`).
+* `dashboard-shell.tsx`: **Teams** moved out of the "Human Resources" folio into the
+  top-level rail (gated by `showHR`), beside the other first-class modules.
+* Behaviour-port frontend edits restored from the earlier WIP: `team-lifecycle-actions`
+  (activation removed), `workflow-form` (required chain name), `teams-client`
+  (`activateTeam` removed, `routeTeamThrough` → `POST /teams/<id>/route/`),
+  `workflows.ts` (`effective_to`), and their tests.
+* `next typegen` re-run so the generated route types cover `/dashboard/teams`.
+* **Gap found while restoring the WIP and fixed:** the port moves
+  `routeTeamThrough` to `POST /api/hr/teams/{id}/route` (matching the backend's
+  `TeamViewSet.route` action, which the redesign brought over), but the earlier WIP
+  shipped no Next proxy for it — the call would have 404'd at runtime. Added
+  `frontend/app/api/hr/teams/[id]/route/route.ts` (the branch's `route` proxy) so the
+  `workflow-routing-actions` "Route through…" write reaches the backend.
+
+### Verification
+
+* Backend: `uv run python manage.py test --noinput` → **Ran 1500 tests, OK**
+  (includes 10 new batch-approve tests and 7 new `leave/tests/test_team_conflicts.py`
+  tests). `manage.py check` clean; `makemigrations --check` → "No changes detected";
+  fresh (test) DB migrates from scratch.
+* Frontend: `npx vitest run` → **108 files / 925 tests passed**; `npx tsc --noEmit`
+  exit 0; `npx eslint` clean. After the `route` proxy was added (see Stage 4),
+  re-verified with `tsc --noEmit` exit 0, eslint clean on the new file, and the 5
+  teams-focused test files (46 tests) passing. (`typecheck:test` still reports the
+  **pre-existing** two `tests/instrumentation-client.test.ts` TS2306 errors —
+  unrelated to this work.)
+* The `hugeicons` dependency entries present in the earlier WIP stash were **not**
+  taken (no changed source file imports them; unrelated to this feature).
+
+### Docs
+
+`DEVELOPER-GUIDE.md` backend-app table gained `organisation`/`teams`/`approvals`
+rows and the split note on `workflows`; `context/architecture.md` §12.11/§12.12
+rewritten for teams-active-on-creation, the removed activation action, the required
+chain name, and the `effective_to` academic-year default; this tracker updated.
+
+### Not taken (deferred follow-ups)
+
+* The physical code move (`services`/`views`/`serializers`/`admin`/`policies`/
+  `providers` into `organisation`/`teams`/`approvals`) and removal of the
+  `workflows.models` shim.
+* The branch's team-calendar endpoint (`GET /api/v1/calendar/team/`), setup hub
+  (`GET /api/v1/setup/*`), and `GET /api/v1/leave/me/form-defaults/`.
+* `.gitignore` entry for the generated Vitest JSON report; `export {}` in
+  `frontend/instrumentation-client.ts` (fixes the pre-existing TS2306 pair);
+  `users.0010` `IF EXISTS` idempotency.

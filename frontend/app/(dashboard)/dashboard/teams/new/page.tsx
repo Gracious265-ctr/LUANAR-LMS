@@ -22,5 +22,5 @@ export default async function ShimPage() {
     redirect("/dashboard");
   }
 
-  redirect("/dashboard/hr-admin/teams?team=new");
+  redirect("/dashboard/teams?team=new");
 }

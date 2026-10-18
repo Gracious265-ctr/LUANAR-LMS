@@ -195,7 +195,7 @@ function auditChangesValue(value: unknown, field: string): string {
 export function auditEditHref(entry: AuditEntry): string | null {
   switch (entry.target_type) {
     case "team":
-      return `/dashboard/hr-admin/teams/${entry.target_id}`;
+      return `/dashboard/teams/${entry.target_id}`;
     case "leavetype":
       return `/leave-config/${entry.target_id}`;
     // A rule no longer has a page of its own: refinement unit 06 folded the

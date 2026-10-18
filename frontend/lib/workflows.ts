@@ -137,6 +137,8 @@ export interface Workflow {
   team: number | null;
   team_name: string;
   effective_from: string | null;
+  /** The end of the academic calendar this chain was written against, if any. */
+  effective_to: string | null;
   is_active: boolean;
   state: WorkflowState | string;
   is_routing: boolean;
@@ -147,7 +149,7 @@ export interface Workflow {
 }
 
 export interface WorkflowInput {
-  /** Required on create; optional on edit. */
+  /** Required: a chain carries its own name, not the team's. */
   name?: string;
   /** Required on create, and on edit it must name a chain this team already owns. */
   team?: number | null;

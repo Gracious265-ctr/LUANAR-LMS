@@ -73,14 +73,14 @@ class NotificationOutbox(models.Model):
         blank=True,
     )
     delegation = models.ForeignKey(
-        "workflows.Delegation",
+        "approvals.Delegation",
         on_delete=models.PROTECT,
         related_name="notification_outbox_rows",
         null=True,
         blank=True,
     )
     reassignment = models.ForeignKey(
-        "workflows.Reassignment",
+        "approvals.Reassignment",
         on_delete=models.PROTECT,
         related_name="notification_outbox_rows",
         null=True,

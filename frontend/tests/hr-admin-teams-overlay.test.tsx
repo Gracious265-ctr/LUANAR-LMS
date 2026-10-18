@@ -16,7 +16,7 @@ const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
     refresh: vi.fn(),
   },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/teams" },
+  pathnameRef: { current: "/dashboard/teams" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -121,7 +121,7 @@ describe("TeamsSection — wave 2", () => {
       screen
         .getByRole("link", { name: /Bunda College Faculty/ })
         .getAttribute("href"),
-    ).toBe("/dashboard/hr-admin/teams/4");
+    ).toBe("/dashboard/teams/4");
   });
 
   it("renders the retired/in-force toggle from the page's filters data", () => {
@@ -134,12 +134,12 @@ describe("TeamsSection — wave 2", () => {
       filters: [
         {
           label: "In force and draft",
-          href: "/dashboard/hr-admin/teams",
+          href: "/dashboard/teams",
           current: false,
         },
         {
           label: "Including retired",
-          href: "/dashboard/hr-admin/teams?retired=1",
+          href: "/dashboard/teams?retired=1",
           current: true,
         },
       ],
@@ -154,8 +154,8 @@ describe("TeamsSection — wave 2", () => {
       "Including retired",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
-      "/dashboard/hr-admin/teams",
-      "/dashboard/hr-admin/teams?retired=1",
+      "/dashboard/teams",
+      "/dashboard/teams?retired=1",
     ]);
     expect(links[0]).not.toHaveAttribute("aria-current");
     expect(links[1]).toHaveAttribute("aria-current", "page");
@@ -176,7 +176,7 @@ describe("TeamsSection — wave 2", () => {
     fireEvent.click(screen.getByRole("button", { name: /New team/ }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/teams?status=retired&team=new",
+      "/dashboard/teams?status=retired&team=new",
     );
   });
 

@@ -168,7 +168,7 @@ describe("DashboardShell", () => {
 
     expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/teams"
+      "/dashboard/teams"
     );
     expect(screen.getByRole("link", { name: "Roles" })).toHaveAttribute(
       "href",

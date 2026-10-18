@@ -324,6 +324,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
             "team",
             "team_name",
             "effective_from",
+            "effective_to",
             "is_active",
             "state",
             "is_routing",
@@ -333,6 +334,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "effective_to",
             "state",
             "is_routing",
             "section_count",
@@ -1022,6 +1024,12 @@ class WorkflowWriteSerializer(serializers.Serializer):
                 "retiring a team decides whether its chain is in force, so it "
                 "is done on the team and audited there.",
             ),
+            (
+                "effective_to",
+                "A chain does not carry its own end date either. It runs to the "
+                "end of the academic calendar, which is read from the academic "
+                "year in force when the chain is created.",
+            ),
         ):
             if field in attrs:
                 raise serializers.ValidationError({field: [message]})
@@ -1066,6 +1074,21 @@ class WorkflowWriteSerializer(serializers.Serializer):
         )
 
 
+class TeamManagerInputSerializer(serializers.Serializer):
+    """The team-wide role holding to designate as a team's manager.
+
+    HR picks a team-scoped approver role and the person who holds it: the role is
+    the capability the manager acts with, the person is who acts. Both are
+    required — a manager without a role could not approve, and a role without a
+    holder names nobody. The role/person/team rules (active, team-scoped, and
+    category-matching) are enforced where every other wide holding is, in
+    :func:`workflows.services.create_team_role_assignment`.
+    """
+
+    role = serializers.PrimaryKeyRelatedField(queryset=ApproverRole.objects.all())
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+
+
 class TeamSerializer(serializers.ModelSerializer):
     """A team: the routing unit HR assigns people to."""
 
@@ -1100,15 +1123,13 @@ class TeamSerializer(serializers.ModelSerializer):
             "an institution-wide approver may serve."
         ),
     )
-    # Writable, and deliberately narrow: the workflow named has to be one this
-    # team already owns (the service refuses anything else), so "route through
-    # this chain instead" can never become "adopt somebody else's chain" — which
-    # would strand every application inside the old one at a step nobody staffs.
-    workflow = serializers.PrimaryKeyRelatedField(
-        queryset=Workflow.objects.all(), required=False, allow_null=True
-    )
+    # Read-only: routing is a decision of its own, made through the ``route``
+    # action, so a generic PATCH can never re-route a team.
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
     workflows = serializers.SerializerMethodField()
+    # The manager to designate, written on create or reassigned on update. A team
+    # is handed to a manager, who then holds its day-to-day configuration.
+    manager = TeamManagerInputSerializer(write_only=True, required=False)
     # The chain, written inline. On create it is created with the team, so there
     # is never a team that exists pointing at a chain HR has not finished
     # describing. On update it replaces the steps of the chain the team already
@@ -1137,6 +1158,7 @@ class TeamSerializer(serializers.ModelSerializer):
             "workflow",
             "workflow_name",
             "workflows",
+            "manager",
             "new_workflow",
             "status",
             "effective_from",
@@ -1151,11 +1173,13 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "code",
-            # Lifecycle is not editable here: activating and retiring go through
-            # their own validated, audited actions rather than a PATCH, so
-            # neither can happen by accident or without a validation record.
+            # Lifecycle is not editable here: creating a team puts it in force,
+            # and retiring it goes through its own audited action rather than a
+            # PATCH, so neither can happen by accident or without an audit entry.
             "status",
             "is_effective",
+            # Routing is the ``route`` action's, never a field edit.
+            "workflow",
             "workflows",
             "stage_roles",
             "member_count",
@@ -1166,9 +1190,28 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs: dict) -> dict:
+        # Routing is the ``route`` action's, so a client still sending
+        # ``workflow`` on a team write learns the boundary instead of believing
+        # it pointed the team somewhere.
+        initial = getattr(self, "initial_data", None) or {}
+        if "workflow" in initial:
+            raise serializers.ValidationError(
+                {
+                    "workflow": (
+                        "Routing is a decision of its own. Create the workflow "
+                        "under this team, then point the team at it with the "
+                        "route action."
+                    )
+                }
+            )
+
         supplied = attrs.pop("new_workflow", None)
         if supplied is not None:
             self._new_workflow = supplied
+
+        manager = attrs.pop("manager", None)
+        if manager is not None:
+            self._manager = manager
 
         campus = self._value(attrs, "campus")
         # A team being placed at a campus is an academic one unless HR says
@@ -1208,17 +1251,6 @@ class TeamSerializer(serializers.ModelSerializer):
                         "An administration team is not campus-based. Clear the "
                         "campus, or switch the category to Academic if this "
                         "team should sit at one."
-                    )
-                }
-            )
-
-        if "workflow" in attrs and self.instance is None and attrs["workflow"] is not None:
-            raise serializers.ValidationError(
-                {
-                    "workflow": (
-                        "A new team cannot adopt an existing workflow. Its "
-                        "approval steps are written with it, or added "
-                        "afterwards under the team."
                     )
                 }
             )
@@ -1348,6 +1380,7 @@ class TeamSerializer(serializers.ModelSerializer):
             actor=self.context["actor"],
             data=dict(validated_data),
             workflow_config=getattr(self, "_new_workflow", None),
+            manager=getattr(self, "_manager", None),
         )
 
     def update(self, instance: Team, validated_data: dict) -> Team:
@@ -1356,11 +1389,12 @@ class TeamSerializer(serializers.ModelSerializer):
             actor=self.context["actor"],
             data=dict(validated_data),
             workflow_config=getattr(self, "_new_workflow", None),
+            manager=getattr(self, "_manager", None),
         )
 
 
 class TeamReadinessSerializer(serializers.Serializer):
-    """The answer to "can this team be activated, and if not, why not?".
+    """The answer to "can this team route, and if not, why not?".
 
     Every problem is returned at once rather than the first one, because a
     configuration with three unstaffed steps should take HR one pass, not three.

@@ -261,11 +261,13 @@ function toggleMember(userId: number) {
   }
   for (const member of workflow?.members ?? []) {
     if (!peopleById.has(member.user)) {
+      // The embedded member carries the person's display fields only, so
+      // designation is left blank rather than read from a field it never sends.
       peopleById.set(member.user, {
         user: member.user,
         full_name: member.user_name,
         email: member.user_email,
-        designation: member.designation,
+        designation: member.designation ?? "",
       });
     }
   }
@@ -364,6 +366,13 @@ function toggleMember(userId: number) {
     setError("");
     setLoading(true);
 
+    if (!name.trim()) {
+      setError(
+        "Give this chain its own name. It is what the team's chain list and the audit trail call it, so it cannot be left blank."
+      );
+      setLoading(false);
+      return;
+    }
     if (steps.length === 0) {
       setError("A chain needs at least one step before it can be saved.");
       setLoading(false);
@@ -385,7 +394,7 @@ function toggleMember(userId: number) {
     }
 
     const input: WorkflowInput = {
-      ...(name.trim() ? { name: name.trim() } : {}),
+      name: name.trim(),
       team: team.id,
       sections: describe(),
       members: memberIds,
@@ -397,7 +406,7 @@ function toggleMember(userId: number) {
       } else {
         await createWorkflow(input);
       }
-      router.push(`/dashboard/hr-admin/teams/${team.id}/workflows`);
+      router.push(`/organisation/teams/${team.id}/workflows`);
       router.refresh();
     } catch (err) {
       setError(
@@ -432,12 +441,14 @@ function toggleMember(userId: number) {
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
+          required
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder={`e.g. ${team.name} replacement`}
         />
         <p className="mt-1 text-xs text-text-muted">
-          Optional. Left blank, the backend names the chain after the team it is
-          built for.
+          This chain&apos;s own name — what the team&apos;s chain list and the
+          audit trail call it. It applies from today until the end of the current
+          academic calendar.
         </p>
       </div>
 
@@ -670,7 +681,7 @@ function toggleMember(userId: number) {
         <p className="mb-3 text-xs text-text-muted">
           Drawn only from this team&apos;s members on the{" "}
           <a
-            href={`/dashboard/hr-admin/teams/${team.id}?tab=members`}
+            href={`/organisation/teams/${team.id}?tab=members`}
             className="font-medium text-brand-primary hover:text-brand-primary-hover"
           >
             Members
@@ -820,8 +831,8 @@ function toggleMember(userId: number) {
           onClick={() =>
             router.push(
               workflow
-                ? `/dashboard/hr-admin/teams/${team.id}/workflows`
-                : `/dashboard/hr-admin/teams/${team.id}/workflows`
+                ? `/organisation/teams/${team.id}/workflows`
+                : `/organisation/teams/${team.id}/workflows`
             )
           }
           className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-3 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"

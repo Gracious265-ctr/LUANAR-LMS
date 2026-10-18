@@ -64,7 +64,7 @@ export default async function EditWorkflowPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}`}
+          href={`/dashboard/teams/${team.id}/workflows/${workflow.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
