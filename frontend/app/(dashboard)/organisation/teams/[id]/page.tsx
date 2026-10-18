@@ -286,15 +286,17 @@ export default async function TeamPage({
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-text-muted">
-                  Chain in force
+                  Chains
                 </span>
                 <p className="text-sm font-medium text-text-primary">
-                  {team.workflow_name || "None"}
+                  {workflows.length === 0
+                    ? "None"
+                    : `${workflows.length} chain${workflows.length === 1 ? "" : "s"}`}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
                   {workflows.length === 0
                     ? "This team owns no chains yet."
-                    : `Owns ${workflows.length} chain${workflows.length === 1 ? "" : "s"}; routes one.`}
+                    : "All of them route at once, each carrying its own members."}
                 </p>
               </div>
               <div>
@@ -360,12 +362,12 @@ export default async function TeamPage({
                     </div>
                     <span
                       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        workflow.is_routing
+                        workflow.is_active
                           ? "bg-brand-secondary-subtle text-brand-secondary"
                           : "bg-surface-muted text-text-muted"
                       }`}
                     >
-                      {workflow.is_routing ? "Routing" : "Not routing"}
+                      {workflow.is_active ? "In force" : "Not in force"}
                     </span>
                   </li>
                 ))}

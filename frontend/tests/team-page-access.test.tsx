@@ -63,8 +63,6 @@ const team = {
   category: "administration",
   campus: null,
   campus_name: "",
-  workflow: null,
-  workflow_name: "",
   workflows: [],
   status: "draft",
   effective_from: null,

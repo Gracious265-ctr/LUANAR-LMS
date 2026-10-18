@@ -76,7 +76,6 @@ export interface WorkflowMemberPool {
     name: string;
     state: string;
     is_active: boolean;
-    is_routing: boolean;
   } | null;
   available: PoolPerson[];
   current: PoolPerson[];

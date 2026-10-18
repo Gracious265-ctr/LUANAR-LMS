@@ -380,7 +380,7 @@ class WorkflowEndpointTests(TestCase):
         team, and the edit form would otherwise be refused on every save.
         """
         owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
-        workflow = owner.workflow
+        workflow = owner.workflows.first()
         manager = designate_manager(owner, self.hr_user)
         self.client.force_authenticate(user=manager)
         response = self.client.patch(
@@ -400,7 +400,7 @@ class WorkflowEndpointTests(TestCase):
         response = self.client.get(self.list_url, {"team": owner.pk})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = [row["id"] for row in response.data["results"]]  # type: ignore[index]
-        self.assertEqual(ids, [owner.workflow_id])
+        self.assertEqual(ids, [owner.workflows.first().id])
 
     def test_delete_not_supported(self):
         """A chain is retired with the team, and never on its own.
@@ -653,7 +653,7 @@ class WorkflowActivationEndpointTests(TestCase):
         team's history saying why.
         """
         team = make_team("Dean office", ["dean"], campus="Main Campus")
-        workflow = team.workflow
+        workflow = team.workflows.first()
         manager = designate_manager(team, self.hr_user)
         self.client.force_authenticate(user=manager)
         response = self.client.patch(

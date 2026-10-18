@@ -89,7 +89,7 @@ class SeparationOfDutiesTests(TestCase):
 
     def test_manager_edits_their_workflows_stages(self):
         self._as_manager()
-        url = f"{WORKFLOWS_URL}{self.team_a.workflow_id}/"
+        url = f"{WORKFLOWS_URL}{self.team_a.workflows.first().id if self.team_a.workflows.first() else None}/"
         response = self.client.patch(
             url,
             {
@@ -100,7 +100,7 @@ class SeparationOfDutiesTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        workflow = Workflow.objects.get(pk=self.team_a.workflow_id)
+        workflow = Workflow.objects.get(pk=self.team_a.workflows.first().id if self.team_a.workflows.first() else None)
         self.assertEqual(
             list(workflow.sections.order_by("order").values_list("name", flat=True)),
             ["Supervisor"],
@@ -108,14 +108,14 @@ class SeparationOfDutiesTests(TestCase):
 
     def test_manager_cannot_edit_another_teams_workflow(self):
         self._as_manager()
-        url = f"{WORKFLOWS_URL}{self.team_b.workflow_id}/"
+        url = f"{WORKFLOWS_URL}{self.team_b.workflows.first().id if self.team_b.workflows.first() else None}/"
         response = self.client.patch(url, {"name": "Hijacked"}, format="json")
         # The chain is scoped out of the manager's queryset, so it 404s.
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_manager_cannot_read_another_teams_workflow(self):
         self._as_manager()
-        response = self.client.get(f"{WORKFLOWS_URL}{self.team_b.workflow_id}/")
+        response = self.client.get(f"{WORKFLOWS_URL}{self.team_b.workflows.first().id if self.team_b.workflows.first() else None}/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     # --- team membership ---------------------------------------------------
@@ -165,21 +165,21 @@ class SeparationOfDutiesTests(TestCase):
     def test_manager_assigns_a_normal_member_to_their_workflow(self):
         add_team_member(team=self.team_a, user=self.member, actor=self.hr)
         self._as_manager()
-        url = f"{WORKFLOWS_URL}{self.team_a.workflow_id}/members/"
+        url = f"{WORKFLOWS_URL}{self.team_a.workflows.first().id if self.team_a.workflows.first() else None}/members/"
         response = self.client.post(url, {"user": self.member.pk}, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
     def test_manager_cannot_assign_a_member_to_another_teams_workflow(self):
         add_team_member(team=self.team_b, user=self.member, actor=self.hr)
         self._as_manager()
-        url = f"{WORKFLOWS_URL}{self.team_b.workflow_id}/members/"
+        url = f"{WORKFLOWS_URL}{self.team_b.workflows.first().id if self.team_b.workflows.first() else None}/members/"
         response = self.client.post(url, {"user": self.member.pk}, format="json")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     # --- section approvers -------------------------------------------------
 
     def _section(self, team):
-        return team.workflow.sections.order_by("order").first()
+        return team.workflows.first().sections.order_by("order").first()
 
     def test_manager_appoints_an_approver_on_their_team(self):
         add_team_member(team=self.team_a, user=self.member, actor=self.hr)

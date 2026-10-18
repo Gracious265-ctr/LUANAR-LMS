@@ -1244,7 +1244,7 @@ class WorkflowDetailMembershipSerializationTests(TestCase):
         )
         self.client.force_authenticate(self.hr)
         self.team = make_team("Detail Team", ["supervisor", "hod"])
-        self.workflow = self.team.workflow
+        self.workflow = self.team.workflows.first()
 
     def test_every_section_emits_memberships(self):
         response = self.client.get(f"{WORKFLOWS_URL}{self.workflow.pk}/")

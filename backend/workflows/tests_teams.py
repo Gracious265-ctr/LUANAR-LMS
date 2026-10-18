@@ -289,8 +289,8 @@ class TeamAPITests(ConfigurationAPIBase):
         """The chain arrives with the team, and is the team's own."""
         team = self.create_team(description="Administration staff")
         self.assertEqual(team["name"], "Administration team")
-        self.assertEqual(team["workflow"], self.workflow.pk)
-        self.assertEqual(team["workflow_name"], "Administration chain")
+        self.assertEqual(team["workflows"][0]["id"], self.workflow.pk)
+        self.assertEqual(team["workflows"][0]["name"], "Administration chain")
         self.assertEqual(
             [s["approver_role"] for s in team["sections"]],
             ["supervisor", "hod"],
@@ -354,7 +354,7 @@ class TeamAPITests(ConfigurationAPIBase):
         other = self.create_team(name="Other team")
         response = self.client.post(
             TEAMS_URL,
-            {"name": "Copying team", "workflow": other["workflow"]},
+            {"name": "Copying team", "workflow": other["workflows"][0]["id"]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -377,7 +377,7 @@ class TeamAPITests(ConfigurationAPIBase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         team = Team.objects.get(name="Chainless team")
-        self.assertIsNone(team.workflow_id)
+        self.assertIsNone(team.workflows.first().id if team.workflows.first() else None)
         self.assertEqual(team.status, Team.Status.ACTIVE)
         self.assertEqual(response.data["sections"], [])  # type: ignore[index]
 
@@ -434,12 +434,12 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("new_workflow", refused.data)
         team = Team.objects.get(pk=created["id"])
-        self.assertIsNone(team.workflow_id)
+        self.assertIsNone(team.workflows.first().id if team.workflows.first() else None)
         # The manager writes it, and the first chain a team owns becomes the one
         # it routes through.
         workflow = self.build_chain(team, self.chain_payload("Second page chain"))
         team.refresh_from_db()
-        self.assertEqual(team.workflow_id, workflow.pk)
+        self.assertEqual(team.workflows.first().id if team.workflows.first() else None, workflow.pk)
         self.assertEqual(
             [s.approver_role.code for s in workflow.sections.order_by("order")],
             ["supervisor", "hod"],
@@ -649,7 +649,7 @@ class TeamRoutingAPITests(ConfigurationAPIBase):
         chain = self.build_chain(team)
         self.assertEqual(chain.team_id, team.pk)
         team.refresh_from_db()
-        self.assertEqual(team.workflow_id, chain.pk)
+        self.assertEqual(team.workflows.first().id if team.workflows.first() else None, chain.pk)
 
     def test_a_team_with_a_manager_is_in_force_when_it_is_created(self):
         """Handing a team over puts it in force: there is no second press.
@@ -731,59 +731,6 @@ class TeamRoutingAPITests(ConfigurationAPIBase):
         self.assertFalse(
             TeamRoleAssignment.objects.filter(team=team, role=self.role, user=first).exists()
         )
-
-    def test_the_manager_routes_the_team_and_it_is_audited(self):
-        team = Team.objects.get(pk=self.create_team()["id"])
-        replacement = self.build_chain(team, name="Replacement chain")
-        # The team already routes through the first chain it owned, so this is
-        # the write that actually moves it.
-        self.assertEqual(team.workflow_id, self.workflow.pk)
-        response = self.manager_client(team).post(
-            f"{TEAMS_URL}{team.pk}/route/",
-            {"workflow": replacement.pk},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        team.refresh_from_db()
-        self.assertEqual(team.workflow_id, replacement.pk)
-        entry = (
-            AuditEntry.objects.filter(
-                target_type=AuditEntry.TargetType.TEAM,
-                target_id=str(team.pk),
-                action=AuditEntry.Action.UPDATED,
-            )
-            .order_by("-id")
-            .first()
-        )
-        self.assertEqual(entry.detail["after"]["workflow_id"], replacement.pk)
-        self.assertEqual(entry.reason, 'Routed through "Replacement chain".')
-
-    def test_hr_cannot_route_a_team(self):
-        team = Team.objects.get(pk=self.create_team()["id"])
-        replacement = self.build_chain(team, name="Replacement chain")
-        response = self.client.post(
-            f"{TEAMS_URL}{team.pk}/route/",
-            {"workflow": replacement.pk},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        team.refresh_from_db()
-        self.assertEqual(team.workflow_id, self.workflow.pk)
-
-    def test_a_team_cannot_route_through_another_teams_chain(self):
-        first = self.create_team()
-        team = Team.objects.get(pk=first["id"])
-        other = Team.objects.get(pk=self.create_team(name="Other team")["id"])
-        response = self.manager_client(team).post(
-            f"{TEAMS_URL}{team.pk}/route/",
-            {"workflow": other.workflow_id},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("workflow", response.data)
-        team.refresh_from_db()
-        self.assertEqual(team.workflow_id, first["workflow"])
-
 
 class SectionApproverTests(ConfigurationAPIBase):
     """Who approves a section: one person, from the team's own employees.
@@ -881,7 +828,7 @@ class SectionApproverTests(ConfigurationAPIBase):
             team=Team.objects.get(pk=team["id"]),
         )
         steps = list(
-            Workflow.objects.get(pk=team["workflow"]).sections.order_by("order")
+            Workflow.objects.get(pk=team["workflows"][0]["id"]).sections.order_by("order")
         )
         self.add_approver(person, steps[0])
         # The second appointment is refused through the API, naming the step
@@ -965,7 +912,7 @@ class SectionApproverTests(ConfigurationAPIBase):
         """
         self.add_approver(self.supervisor)
         team = self.create_team("Agriculture team")
-        step = Workflow.objects.get(pk=team["workflow"]).sections.get(order=1)
+        step = Workflow.objects.get(pk=team["workflows"][0]["id"]).sections.get(order=1)
         # The person's employee record moves team, as an internal transfer would,
         # and they are appointed on the team they moved to.
         profile = self.supervisor.employee_profile
@@ -1089,7 +1036,7 @@ class SectionApproverTests(ConfigurationAPIBase):
         other = Team.objects.get(name="Other team")
         response = self.client.get(f"{MEMBERS_URL}?workflow={first_chain}")
         self.assertEqual(len(response.data["results"]), 1)
-        response = self.client.get(f"{MEMBERS_URL}?workflow={other.workflow_id}")
+        response = self.client.get(f"{MEMBERS_URL}?workflow={other.workflows.first().id if other.workflows.first() else 0}")
         self.assertEqual(len(response.data["results"]), 0)
         unrelated = make_workflow("Unrelated chain", ("dean",))
         response = self.client.get(f"{MEMBERS_URL}?workflow={unrelated.pk}")
@@ -1696,7 +1643,7 @@ class RoutingConfigurationTests(TestCase):
             ("supervisor", "hod"),
             approvers={"supervisor": person},
         )
-        section = team.workflow.sections.get(approver_role__code="supervisor")
+        section = team.workflows.first().sections.get(approver_role__code="supervisor")
         self.assertEqual(section.approver, person)
         self.assertTrue(is_approver_user(person))
 
@@ -1734,7 +1681,7 @@ class RoutingConfigurationTests(TestCase):
             ("supervisor",),
             approvers={"supervisor": person},
         )
-        section = team.workflow.sections.get(approver_role__code="supervisor")
+        section = team.workflows.first().sections.get(approver_role__code="supervisor")
         remove_section_member(
             membership=section.members.get(user=person), actor=self.hr
         )
@@ -1760,9 +1707,9 @@ class RoutingConfigurationTests(TestCase):
         with self.assertRaises(Exception) as ctx:
             ensure_role_not_in_use(ApproverRole.objects.get(code="supervisor"))
         message = str(ctx.exception)
-        self.assertIn(f"the '{team.workflow.name}' workflow", message)
+        self.assertIn(f"the '{team.workflows.first().name if team.workflows.first() else ""}' workflow", message)
         self.assertIn("1 section and 1 member", message)
-        self.assertEqual(message.count(f"the '{team.workflow.name}' workflow"), 1)
+        self.assertEqual(message.count(f"the '{team.workflows.first().name if team.workflows.first() else ""}' workflow"), 1)
 
     def test_employee_profiles_expose_their_team(self):
         from users.models import EmployeeProfile

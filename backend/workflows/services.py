@@ -619,20 +619,25 @@ def wide_holder_ids(team: Team, role: ApproverRole) -> set[int]:
 def validate_team(team: Team) -> TeamReadiness:
     """Check whether a team can route an application's approvals.
 
-    Side-effect free and safe to call at any time: the validation endpoint and
-    the activation action run the same function, so HR sees exactly the
-    problems that will block activation, no more and no fewer.
+    Side-effect free and safe to call at any time: the validation endpoint runs
+    the same function, so HR sees exactly the problems that will block a
+    submission, no more and no fewer.
+
+    A team may own several chains and every one of them is checked on its own,
+    because employees are spread across them by membership and any chain may be
+    carrying applications today — a single broken chain is a group of employees
+    who cannot submit, even if the rest of the team's chains are healthy.
 
     The checks are deliberately about the team's *own* configuration — the
-    workflow, its sections, their roles, and whether somebody can act at each
+    workflows, their sections, their roles, and whether somebody can act at each
     step today. Per-applicant resolution (an applicant who is themselves the
     only approver of a step, say) cannot be known without an application and is
     still refused at submission by invariant 12.7.
     """
     issues: list[TeamIssue] = []
-    workflow = team.workflow
+    workflows = list(team.workflows.order_by("name"))
 
-    if workflow is None:
+    if not workflows:
         issues.append(
             TeamIssue(
                 "workflow_missing",
@@ -643,27 +648,77 @@ def validate_team(team: Team) -> TeamReadiness:
         )
         return TeamReadiness(team=team, issues=tuple(issues))
 
+    for workflow in workflows:
+        issues.extend(_validate_workflow(team=team, workflow=workflow))
+
+    if (
+        team.effective_from is not None
+        and team.effective_to is not None
+        and team.effective_to < team.effective_from
+    ):
+        issues.append(
+            TeamIssue(
+                "window_ordered",
+                "effective_to",
+                f"The end date ({team.effective_to.isoformat()}) is before the "
+                f"start date ({team.effective_from.isoformat()}).",
+            )
+        )
+
+    if team.effective_to is not None and team.effective_to < timezone.localdate():
+        issues.append(
+            TeamIssue(
+                "window_ended",
+                "effective_to",
+                f"This team's last routing date was "
+                f"{team.effective_to.isoformat()}, which has passed. Move the end "
+                "date into the future, or leave it blank, to activate the team.",
+            )
+        )
+
+    return TeamReadiness(team=team, issues=tuple(issues))
+
+
+def _validate_workflow(*, team: Team, workflow: Workflow) -> list[TeamIssue]:
+    """Every problem on one of a team's chains, named in workflow terms.
+
+    Issues carry the workflow they came from in their message so a team that
+    owns several chains tells HR *which* one is broken rather than reporting a
+    bare step number with no chain to look under.
+    """
+    issues: list[TeamIssue] = []
+    today = timezone.localdate()
+
     if not workflow.is_active:
         issues.append(
             TeamIssue(
                 "workflow_inactive",
                 "workflow",
-                f"Workflow '{workflow.name}' is inactive. Reactivate it, or point "
-                f"the {team.name} team at an active workflow.",
+                f"Workflow '{workflow.name}' is inactive. Put it back in force, "
+                "or move this team's members onto another of its workflows.",
             )
         )
 
-    if (
-        workflow.effective_from is not None
-        and workflow.effective_from > timezone.localdate()
-    ):
+    if workflow.effective_from is not None and workflow.effective_from > today:
         issues.append(
             TeamIssue(
                 "workflow_scheduled",
                 "workflow",
                 f"Workflow '{workflow.name}' does not start until "
                 f"{workflow.effective_from.isoformat()}. Move its start date "
-                f"earlier, or wait until then to activate the {team.name} team.",
+                f"earlier, or leave it; members routed to it cannot apply "
+                "until it starts.",
+            )
+        )
+
+    if workflow.effective_to is not None and workflow.effective_to < today:
+        issues.append(
+            TeamIssue(
+                "workflow_ended",
+                "workflow",
+                f"Workflow '{workflow.name}' stopped routing applications on "
+                f"{workflow.effective_to.isoformat()}. Extend its window, or "
+                "write a replacement chain, before its members apply again.",
             )
         )
 
@@ -678,9 +733,10 @@ def validate_team(team: Team) -> TeamReadiness:
                 "no_sections",
                 "sections",
                 f"Workflow '{workflow.name}' has no active approval sections. Add "
-                "at least one step before activating the team.",
+                "at least one step before its members apply.",
             )
         )
+        return issues
 
     for section in sections:
         role = section.approver_role
@@ -689,8 +745,9 @@ def validate_team(team: Team) -> TeamReadiness:
                 TeamIssue(
                     "inactive_role",
                     "sections",
-                    f'The "{section.name}" step needs the "{role.label}" role, which '
-                    "is deactivated. Reactivate it in Roles, or replace the step.",
+                    f'The "{section.name}" step of "{workflow.name}" needs the '
+                    f'"{role.label}" role, which is deactivated. Reactivate it in '
+                    "Roles, or replace the step.",
                     section=section.order,
                     approver_role=role.code,
                 )
@@ -726,8 +783,8 @@ def validate_team(team: Team) -> TeamReadiness:
                 TeamIssue(
                     "no_approver",
                     "sections",
-                    f'Nobody can act on the "{section.name}" step '
-                    f"({role.label}). {hint}",
+                    f'Nobody can act on the "{section.name}" step of '
+                    f'"{workflow.name}" ({role.label}). {hint}',
                     section=section.order,
                     approver_role=role.code,
                 )
@@ -735,10 +792,10 @@ def validate_team(team: Team) -> TeamReadiness:
         else:
             # An approver appointed before they joined the team, or whose own
             # employee record moved since, still routes — the write-time check only
-            # ran when the appointment was made. Report it rather than let a team be
-            # activated whose approver is outside it. A wide holding is the
-            # deliberate exception: not being on the team is the whole point of
-            # one.
+            # ran when the appointment was made. Report it rather than let a chain
+            # carry an application with an approver outside it. A wide holding is
+            # the deliberate exception: not being on the team is the whole point
+            # of one.
             wide_ids = wide_holder_ids(team, role)
             for approver_id in approvers:
                 if approver_id in wide_ids:
@@ -751,41 +808,16 @@ def validate_team(team: Team) -> TeamReadiness:
                         TeamIssue(
                             "approver_outside_team",
                             "sections",
-                            f'The approver of the "{section.name}" step is no longer '
-                            "a member of this team. Appoint one of the team's "
-                            "members, or move the approver's employee record.",
+                            f'The approver of the "{section.name}" step of '
+                            f'"{workflow.name}" is no longer a member of this '
+                            "team. Appoint one of the team's members, or move the "
+                            "approver's employee record.",
                             section=section.order,
                             approver_role=role.code,
                         )
                     )
                     break
-
-    if (
-        team.effective_from is not None
-        and team.effective_to is not None
-        and team.effective_to < team.effective_from
-    ):
-        issues.append(
-            TeamIssue(
-                "window_ordered",
-                "effective_to",
-                f"The end date ({team.effective_to.isoformat()}) is before the "
-                f"start date ({team.effective_from.isoformat()}).",
-            )
-        )
-
-    if team.effective_to is not None and team.effective_to < timezone.localdate():
-        issues.append(
-            TeamIssue(
-                "window_ended",
-                "effective_to",
-                f"This team's last routing date was "
-                f"{team.effective_to.isoformat()}, which has passed. Move the end "
-                "date into the future, or leave it blank, to activate the team.",
-            )
-        )
-
-    return TeamReadiness(team=team, issues=tuple(issues))
+    return issues
 
 
 def _unique_workflow_name(base: str, exclude_pk: int | None = None) -> str:
@@ -1096,44 +1128,6 @@ def update_team(
     return team
 
 
-def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
-    """Point a team at one of the chains it owns, as the team's manager.
-
-    Routing is the manager's call: they build the team's chains and decide which
-    one is in force. The workflow named must be one the team already owns
-    (:attr:`Workflow.team`), so "route through this chain instead" can never
-    become "adopt somebody else's chain" — which would strand every application
-    inside the old one at a step nobody staffs.
-
-    HR stays out of this deliberately: HR creates the team and assigns its
-    manager, and the manager owns the routing decision from then on.
-    """
-    _require_team_manager(actor, team, TeamActionError)
-    with transaction.atomic():
-        team = Team.objects.select_for_update().get(pk=team.pk)
-        if workflow is None or workflow.team_id != team.pk:
-            raise TeamActionError(
-                "workflow",
-                "A team can only route through a workflow it owns. Create the "
-                "workflow under this team first, then point the team at it.",
-            )
-        if team.workflow_id == workflow.pk:
-            return team
-        before = _team_snapshot(team)
-        team.workflow = workflow
-        team.save(update_fields=["workflow", "updated_at"])
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.UPDATED,
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=team.pk,
-            target_summary=team.name,
-            detail=changed_fields(before, _team_snapshot(team)),
-            reason=f'Routed through "{workflow.name}".',
-        )
-    return team
-
-
 def academic_calendar_end() -> date | None:
     """The last day of the academic calendar a chain is written against.
 
@@ -1152,13 +1146,11 @@ def academic_calendar_end() -> date | None:
 def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
     """Build a workflow the team owns, with its stages, in one transaction.
 
-    A team may own several workflows — the one it routes through, and a
-    replacement HR is building alongside it — so a workflow is created *for* a
-    team and ownership is written at creation. Ownership is not routing:
-    :attr:`Team.workflow` still decides which chain an application follows, and
-    it is only moved here when the team has no chain at all, because silently
-    re-routing a team that already routes is the one change this must never
-    make.
+    A team may own several workflows and every one of them can be in force at
+    the same time, so creating one never changes how any other routes: a workflow
+    is created *for* a team, ownership is written at creation, and nothing on
+    the team is repointed as a side effect. Which chain an employee follows is
+    decided by their membership, not by the team.
 
     ``sections`` is the same stage list the team form sends, so stage
     configuration is one implementation whether HR is editing the chain they
@@ -1208,10 +1200,6 @@ def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
                 config=[dict(section) for section in sections_payload],
                 actor=actor,
             )
-
-        if team.workflow_id is None:
-            team.workflow = workflow
-            team.save(update_fields=["workflow", "updated_at"])
 
         if members_payload is not None:
             sync_workflow_members(
@@ -1350,7 +1338,10 @@ def _team_snapshot(team: Team) -> dict:
         # instance would not survive being written to the audit's JSON detail.
         "campus_id": team.campus_id,
         "campus": team.campus.name if team.campus_id else "",
-        "workflow_id": team.workflow_id,
+        # The chains the team owns, by id and name: routing is decided per
+        # applicant through membership now, so what the audit has to show is
+        # which chains existed, not which one was "the" one.
+        "workflow_ids": list(team.workflows.order_by("pk").values_list("pk", flat=True)),
         "status": team.status,
         "effective_from": team.effective_from,
         "effective_to": team.effective_to,
@@ -2343,7 +2334,6 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
             "name": workflow.name,
             "state": workflow.state,
             "is_active": workflow.is_active,
-            "is_routing": team.workflow_id == workflow.pk,
         }
 
     return {

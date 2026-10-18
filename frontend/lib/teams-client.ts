@@ -102,23 +102,6 @@ export async function deactivateTeam(id: number | string): Promise<Team> {
   return send<Team>(`/api/hr/teams/${id}/deactivate`, "POST");
 }
 
-/**
- * Point a team at one of the chains it already owns.
- *
- * This is the routing decision, not an edit to a chain: the chain keeps its
- * steps, and what changes is which of the team's chains new applications go
- * through. The backend refuses a chain the team does not own, so this can
- * never move a team onto somebody else's steps.
- */
-export async function routeTeamThrough(
-  teamId: number | string,
-  workflowId: number | string | null
-): Promise<Team> {
-  return send<Team>(`/api/hr/teams/${teamId}/route`, "POST", {
-    workflow: workflowId,
-  });
-}
-
 export async function createCampus(input: CampusInput): Promise<Campus> {
   return send<Campus>("/api/hr/campuses", "POST", input);
 }

@@ -72,8 +72,6 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     category: "academic",
     campus: null,
     campus_name: "",
-    workflow: 1,
-    workflow_name: "Academic approval",
     workflows: [],
     status: "active",
     effective_from: "2026-01-01",
@@ -88,6 +86,8 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     sections: [
       {
         id: 1,
+        workflow: 1,
+        workflow_name: "Academic approval",
         name: "Direct supervisor",
         order: 1,
         is_active: true,
@@ -102,6 +102,8 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
       },
       {
         id: 2,
+        workflow: 1,
+        workflow_name: "Academic approval",
         name: "Team leader",
         order: 2,
         is_active: true,

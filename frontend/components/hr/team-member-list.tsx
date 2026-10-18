@@ -48,7 +48,11 @@ export function TeamMemberList({ team }: { team: Team }) {
         const [people, periods] = await Promise.all([
           roleId === undefined
             ? Promise.resolve([] as EligibleApprover[])
-            : listEligibleApprovers(team.id, roleId, team.workflow ?? undefined),
+            : listEligibleApprovers(
+                team.id,
+                roleId,
+                section.workflow ?? undefined
+              ),
           listSectionMembers(section.id),
         ]);
         return [section.id, { people, open: periods[0] ?? null }] as const;
@@ -77,7 +81,7 @@ export function TeamMemberList({ team }: { team: Team }) {
     };
     // Re-run when the server props change after an appointment, so the current
     // holder and the eligible list stay in step with the team.
-  }, [team.id, team.sections, team.workflow, roleIdByCode]);
+  }, [team.id, team.sections, roleIdByCode]);
 
   async function appoint(section: TeamSection, userId: number) {
     setError("");

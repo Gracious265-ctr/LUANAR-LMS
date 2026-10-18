@@ -85,9 +85,12 @@ export function sectionResolutionLabel(resolution: string): string {
   return SECTION_RESOLUTION_LABELS[resolution as SectionResolution] ?? resolution;
 }
 
-/** A team row's read-only summary of one step of the workflow it routes through. */
+/** A team row's read-only summary of one step of one of the team's chains. */
 export interface TeamSection {
   id: number;
+  /** The chain this step belongs to; a team may own several. */
+  workflow: number;
+  workflow_name: string;
   name: string;
   order: number;
   is_active: boolean;
@@ -118,14 +121,13 @@ export interface TeamStageRole {
 
 /**
  * A chain the team owns, named so a screen can show every one of them without
- * reading them all. `is_routing` is the one the team is currently pointed at —
- * a team may own several and route exactly one, and switching between them is
- * a decision rather than an edit to whichever one happens to be first.
+ * reading them all. Every chain a team owns routes at once, each carrying the
+ * employees who are members of it, so there is no single "live" chain.
  */
 export interface WorkflowRef {
   id: number;
   name: string;
-  is_routing: boolean;
+  state: string;
   section_count: number;
   effective_from: string | null;
   is_active: boolean;
@@ -141,10 +143,7 @@ export interface Team {
   /** The campus this team sits in, required when the category is academic. */
   campus: number | null;
   campus_name: string;
-  /** The chain this team routes through, or null while the team is a draft. */
-  workflow: number | null;
-  workflow_name: string;
-  /** Every chain this team owns, including the one it routes through. */
+  /** Every chain this team owns; each one routes the members enrolled in it. */
   workflows: WorkflowRef[];
   status: TeamStatus | string;
   effective_from: string | null;

@@ -40,7 +40,7 @@ from approvals.models import (
     ApprovalDecision,
 )
 from organisation.models import ApproverRole, Team
-from workflows.models import Section, SectionMember, Workflow
+from workflows.models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
@@ -217,6 +217,12 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         profile.team = team
         profile.save(update_fields=["team"])
+        # Being on a team is not enough to route: an employee follows the chain
+        # they are a member of, so placing one on a team also enrols them in the
+        # team's workflow.
+        workflow = team.workflows.first()
+        if workflow is not None:
+            WorkflowMember.objects.get_or_create(team=team, workflow=workflow, user=user)
         return profile
 
     def test_chain_for_administration_starts_with_supervisor(self):
@@ -415,7 +421,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
-        self.assertIn("inactive", str(ctx.exception))
+        self.assertIn("not in force", str(ctx.exception))
 
     def test_retired_team_raises_config_error(self):
         """A team that has been retired stops routing, and says so.

@@ -79,7 +79,15 @@ class Campus(models.Model):
 
 
 class Team(models.Model):
-    """A group of employees sharing one approval workflow."""
+    """A group of employees sharing one or more approval workflows.
+
+    A team may own several chains (``Workflow.team``) and every one of them can
+    be in force at the same time. Which chain an application follows is not a
+    property of the team but of the applicant: each employee is a normal member
+    of exactly one of the team's workflows (:class:`workflows.models.WorkflowMember`)
+    and routes through that one, so two people on the same team can be inside
+    two different chains simultaneously.
+    """
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
@@ -112,13 +120,6 @@ class Team(models.Model):
             "The campus an academic team sits at; required when the category is "
             "Academic and not allowed when it is Administration."
         ),
-    )
-    workflow = models.OneToOneField(
-        "workflows.Workflow",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="routed_by",
     )
     status = models.CharField(
         max_length=20,

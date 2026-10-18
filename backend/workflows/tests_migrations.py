@@ -436,20 +436,16 @@ class ModelConstraintTests(MigrationTestCase):
         from django.db import IntegrityError, transaction  # noqa: PLC0415
 
         from organisation.models import ApproverRole, Campus, Team  # noqa: PLC0415
-        from workflows.models import Workflow  # noqa: PLC0415
 
         ApproverRole.objects.create(code="dean", label="Dean")
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 ApproverRole.objects.create(code="dean", label="Dean again")
 
-        workflow = Workflow.objects.create(name="Chain", is_active=True)
-        Team.objects.create(name="Science", code="science", workflow=workflow)
+        Team.objects.create(name="Science", code="science")
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                Team.objects.create(
-                    name="Science copy", code="science", workflow=workflow
-                )
+                Team.objects.create(name="Science copy", code="science")
 
         Campus.objects.create(name="Tehune", code="tehune")
         with self.assertRaises(IntegrityError):
@@ -463,14 +459,14 @@ class ModelConstraintTests(MigrationTestCase):
         from organisation.models import ApproverRole, Team  # noqa: PLC0415
         from workflows.models import Section, SectionMember, Workflow  # noqa: PLC0415
 
+        science = Team.objects.create(name="Science", code="science")
+        arts = Team.objects.create(name="Arts", code="arts")
         science_workflow = Workflow.objects.create(
-            name="Science chain", is_active=True
+            name="Science chain", is_active=True, team=science
         )
-        arts_workflow = Workflow.objects.create(name="Arts chain", is_active=True)
-        science = Team.objects.create(
-            name="Science", code="science", workflow=science_workflow
+        arts_workflow = Workflow.objects.create(
+            name="Arts chain", is_active=True, team=arts
         )
-        arts = Team.objects.create(name="Arts", code="arts", workflow=arts_workflow)
         supervisor_role = ApproverRole.objects.create(
             code="supervisor", label="Supervisor"
         )
@@ -503,28 +499,27 @@ class ModelConstraintTests(MigrationTestCase):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
         from organisation.models import Campus, Team  # noqa: PLC0415
-        from workflows.models import Workflow  # noqa: PLC0415
 
         campus = Campus.objects.create(name="Tehune", code="tehune")
         Team.objects.create(
             name="Tehune team",
             code="tehune-team",
             campus=campus,
-            workflow=Workflow.objects.create(name="Chain", is_active=True),
         )
         with self.assertRaises(ProtectedError):
             campus.delete()
 
-    def test_a_workflow_referenced_by_a_team_cannot_be_deleted(self):
-        from django.db.models import ProtectedError  # noqa: PLC0415
-
+    def test_deleting_a_workflow_leaves_its_team_in_place(self):
+        """A chain is owned by a team, not protected by it: removing the chain
+        merely unowns it (``SET_NULL``), leaving the team intact."""
         from organisation.models import Team  # noqa: PLC0415
         from workflows.models import Workflow  # noqa: PLC0415
 
-        workflow = Workflow.objects.create(name="Chain", is_active=True)
-        Team.objects.create(name="Team", code="team", workflow=workflow)
-        with self.assertRaises(ProtectedError):
-            workflow.delete()
+        team = Team.objects.create(name="Team", code="team")
+        workflow = Workflow.objects.create(name="Chain", is_active=True, team=team)
+        workflow.delete()
+        self.assertTrue(Team.objects.filter(pk=team.pk).exists())
+        self.assertFalse(Team.objects.get(pk=team.pk).workflows.exists())
 
     def test_a_role_referenced_by_a_section_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415

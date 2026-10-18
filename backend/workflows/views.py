@@ -49,7 +49,6 @@ from .services import (
     remove_section_member,
     remove_team_member,
     remove_workflow_member,
-    route_team,
     team_member_summaries,
     validate_team,
     workflow_member_pool,
@@ -199,11 +198,6 @@ class WorkflowViewSet(
         team = self.request.query_params.get("team")
         if team:
             queryset = queryset.filter(team_id=positive_int(team, "team"))
-        routing = self.request.query_params.get("routing")
-        if routing == "1":
-            queryset = queryset.filter(routed_by__isnull=False)
-        elif routing == "0":
-            queryset = queryset.filter(routed_by__isnull=True)
         return queryset.order_by("name")
 
     def _write_response(self, workflow):
@@ -294,9 +288,8 @@ class TeamViewSet(
         Creating a team, editing its category/campus/details, assigning its
         manager, and moving it in or out of force are HR decisions. Everything
         else on this viewset — reading, listing members, adding/removing members,
-        shaping the workflow pool, and choosing which chain the team routes
-        through — is the team's manager's, filtered to their own team by
-        :meth:`get_queryset`.
+        and shaping the workflow pool — is the team's manager's, filtered to
+        their own team by :meth:`get_queryset`.
         """
         if self.action in (
             "create",
@@ -309,13 +302,11 @@ class TeamViewSet(
             "members",
             "member_candidates",
             "workflow_members_pool",
-            "route",
         ):
-            # Adding and removing the roster — and reading who may be added —
-            # and choosing which of the team's chains is in force are the
-            # manager's calls once HR has created the team and designated them.
-            # HR stays out of it rather than merely scoping the manager to their
-            # own team, so the handover is the whole boundary.
+            # Adding and removing the roster — and reading who may be added to a
+            # chain — are the manager's calls once HR has created the team and
+            # designated them. HR stays out of it rather than merely scoping the
+            # manager to their own team, so the handover is the whole boundary.
             return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
         # Remove-member is a detail action on members (DELETE)
         if self.action == "remove_member":
@@ -324,10 +315,10 @@ class TeamViewSet(
 
     def get_queryset(self):
         base = Team.objects.select_related(
-            "workflow", "campus"
+            "campus"
         ).prefetch_related(
-            "workflow__sections__approver_role",
-            "workflow__sections__approver",
+            "workflows__sections__approver_role",
+            "workflows__sections__approver",
             "workflows",
         )
         managed = _managed_team_ids(self.request.user)
@@ -707,36 +698,6 @@ class TeamViewSet(
             )
         return Response(
             TeamSerializer(team, context=self.get_serializer_context()).data
-        )
-
-    @action(detail=True, methods=["post"], url_path="route")
-    def route(self, request, *args, **kwargs):
-        """Point this team at one of the chains it owns, as its manager.
-
-        Routing is the manager's decision. The workflow named must be one the
-        team already owns, so this can only choose among the team's own chains —
-        never borrow another team's.
-        """
-        team = self.get_object()
-        workflow_id = request.data.get("workflow")
-        workflow = None
-        if workflow_id not in (None, ""):
-            try:
-                workflow_pk = positive_int(workflow_id, "workflow")
-            except ValidationError:
-                return Response(
-                    {"workflow": ["That workflow is missing or is not this team's."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            workflow = Workflow.objects.filter(pk=workflow_pk, team=team).first()
-        try:
-            routed = route_team(team=team, actor=request.user, workflow=workflow)
-        except TeamActionError as exc:
-            return Response(
-                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
-            )
-        return Response(
-            TeamSerializer(routed, context=self.get_serializer_context()).data
         )
 
     @action(detail=True, methods=["post"], url_path="validate")

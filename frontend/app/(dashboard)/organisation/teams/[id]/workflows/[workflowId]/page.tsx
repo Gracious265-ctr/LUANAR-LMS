@@ -2,11 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
-import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
 import { canConfigureChains } from "@/lib/team-access";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
-import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { getTeam } from "@/lib/teams";
 
 /**
  * One chain: its steps, in order, and how each one finds the person who acts.
@@ -56,7 +55,6 @@ export default async function WorkflowDetailPage({
     notFound();
   }
 
-  const workflows = await listTeamWorkflows(team.id).catch(() => []);
   const canConfigure = canConfigureChains(isHr);
 
   return (
@@ -77,14 +75,13 @@ export default async function WorkflowDetailPage({
               </h2>
               <span
                 className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  workflow.is_routing
+                  workflow.is_active
                     ? "bg-brand-secondary-subtle text-brand-secondary"
                     : "bg-surface-muted text-text-muted"
                 }`}
               >
                 {workflowStateLabel(workflow.state)}
-              </span>
-            </div>
+              </span>            </div>
             <p className="text-text-secondary">
               Owned by {team.name}
               {workflow.effective_from
@@ -196,21 +193,13 @@ export default async function WorkflowDetailPage({
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Which chain routes
+          How this chain routes
         </h3>
-        <p className="mb-3 text-sm text-text-secondary">
-          {workflow.is_routing
-            ? "This is the chain new applications go through."
-            : "This chain is owned but not routing. Point the team at it when its steps are ready."}
+        <p className="text-sm text-text-secondary">
+          Every chain a team owns routes at once, each carrying the employees
+          who are members of it. This chain reaches its own members as soon as
+          its steps are staffed and it is in force.
         </p>
-        {!isHr ? (
-          <WorkflowRoutingActions team={team} workflows={workflows} />
-        ) : (
-          <p className="text-sm text-text-muted">
-            Pointing the team at a chain is the manager&apos;s call. Ask the
-            manager to switch the team to this chain once its steps are ready.
-          </p>
-        )}
       </div>
     </div>
   );

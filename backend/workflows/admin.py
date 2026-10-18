@@ -156,8 +156,7 @@ class WorkflowAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        # PROTECTed by Team.workflow, and the audit trail is the record of why
-        # a chain looked the way it did.
+        # The audit trail is the record of why a chain looked the way it did.
         return False
 
 

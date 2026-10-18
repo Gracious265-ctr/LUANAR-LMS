@@ -130,8 +130,9 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.chain_approvers = (self.supervisor, self.hod, self.registrar, self.dvc)
         self.chain_roles = dict(zip(CHAIN, self.chain_approvers, strict=True))
         self.team = self.hr_creates_team(CHAIN, self.chain_roles)
-        self.chain = {"id": self.team["workflow"]}
+        self.chain = self.team["workflows"][0]
         self.team_id = self.team["id"]
+        self.workflow_id = self.chain["id"]
         # The chain's approvers are institution-wide, so they are exempt from
         # "an approver must be a member of the team" and resolve straight off
         # their section appointment. They are deliberately *not* placed on the
@@ -207,6 +208,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
             format="json",
         )
         self.assertEqual(chain.status_code, 201, chain.data)
+        self.manager = manager
 
         self.client.force_authenticate(user=self.hr)
         team = self.client.get(f"/api/v1/teams/{team_id}/")
@@ -254,7 +256,12 @@ class EndToEndBase(StubProviderMixin, TestCase):
         return manager
 
     def place_employee_on_team(self):
-        """Put the applicant on the team, the way HR does it."""
+        """Put the applicant on the team and enrol them in its chain.
+
+        Being on a team is not enough to route: an employee follows the chain
+        they are a normal member of, so the manager — who owns the roster after
+        HR hands the team over — adds them to the workflow.
+        """
         self.client.force_authenticate(user=self.hr)
         response = self.client.patch(
             f"/api/v1/employees/{self.employee_profile.id}/",
@@ -262,6 +269,14 @@ class EndToEndBase(StubProviderMixin, TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200, response.data)
+        self.client.force_authenticate(user=self.manager)
+        enrolled = self.client.post(
+            f"/api/v1/workflows/{self.workflow_id}/members/",
+            {"user": self.employee.pk},
+            format="json",
+        )
+        self.assertEqual(enrolled.status_code, 201, enrolled.data)
+        self.client.force_authenticate(user=self.hr)
         self.employee.refresh_from_db()
         return self.employee.employee_profile
 

@@ -101,8 +101,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     team_name: "Bunda College Faculty",
     effective_from: null,
     is_active: true,
-    state: "standby",
-    is_routing: false,
+    state: "active",
     section_count: 1,
     sections: [],
     members: [],
@@ -136,7 +135,7 @@ describe("WorkflowForm members section", () => {
   it("pre-fills the current members of an edited workflow", async () => {
     vi.mocked(getWorkflowMemberPool).mockResolvedValue(
       makePool({
-        workflow: { id: 1, name: "Academic approval", state: "standby", is_active: true, is_routing: false },
+        workflow: { id: 1, name: "Academic approval", state: "active", is_active: true },
         current: [
           {
             id: 31,
@@ -186,6 +185,9 @@ describe("WorkflowForm members section", () => {
     render(<WorkflowForm team={team} roles={roles} />);
     await screen.findByText("Ruth Member");
 
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Bunda College Faculty replacement" },
+    });
     fireEvent.click(
       screen.getByRole("button", { name: "Add step" })
     );
@@ -223,6 +225,9 @@ describe("WorkflowForm approver picker", () => {
     vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={team} roles={roles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Supervisor chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
 
     await screen.findByRole("combobox", { name: /approver/i });
@@ -333,6 +338,9 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
     vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registrar chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "Role" }),
@@ -382,6 +390,9 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
     vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
 
     render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registrar chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "Role" }),

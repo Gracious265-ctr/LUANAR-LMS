@@ -4,6 +4,25 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Multi-workflow teams — COMPLETE (2026-10-18).** A team may now own and run
+  several approval chains at once, so routing stopped being a property of the
+  team. `Team.workflow` is removed entirely (migration
+  `organisation/0007_remove_team_workflow`; the `route` action, `is_routing`,
+  the `WorkflowRoutingActions` component and its `/api/hr/teams/[id]/route`
+  proxy are gone, all chains route simultaneously), `Team.Status.DRAFT` is gone
+  (teams are always ACTIVE on creation, HR `activate` removed, `deactivate`
+  retained), workflow names are required, and `Workflow.effective_to` defaults
+  to the active academic year's end (`workflows/0034_workflow_effective_to_and_more`).
+  Routing resolves per applicant from their `WorkflowMember` membership
+  (`workflows/providers.py::_member_workflow`): a normal member sits in exactly
+  one chain per team (enforced by `workflow_member_team_user_unique`), while a
+  wide approver may sit in several. Team members are not auto-enrolled — HR
+  adds them. Frontend types/pages/table updated; `WorkflowState` is
+  `active | scheduled | inactive | draft` (`is_routing` dropped). Verified:
+  backend full suite 1574+ tests OK (all modules re-run green, incl. the 30-test
+  `workflows.tests_migrations`), `makemigrations --check` clean; frontend
+  typecheck/lint clean and 985 tests OK.
+
 - **HR leave-system simplification — IN PROGRESS (started 2026-10-11)** — the
   approved 7-phase plan to reduce the steps HR takes across the whole leave
   system (one non-technical generalist HR user): setup spine → onboarding →

@@ -46,7 +46,7 @@ class TeamCalendarAccessTests(APITestCase):
     def setUp(self):
         self.hr = make_user("hr@luanar", role=User.Role.HR)
         self.team = make_team("Finance", ["supervisor"], campus=None)
-        self.supervisor = self.team.workflow.sections.get(
+        self.supervisor = self.team.workflows.first().sections.get(
             approver_role__code="supervisor"
         ).approver
         self.member = _employee("member@luanar", self.team)
@@ -100,7 +100,7 @@ class TeamCalendarAccessTests(APITestCase):
 class TeamCalendarContentTests(APITestCase):
     def setUp(self):
         self.team = make_team("Finance", ["supervisor"], campus=None)
-        self.supervisor = self.team.workflow.sections.get(
+        self.supervisor = self.team.workflows.first().sections.get(
             approver_role__code="supervisor"
         ).approver
         self.inside = _employee("inside@luanar", self.team, first_name="Ina")

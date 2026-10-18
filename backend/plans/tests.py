@@ -28,7 +28,7 @@ from leave.models import LeaveType
 from leave.tests.stubs import TODAY, _leave_types, make_user
 from notifications.models import NotificationOutbox
 from users.models import EmployeeProfile, User
-from workflows.models import SectionMember
+from workflows.models import SectionMember, WorkflowMember
 from approvals.models import Delegation
 from workflows.providers import DatabaseWorkflowProvider
 from workflows.testing import (
@@ -102,7 +102,14 @@ def _profile(user, **kwargs):
         category="administration",
     )
     defaults.update(kwargs)
-    return EmployeeProfile.objects.create(user=user, **defaults)
+    profile = EmployeeProfile.objects.create(user=user, **defaults)
+    # A fixture that places somebody on a team also enrols them in the team's
+    # chain: routing follows membership, so a profile alone would not route.
+    team = kwargs.get("team")
+    workflow = team.workflows.first() if team is not None else None
+    if workflow is not None:
+        WorkflowMember.objects.get_or_create(team=team, workflow=workflow, user=user)
+    return profile
 
 
 class PlanServiceBase(StubProviderMixin, TestCase):
@@ -161,7 +168,7 @@ class PlanServiceBase(StubProviderMixin, TestCase):
         # ``team_id`` of None even though the row is correct. Re-read the user so
         # scope queries see the team the way the rest of the app does.
         self.employee = User.objects.get(pk=self.employee.pk)
-        self.workflow = self.team.workflow
+        self.workflow = self.team.workflows.first()
 
     def _sync_leave_registry(self):
         """Mirror the stub's rules into the real LeaveType registry.
@@ -720,8 +727,8 @@ class StageRoutingTests(PlanServiceBase):
         )
         self.assertEqual(plan.status, LeaveDayPlan.Status.SUBMITTED)
 
-    def test_a_draft_team_cannot_route(self):
-        self.team.status = self.team.Status.DRAFT
+    def test_a_retired_team_cannot_route(self):
+        self.team.status = self.team.Status.INACTIVE
         self.team.save(update_fields=["status"])
         with self.assertRaises(PlanValidationFailedError) as ctx:
             submit_plan(user=self.employee, plan_id=self.make_plan().id)

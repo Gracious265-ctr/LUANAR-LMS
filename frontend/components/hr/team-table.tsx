@@ -43,7 +43,7 @@ export function TeamTable({ teams }: { teams: Team[] }) {
               Team
             </th>
             <th scope="col" className="px-4 py-3">
-              Chain
+              Chains
             </th>
             <th scope="col" className="px-4 py-3">
               Steps
@@ -85,8 +85,10 @@ export function TeamTable({ teams }: { teams: Team[] }) {
                 </span>
               </th>
               <td className="px-4 py-3 text-text-secondary">
-                {team.workflow_name || (
+                {team.workflows.length === 0 ? (
                   <span className="text-text-muted">No chain</span>
+                ) : (
+                  team.workflows.map((workflow) => workflow.name).join(", ")
                 )}
               </td>
               <td className="px-4 py-3 text-text-secondary">

@@ -80,13 +80,12 @@ class TeamAdmin(admin.ModelAdmin):
         "code",
         "category",
         "campus",
-        "workflow",
-        "status",
+                "status",
         "effective_window",
     )
     list_filter = ("status", "category", "campus")
     search_fields = ("name", "code", "description")
-    raw_id_fields = ("workflow", "campus")
+    raw_id_fields = ("campus",)
     ordering = ("name",)
     readonly_fields = ("status", "created_at", "updated_at")
 

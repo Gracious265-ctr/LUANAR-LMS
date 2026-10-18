@@ -192,7 +192,11 @@ export default async function CampusPage({
                     {team.name}
                   </Link>
                   <p className="text-xs text-text-muted">
-                    {team.workflow_name || "No chain yet"}
+                    {team.workflows.length === 0
+                      ? "No chain yet"
+                      : team.workflows
+                          .map((workflow) => workflow.name)
+                          .join(", ")}
                   </p>
                 </div>
                 <span

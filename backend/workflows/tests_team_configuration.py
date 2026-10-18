@@ -43,7 +43,7 @@ from approvals.models import (
     ApprovalDecision,
 )
 from organisation.models import ApproverRole, Team
-from workflows.models import Section, SectionMember, Workflow
+from workflows.models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import DatabaseWorkflowProvider, WorkflowConfigError
 from approvals.services import (
     decide,
@@ -261,9 +261,9 @@ class TeamConfigurationBase(TestCase):
         if name is not None:
             payload["name"] = name
         else:
-            payload["name"] = f"{team.workflow.name or team.name} chain" if hasattr(team, "workflow") and team.workflow else f"{team.name} chain"
+            payload["name"] = f"{(team.workflows.first().name if team.workflows.first() else team.name)} chain"
         return self.manager_client(team).patch(
-            f"{WORKFLOWS_URL}{team.workflow_id}/", payload, format="json"
+            f"{WORKFLOWS_URL}{team.workflows.first().id}/", payload, format="json"
         )
 
     def read(self, team_id: int) -> dict:
@@ -276,7 +276,16 @@ class TeamConfigurationBase(TestCase):
             user=self.employee,
             defaults={"team": team},
         )
-        # Writing the profile caches it on the user instance, holding on to the
+        # Routing follows membership, not merely being on the team: an employee
+        # with no workflow membership is refused at submission. A test that
+        # places an employee to watch them route therefore enrolls them in the
+        # team's chain as well.
+        chain = team.workflows.first()
+        if chain is not None:
+            WorkflowMember.objects.get_or_create(
+                workflow=chain, user=self.employee, defaults={"team": team}
+            )
+        # Writing the profile caches the user instance, holding on to the
         # Team object the caller passed — which may be a read taken before the
         # team was activated. Dropping the cache means the routing assertions
         # below are reading what is in the database, not what the test remembers.
@@ -303,22 +312,22 @@ class TeamCreationTests(TeamConfigurationBase):
     def test_a_team_is_created_with_its_workflow_sections_and_approvers(self):
         team = self.create_team()
         self.assertEqual(team["status"], Team.Status.ACTIVE)
-        self.assertTrue(team["workflow_name"])
+        self.assertTrue(team["workflows"])
 
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["supervisor", "hod"],
         )
         self.assertEqual(
-            stored.workflow.sections.get(approver_role__code="supervisor").approver_id,
+            stored.workflows.first().sections.get(approver_role__code="supervisor").approver_id,
             self.supervisor.pk,
         )
         # Each appointment is also an effective-dated period, so the history of
         # who held the step is a record rather than a snapshot.
         self.assertEqual(
             SectionMember.objects.get(
-                section=stored.workflow.sections.get(approver_role__code="supervisor"),
+                section=stored.workflows.first().sections.get(approver_role__code="supervisor"),
                 user=self.supervisor,
             ).effective_to,
             None,
@@ -337,7 +346,7 @@ class TeamCreationTests(TeamConfigurationBase):
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team.pk).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team.pk).workflows.first().sections.order_by("order")
             ],
             ["hod", "supervisor"],
         )
@@ -347,7 +356,7 @@ class TeamCreationTests(TeamConfigurationBase):
         self.place_on_team(team, self.supervisor, self.hod)
         response = self.build_chain(team, self.chain, name="ICT leave chain")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(Team.objects.get(pk=team.pk).workflow.name, "ICT leave chain")
+        self.assertEqual(Team.objects.get(pk=team.pk).workflows.first().name, "ICT leave chain")
 
     def test_a_clashing_chain_name_is_suffixed_rather_than_rejected(self):
         """The team name is what HR typed; a chain name collision is our problem.
@@ -359,7 +368,7 @@ class TeamCreationTests(TeamConfigurationBase):
         Workflow.objects.create(name="Administration workflow")
         team = self.create_team()
         self.assertNotEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, "Administration workflow"
+            Team.objects.get(pk=team["id"]).workflows.first().name, "Administration workflow"
         )
 
     def test_a_team_owns_its_chain(self):
@@ -373,7 +382,7 @@ class TeamCreationTests(TeamConfigurationBase):
         second = self.create_team(
             name="Second team", approvers=self.approvers_for("second")
         )
-        self.assertNotEqual(first["workflow"], second["workflow"])
+        self.assertNotEqual(first["workflows"][0]["id"], second["workflows"][0]["id"])
         self.assertEqual(
             Workflow.objects.filter(team__isnull=False).count(),
             Team.objects.count(),
@@ -394,7 +403,7 @@ class TeamCreationTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["status"], Team.Status.ACTIVE)
-        self.assertIsNone(response.data["workflow"])
+        self.assertEqual(response.data["workflows"], [])
         self.assertEqual(response.data["sections"], [])
         self.assertEqual(response.data["members"], [])
 
@@ -409,7 +418,7 @@ class TeamCreationTests(TeamConfigurationBase):
         other = self.create_team(name="Other team", approvers=self.approvers_for("other"))
         response = self.client.post(
             TEAMS_URL,
-            {"name": "Copying team", "workflow": other["workflow"]},
+            {"name": "Copying team", "workflow": other["workflows"][0]["id"]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -510,7 +519,7 @@ class TeamCreationTests(TeamConfigurationBase):
             ],
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        section = Team.objects.get(pk=team.pk).workflow.sections.get(order=1)
+        section = Team.objects.get(pk=team.pk).workflows.first().sections.get(order=1)
         self.assertIsNone(section.approver_id)
 
     def test_one_may_not_hold_two_stages_of_one_chain(self):
@@ -540,7 +549,7 @@ class TeamCreationTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already assigned to step 1", str(response.data))
-        self.assertIsNone(Team.objects.get(pk=team.pk).workflow_id)
+        self.assertIsNone(Team.objects.get(pk=team.pk).workflows.first())
 
     def test_a_role_may_not_repeat_across_stages_of_one_chain(self):
         """The other leg: a role is on one stage per workflow too (Unit 30).
@@ -568,7 +577,7 @@ class TeamCreationTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already assigned to another stage", str(response.data))
-        self.assertIsNone(Team.objects.get(pk=team.pk).workflow_id)
+        self.assertIsNone(Team.objects.get(pk=team.pk).workflows.first())
 
     def test_the_one_role_rule_does_not_reach_across_teams(self):
         """The restriction is scoped to a team, not global.
@@ -600,7 +609,7 @@ class TeamCreationTests(TeamConfigurationBase):
             Section.objects.filter(
                 approver_role__code="supervisor",
                 approver=records_supervisor,
-                workflow_id=second["workflow"],
+                workflow_id=second["workflows"][0]["id"],
             ).count(),
             1,
         )
@@ -620,7 +629,7 @@ class TeamCreationTests(TeamConfigurationBase):
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.WORKFLOW,
             action=AuditEntry.Action.CREATED,
-            target_id=str(team["workflow"]),
+            target_id=str(team["workflows"][0]["id"]),
             reason__startswith="Created for the",
         )
         self.assertEqual(
@@ -673,7 +682,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["supervisor", "dean"],
         )
 
@@ -684,7 +693,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         their stages point at the sections the team used to have.
         """
         team = self.create_team()
-        original_chain = team["workflow"]
+        original_chain = team["workflows"][0]["id"]
         response = self.edit_chain(
             Team.objects.get(pk=team["id"]),
             [{"name": "Only step", "approver_role": "supervisor"}],
@@ -694,7 +703,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
             f"{TEAMS_URL}{team['id']}/", {"name": "Renamed team"}, format="json"
         )
         stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.workflow_id, original_chain)
+        self.assertEqual(stored.workflows.first().id, original_chain)
         self.assertEqual(stored.name, "Renamed team")
 
     def test_reordering_keeps_each_step_and_its_approver(self):
@@ -706,7 +715,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         """
         team = self.create_team()
         sections = list(
-            Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+            Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
         )
         response = self.edit_chain(
             Team.objects.get(pk=team["id"]),
@@ -722,11 +731,11 @@ class TeamChainEditingTests(TeamConfigurationBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["hod", "supervisor"],
         )
         self.assertEqual(
-            stored.workflow.sections.get(approver_role__code="hod").approver_id,
+            stored.workflows.first().sections.get(approver_role__code="hod").approver_id,
             self.hod.pk,
         )
 
@@ -749,7 +758,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
             ],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        chain = Team.objects.get(pk=team["id"]).workflow
+        chain = Team.objects.get(pk=team["id"]).workflows.first()
         renamed = chain.sections.get(name="Renamed supervisor step")
         self.assertIsNone(renamed.approver_id)
         # The step that did not change kept its approver, so renaming one step is
@@ -768,7 +777,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.WORKFLOW,
             action=AuditEntry.Action.UPDATED,
-            target_id=str(team["workflow"]),
+            target_id=str(team["workflows"][0]["id"]),
         )
         self.assertEqual(entry.detail["team"], "Administration team")
 
@@ -779,7 +788,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, "ICT leave chain"
+            Team.objects.get(pk=team["id"]).workflows.first().name, "ICT leave chain"
         )
 
     def test_renaming_a_team_does_not_alter_its_chain_name(self):
@@ -790,12 +799,12 @@ class TeamChainEditingTests(TeamConfigurationBase):
         changes nobody made.
         """
         team = self.create_team()
-        chain_name = team["workflow_name"]
+        chain_name = team["workflows"][0]["name"]
         self.client.patch(
             f"{TEAMS_URL}{team['id']}/", {"name": "Better name"}, format="json"
         )
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, chain_name
+            Team.objects.get(pk=team["id"]).workflows.first().name, chain_name
         )
 
     def test_editing_the_steps_does_not_change_the_status(self):
@@ -817,7 +826,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         response = self.edit_chain(Team.objects.get(pk=team["id"]), [])
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.sections.count(), 2
+            Team.objects.get(pk=team["id"]).workflows.first().sections.count(), 2
         )
 
     def test_a_bad_role_is_refused_on_edit_and_leaves_the_steps_alone(self):
@@ -828,7 +837,7 @@ class TeamChainEditingTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.sections.count(), 2
+            Team.objects.get(pk=team["id"]).workflows.first().sections.count(), 2
         )
 
     def test_a_chain_can_appoint_one_approver_to_a_step(self):
@@ -859,12 +868,12 @@ class TeamChainEditingTests(TeamConfigurationBase):
         stored = Team.objects.get(pk=team.pk)
         self.assertEqual(
             [
-                s.approver_id for s in stored.workflow.sections.order_by("order")
+                s.approver_id for s in stored.workflows.first().sections.order_by("order")
             ],
             [self.supervisor.pk, self.hod.pk],
         )
         self.assertEqual(
-            SectionMember.objects.filter(section__workflow=stored.workflow).count(), 2
+            SectionMember.objects.filter(section__workflow=stored.workflows.first()).count(), 2
         )
 
 
@@ -963,7 +972,7 @@ class TeamValidationTests(TeamConfigurationBase):
 
     def test_a_chain_with_no_active_steps_is_reported(self):
         team = Team.objects.get(pk=self.create_team()["id"])
-        team.workflow.sections.update(is_active=False)
+        team.workflows.first().sections.update(is_active=False)
         response = self.client.post(
             f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
@@ -972,8 +981,9 @@ class TeamValidationTests(TeamConfigurationBase):
 
     def test_a_retired_workflow_is_reported(self):
         team = Team.objects.get(pk=self.create_team()["id"])
-        team.workflow.is_active = False
-        team.workflow.save(update_fields=["is_active"])
+        chain = team.workflows.first()
+        chain.is_active = False
+        chain.save(update_fields=["is_active"])
         response = self.client.post(
             f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
@@ -1067,15 +1077,15 @@ class TeamValidationTests(TeamConfigurationBase):
         self.activate(registry_row.pk)
         self.activate(records_row.pk)
         # Two active teams, two distinct chains.
-        self.assertNotEqual(registry_row.workflow_id, records_row.workflow_id)
+        self.assertNotEqual(registry_row.workflows.first().id, records_row.workflows.first().id)
 
         registry_stages = self.stages_for(registry_row)
         records_stages = self.stages_for(records_row)
         self.assertEqual([s.role for s in registry_stages], ["supervisor"])
         self.assertEqual([s.role for s in records_stages], ["hod"])
         # And the steps are the two chains' own sections, not one shared chain.
-        registry_sections = set(registry_row.workflow.sections.values_list("pk", flat=True))
-        records_sections = set(records_row.workflow.sections.values_list("pk", flat=True))
+        registry_sections = set(registry_row.workflows.first().sections.values_list("pk", flat=True))
+        records_sections = set(records_row.workflows.first().sections.values_list("pk", flat=True))
         self.assertEqual({s.section_id for s in registry_stages}, registry_sections)
         self.assertEqual({s.section_id for s in records_stages}, records_sections)
         self.assertFalse(registry_sections & records_sections)
@@ -1130,7 +1140,7 @@ class TeamValidationTests(TeamConfigurationBase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(
             Team.objects.get(pk=elsewhere.pk)
-            .workflow.sections.get(approver_role__code="dean")
+            .workflows.first().sections.get(approver_role__code="dean")
             .approver_id,
             records_supervisor.pk,
         )
@@ -1224,26 +1234,27 @@ class TeamActivationTests(TeamConfigurationBase):
         )
         team = self.create_team()
         stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.workflow.effective_from, today)
-        self.assertEqual(stored.workflow.effective_to, year.end_date)
-        self.assertEqual(stored.workflow.state, "active")
+        self.assertEqual(stored.workflows.first().effective_from, today)
+        self.assertEqual(stored.workflows.first().effective_to, year.end_date)
+        self.assertEqual(stored.workflows.first().state, "active")
 
     def test_a_chain_written_without_an_academic_year_has_no_end_date(self):
         """Nothing configured means no boundary at all, rather than a guess."""
         self.assertFalse(FinancialYear.objects.filter(is_active=True).exists())
         team = self.create_team()
         stored = Team.objects.get(pk=team["id"])
-        self.assertIsNone(stored.workflow.effective_to)
-        self.assertEqual(stored.workflow.state, "active")
+        self.assertIsNone(stored.workflows.first().effective_to)
+        self.assertEqual(stored.workflows.first().state, "active")
 
     def test_editing_the_chain_keeps_the_date_it_was_given(self):
         team = self.create_team()
         stored = Team.objects.get(pk=team["id"])
-        stored.workflow.effective_from = timezone.localdate() - timedelta(days=5)
-        stored.workflow.save(update_fields=["effective_from"])
+        chain = stored.workflows.first()
+        chain.effective_from = timezone.localdate() - timedelta(days=5)
+        chain.save(update_fields=["effective_from"])
         self.edit_chain(stored, [{"name": "Step", "approver_role": "supervisor"}])
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.effective_from,
+            Team.objects.get(pk=team["id"]).workflows.first().effective_from,
             timezone.localdate() - timedelta(days=5),
         )
 
@@ -1355,7 +1366,7 @@ class TeamDetailsTests(TeamConfigurationBase):
         appeal eventually asks.
         """
         team = self.create_team()
-        step_one = Team.objects.get(pk=team["id"]).workflow.sections.get(order=1)
+        step_one = Team.objects.get(pk=team["id"]).workflows.first().sections.get(order=1)
         response = self.client.get(f"{MEMBERS_URL}?section={step_one.pk}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         first = next(
@@ -1448,8 +1459,8 @@ class MembershipHistoryTests(TeamConfigurationBase):
             "hod", username="repl@teamflow.test", institution_wide=False
         )
         self.team = Team.objects.get(pk=self.create_team()["id"])
-        self.step_one = self.team.workflow.sections.get(order=1)
-        self.step_two = self.team.workflow.sections.get(order=2)
+        self.step_one = self.team.workflows.first().sections.get(order=1)
+        self.step_two = self.team.workflows.first().sections.get(order=2)
 
     def staff_and_get(self, section: Section, user) -> SectionMember:
         # Appointment is only open to the team's own members, so put them on it
@@ -1715,7 +1726,7 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
@@ -1751,7 +1762,7 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
@@ -1780,7 +1791,7 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team.pk).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team.pk).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
@@ -1814,7 +1825,7 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         stored = Team.objects.get(pk=team["id"])
         self.place_employee(stored)
         membership = SectionMember.objects.get(
-            section=stored.workflow.sections.get(order=2), user=self.hod
+            section=stored.workflows.first().sections.get(order=2), user=self.hod
         )
         self.unappoint(membership)
         with self.assertRaises(ValidationFailedError) as ctx:
@@ -1880,7 +1891,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         that later.
         """
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
         self.unappoint(membership)
@@ -1897,7 +1908,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
     def test_the_removed_approver_can_still_decide_the_live_application(self):
         """The end of a membership is not a retraction of what came before."""
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
         self.unappoint(membership)
@@ -1924,13 +1935,13 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         profile.save(update_fields=["team"])
         replacement.refresh_from_db()
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
         self.unappoint(membership)
         self.assertEqual(
             self.appoint(
-                self.stored.workflow.sections.get(order=1), replacement
+                self.stored.workflows.first().sections.get(order=1), replacement
             ).status_code,
             status.HTTP_201_CREATED,
         )
@@ -1965,7 +1976,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         self.assertEqual(stage.role_label, "Supervisor")
         self.assertEqual(
             stage.section_ref_id,
-            self.stored.workflow.sections.get(order=1).pk,
+            self.stored.workflows.first().sections.get(order=1).pk,
         )
 
     def test_a_section_a_live_stage_points_at_cannot_be_deleted(self):
@@ -1976,7 +1987,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         out from under it, and the stage keeps its own copy of the step's meaning
         rather than having to go and look it up.
         """
-        section = self.stored.workflow.sections.get(order=1)
+        section = self.stored.workflows.first().sections.get(order=1)
         with self.assertRaises(ProtectedError):
             section.delete()
 
