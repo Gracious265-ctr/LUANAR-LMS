@@ -150,10 +150,7 @@ it("links editable targets to their edit page", () => {
 
     const links = screen.getAllByRole("link", { name: "Edit" });
     expect(links).toHaveLength(3);
-    expect(links[0]).toHaveAttribute(
-      "href",
-      "/dashboard/hr-admin/leave-rules/7/edit"
-    );
+    expect(links[0]).toHaveAttribute("href", "/leave-config");
     expect(links[1]).toHaveAttribute(
       "href",
       "/dashboard/hr-admin/employees/42"

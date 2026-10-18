@@ -1,4 +1,5 @@
 from django.urls import include, path
+from django.views.generic import RedirectView
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from .views import (
@@ -6,8 +7,6 @@ from .views import (
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
-    LeaveRuleViewSet,
-    LeaveTypeViewSet,
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
@@ -20,8 +19,6 @@ app_name = "leave"
 
 hr_router = SimpleRouter()
 hr_router.register("entitlements", GradeEntitlementViewSet, basename="entitlement")
-hr_router.register("leave-types", LeaveTypeViewSet, basename="leave-type")
-hr_router.register("leave-rules", LeaveRuleViewSet, basename="leave-rule")
 hr_router.register("financial-years", FinancialYearViewSet, basename="financial-year")
 hr_router.register("public-holidays", PublicHolidayViewSet, basename="public-holiday")
 
@@ -70,6 +67,20 @@ urlpatterns = [
     path("", include("leave.cancellations.urls")),
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
+    # Refinement unit 06 retired the HR leave-types CRUD: leave types are now
+    # configured in the Leave Configuration app. The endpoint answers with a
+    # redirect rather than a 404 so a bookmarked or scripted call still lands
+    # somewhere useful.
+    path(
+        "leave-types/",
+        RedirectView.as_view(pattern_name="leave-config-type-list", permanent=False),
+        name="legacy-leave-type-list",
+    ),
+    path(
+        "leave-rules/",
+        RedirectView.as_view(pattern_name="leave-config-type-list", permanent=False),
+        name="legacy-leave-rule-list",
+    ),
     path(
         "employee/leave-types/",
         employee_leave_types,

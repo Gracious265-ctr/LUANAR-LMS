@@ -121,8 +121,8 @@ def document_values(application) -> dict[str, str]:
     """
     from django.utils import timezone
 
-    from leave.models import LeaveType
     from leave.providers import get_provider
+    from leave_config.models import LeaveType
 
     employee = application.employee
     profile = getattr(employee, "employee_profile", None)

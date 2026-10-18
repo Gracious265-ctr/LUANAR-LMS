@@ -16,11 +16,10 @@ from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
     SupportingDocument,
 )
+from leave_config.models import LeaveType
 from users.models import User
 
 from workflows.models import Delegation, Reassignment, Workflow
@@ -560,15 +559,19 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(updated.detail["after"]["days"], 22)
 
     def test_leave_type_create_and_update_are_audited(self):
+        # Refinement unit 06 moved the leave-type registry (and its audit
+        # trail) to the Leave Configuration app.
         response = self.client.post(
-            "/api/v1/leave-types/", {"name": "Compassionate leave"}, format="json"
+            "/api/v1/leave-config/types/",
+            {"name": "Compassionate leave"},
+            format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         entry_id = response.data["id"]
         self.assertEqual(self._entry_for("leavetype", entry_id).action, "created")
 
         response = self.client.patch(
-            f"/api/v1/leave-types/{entry_id}/",
+            f"/api/v1/leave-config/types/{entry_id}/",
             {"name": "Compassionate leave (revised)"},
             format="json",
         )
@@ -576,34 +579,6 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         updated = self._entry_for("leavetype", entry_id)
         self.assertEqual(updated.action, "updated")
         self.assertEqual(updated.detail["before"]["name"], "Compassionate leave")
-
-    def test_leave_rule_create_and_update_are_audited(self):
-        leave_type = LeaveType.objects.create(name="Annual leave", code="annual")
-        response = self.client.post(
-            "/api/v1/leave-rules/",
-            {
-                "leave_type": leave_type.pk,
-                "max_duration_days": 30,
-                "eligibility": "All staff",
-                "min_notice_days": 1,
-                "requires_supporting_document": False,
-                "consumes_annual_entitlement": True,
-                "effective_from": (self.today - timedelta(days=10)).isoformat(),
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        rule_id = response.data["id"]
-        self.assertEqual(self._entry_for("leaverule", rule_id).action, "created")
-
-        response = self.client.patch(
-            f"/api/v1/leave-rules/{rule_id}/", {"max_duration_days": 32}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        updated = self._entry_for("leaverule", rule_id)
-        self.assertEqual(updated.action, "updated")
-        self.assertEqual(updated.detail["before"]["max_duration_days"], 30)
-        self.assertEqual(updated.detail["after"]["max_duration_days"], 32)
 
     def test_financial_year_create_and_update_are_audited(self):
         response = self.client.post(

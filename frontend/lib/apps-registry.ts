@@ -5,6 +5,7 @@ import {
   Building2,
   FileStack,
   Users,
+  SlidersHorizontal,
 } from "lucide-react";
 
 export const APPS_REGISTRY = {
@@ -43,6 +44,12 @@ export const APPS_REGISTRY = {
     description: "Manage employees, grades, and leave rules",
     icon: Users,
     route: "/dashboard/hr-admin",
+  },
+  "leave-config": {
+    name: "Leave Configuration",
+    description: "Manage leave types and their rules",
+    icon: SlidersHorizontal,
+    route: "/leave-config",
   },
 } as const;
 

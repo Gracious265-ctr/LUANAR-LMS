@@ -58,6 +58,20 @@ Update this file after every meaningful implementation change.
   "← All Apps"). See "Completed (Unit 3 — Leave App Dashboard) (2026-10-17)"
   at the end of this file.
 
+- **Unit 06 — Leave Configuration App — COMPLETED (2026-10-18)** — refinement
+  unit `context/refinement/06-leave-configuration-app.md`. Implements a dedicated
+  HR-only `leave_config` app to own `LeaveType` centrally (branch scope,
+  grade/gender eligibility, rules, planning flags, institutional-registrar
+  escalation, deactivation). No entitlement field (grade-based entitlement
+  remains elsewhere); single `notice_days` shared by submission/Plans; read-only
+  active types list for authenticated users, writes HR/superuser only. Cross-module
+  services (`is_eligible`, `validate_notice`, flag helpers) centralize rules.
+  Retires the HR leave-types CRUD and the Leave Rules surface (`leave.LeaveType`/
+  `LeaveRule` models, `/api/v1/leave-rules/`, `/dashboard/hr-admin/leave-types`,
+  `/dashboard/hr-admin/leave-rules`); the Leave app keeps only the employee
+  `employee/leave-types/` projection. See "Completed (Unit 06 — Leave
+  Configuration App) (2026-10-18)" at the end of this file.
+
 - **HR leave-system simplification — IN PROGRESS (started 2026-10-11)** — the
   approved 7-phase plan to reduce the steps HR takes across the whole leave
   system (one non-technical generalist HR user): setup spine → onboarding →
@@ -5734,3 +5748,173 @@ ran — first run `9 created, 0 updated, 7 role-linked, 1 vacant`, second run
 `0 created, 9 updated, 7 role-linked, 1 vacant` (idempotent). Docs updated:
 `DEVELOPER-GUIDE.md` (two app rows + four "I want to change" rows),
 `context/architecture.md` (backend tree).
+
+---
+
+## Completed (Unit 06 — Leave Configuration App) (2026-10-18)
+
+**Goal.** One HR-only app that owns the leave-type registry: name/colour/
+description, the three eligibility dimensions, the rules (supporting document,
+maximum duration, notice period), plannability, institutional-registrar
+escalation and the deactivate/reactivate lifecycle — so `leave`, `plans` and the
+`approvals` chain resolver all read a leave-type rule from one place instead of
+each holding its own copy.
+
+**Ownership decisions.** `leave_config` is the true owner of `LeaveType`, the
+same way `org` owns `OrgUnit`. The move from `leave` was **state-only**: two
+migrations, no DDL, no data copy, and `db_table="leave_leavetype"` plus the
+integer primary key were deliberately kept, because renaming them would have
+rewritten every referencing table's constraints.
+
+**Backend.**
+- **New `leave_config` app.** `LeaveType` (`name`/`code` unique, `color` from a
+  restricted status-safe palette, `description`, `branch_scope` ∈
+  `academic|administrative|both`, `eligible_grades` JSON list of provider grade
+  ids, `eligible_gender` ∈ `any|male|female`, `requires_supporting_document`,
+  `max_duration_days` nullable, `notice_days` nullable, `eligibility` +
+  `eligibility_rules` for the Unit 14 validation engine, `plannable`,
+  `consumes_annual_entitlement`, `requires_institutional_registrar_approval`,
+  `is_active`, timestamps) with `eligible_grade_ids` normalisation (upper-cased,
+  blanks dropped). **No entitlement field** (§1.3) — days-per-year stays in
+  `leave.GradeLeaveEntitlement`.
+  - `leave_config/0001_initial` takes over the pre-existing `leave_leavetype`
+    table (state-only), dropping `leave`'s copy of the model state-only.
+  - `leave_config/0002_fold_leave_rules_into_types` writes the rule columns,
+    folds the effective-dated `leave.LeaveRule` rows onto their type and drops
+    the old `plan_notice_days` column. Fold precedence: the rule in force today
+    (greatest `effective_from` ≤ migration date; a type with only pending rules
+    keeps the earliest, so it still has a policy); `notice_days` is *derived*,
+    not moved — plan window only → that value, rule minimum only → that value,
+    both → the larger (neither validation nor the reminder may silently loosen),
+    neither → `NULL`.
+  - `leave.LeaveRule` itself was retired by `leave/0021`; `LeaveTypeRules.effective_from`
+    (the API validator's rule set) was kept, so `VALIDATOR_VERSION` stays `"1"`.
+- **`leave_config/services.py` — the single source every module reads.**
+  `can_access_leave_config` (`superuser or staff or role == HR`),
+  `is_eligible(leave_type, employee)` (all three dimensions independently
+  unrestricted-or-matching; a restricted dimension that cannot be resolved
+  fails **closed**), `check_notice`/`validate_notice` (returns a `NoticeCheck`
+  with `unit_label`, `day_unit_for`, holiday-aware `_earliest_start`; `NULL`
+  notice = no minimum), `get_notice_days`/`get_max_duration_days`/
+  `get_requires_supporting_document`/`is_plannable`/`consumes_annual_entitlement`,
+  `deactivate_leave_type`/`reactivate_leave_type` (audited; the annual type
+  raises `AnnualLeaveLifecycleError` rather than being retired — reactivating it
+  is allowed, because that is a repair), and the reserved
+  annual-leave identity: `find_annual_leave_type`, `is_annual_leave_type`,
+  `is_annual_leave_identity`, `get_or_create_annual_leave_type`,
+  `ensure_annual_leave_policy`, `provision_annual_leave`.
+- **API** (`/api/v1/leave-config/…`): list/create + retrieve/update with
+  `pagination_class = None` (the list answers with a **bare array**),
+  `http_method_names` excluding `DELETE` (405 — retire, never delete),
+  `is_active` read-only, and the audited `POST {id}/deactivate/` and
+  `POST {id}/reactivate/` (the former answers 400 for the annual type). `GET
+  grades/` serves the grade multi-select from the `directory` provider
+  (`GradeRecord.id`/`name`).
+  - Carried-over product rule (spec 31), narrowed the same day: annual leave is
+    **created** by an entitlement, never typed by hand, so
+    `LeaveTypeSerializer._guard_annual_leave` still refuses any created row whose
+    identity *would* be the annual type, and still refuses to rename the
+    provisioned row or move its short code (entitlements and the balance ledger
+    resolve through name/code). Its **rules** became HR-editable here — see the
+    follow-up below. `LeaveTypeAdminForm` and the admin's readonly fields mirror
+    all of it, so the Django admin cannot bypass the guards either.
+- **Retired surfaces.** `leave.LeaveType`/`leave.LeaveRule` models, the
+  `/api/v1/leave-rules/` CRUD and the `leave/types/` + `leave/rules/` HR
+  endpoints are gone; the Leave app keeps only the employee-facing
+  `employee/leave-types/` projection (`EmployeeLeaveTypeSerializer`). Repoints
+  landed across `leave` (validation/dashboard/drafts), `plans`, `documents`,
+  `audit`, `workflows` and `notifications`.
+- **Launcher.** `launcher/services.py` gained `can_access_leave_config`
+  (delegating to `leave_config.services.can_access_leave_config`, so the backend
+  gate has exactly one implementation) and `get_launcher_apps` appends
+  `{"key": "leave-config", "badge": None}`.
+
+**Frontend.**
+- **Routes** `app/(dashboard)/leave-config/`: `layout.tsx`
+  (`metadata.title = "Leave Configuration"`), `page.tsx` (the list, reads
+  `?include_inactive=true`, calls `requireLeaveConfigAccess()` before anything
+  else), `new/page.tsx`, `[id]/page.tsx` (edit; `getLeaveType(id).catch(() =>
+  notFound())`), plus a `loading.tsx` for each of the three.
+- **Components** `components/leave-config/`: `LeaveTypeTable` (the §3.2 columns;
+  inactive rows stay in the same list, muted with `opacity-60` +
+  `data-inactive="true"`), `ShowInactiveToggle`, `DeactivateDialog` (the
+  confirm step of the 3-click flow, and Reactivate on a retired type),
+  `LeaveTypeForm` (sections Basics/Eligibility/Rules/Planning/Approval; the
+  registrar checkbox appears only when `branch_scope !== "academic"`; the annual
+  type gets the same form with its name/code read-only, an info banner pointing
+  at Entitlements, and no Deactivate/Reactivate control).
+- **Lib/proxies.** `lib/leave-config.ts` (types + vocabulary + field-error
+  mapping), `lib/leave-config-client.ts` (browser writes), `lib/leave-config-server.ts`
+  (`requireLeaveConfigAccess`, server-only), `lib/nav/leave-config-nav.ts`
+  (`LEAVE_CONFIG_NAV_ITEMS` = "Leave Types" → `/leave-config`, "Create Leave
+  Type" → `/leave-config/new`, plus the standard "← All Apps"), and the proxy
+  routes `app/api/leave-config/{types,types/[id],types/[id]/deactivate,
+  types/[id]/reactivate,grades}`.
+- **Shell.** `dashboard-shell.tsx` renders the shell `<h1>` ("Leave
+  Management"), so module pages use `<h2>` and card/section headings `<h3>`;
+  the rail gained the "Leave Configuration" module branch through the shared
+  `ModuleNavLinks`. `lib/apps-registry.ts` records the launcher entry.
+- **Access gate.** `canAccessLeaveConfig(user)` = `is_superuser === true ||
+  user.role === "hr"` — the same rule the backend enforces. `User.Role` only has
+  `employee|approver|hr` and `UserSerializer` does not serialise `is_staff`, so
+  "staff but not HR" is reachable in Django admin but not through the UI; the
+  two gates therefore agree on everything the frontend can observe.
+
+**Testing.**
+- Backend: `leave_config/tests.py` — 42 tests
+  (`LeaveTypeCreateUpdateTest`, `LeaveTypeAccessTest`, `LeaveTypeLifecycleTest`,
+  `LeaveTypeValidationTest`, `IsEligibleTest`, `NoticeTest`); `launcher/tests.py`
+  — 6 (employee/approver denied, HR/superuser allowed, no badge, gate parity with
+  the service).
+- Frontend: 70 tests across `tests/leave-config-lib.test.ts` (24),
+  `tests/leave-config-form.test.tsx` (22), `tests/leave-config-table.test.tsx`
+  (8), `tests/leave-config-proxy.test.ts` (11) and `tests/leave-config-access.test.ts`;
+  a `describe("DashboardShell Leave Configuration module")` block added to
+  `tests/dashboard-shell.test.tsx`; the `tests/server-only-imports.test.ts`
+  canary extended to `lib/leave-config-server.ts`. The now-dead HR tests
+  (`leave-rules.test.ts`, `leave-type-form.test.tsx`, `leave-type-table.test.tsx`)
+  were deleted with their surfaces.
+
+**Verification.** `manage.py test --noinput` → **1468 tests OK**; the count moves
+from the previous unit's 1470 because the retired leave-type/leave-rule suites
+went with their models and the annual guards added six tests;
+`makemigrations --check --dry-run` → "No changes detected". Frontend `npm test`
+→ **108 files, 926 tests, all pass**; `eslint` clean;
+`tsc --noEmit -p tsconfig.test.json` reports only the two pre-existing
+`instrumentation-client.ts` TS2306 errors (untouched files).
+
+**Follow-up (same day) — annual leave's rules are HR's again.** The first cut
+made the annual type read-only in every field, which (with the Leave Rules
+surface retired) left its `notice_days` and `max_duration_days` frozen at
+whatever the first entitlement happened to provision. HR needs the notice period
+in particular — it is what the Plans reminder counts down from. So the type is
+now editable for its **rules** exactly like any other type, while its
+**identity** stays pinned: creating a competing "Annual Leave" is refused,
+renaming or re-coding the provisioned row is refused (entitlements and the
+balance ledger resolve through those), the
+`consumes_annual_entitlement` marker cannot be cleared (it is what the ledger
+resolves to, and it is not a field the form offers), and deactivate/reactivate
+is gone from the form and refused with a 400 by the endpoint — reactivation is
+still allowed, since restoring a retired annual type is a repair. The Django
+admin mirrors each rule (readonly name/code, the guard in the admin form, the
+lifecycle action skipping the refusal and reporting it). Seven backend tests
+cover it — rules editable and audited, rename refused, code change refused,
+marker clearing refused, marker re-sent unchanged accepted, deactivation refused,
+reactivation allowed — the first replacing the old blanket-refusal test (36 → 42
+in `leave_config/tests.py`). The frontend form suite gained three (rules editable
+with identity read-only, the Entitlements pointer, no lifecycle control) in place
+of the old "keeps annual leave out of this form entirely".
+`context/architecture.md` §10 and `DEVELOPER-GUIDE.md` were updated to match.
+
+**Stale test note.** `tests/entitlement-form.test.tsx` ("sends null when the
+band is left on annual leave") is load-sensitive: it takes ~2.5 s alone against
+Vitest's 5 s per-test timeout and has been observed to time out only when the
+full suite runs under heavy parallel load. It passes in isolation and in the
+last full run (199 s); it is a pre-existing timing flake, not a Unit 06
+regression.
+
+**Docs.** `DEVELOPER-GUIDE.md` (new `leave_config` app row + "I want to change"
+rows for the registry, the leave-types/leave-rules retirement, and the
+frontend module), `context/architecture.md` (backend tree + §10 configuration
+ownership paragraph), `context/refinement/04-leave-plans-app.md`
+(`plan_notice_days` → the single `notice_days`).

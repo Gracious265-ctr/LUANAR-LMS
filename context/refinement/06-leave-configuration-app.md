@@ -1,6 +1,6 @@
 # Unit — Leave Configuration App
 
-*Unit number left open. New module (7th app on the launcher) — adds `backend/leave_config/` and `frontend/app/(dashboard)/leave-config/`. This is the one place `LeaveType` and all its rules are created and edited; every other module (Leave, Approvals/org-tree chain resolution, Plans) reads from here and never defines its own copy of a rule.*
+read `context/AGENTS.md` before starting
 
 ---
 

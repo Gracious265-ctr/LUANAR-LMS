@@ -19,10 +19,9 @@ from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
 )
+from leave_config.models import LeaveType
 from workflows.testing import team_for
 from leave.providers.database import DatabaseRulesProvider
 from users.models import EmployeeProfile
@@ -86,20 +85,16 @@ class GetEmployeeForUserTests(ProviderSetupMixin, TestCase):
 
 class GetLeaveTypeRulesTests(ProviderSetupMixin, TestCase):
     def _make_leave_type(self, code, **rule_fields):
-        leave_type = LeaveType.objects.create(name=code.title(), code=code)
-        LeaveRule.objects.create(
-            leave_type=leave_type,
-            effective_from=date(2026, 1, 1),
-            max_duration_days=rule_fields.pop("max_duration_days", 10),
-            **rule_fields,
-        )
-        return leave_type
+        # Refinement unit 06 folded the effective-dated rule into the type, so
+        # the fields the provider reads are written straight onto the row.
+        rule_fields.setdefault("max_duration_days", 10)
+        return LeaveType.objects.create(name=code.title(), code=code, **rule_fields)
 
     def test_annual_is_measured_in_working_days(self):
         leave_type = self._make_leave_type(
             "annual",
             max_duration_days=30,
-            min_notice_days=5,
+            notice_days=5,
             consumes_annual_entitlement=True,
         )
 
@@ -137,11 +132,27 @@ class GetLeaveTypeRulesTests(ProviderSetupMixin, TestCase):
         self.assertEqual(rule.type, "gender")
         self.assertEqual(rule.params, {"allowed": ["M"]})
 
-    def test_rule_not_effective_yet_returns_none(self):
+    def test_effective_dating_is_retired_so_any_as_of_answers(self):
+        # The ``LeaveRule`` date dimension is gone (§4.2): a type that exists
+        # answers for any date, and only its own ``is_active`` gate applies.
         leave_type = self._make_leave_type("compassionate")
-        self.assertIsNone(
-            self.provider.get_leave_type_rules(leave_type.id, date(2025, 12, 31))
-        )
+        rules = self.provider.get_leave_type_rules(leave_type.id, date(2025, 12, 31))
+
+        self.assertIsNotNone(rules)
+        self.assertTrue(rules.is_active)
+
+    def test_deactivated_type_carries_its_flag_instead_of_disappearing(self):
+        # Deactivation (§1.5) hides a type from new selections without taking
+        # the policy away from applications already filed against it, so the
+        # provider still answers — just flagged. The catalog, not the evaluator,
+        # is what stops offering the type.
+        leave_type = self._make_leave_type("compassionate")
+        LeaveType.objects.filter(pk=leave_type.pk).update(is_active=False)
+
+        rules = self.provider.get_leave_type_rules(leave_type.id, date(2026, 9, 21))
+
+        self.assertIsNotNone(rules)
+        self.assertFalse(rules.is_active)
 
     def test_unknown_leave_type_returns_none(self):
         self.assertIsNone(self.provider.get_leave_type_rules(999999, date(2026, 9, 21)))

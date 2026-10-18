@@ -22,10 +22,9 @@ from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
 )
+from leave_config.models import LeaveType
 from workflows.testing import team_for
 from leave.services.submission import submit_application
 from leave.services.working_days import calculate_working_days, holidays_in_range
@@ -102,12 +101,11 @@ class PublicHolidayBase(TestCase):
             days=30,
             effective_from=at(date(2026, 1, 1)),
         )
-        self.leave_type = LeaveType.objects.create(name="Annual", code="annual")
-        LeaveRule.objects.create(
-            leave_type=self.leave_type,
-            effective_from=at(date(2026, 1, 1)),
+        self.leave_type = LeaveType.objects.create(
+            name="Annual",
+            code="annual",
             max_duration_days=30,
-            min_notice_days=0,
+            notice_days=0,
             consumes_annual_entitlement=True,
         )
         # Only the *rules* provider stays real here, because the public-holiday
@@ -426,9 +424,7 @@ class NoticePeriodTests(PublicHolidayBase):
 
     def setUp(self):
         super().setUp()
-        LeaveRule.objects.filter(leave_type=self.leave_type).update(
-            min_notice_days=5
-        )
+        LeaveType.objects.filter(pk=self.leave_type.pk).update(notice_days=5)
         patcher = mock.patch(
             "leave.validation.pipeline.get_today", return_value=self.TODAY
         )

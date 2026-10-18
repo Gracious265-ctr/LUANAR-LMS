@@ -26,7 +26,9 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
+from leave_config.services import is_plannable
 from leave.services import create_draft_application
 from users.models import EmployeeProfile
 from workflows.models import CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
@@ -99,7 +101,9 @@ def find_plan_overlap(
 
 
 def _assert_plannable(leave_type: LeaveType) -> None:
-    if not leave_type.plannable:
+    # Read through ``leave_config`` (§4.7) so this gate can never drift from the
+    # flag the Leave Configuration screens edit.
+    if not is_plannable(leave_type):
         raise LeaveTypeNotPlannableError(
             f"{leave_type.name} cannot be planned. Choose a leave type that "
             "allows planning."

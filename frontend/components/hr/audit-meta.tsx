@@ -197,9 +197,12 @@ export function auditEditHref(entry: AuditEntry): string | null {
     case "team":
       return `/dashboard/hr-admin/teams/${entry.target_id}`;
     case "leavetype":
-      return `/dashboard/hr-admin/leave-types/${entry.target_id}/edit`;
+      return `/leave-config/${entry.target_id}`;
+    // A rule no longer has a page of its own: refinement unit 06 folded the
+    // rule into its leave type. The entry still points HR at the app that now
+    // owns that number, rather than at a route that no longer exists.
     case "leaverule":
-      return `/dashboard/hr-admin/leave-rules/${entry.target_id}/edit`;
+      return "/leave-config";
     case "entitlement":
       return `/dashboard/hr-admin/entitlements/${entry.target_id}/edit`;
     case "financialyear":

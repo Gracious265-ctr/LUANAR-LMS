@@ -90,6 +90,19 @@ def _hr_admin_badge(user) -> dict | None:
     return None
 
 
+def can_access_leave_config(user) -> bool:
+    """Leave Configuration is an HR surface (spec 4.6).
+
+    Delegates to ``leave_config.services.can_access_leave_config`` rather than
+    restating the rule: the launcher card, the ``/leave-config`` page gate and
+    the viewset permission are three views of one decision, and a copy of the
+    rule here is a copy that can drift.
+    """
+    from leave_config.services import can_access_leave_config as gate
+
+    return gate(user)
+
+
 def get_launcher_apps(user) -> list[dict]:
     apps = []
     if can_access_leave(user):
@@ -104,4 +117,6 @@ def get_launcher_apps(user) -> list[dict]:
         apps.append({"key": "documents", "badge": None})
     if can_access_hr_admin(user):
         apps.append({"key": "hr-admin", "badge": _hr_admin_badge(user)})
+    if can_access_leave_config(user):
+        apps.append({"key": "leave-config", "badge": None})
     return apps

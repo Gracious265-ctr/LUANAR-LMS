@@ -34,7 +34,7 @@ class LeavePlan(models.Model):
         related_name="leave_plans",
     )
     leave_type = models.ForeignKey(
-        "leave.LeaveType",
+        "leave_config.LeaveType",
         on_delete=models.PROTECT,
         related_name="leave_plans",
     )

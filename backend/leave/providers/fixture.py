@@ -67,7 +67,9 @@ class FixtureRulesProvider:
         for rules in data.LEAVE_TYPES:
             if rules.id != leave_type_id:
                 continue
-            if not rules.is_active or rules.effective_from > as_of:
+            # Deactivation (§1.5) hides a type from new use. Effective dating
+            # retired with ``LeaveRule`` (unit 06), so any ``as_of`` answers.
+            if not rules.is_active:
                 return None
             return rules
         return None

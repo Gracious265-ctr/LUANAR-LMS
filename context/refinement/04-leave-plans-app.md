@@ -69,21 +69,27 @@ LeavePlan
 ```
 
 ```
-LeaveType  (existing model, Units 2-11 — add two fields)
-  plannable          Bool, default True         (2.6)
-  plan_notice_days   Int, nullable               ← how many days before
-                                                    planned_start_date the
-                                                    reminder fires; null
-                                                    means "not plannable
-                                                    far ahead" even if
-                                                    plannable=True is set
-                                                    elsewhere — treat null
-                                                    as "fire immediately
-                                                    on creation" if that
-                                                    ever comes up, but in
-                                                    practice this should
-                                                    always be set for any
-                                                    plannable type
+LeaveType  (the registry model — Unit 06 moved it to `leave_config` and folded the
+            old effective-dated LeaveRule into it, so the second field this unit
+            originally added no longer exists as a separate number)
+  plannable    Bool, default True                 (2.6)
+  notice_days  Int, nullable                      ← days of advance notice this
+                                                    type requires. The Leave
+                                                    app's submission check
+                                                    (Unit 14) and this plan's
+                                                    reminder read the same
+                                                    number: the reminder fires
+                                                    when today >=
+                                                    planned_start_date -
+                                                    notice_days. Null means no
+                                                    minimum and no reminder.
+                                                    (Written when this unit
+                                                    shipped as
+                                                    `plan_notice_days`; Unit 06
+                                                    retired the duplicate —
+                                                    see
+                                                    `context/refinement/06-leave-configuration-app.md`
+                                                    §1.2.)
 ```
 
 ```
@@ -99,7 +105,7 @@ LeaveApplication  (existing model — add one field)
 Employee creates a Plan (status: upcoming)
         │
         ▼
-Scheduled daily check: today >= (planned_start_date - plan_notice_days)?
+Scheduled daily check: today >= (planned_start_date - notice_days)?
         │
         ├── No  → stays "upcoming", nothing happens yet
         │
@@ -211,6 +217,8 @@ class LeavePlan(models.Model):
 
 Migration on `leave.LeaveType`: add `plannable` (bool, default True) and `plan_notice_days` (int, null=True). Migration on `leave.LeaveApplication`: add `source_plan` (FK, null=True).
 
+*(Superseded by Unit 06: the model now lives in `leave_config` and the reminder reads its single `notice_days` field, which the Leave app's submission validation also uses — the `plan_notice_days` column was dropped when the two numbers were folded into one.)*
+
 ### 4.3 Services (`backend/plans/services.py`)
 
 ```python
@@ -260,10 +268,10 @@ def check_and_notify_plans():
 
     due = LeavePlan.objects.filter(
         status=LeavePlanStatus.UPCOMING,
-        leave_type__plan_notice_days__isnull=False,
+        leave_type__notice_days__isnull=False,
     ).annotate(
         notify_date=ExpressionWrapper(
-            F("planned_start_date") - F("leave_type__plan_notice_days") * timedelta(days=1),
+            F("planned_start_date") - F("leave_type__notice_days") * timedelta(days=1),
             output_field=DateField(),
         )
     ).filter(notify_date__lte=today)

@@ -3,8 +3,10 @@
 One task, three passes, all idempotent so a double run (worker restart, manual
 re-trigger) sends nothing twice:
 
-1. **Remind** — an ``upcoming`` plan whose type names a ``plan_notice_days``
-   window that has just opened is emailed and moved to ``notified``.
+1. **Remind** — an ``upcoming`` plan whose type names a ``notice_days``
+   window that has just opened is emailed and moved to ``notified``. The
+   window is ``LeaveType.notice_days`` read straight from ``leave_config`` —
+   the single number Unit 14's submission validation enforces too.
 2. **Follow up** — a ``notified`` plan still unconverted
    :data:`FOLLOW_UP_AFTER_DAYS` days later gets one follow-up, then never again.
 3. **Mark missed** — an open plan whose window has passed unmoved becomes
@@ -35,10 +37,10 @@ def _send_reminders(today) -> int:
     plans = LeavePlan.objects.filter(
         status=LeavePlanStatus.UPCOMING,
         planned_start_date__gte=today,
-        leave_type__plan_notice_days__isnull=False,
+        leave_type__notice_days__isnull=False,
     ).select_related("employee", "leave_type")
     for plan in plans:
-        notice = plan.leave_type.plan_notice_days or 0
+        notice = plan.leave_type.notice_days or 0
         if today < plan.planned_start_date - timedelta(days=notice):
             continue
         _, created = queue_plan_email(plan, PLAN_REMINDER)

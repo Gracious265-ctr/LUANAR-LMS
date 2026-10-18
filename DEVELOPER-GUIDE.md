@@ -59,7 +59,8 @@ database directly; it always goes through the Django API.
 | App | What it owns |
 |-----|--------------|
 | `backend/users` | User accounts, roles/permissions, login (JWT tokens) |
-| `backend/leave` | The core leave domain: employees, entitlements, leave types/rules, financial years, holidays, applications, validation, submission, resubmission, cancellation, supporting documents, tracking, document storage |
+| `backend/leave` | The core leave domain: employees, grade entitlements, financial years, holidays, applications, validation, submission, resubmission, cancellation, supporting documents, tracking, document storage |
+| `backend/leave_config` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_config/services.py` |
 | `backend/workflows` | Approval workflows: stages, decisions, delegation, reassignment |
 | `backend/documents` | The official approved-leave **PDF** generator + template |
 | `backend/notifications` | Notification outbox + email sending (composers write rows, `tasks.py` sends them via django-q2) |
@@ -94,8 +95,12 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | The set-password link (request, resend, confirm) | `backend/users/services.py`, `backend/notifications/accounts.py`, `frontend/lib/password-set.ts` |
 | Changing a password from a live session (and the session eviction) | `backend/users/services.py` (`change_password`), `backend/users/authentication.py` |
 | Seed dev demo data (a routable team, its Supervisor→HOD→Registrar chain, approver + employee accounts, and baseline leave config) | `backend/users/management/commands/seed_demo_data.py` |
-| Employee/HR data serialisers (employees, entitlements, leave types, rules, financial years, holidays, applications) | `backend/leave/serializers/__init__.py` |
-| The HR/employee API endpoints (entitlements, leave types/rules, financial years, holidays, applications, documents) | `backend/leave/views/__init__.py` |
+| Employee/HR data serialisers (employees, entitlements, financial years, holidays, applications) | `backend/leave/serializers/__init__.py` |
+| The HR/employee API endpoints (entitlements, financial years, holidays, applications, documents) | `backend/leave/views/__init__.py` |
+| A leave type or any rule on it (name, eligibility, maximum duration, notice period, documents, plannability, registrar escalation) | `backend/leave_config/models.py`, `backend/leave_config/services.py`, `backend/leave_config/serializers.py`, `backend/leave_config/views.py` |
+| Stopping or restoring a leave type (deactivate/reactivate, never delete) | `backend/leave_config/services.py` (`deactivate_leave_type`/`reactivate_leave_type`), `backend/leave_config/views.py` |
+| Whether an employee may pick a leave type (branch/grade/gender eligibility) or how much notice it needs | `backend/leave_config/services.py` (`is_eligible`, `validate_notice`) |
+| The annual leave type's rules (notice period, maximum duration, eligibility …) | `backend/leave_config/services.py` (`provision_annual_leave` provisions the row; its rules are edited through the ordinary leave-type endpoint) |
 | Employee "my leave" overview and history endpoints | `backend/leave/views/my_leave.py`, `backend/leave/views/history.py` |
 | The employee leave **dashboard** summary (balances + needs-attention + drafts + recent) | `backend/leave/services/dashboard.py`, `backend/leave/views/dashboard.py` |
 | Resubmission endpoint after a correction | `backend/leave/views/resubmission.py` |
@@ -140,9 +145,10 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 |--------|---------------|
 | `frontend/app/(dashboard)/dashboard/…` | The pages you see inside the app (employee + HR) |
 | `frontend/app/(dashboard)/approvals/…` | Approvers' "pending approvals" pages |
+| `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit) |
 | `frontend/app/(auth)/login/` | The login page |
-| `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans) |
-| `frontend/components/…` | Reusable UI pieces, grouped by area (hr, approvals, applications, cancellation, tracking, dashboard) |
+| `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans, leave-config) |
+| `frontend/components/…` | Reusable UI pieces, grouped by area (hr, leave-config, approvals, applications, cancellation, tracking, dashboard) |
 | `frontend/lib/…` | Typed helpers for each domain — where API calls + TypeScript types live |
 | `frontend/scripts/e2e.sh` | The end-to-end smoke test script (`npm run test:e2e`) |
 | `frontend/tests/…` | Frontend tests (Vitest + Testing Library) |
@@ -162,7 +168,9 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | **Leave Plans** (plan ahead → reminder → apply) | `frontend/app/(dashboard)/dashboard/plans/…` + `frontend/components/plans/`, `frontend/lib/plans/`, `frontend/lib/hooks/usePlans.ts` and `useTeamPlans.ts`; backend `backend/plans/` |
 | Scheduled plan reminders / missed-plan sweep | `backend/plans/tasks.py` (`check_and_notify_plans`) + `backend/plans/migrations/0002_schedule_plan_check.py` |
 | Approvals list / approval detail for approvers | `frontend/app/(dashboard)/approvals/` + `frontend/components/approvals/` |
-| HR admin home and all HR pages (employees, entitlements, leave rules, workflows, leave types, calendar, delegations, reassignments, audit, document template) | `frontend/app/(dashboard)/dashboard/hr-admin/…` |
+| HR admin home and all HR pages (employees, entitlements, workflows, calendar, delegations, reassignments, audit, document template) | `frontend/app/(dashboard)/dashboard/hr-admin/…` |
+| The **Leave Configuration** app (list/create/edit leave types, deactivate & reactivate) | `frontend/app/(dashboard)/leave-config/…` + `frontend/components/leave-config/`, `frontend/lib/leave-config*.ts` |
+| Who may open Leave Configuration (the frontend access check) | `frontend/lib/leave-config-server.ts` (`canAccessLeaveConfig`; backend twin in `backend/leave_config/services.py`) |
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
 | Shared API client / how tokens are attached | `frontend/lib/api-client.ts` |
 | Shared utilities (`cn`, error messages, dates) | `frontend/lib/utils.ts` |

@@ -10,4 +10,5 @@ urlpatterns = [
     path("api/v1/", include("documents.urls")),
     path("api/v1/", include("audit.urls")),
     path("api/v1/apps/", include("launcher.urls")),
+    path("api/v1/", include("leave_config.urls")),
 ]

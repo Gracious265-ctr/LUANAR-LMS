@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from leave.models import FinancialYear, LeaveType
+from leave.models import FinancialYear
+from leave_config.models import LeaveType
 
 from .models import LeavePlan
 

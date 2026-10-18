@@ -10,7 +10,6 @@ import {
   CalendarRange,
   ChevronLeft,
   ChevronsRight,
-  ClipboardList,
   FileText,
   History,
   Home,
@@ -18,7 +17,7 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
-  Tags,
+  SlidersHorizontal,
   User,
   UserCheck,
   UserCog,
@@ -35,6 +34,10 @@ import {
   LEAVE_NAV_ITEMS,
 } from "@/lib/nav/leave-nav";
 import { isPlansModule, PLANS_NAV_ITEMS } from "@/lib/nav/plans-nav";
+import {
+  isLeaveConfigModule,
+  LEAVE_CONFIG_NAV_ITEMS,
+} from "@/lib/nav/leave-config-nav";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
@@ -304,7 +307,9 @@ const NavLinks = memo(function NavLinks({
     ? LEAVE_NAV_ITEMS
     : isPlansModule(currentPath)
       ? PLANS_NAV_ITEMS
-      : null;
+      : isLeaveConfigModule(currentPath)
+        ? LEAVE_CONFIG_NAV_ITEMS
+        : null;
   if (moduleItems) {
     return (
       <ModuleNavLinks currentPath={currentPath} open={open} items={moduleItems} />
@@ -416,10 +421,13 @@ const NavLinks = memo(function NavLinks({
             currentPath={currentPath}
             open={open}
           />
+          {/* Leave types became their own module (unit 06): the HR folio keeps
+              the way in, and the rail swaps to the module's own two items the
+              moment you cross into it. */}
           <Option
-            Icon={ClipboardList}
-            title="Leave Rules"
-            href="/dashboard/hr-admin/leave-rules"
+            Icon={SlidersHorizontal}
+            title="Leave Types"
+            href="/leave-config"
             currentPath={currentPath}
             open={open}
           />
@@ -434,13 +442,6 @@ const NavLinks = memo(function NavLinks({
             Icon={UserCog}
             title="Roles"
             href="/dashboard/hr-admin/roles"
-            currentPath={currentPath}
-            open={open}
-          />
-          <Option
-            Icon={Tags}
-            title="Leave Types"
-            href="/dashboard/hr-admin/leave-types"
             currentPath={currentPath}
             open={open}
           />

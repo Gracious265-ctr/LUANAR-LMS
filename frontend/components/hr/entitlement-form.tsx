@@ -17,8 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listLeaveTypes } from "@/lib/leave-types-client";
-import type { LeaveTypeListResponse } from "@/lib/leave-rules";
+import { listLeaveTypes } from "@/lib/leave-config-client";
+import type { LeaveType } from "@/lib/leave-config";
 
 export function EntitlementForm({
   entitlement,
@@ -43,7 +43,7 @@ export function EntitlementForm({
   const [effectiveFrom, setEffectiveFrom] = useState(entitlement?.effective_from ?? "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeListResponse | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[] | null>(null);
   const [ltError, setLtError] = useState("");
   // The picker is a popover trigger, so its value has to be mirrored into state
   // for the display and still reach FormData through the Select's own name.
@@ -52,7 +52,9 @@ export function EntitlementForm({
   );
 
   useEffect(() => {
-    listLeaveTypes()
+    // The picker is about a grade's entitlement, not about what employees may
+    // pick today, so a retired annual type still has to be selectable here.
+    listLeaveTypes({ includeInactive: true })
       .then((data) => setLeaveTypes(data))
       .catch(() => setLtError("Unable to load leave types. Please try again."));
   }, []);
@@ -146,7 +148,7 @@ export function EntitlementForm({
       <Field
         label="Leave type"
         htmlFor="leave_type"
-        hint="Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Rules."
+        hint="Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Configuration."
         error={ltError || null}
       >
         <Select
@@ -159,7 +161,7 @@ export function EntitlementForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Annual (untyped)</SelectItem>
-            {(leaveTypes?.results || [])
+            {(leaveTypes || [])
               .filter((lt) => lt.code === "annual")
               .map((lt) => (
                 <SelectItem key={lt.id} value={String(lt.id)}>

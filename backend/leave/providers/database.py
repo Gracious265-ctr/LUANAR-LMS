@@ -11,34 +11,22 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from leave_config.models import LeaveType
+from leave_config.services import day_unit_for
 from users.models import EmployeeProfile
 
-from ..models import LeaveType
 from ..services import (
     financial_year_for_date,
     financial_year_label,
     public_holidays_between,
-    resolve_leave_rule,
     resolved_annual_entitlement,
 )
 from .base import (
-    DurationUnit,
     EligibilityRule,
     EmployeeInfo,
     FinancialYear,
     LeaveTypeRules,
 )
-
-ANNUAL_CODE = "annual"
-
-
-def _unit_for_code(code: str) -> DurationUnit:
-    """LeaveRule stores day counts without units (Unit 20 decision D4).
-
-    Annual leave is measured in working days; every other type in calendar
-    days. Documented in ``docs/leave-rules-provider-contract.md``.
-    """
-    return "working_days" if code == ANNUAL_CODE else "calendar_days"
 
 
 def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
@@ -93,19 +81,22 @@ class DatabaseRulesProvider:
         )
 
     def get_leave_type_rules(self, leave_type_id: int, as_of: date):
+        """The type's live policy.
+
+        The type *is* the rule since refinement unit 06 retired effective-dated
+        ``LeaveRule`` rows, so ``as_of`` no longer narrows the answer: it stays
+        in the protocol signature because the fixture provider and the snapshot
+        shape both carry it. A missing type still returns ``None``.
+        """
         try:
             leave_type = LeaveType.objects.get(pk=leave_type_id)
         except LeaveType.DoesNotExist:
             return None
 
-        rule = resolve_leave_rule(leave_type, as_of)
-        if rule is None:
-            return None
-
-        unit = _unit_for_code(leave_type.code)
+        unit = day_unit_for(leave_type)
         eligibility = tuple(
             EligibilityRule(type=item["type"], params=dict(item.get("params") or {}))
-            for item in (rule.eligibility_rules or [])
+            for item in (leave_type.eligibility_rules or [])
             if isinstance(item, dict) and item.get("type")
         )
 
@@ -113,15 +104,15 @@ class DatabaseRulesProvider:
             id=leave_type.id,
             code=leave_type.code,
             name=leave_type.name,
-            is_active=True,
-            deducts_annual_balance=rule.consumes_annual_entitlement,
-            max_duration=rule.max_duration_days,
+            is_active=leave_type.is_active,
+            deducts_annual_balance=leave_type.consumes_annual_entitlement,
+            max_duration=leave_type.max_duration_days,
             max_duration_unit=unit,
-            min_notice=rule.min_notice_days,
+            min_notice=leave_type.notice_days or 0,
             min_notice_unit=unit,
-            requires_document=rule.requires_supporting_document,
+            requires_document=leave_type.requires_supporting_document,
             eligibility=eligibility,
-            effective_from=rule.effective_from,
+            effective_from=leave_type.created_at.date(),
         )
 
     def get_financial_year_for(self, d: date):

@@ -16,8 +16,6 @@ from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
 )
 from ..permissions import IsOwner
@@ -26,8 +24,6 @@ from ..serializers import (
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
-    LeaveRuleSerializer,
-    LeaveTypeSerializer,
     PublicHolidaySerializer,
 )
 from ..services import (
@@ -89,23 +85,6 @@ class GradeEntitlementViewSet(
             }
         )
 
-class LeaveTypeViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for leave types (no hard delete)."""
-
-    serializer_class = LeaveTypeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        return LeaveType.objects.all()
-
-
 class EmployeeLeaveTypeViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -128,34 +107,6 @@ class EmployeeLeaveTypeViewSet(
         profile = getattr(self.request.user, "employee_profile", None)
         grade = getattr(profile, "grade", None) if profile else None
         return leave_types_available_to(grade)
-
-
-class LeaveRuleViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for effective-dated leave rules (no hard delete)."""
-
-    serializer_class = LeaveRuleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        queryset = LeaveRule.objects.all()
-        leave_type = self.request.query_params.get("leave_type")
-        if leave_type:
-            queryset = queryset.filter(
-                leave_type=positive_int(leave_type, "leave_type")
-            )
-        effective = self.request.query_params.get("effective")
-        if effective == "current":
-            queryset = queryset.filter(effective_from__lte=timezone.localdate())
-        elif effective == "upcoming":
-            queryset = queryset.filter(effective_from__gt=timezone.localdate())
-        return queryset
 
 
 class FinancialYearViewSet(

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, CalendarRange, ClipboardList, FileText, History, Tags, UserCheck, UserCog, Users } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, CalendarRange, FileText, History, SlidersHorizontal, UserCheck, UserCog, Users } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -53,29 +53,21 @@ export default async function HRAdminPage() {
               Configure annual leave entitlements by grade range.
             </p>
           </Link>
+          {/* Unit 06 gave leave types and their rules an app of their own, so
+              the two cards this used to hold collapse into one way in. */}
           <Link
-            href="/dashboard/hr-admin/leave-rules"
+            href="/leave-config"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
-              <ClipboardList className="h-5 w-5" />
+              <SlidersHorizontal className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-semibold text-text-primary">Leave Rules</h3>
+            <h3 className="text-lg font-semibold text-text-primary">
+              Leave Configuration
+            </h3>
             <p className="mt-1 text-sm text-text-secondary">
-              Configure maximum duration, notice, eligibility, and documents per
-              leave type.
-            </p>
-          </Link>
-          <Link
-            href="/dashboard/hr-admin/leave-types"
-            className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
-          >
-            <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
-              <Tags className="h-5 w-5" />
-            </div>
-            <h3 className="text-lg font-semibold text-text-primary">Leave Types</h3>
-            <p className="mt-1 text-sm text-text-secondary">
-              Maintain the registry of leave types the university offers.
+              Maintain the registry of leave types and every rule attached to
+              them: eligibility, duration, notice, and documents.
             </p>
           </Link>
           <Link

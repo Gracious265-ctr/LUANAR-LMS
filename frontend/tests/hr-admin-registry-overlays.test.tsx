@@ -3,20 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Entitlement } from "@/lib/entitlements";
 import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
-import type { LeaveRule, LeaveType } from "@/lib/leave-rules";
 import {
   createApproverRole,
   updateApproverRole,
 } from "@/lib/approver-roles-client";
-import {
-  createLeaveRule,
-  updateLeaveRule,
-} from "@/lib/leave-rules-client";
-
-import { pickDate } from "./helpers/date";
 
 import { EntitlementsSection } from "@/components/hr/EntitlementsSection";
-import { LeaveRulesSection } from "@/components/hr/LeaveRulesSection";
 import { RolesSection } from "@/components/hr/RolesSection";
 
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
@@ -30,11 +22,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => pathnameRef.current,
   useSearchParams: () => searchParamsRef.current,
 }));
-
-vi.mock("@/lib/leave-rules-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/leave-rules-client")>();
-  return { ...actual, createLeaveRule: vi.fn(), updateLeaveRule: vi.fn() };
-});
 
 vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
   const actual =
@@ -58,26 +45,6 @@ const entitlements: Entitlement[] = [
     days: 30,
     effective_from: "2026-01-01",
     leave_type: null,
-  },
-];
-
-const leaveTypes: LeaveType[] = [
-  { id: 1, name: "Annual leave", code: "annual" },
-  { id: 2, name: "Maternity leave", code: "maternity" },
-];
-
-const rules: LeaveRule[] = [
-  {
-    id: 7,
-    leave_type: 1,
-    leave_type_code: "annual",
-    leave_type_name: "Annual leave",
-    max_duration_days: 30,
-    min_notice_days: 14,
-    eligibility: "",
-    requires_supporting_document: false,
-    consumes_annual_entitlement: true,
-    effective_from: "2026-01-01",
   },
 ];
 
@@ -114,16 +81,25 @@ const roles: ApproverRole[] = [
 
 const noAssignments: Record<number, RoleAssignment[]> = {};
 
-/** EntitlementForm posts with fetch rather than a typed client. */
+/**
+ * EntitlementForm posts with fetch rather than a typed client, and reads the
+ * leave-type registry through one — so the registry endpoint has to answer
+ * with a bare array here, exactly as the API does, or the picker tries to
+ * `.filter` an entitlement.
+ */
 function stubFetch() {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      new Response(JSON.stringify(entitlements[0]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
+    vi.fn(async (input: RequestInfo | URL) => {
+      const isLeaveConfig = String(input).includes("leave-config");
+      return new Response(
+        JSON.stringify(isLeaveConfig ? [] : entitlements[0]),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    })
   );
 }
 
@@ -132,8 +108,6 @@ describe("HR admin registry overlays — wave 1", () => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
     vi.stubGlobal("history", { ...window.history, length: 2 });
-    vi.mocked(createLeaveRule).mockResolvedValue(rules[0]);
-    vi.mocked(updateLeaveRule).mockResolvedValue(rules[0]);
     vi.mocked(createApproverRole).mockResolvedValue(roles[0]);
     vi.mocked(updateApproverRole).mockResolvedValue(roles[0]);
   });
@@ -195,7 +169,7 @@ describe("HR admin registry overlays — wave 1", () => {
     });
 
     it("uses the entitlement param, not another section's", () => {
-      searchParamsRef.current = new URLSearchParams("rule=7&entitlement=3");
+      searchParamsRef.current = new URLSearchParams("role=11&entitlement=3");
       render(<EntitlementsSection entitlements={entitlements} today="2026-06-01" />);
 
       expect(screen.getByLabelText("Annual days")).toHaveValue(21);
@@ -210,134 +184,6 @@ describe("HR admin registry overlays — wave 1", () => {
 
       await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
       expect(routerMock.back).toHaveBeenCalledTimes(1);
-      expect(routerMock.push).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("LeaveRulesSection", () => {
-    beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/leave-rules";
-    });
-
-    it("renders the table and a custom heading", () => {
-      render(
-        <LeaveRulesSection
-          rules={rules}
-          leaveTypes={leaveTypes}
-          today="2026-06-01"
-          heading="Current rules"
-        />
-      );
-
-      expect(screen.getByText("Current rules")).toBeInTheDocument();
-      expect(screen.getByText("Annual leave")).toBeInTheDocument();
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-
-    it("keeps the row name a real link to the old edit route", () => {
-      render(
-        <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
-      );
-
-      expect(screen.getByRole("link", { name: "Annual leave" })).toHaveAttribute(
-        "href",
-        "/dashboard/hr-admin/leave-rules/7/edit"
-      );
-    });
-
-    it("opens the edit overlay from the row pencil", () => {
-      render(
-        <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
-      );
-
-      fireEvent.click(screen.getByRole("button", { name: "Edit Annual leave rule" }));
-
-      expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/leave-rules?rule=7"
-      );
-    });
-
-    it("seeds the edit form from the row", () => {
-      searchParamsRef.current = new URLSearchParams("rule=7");
-      render(
-        <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
-      );
-
-      expect(screen.getByLabelText("Maximum duration (days)")).toHaveValue(30);
-      expect(screen.getByLabelText("Minimum notice (days)")).toHaveValue(14);
-    });
-
-    it("explains a rule hidden by the page's filters, and offers to show all", () => {
-      searchParamsRef.current = new URLSearchParams(
-        "effective=current&leave_type=2&rule=7"
-      );
-      render(
-        <LeaveRulesSection
-          rules={[]}
-          leaveTypes={leaveTypes}
-          today="2026-06-01"
-          clearFiltersHref="/dashboard/hr-admin/leave-rules"
-        />
-      );
-
-      expect(screen.getByText(/not in the current view/i)).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole("button", { name: "Show all rules" }));
-
-      expect(routerMock.push).toHaveBeenCalledWith("/dashboard/hr-admin/leave-rules");
-    });
-
-    it("omits the escape hatch when there is nowhere to clear to", () => {
-      searchParamsRef.current = new URLSearchParams("rule=7");
-      render(
-        <LeaveRulesSection
-          rules={[]}
-          leaveTypes={leaveTypes}
-          today="2026-06-01"
-        />
-      );
-
-      expect(
-        screen.queryByRole("button", { name: "Show all rules" })
-      ).toBeNull();
-    });
-
-    it("keeps the other filters when the overlay opens", () => {
-      searchParamsRef.current = new URLSearchParams(
-        "effective=current&leave_type=2&rule=7"
-      );
-      render(
-        <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
-      );
-
-      expect(screen.getByLabelText("Maximum duration (days)")).toHaveValue(30);
-    });
-
-    it("reports a create back to the host and refetches", async () => {
-      searchParamsRef.current = new URLSearchParams("rule=new");
-      render(
-        <LeaveRulesSection rules={rules} leaveTypes={leaveTypes} today="2026-06-01" />
-      );
-
-      // A create needs its required fields. The leave type is a native `select`
-      // so that a type created from this same form appears in it; the browser
-      // can enforce `required` on it, and the date picker is still not.
-      fireEvent.change(screen.getByLabelText("Leave type"), {
-        target: { value: "1" },
-      });
-      fireEvent.change(screen.getByLabelText("Maximum duration (days)"), {
-        target: { value: "21" },
-      });
-      pickDate(screen.getByLabelText("Effective from"), "2026-07-01");
-
-      fireEvent.click(screen.getByRole("button", { name: "Create rule" }));
-
-      await waitFor(() =>
-        expect(createLeaveRule).toHaveBeenCalledWith(
-          expect.objectContaining({ max_duration_days: 21 })
-        )
-      );
-      await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
       expect(routerMock.push).not.toHaveBeenCalled();
     });
   });

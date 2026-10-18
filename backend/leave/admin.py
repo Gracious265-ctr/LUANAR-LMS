@@ -6,16 +6,12 @@ from .models import (
     FinancialYear,
     GradeEntitlement,
     GradeLeaveEntitlement,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
 )
 from .services import (
     find_annual_leave_type,
     find_overlapping_financial_year,
     find_overlapping_rule,
-    is_annual_leave_identity,
-    is_annual_leave_type,
     provision_annual_leave,
 )
 
@@ -77,12 +73,11 @@ class GradeEntitlementAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         from django.db import transaction
 
-        # Same provisioning the API performs, so annual leave and its first rule
-        # exist whichever surface HR used. Inside the transaction as the save is,
-        # so a half-provisioned band is never committed.
+        # Same provisioning the API performs, so annual leave exists whichever
+        # surface HR used. Inside the transaction as the save is, so a
+        # half-provisioned band is never committed.
         with transaction.atomic():
             obj.leave_type = provision_annual_leave(
-                effective_from=obj.effective_from,
                 days=obj.days,
                 actor=getattr(request, "user", None),
             )
@@ -90,62 +85,6 @@ class GradeEntitlementAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
-
-
-class LeaveTypeAdminForm(forms.ModelForm):
-    """Admin form that keeps annual leave out of the leave-type registry.
-
-    The same two guards the API applies, phrased for the admin: annual leave
-    cannot be created here because an entitlement provisions it, and it cannot
-    be edited because an entitlement is what an admin edits.
-    """
-
-    class Meta:
-        model = LeaveType
-        fields = "__all__"
-
-    def clean(self):
-        cleaned = super().clean()
-
-        if self.instance.pk is not None and is_annual_leave_type(self.instance):
-            raise ValidationError(
-                "Annual leave is created and maintained from Entitlements. "
-                "Edit the entitlement for a grade range instead."
-            )
-
-        if self.instance.pk is None:
-            name = cleaned.get("name") or ""
-            code = cleaned.get("code") or ""
-            if is_annual_leave_identity(name, code):
-                raise ValidationError(
-                    f'"{name}" is reserved for annual leave, which is created '
-                    "automatically when you add an entitlement."
-                )
-        return cleaned
-
-
-@admin.register(LeaveType)
-class LeaveTypeAdmin(admin.ModelAdmin):
-    form = LeaveTypeAdminForm
-    list_display = ("name", "code", "is_active")
-    list_filter = ("is_active",)
-    search_fields = ("name", "code")
-    ordering = ("name",)
-
-
-@admin.register(LeaveRule)
-class LeaveRuleAdmin(admin.ModelAdmin):
-    list_display = (
-        "leave_type",
-        "max_duration_days",
-        "min_notice_days",
-        "requires_supporting_document",
-        "consumes_annual_entitlement",
-        "effective_from",
-    )
-    search_fields = ("leave_type__name", "leave_type__code", "eligibility")
-    list_filter = ("leave_type", "effective_from", "requires_supporting_document")
-    ordering = ("-effective_from", "leave_type")
 
 
 class FinancialYearAdminForm(forms.ModelForm):

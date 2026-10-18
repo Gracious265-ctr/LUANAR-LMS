@@ -18,7 +18,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from launcher.services import _plans_badge, can_access_plans
-from leave.models import FinancialYear, LeaveApplication, LeaveType
+from leave.models import FinancialYear, LeaveApplication
+from leave_config.models import LeaveType
 from notifications.models import NotificationOutbox
 from notifications.plans import PLAN_FOLLOW_UP, PLAN_REMINDER
 from plans.models import LeavePlan, LeavePlanStatus
@@ -49,7 +50,7 @@ class PlansTestBase(TestCase):
             is_active=True,
         )
         self.leave_type = LeaveType.objects.create(
-            name="Annual Leave", code="annual", plannable=True, plan_notice_days=7
+            name="Annual Leave", code="annual", plannable=True, notice_days=7
         )
         self.team = team_for("Administration Team")
         self.user = self._employee("employee@test.luanar")

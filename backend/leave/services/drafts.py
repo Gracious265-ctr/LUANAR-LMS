@@ -12,7 +12,8 @@ from datetime import date
 
 from django.db import transaction
 
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
 from leave.services.working_days import calculate_working_days
 
 

@@ -532,3 +532,97 @@ describe("DashboardShell Plans module", () => {
     ).toHaveAttribute("aria-current", "page");
   });
 });
+
+describe("DashboardShell Leave Configuration module", () => {
+  it("scopes the rail to the launcher plus exactly the two configuration items", () => {
+    currentPath = "/leave-config";
+    // The strictest visitor again: an HR approver must lose their HR and
+    // approvals destinations, not merely the employee-only extras.
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "Leave Types" })).toHaveAttribute(
+      "href",
+      "/leave-config",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Create Leave Type" }),
+    ).toHaveAttribute("href", "/leave-config/new");
+
+    // Exactly two destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+
+    for (const hidden of [
+      "Dashboard",
+      "My Applications",
+      "Approvals",
+      "Leave Plans",
+      "Request Cover",
+      "My Account",
+      "Audit View",
+      "Teams",
+    ]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps the full institutional rail outside the module", () => {
+    currentPath = "/dashboard";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "My Account" })).toBeInTheDocument();
+    expect(
+      within(nav).queryByRole("link", { name: "Leave Types" }),
+    ).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "All apps" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["/leave-config"],
+    ["/leave-config/7"],
+  ])("marks Leave Types active at %s", (path) => {
+    currentPath = path;
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Leave Types" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Create Leave Type" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks Create Leave Type active only on the create form", () => {
+    currentPath = "/leave-config/new";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: "Create Leave Type" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: "Leave Types" })).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("does not let an edit path be mistaken for the create form", () => {
+    // `/leave-config/new` is static and `/leave-config/[id]` is dynamic, so the
+    // router resolves "new" to the form — but the rail decides by string, and
+    // a matcher that treated every unknown segment as an id would light the
+    // wrong item here.
+    currentPath = "/leave-config/42";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: "Create Leave Type" }),
+    ).not.toHaveAttribute("aria-current", "page");
+  });
+});

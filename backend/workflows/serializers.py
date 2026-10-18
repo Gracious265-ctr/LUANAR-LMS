@@ -6,7 +6,8 @@ from rest_framework import serializers
 from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from audit.services import changed_fields, record_audit
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
 from users.models import User
 
 from .models import (

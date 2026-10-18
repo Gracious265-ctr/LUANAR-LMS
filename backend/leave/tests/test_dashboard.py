@@ -23,9 +23,8 @@ from leave.models import (
     GradeEntitlement,
     GradeLeaveEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
 )
+from leave_config.models import LeaveType
 from users.models import EmployeeProfile
 from workflows.models import ApplicationStage, ApprovalDecision
 from workflows.testing import team_for
@@ -62,11 +61,11 @@ class DashboardTestBase(TestCase):
             is_active=True,
         )
 
-        # Annual leave, consumed from the shared annual balance.
-        self.annual = LeaveType.objects.create(name="Annual Leave", code="annual")
-        LeaveRule.objects.create(
-            leave_type=self.annual,
-            effective_from=EFFECTIVE_FROM,
+        # Annual leave, consumed from the shared annual balance. The rule the
+        # type carries lives on the type itself since unit 06 folded the two.
+        self.annual = LeaveType.objects.create(
+            name="Annual Leave",
+            code="annual",
             max_duration_days=30,
             consumes_annual_entitlement=True,
         )

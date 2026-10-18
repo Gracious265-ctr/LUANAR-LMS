@@ -7,7 +7,7 @@ in :mod:`plans.tasks` calls it directly.
 Two kinds exist, and the outbox's ``one_outbox_row_per_plan_kind`` constraint
 makes each fire at most once per plan:
 
-* ``plan_reminder`` — sent when the type's ``plan_notice_days`` window opens.
+* ``plan_reminder`` — sent when the type's ``notice_days`` window opens.
 * ``plan_followup`` — sent once, some days later, if the plan is still sitting
   there unconverted. This is the "you said you'd apply, did you mean to?" nudge.
 

@@ -18,7 +18,8 @@ from django.utils import timezone
 from workflows.models import ApprovalDecision
 
 from .. import providers as leave_providers
-from ..models import LeaveApplication, LeaveType
+from ..models import LeaveApplication
+from leave_config.models import LeaveType
 from . import (
     active_financial_year,
     financial_year_label,

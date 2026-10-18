@@ -34,7 +34,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from leave.models import FinancialYear, GradeEntitlement, LeaveRule, LeaveType
+from leave.models import FinancialYear, GradeEntitlement
+from leave_config.models import LeaveType
 from users.models import EmployeeProfile
 from workflows.models import ApproverRole, Team
 from workflows.services import (
@@ -318,21 +319,17 @@ class Command(BaseCommand):
             year.is_active = True
             year.save(update_fields=["is_active"])
 
+        # Refinement unit 06 folded the effective-dated leave rule into the
+        # type itself: ``notice_days`` now carries the value the Leave Plans
+        # reminder and Unit 14's submission validation both read.
         leave_type, _ = LeaveType.objects.update_or_create(
             code="annual",
             defaults={
                 "name": "Annual Leave",
                 "is_active": True,
                 "plannable": True,
-                "plan_notice_days": 7,
-            },
-        )
-        LeaveRule.objects.update_or_create(
-            leave_type=leave_type,
-            effective_from=year_start,
-            defaults={
+                "notice_days": 7,
                 "max_duration_days": 30,
-                "min_notice_days": 0,
                 "requires_supporting_document": False,
                 "consumes_annual_entitlement": True,
             },

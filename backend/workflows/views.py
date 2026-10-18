@@ -12,7 +12,8 @@ from users.models import EmployeeProfile, User
 from users.permissions import IsHRRole
 
 from audit.validation import positive_int, uuid_value
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
 
 from .models import (
     ApproverRole,

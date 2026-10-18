@@ -4,53 +4,10 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Min
 from django.utils import timezone
-from django.utils.text import slugify
 
-
-class LeaveType(models.Model):
-    """Named leave type registry entry (annual, maternity, paternity, ...)."""
-
-    name = models.CharField(max_length=120, unique=True)
-    code = models.SlugField(max_length=50, unique=True, blank=True)
-    is_active = models.BooleanField(
-        default=True,
-        help_text=(
-            "Whether HR still offers this type. Retiring a type hides it from "
-            "employees without deleting it, so applications already filed against "
-            "it keep their type and its rules keep their history."
-        ),
-    )
-    plannable = models.BooleanField(
-        default=True,
-        help_text=(
-            "Whether employees may pre-plan this type (Leave Plans). Types that "
-            "are rarely planned ahead — sick leave, for instance — set this off so "
-            "they never appear on the Create a Plan form."
-        ),
-    )
-    plan_notice_days = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text=(
-            "How many days before a plan's start date the reminder email fires. "
-            "Null means no reminder window is configured; the plan stays visible "
-            "and can still be applied for manually."
-        ),
-    )
-
-    class Meta:
-        ordering = ["name"]
-
-    def __str__(self) -> str:
-        return self.name
-
-    def save(self, *args, **kwargs):
-        self.name = self.name.strip()
-        if not self.code:
-            self.code = slugify(self.name)
-        else:
-            self.code = self.code.strip().lower()
-        super().save(*args, **kwargs)
+# ``LeaveType`` lives in ``leave_config`` (refinement unit 06). This app only
+# ever references it by name — every rule on it is read through
+# ``leave_config.services``, never copied onto a model here.
 
 
 class GradeEntitlement(models.Model):
@@ -72,7 +29,7 @@ class GradeEntitlement(models.Model):
     days = models.PositiveIntegerField()
     effective_from = models.DateField()
     leave_type = models.ForeignKey(
-        LeaveType,
+        "leave_config.LeaveType",
         on_delete=models.PROTECT,
         related_name="grade_entitlements",
         null=True,
@@ -120,48 +77,6 @@ class GradeEntitlement(models.Model):
         super().save(*args, **kwargs)
 
 
-class LeaveRule(models.Model):
-    """Effective-dated configuration for a leave type."""
-
-    leave_type = models.ForeignKey(
-        LeaveType, on_delete=models.CASCADE, related_name="rules"
-    )
-    max_duration_days = models.PositiveIntegerField()
-    eligibility = models.TextField(blank=True)
-    eligibility_rules = models.JSONField(
-        default=list,
-        blank=True,
-        help_text=(
-            "Machine-readable eligibility rules for the validation engine, each "
-            "``{'type': ..., 'params': {...}}``. ``eligibility`` above stays the "
-            "human-readable description."
-        ),
-    )
-    min_notice_days = models.PositiveIntegerField(default=0)
-    requires_supporting_document = models.BooleanField(default=False)
-    consumes_annual_entitlement = models.BooleanField(default=False)
-    effective_from = models.DateField()
-
-    class Meta:
-        ordering = ["-effective_from", "leave_type"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(max_duration_days__gte=1),
-                name="leaverule_max_duration_days_gte_1",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(min_notice_days__gte=0),
-                name="leaverule_min_notice_days_gte_0",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.leave_type.name}: {self.max_duration_days} days "
-            f"(from {self.effective_from})"
-        )
-
-
 class FinancialYear(models.Model):
     """A configured financial-year period for the university."""
 
@@ -199,7 +114,7 @@ class GradeLeaveEntitlement(models.Model):
         help_text="External grade identifier from the organisation provider.",
     )
     leave_type = models.ForeignKey(
-        LeaveType,
+        "leave_config.LeaveType",
         on_delete=models.PROTECT,
         related_name="grade_leave_entitlements",
     )

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "launcher",
     "directory",
     "org",
+    "leave_config",
 ]
 
 MIDDLEWARE = [

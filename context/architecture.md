@@ -48,6 +48,7 @@ luanar-leave-system/
 │   ├── config/
 │   ├── users/
 │   ├── leave/
+│   ├── leave_config/
 │   ├── workflows/
 │   ├── notifications/
 │   ├── documents/
@@ -476,9 +477,26 @@ Configuration changes must have an effective date where historical behavior coul
 
 One configuration row is owned rather than curated: annual leave and its starting rule
 are created on demand when HR saves a grade entitlement, rather than seeded or entered
-by hand in Leave Types. The annual leave type is therefore read-only there and its rule
-is edited under Leave Rules. See
+by hand in Leave Configuration. What the entitlement owns is the person's *days*; what
+stays fixed is the type's identity — the registry refuses to create a competing
+"Annual Leave", to rename the provisioned one, to change its short code or to retire
+it — the API serializer pins the identity, `leave_config.services` refuses the
+retirement itself, and the Django admin mirrors both — because entitlements,
+the balance ledger and every catalogue entry resolve through that row. Its **rules**
+stay editable in Leave Configuration like any other type's, since that app is the only
+surface that owns a leave-type rule. See
 `context/specs/31-entitlement-linked-leave-type-availability-spec.md`.
+
+The leave-type registry itself lives in one app, `leave_config`, which owns `LeaveType`
+and every rule attached to it (branch/grade/gender eligibility, maximum duration, notice
+period, supporting-document requirement, plannability, institutional-registrar
+escalation, deactivation). Every other module — the Leave app's validation pipeline and
+dashboard, the Plans app's reminder scheduler, the approvals chain resolver — reads these
+rules through `leave_config.services` and must never define its own copy of a leave-type
+rule. There is exactly one notice number per type: the same `notice_days` decides whether
+an application is submitted too close to its start date and when the Plans reminder
+fires (the earlier split `LeaveType.plan_notice_days` / `LeaveRule.min_notice_days` was
+folded into it).
 
 ---
 
