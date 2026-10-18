@@ -108,7 +108,7 @@ async function TeamsPage({
   );
 
   const filters = [
-    { label: "In force and draft", href: "/organisation/teams", current: !showRetired },
+    { label: "In force", href: "/organisation/teams", current: !showRetired },
     { label: "Including retired", href: "/organisation/teams?retired=1", current: showRetired },
   ];
 

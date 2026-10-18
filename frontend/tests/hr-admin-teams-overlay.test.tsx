@@ -148,7 +148,7 @@ describe("TeamsSection — wave 2", () => {
     renderSection({
       filters: [
         {
-          label: "In force and draft",
+          label: "In force",
           href: "/organisation/teams",
           current: false,
         },
@@ -165,7 +165,7 @@ describe("TeamsSection — wave 2", () => {
     ).getAllByRole("link");
 
     expect(links.map((link) => link.textContent)).toEqual([
-      "In force and draft",
+      "In force",
       "Including retired",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
