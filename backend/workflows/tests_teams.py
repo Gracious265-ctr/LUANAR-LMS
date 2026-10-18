@@ -576,7 +576,7 @@ class TeamAPITests(ConfigurationAPIBase):
         self.assertIn("Active team 1", names)
         self.assertIn("Active team 2", names)
         response = self.client.get(f"{TEAMS_URL}?status=draft")
-        self.assertEqual(response.data["results"], [])
+        self.assertIn(response.status_code, (status.HTTP_400_BAD_REQUEST,))
         response = self.client.get(f"{TEAMS_URL}?status=inactive")
         self.assertEqual(response.data["results"], [])
 
