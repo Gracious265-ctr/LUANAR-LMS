@@ -1133,8 +1133,9 @@ def team_manager_profile(team: Team | None) -> EmployeeProfile | None:
     Who may join a team's roster is measured against the *manager's* own
     category, so callers can ask which category governs a team without first
     finding the manager and then loading their profile separately. Returns
-    ``None`` for a team with no active designated manager — the not-yet-handed-over
-    draft — so the caller can fall back to the team's own category.
+    ``None`` for a team with no active designated manager — the
+    not-yet-handed-over team — so the caller can fall back to the team's own
+    category.
     """
     if team is None:
         return None

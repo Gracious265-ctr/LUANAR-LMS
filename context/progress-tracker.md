@@ -8,10 +8,13 @@ Update this file after every meaningful implementation change.
   several approval chains at once, so routing stopped being a property of the
   team. `Team.workflow` is removed entirely (migration
   `organisation/0007_remove_team_workflow`; the `route` action, `is_routing`,
-  the `WorkflowRoutingActions` component and its `/api/hr/teams/[id]/route`
+  the   `WorkflowRoutingActions` component and its `/api/hr/teams/[id]/route`
   proxy are gone, all chains route simultaneously), `Team.Status.DRAFT` is gone
   (teams are always ACTIVE on creation, HR `activate` removed, `deactivate`
-  retained), workflow names are required, and `Workflow.effective_to` defaults
+  retained, and legacy `draft` rows converted by
+  `organisation/0008_convert_team_draft_to_active`; the frontend
+  `teamStatusLabel`/`teamStatusBadgeClass` normalise any non-retired status to
+  Active), workflow names are required, and `Workflow.effective_to` defaults
   to the active academic year's end (`workflows/0034_workflow_effective_to_and_more`).
   Routing resolves per applicant from their `WorkflowMember` membership
   (`workflows/providers.py::_member_workflow`): a normal member sits in exactly

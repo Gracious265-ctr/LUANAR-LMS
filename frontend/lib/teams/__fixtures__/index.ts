@@ -38,10 +38,10 @@ export function makeTeam(overrides: Partial<Team> = {}): Team {
         is_active: true,
       },
     ],
-    status: "draft",
+    status: "active",
     effective_from: null,
     effective_to: null,
-    is_effective: false,
+    is_effective: true,
     stage_roles: [
       { id: 1, code: "supervisor", label: "Supervisor" },
       { id: 2, code: "lead", label: "Team Leader" },

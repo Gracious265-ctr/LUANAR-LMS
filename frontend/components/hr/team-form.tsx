@@ -27,7 +27,7 @@ import { createTeam, updateTeam } from "@/lib/teams-client";
  * Approvers tab, where the wide-holder panel already offers "Make manager", and
  * the chain is the manager's own screen.
  *
- * A team with no steps can still be saved: it is created as a draft and routes
+ * A team with no steps can still be saved: it is created active and routes
  * nothing until its manager builds and routes a chain.
  */
 export function TeamForm({

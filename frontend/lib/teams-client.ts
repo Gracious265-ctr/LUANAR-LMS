@@ -15,19 +15,18 @@ export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
   inactive: "Retired",
 };
 
+export function normaliseTeamStatus(status: string): TeamStatus {
+  return status === "inactive" ? "inactive" : "active";
+}
+
 export function teamStatusLabel(status: string): string {
-  return TEAM_STATUS_LABELS[status as TeamStatus] ?? status;
+  return TEAM_STATUS_LABELS[normaliseTeamStatus(status)];
 }
 
 export function teamStatusBadgeClass(status: string): string {
-  switch (status) {
-    case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
-    case "inactive":
-      return "bg-surface-muted text-text-muted";
-    default:
-      return "bg-brand-secondary-subtle text-brand-secondary";
-  }
+  return normaliseTeamStatus(status) === "inactive"
+    ? "bg-surface-muted text-text-muted"
+    : "bg-brand-secondary-subtle text-brand-secondary";
 }
 
 /**

@@ -16,10 +16,8 @@ export {
 } from "./team-category";
 
 /**
- * Where a team is in its life. Three states, not a checkbox, because the step
- * between them is a decision: only an active team inside its effective window
- * routes an application, and a draft one is deliberately inert while HR is
- * still building it.
+ * Where a team is in its life. Only an active team inside its effective window
+ * routes an application; a retired one is deliberately inert.
  *
  * Open-ended like the role codes: a status this build has not seen must survive
  * a round trip rather than crash a screen.

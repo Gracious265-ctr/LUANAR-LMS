@@ -210,12 +210,12 @@ describe("TeamsSection — wave 2", () => {
   it("refreshes without navigating once a draft is saved", async () => {
     searchParamsRef.current = new URLSearchParams("team=new");
     vi.mocked(createTeam).mockResolvedValue(
-      makeTeam({ id: 7, name: "Physics", status: "draft" }),
+      makeTeam({ id: 7, name: "Physics" }),
     );
     renderSection({
       teams: [
         makeTeam(),
-        makeTeam({ id: 7, name: "Physics", status: "draft" }),
+        makeTeam({ id: 7, name: "Physics" }),
       ],
     });
 
@@ -227,19 +227,17 @@ describe("TeamsSection — wave 2", () => {
     expect(routerMock.push).not.toHaveBeenCalled();
   });
 
-  it("raises no 'not in this table' warning for a saved draft", async () => {
-    // A new team is a draft and the list read excludes only retired teams, so a
-    // draft shows under both filters. Unlike delegations and employees there is
-    // no state the save could hide it from, so the warning would be dead code.
+  it("raises no 'not in this table' warning for a newly saved team", async () => {
+    // A new team is active immediately and the list read excludes only retired
+    // teams, so it is in the table under both filters. Unlike delegations and
+    // employees there is no state the save could hide it from, so the warning
+    // would be dead code.
     searchParamsRef.current = new URLSearchParams("team=new");
     vi.mocked(createTeam).mockResolvedValue(
-      makeTeam({ id: 7, name: "Physics", status: "draft" }),
+      makeTeam({ id: 7, name: "Physics" }),
     );
     renderSection({
-      teams: [
-        makeTeam(),
-        makeTeam({ id: 7, name: "Physics", status: "draft" }),
-      ],
+      teams: [makeTeam(), makeTeam({ id: 7, name: "Physics" })],
     });
 
     completeCreateForm();

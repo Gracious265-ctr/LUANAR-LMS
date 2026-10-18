@@ -262,17 +262,17 @@ class TeamViewSet(
 ):
     """HR-only CRUD for teams, plus their lifecycle actions (no hard delete).
 
-    A team is created in one pass, optionally with its whole approval chain, and
-    put into force by a separate validated action. Members are edited through
+    A team is created in force in one pass, optionally with its whole approval
+    chain, and retired by a separate validated action. Members are edited through
     :class:`SectionMemberViewSet` (approver periods), the members actions on
     this viewset (normal team membership), and the workflow member actions —
     each add/remove is its own atomic, audited action instead of a whole-team
     overwrite.
 
-    ``status`` is a three-state lifecycle, not a flag, so the list defaults to
-    the teams that are actually in force plus the drafts HR is still working on
-    (``?status=active``, ``?status=draft``, or ``?include_inactive=1`` for
-    everything) rather than hiding the half-built ones HR most needs to see.
+    ``status`` is a two-state lifecycle, not a flag, so the list defaults to the
+    teams that are actually in force (``?status=active``, or ``?include_inactive=1``
+    for everything, retired teams included) rather than hiding the retired ones
+    HR may still need to see.
     """
 
     serializer_class = TeamSerializer

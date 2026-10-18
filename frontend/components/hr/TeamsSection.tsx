@@ -66,9 +66,9 @@ export interface TeamsSectionProps {
  * not in it.
  *
  * There is deliberately no "saved but not in this table" warning here, unlike the
- * delegations and employees lists. A new team is a draft, and the list query
- * excludes only retired teams, so a draft is in the table under both filters —
- * the warning would be code that can never fire.
+ * delegations and employees lists. A new team is active immediately, and the
+ * list query excludes only retired teams, so it is in the table under both
+ * filters — the warning would be code that can never fire.
  */
 export function TeamsSection({
   teams,
@@ -91,7 +91,7 @@ export function TeamsSection({
           <h3 className="text-lg font-semibold text-text-primary">Teams</h3>
           <p className="mt-1 text-sm text-text-secondary">
             The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application.
+            team&apos;s chains decide who approves their application.
           </p>
         </div>
         {canCreate && (
@@ -143,7 +143,7 @@ export function TeamsSection({
           targetKey={overlay.target}
           size="lg"
           title="New team"
-          description="A team starts as a draft and routes nothing until its manager builds and routes a chain. Describe the team, then assign the manager who runs its members, chains, and routing."
+          description="A new team starts active but routes nothing until its manager builds a chain. Describe the team, then assign the manager who runs its members and chains."
           onOpenChange={(open) => {
             if (!open) overlay.close();
           }}
