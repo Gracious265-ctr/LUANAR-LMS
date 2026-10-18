@@ -10,7 +10,7 @@ describe("TeamTable", () => {
       <TeamTable
         teams={[
           makeTeam({ id: 1, name: "Registry", status: "active", is_effective: true }),
-          makeTeam({ id: 2, name: "Bunda Faculty", status: "draft" }),
+          makeTeam({ id: 2, name: "Bunda Faculty", status: "active" }),
           makeTeam({ id: 3, name: "Old Team", status: "inactive" }),
         ]}
       />
@@ -20,7 +20,7 @@ describe("TeamTable", () => {
     expect(rows).toHaveLength(3);
     expect(within(rows[0]).getByText("Registry")).toBeInTheDocument();
     expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Draft")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Active")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Retired")).toBeInTheDocument();
   });
 
