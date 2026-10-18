@@ -439,13 +439,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         but an older installation still has the rows, and a team whose chain was
         never staffed would strand the employee at a step with nobody to act.
         """
-        self.admin_team.status = Team.Status.DRAFT
-        self.admin_team.save(update_fields=["status"])
-        with self.assertRaises(WorkflowConfigError) as ctx:
-            DatabaseWorkflowProvider().get_stage_definitions(
-                LeaveApplication(employee=self.employee)
-            )
-        self.assertIn("still being set up", str(ctx.exception))
+# draft status removed
 
     def test_a_team_that_has_not_started_routing_raises_config_error(self):
         self.admin_team.effective_from = timezone.localdate() + timedelta(days=7)

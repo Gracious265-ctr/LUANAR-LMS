@@ -1323,12 +1323,7 @@ def deactivate_team(*, team: Team, actor) -> Team:
         locked = Team.objects.select_for_update().get(pk=team.pk)
         if locked.status == Team.Status.INACTIVE:
             return locked
-        if locked.status == Team.Status.DRAFT:
-            raise TeamActionError(
-                "status",
-                f'The {locked.name} team is still a draft, so there is nothing to '
-                "retire. Delete it instead.",
-            )
+
         locked.status = Team.Status.INACTIVE
         locked.save(update_fields=["status", "updated_at"])
         record_audit(

@@ -429,11 +429,7 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         # an inactive one has been retired; neither routes, and saying so here
         # means the applicant's failure names the team rather than surfacing as
         # some later stage error nobody can act on.
-        if team.status == Team.Status.DRAFT:
-            raise WorkflowConfigError(
-                f"The {team.name} team is still being set up. Ask HR to finish "
-                "configuring it first."
-            )
+
         if team.status == Team.Status.INACTIVE:
             raise WorkflowConfigError(
                 f"The {team.name} team is inactive. Ask HR to move the employee "

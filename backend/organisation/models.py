@@ -82,7 +82,6 @@ class Team(models.Model):
     """A group of employees sharing one approval workflow."""
 
     class Status(models.TextChoices):
-        DRAFT = "draft", "Draft"
         ACTIVE = "active", "Active"
         INACTIVE = "inactive", "Inactive"
 
@@ -124,7 +123,7 @@ class Team(models.Model):
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.DRAFT,
+        default=Status.ACTIVE,
     )
     effective_from = models.DateField(null=True, blank=True)
     effective_to = models.DateField(null=True, blank=True)

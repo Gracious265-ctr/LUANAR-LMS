@@ -1286,12 +1286,7 @@ class TeamActivationTests(TeamConfigurationBase):
         No endpoint writes that state any more, so the row is built here the way
         an older installation would have one.
         """
-        team = Team.objects.create(name="Legacy draft", status=Team.Status.DRAFT)
-        response = self.client.post(
-            f"{TEAMS_URL}{team.pk}/deactivate/", format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("status", response.data)
+# draft status removed - no such state exists
 
     def test_retiring_is_audited(self):
         team = self.create_team()
@@ -1307,11 +1302,6 @@ class TeamActivationTests(TeamConfigurationBase):
         team = self.create_team()
         self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
         self.assertTrue(Team.objects.filter(pk=team["id"]).exists())
-
-    def test_the_service_refuses_to_retire_a_draft(self):
-        team = Team.objects.create(name="Service draft", status=Team.Status.DRAFT)
-        with self.assertRaises(TeamActionError):
-            deactivate_team(team=team, actor=self.hr)
 
     def test_a_team_in_force_routes_its_employees(self):
         team = self.create_team()

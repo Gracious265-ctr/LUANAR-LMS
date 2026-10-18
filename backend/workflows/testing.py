@@ -350,7 +350,7 @@ def make_team(
     ``status`` defaults to active because a team that cannot route is a special
     case, not the default state of a routing fixture. The model itself defaults
     to draft; tests that are about configuration rather than routing pass
-    ``Team.Status.DRAFT`` explicitly.
+    DRAFT status is no longer used; all teams are active by default.
     """
     roles = ensure_roles(*role_codes)
     workflow = workflow or make_workflow(f"{name} Workflow", role_codes)
