@@ -24,9 +24,9 @@ export {
  * Open-ended like the role codes: a status this build has not seen must survive
  * a round trip rather than crash a screen.
  */
-export type TeamStatus = "draft" | "active" | "inactive";
+export type TeamStatus = "active" | "inactive";
 
-export const TEAM_STATUS_CODES: TeamStatus[] = ["draft", "active", "inactive"];
+export const TEAM_STATUS_CODES: TeamStatus[] = ["active", "inactive"];
 
 
 /**
