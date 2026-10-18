@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
+import { canConfigureChains } from "@/lib/team-access";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
 
@@ -13,7 +14,7 @@ import { getTeam, listTeamWorkflows } from "@/lib/teams";
  * "How it resolves" is the point of reading a chain on its own. A step may be
  * staffed by hand, or it may fall back to a team-wide, campus-wide or
  * institution-wide holding — and which of those applies is what tells HR
- * whether this chain can be put into force, and where to go to staff it.
+ * whether this chain can route an application, and where to go to staff it.
  */
 export default async function WorkflowDetailPage({
   params,
@@ -26,8 +27,12 @@ export default async function WorkflowDetailPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
+  const isHr = user.role === "hr";
+  // The manager reads and configures their own team's chains; both reads are
+  // scoped to the teams they manage, and the ownership check below makes a
+  // foreign chain unreachable even if one read returned something.
+  if (!isHr && user.manages_teams !== true) {
+    redirect("/");
   }
 
   let team;
@@ -52,12 +57,13 @@ export default async function WorkflowDetailPage({
   }
 
   const workflows = await listTeamWorkflows(team.id).catch(() => []);
+  const canConfigure = canConfigureChains(isHr);
 
   return (
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}/workflows`}
+          href={`/organisation/teams/${team.id}/workflows`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -86,13 +92,15 @@ export default async function WorkflowDetailPage({
                 : ""}
             </p>
           </div>
-          <Link
-            href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}/edit`}
-            className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
-            <Pencil className="h-4 w-4" />
-            Edit steps
-          </Link>
+          {canConfigure && (
+            <Link
+              href={`/organisation/teams/${team.id}/workflows/${workflow.id}/edit`}
+              className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit steps
+            </Link>
+          )}
         </div>
       </div>
 
@@ -149,6 +157,44 @@ export default async function WorkflowDetailPage({
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+        <h3 className="text-lg font-semibold text-text-primary">
+          Normal members
+        </h3>
+        <p className="mt-1 text-sm text-text-secondary">
+          Team members on this chain who are not its step approvers. Membership
+          is edited with the steps on the{" "}
+          {canConfigure ? (
+            <Link
+              href={`/organisation/teams/${team.id}/workflows/${workflow.id}/edit`}
+              className="font-medium text-brand-primary hover:text-brand-primary-hover"
+            >
+              Edit steps
+            </Link>
+          ) : (
+            <span className="font-medium text-text-secondary">Edit steps</span>
+          )}{" "}
+          screen, and it decides who may route through this chain rather than
+          who acts at each step.
+        </p>
+        {workflow.members.length === 0 ? (
+          <p className="mt-3 text-sm text-text-muted">
+            No normal members on this chain yet.
+          </p>
+        ) : (
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {workflow.members.map((member) => (
+              <li
+                key={member.id}
+                className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs text-text-secondary"
+              >
+                {member.full_name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-1 text-lg font-semibold text-text-primary">
           Which chain routes
         </h3>
@@ -157,7 +203,14 @@ export default async function WorkflowDetailPage({
             ? "This is the chain new applications go through."
             : "This chain is owned but not routing. Point the team at it when its steps are ready."}
         </p>
-        <WorkflowRoutingActions team={team} workflows={workflows} />
+        {!isHr ? (
+          <WorkflowRoutingActions team={team} workflows={workflows} />
+        ) : (
+          <p className="text-sm text-text-muted">
+            Pointing the team at a chain is the manager&apos;s call. Ask the
+            manager to switch the team to this chain once its steps are ready.
+          </p>
+        )}
       </div>
     </div>
   );

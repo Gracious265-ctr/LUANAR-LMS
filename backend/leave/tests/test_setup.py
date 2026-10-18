@@ -18,7 +18,7 @@ from leave.services.setup import (
     rollover_financial_year,
     setup_status,
 )
-from org.models import ApproverRole
+from organisation.models import ApproverRole
 
 User = get_user_model()
 

@@ -1,11 +1,8 @@
-from datetime import date
-
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from users.models import EmployeeProfile, User
+from users.models import User
 
 
 class ApproverRole(models.Model):
@@ -118,7 +115,7 @@ class Team(models.Model):
         ),
     )
     workflow = models.OneToOneField(
-        "org.Workflow",
+        "workflows.Workflow",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
@@ -169,60 +166,6 @@ class Team(models.Model):
         return f"{self.name} ({self.get_status_display()})"
 
 
-class OpenSectionMembershipManager(models.Manager):
-    def get_queryset(self):
-        return super().get_queryset().filter(effective_to__isnull=True)
-
-
-class SectionMemberQuerySet(models.QuerySet):
-    def effective_on(self, on: date | None = None) -> "SectionMemberQuerySet":
-        day = on or timezone.localdate()
-        return self.filter(effective_from__lte=day).filter(
-            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=day)
-        )
-
-
-class SectionMember(models.Model):
-    objects = OpenSectionMembershipManager.from_queryset(SectionMemberQuerySet)()
-    all_objects = models.Manager()
-
-    section = models.ForeignKey(
-        "org.Section", on_delete=models.CASCADE, related_name="members"
-    )
-    user = models.ForeignKey(
-        User, on_delete=models.PROTECT, related_name="section_memberships"
-    )
-    effective_from = models.DateField(default=timezone.localdate)
-    effective_to = models.DateField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "workflows_sectionmember"
-        ordering = ["section", "user", "effective_from"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(effective_to__isnull=True)
-                | models.Q(effective_to__gte=models.F("effective_from")),
-                name="sectionmember_effective_window_ordered",
-            ),
-            models.UniqueConstraint(
-                fields=["section", "user"],
-                condition=models.Q(effective_to__isnull=True),
-                name="sectionmember_open_section_user_unique",
-            ),
-        ]
-
-    def is_effective(self, on: date | None = None) -> bool:
-        day = on or timezone.localdate()
-        if self.effective_from > day:
-            return False
-        return self.effective_to is None or self.effective_to >= day
-
-    def __str__(self) -> str:
-        period = f"{self.effective_from} → {self.effective_to or 'open'}"
-        return f"{self.user.get_full_name()} — {self.section.name} ({period})"
-
-
 class RoleAssignment(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="role_assignments"
@@ -269,6 +212,14 @@ class TeamRoleAssignment(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="team_role_assignments"
     )
+    is_team_manager = models.BooleanField(
+        default=False,
+        help_text=(
+            "Whether this team-wide holder is the team's designated manager. "
+            "A manager may manage the team's members and workflows; at most one "
+            "holder on a team carries this flag."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -277,6 +228,11 @@ class TeamRoleAssignment(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["team", "role"], name="teamroleassignment_team_role_unique"
+            ),
+            models.UniqueConstraint(
+                fields=["team"],
+                condition=models.Q(is_team_manager=True),
+                name="teamroleassignment_one_manager_per_team",
             ),
         ]
 
@@ -340,167 +296,3 @@ class CampusRoleAssignment(models.Model):
             raise ValidationError(
                 {"campus": '"%s" is retired and cannot hold approvers.' % self.campus.name}
             )
-
-
-class Workflow(models.Model):
-    name = models.CharField(max_length=200, unique=True)
-    team = models.ForeignKey(
-        "org.Team",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="workflows",
-    )
-    effective_from = models.DateField(null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = "workflows_workflow"
-        ordering = ["name"]
-
-    @property
-    def state(self) -> str:
-        if self.effective_from is None:
-            return "draft"
-        if not self.is_active:
-            return "inactive"
-        if self.effective_from > timezone.localdate():
-            return "scheduled"
-        return "active"
-
-    def __str__(self) -> str:
-        return f"{self.name} ({self.state})"
-
-
-class Section(models.Model):
-    workflow = models.ForeignKey(
-        Workflow, on_delete=models.CASCADE, related_name="sections"
-    )
-    name = models.CharField(max_length=200)
-    order = models.PositiveIntegerField()
-    approver_role = models.ForeignKey(
-        ApproverRole,
-        on_delete=models.PROTECT,
-        related_name="sections",
-    )
-    approver = models.ForeignKey(
-        "users.User",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="approver_sections",
-    )
-    description = models.TextField(blank=True, default="")
-    is_active = models.BooleanField(default=True)
-
-    @property
-    def memberships(self):
-        return SectionMember.all_objects.filter(section=self).order_by(
-            "effective_from", "id"
-        )
-
-    class Meta:
-        db_table = "workflows_section"
-        ordering = ["order"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(order__gte=1),
-                name="section_order_gte_1",
-            ),
-            models.UniqueConstraint(
-                fields=["workflow", "order"],
-                name="section_workflow_order_unique",
-            ),
-            models.UniqueConstraint(
-                fields=["workflow", "approver"],
-                name="section_workflow_approver_unique",
-            ),
-            models.UniqueConstraint(
-                fields=["workflow", "approver_role"],
-                name="section_workflow_role_unique",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.order}. {self.name} ({self.approver_role.label})"
-
-
-class Delegation(models.Model):
-    class Status(models.TextChoices):
-        REQUESTED = "requested", "Requested"
-        APPROVED = "approved", "Approved"
-        REJECTED = "rejected", "Rejected"
-        CANCELLED = "cancelled", "Cancelled"
-
-    approver = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        related_name="delegations_as_approver",
-    )
-    delegate = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        related_name="delegations_as_delegate",
-        null=True,
-        blank=True,
-    )
-    starts_on = models.DateField()
-    ends_on = models.DateField(null=True, blank=True)
-    request_reason = models.TextField(blank=True)
-    requested_by = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        related_name="delegations_requested",
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=Status.choices,
-        default=Status.REQUESTED,
-    )
-    decision_reason = models.TextField(blank=True)
-    decided_by = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        related_name="delegations_decided",
-        null=True,
-        blank=True,
-    )
-    decided_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "workflows_delegation"
-        ordering = ["-created_at"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(ends_on__isnull=True)
-                | models.Q(ends_on__gte=models.F("starts_on")),
-                name="delegation_ends_on_gte_starts_on",
-            ),
-            models.UniqueConstraint(
-                fields=["approver"],
-                condition=models.Q(status="requested"),
-                name="one_open_request_per_approver",
-            ),
-        ]
-
-    @property
-    def state(self) -> str:
-        """The calendar-aware lifecycle state shown in the UI.
-
-        ``approved`` maps to ``scheduled`` / ``active`` / ``ended`` depending on
-        today against the delegation period.
-        """
-        if self.status == self.Status.APPROVED:
-            today = timezone.localdate()
-            if self.ends_on is not None and self.ends_on < today:
-                return "ended"
-            if self.starts_on > today:
-                return "scheduled"
-            return "active"
-        return self.status
-
-    def __str__(self) -> str:
-        delegate = self.delegate.get_full_name() if self.delegate else "unassigned"
-        return f"{self.approver.get_full_name()} → {delegate} ({self.state})"

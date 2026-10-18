@@ -53,11 +53,11 @@ from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from org.models import Delegation
+from approvals.models import Delegation
 
-from .models import Reassignment
+from approvals.models import Reassignment
 from .policies import get_decision_authority, is_self_application
-from .services import (
+from approvals.services import (
     ApprovalNotAllowedError,
     ReassignmentError,
     SelfApprovalBlockedError,

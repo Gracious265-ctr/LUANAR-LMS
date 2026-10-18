@@ -256,7 +256,7 @@ def _ensure_leave_types(*, actor, dry_run: bool, result: ApplyResult) -> None:
 
 
 def _ensure_roles(*, actor, dry_run: bool, result: ApplyResult) -> None:
-    from org.models import ApproverRole
+    from organisation.models import ApproverRole
     from workflows.presets import ROLE_SPECS
 
     created = skipped = 0
@@ -348,7 +348,7 @@ def setup_status() -> dict:
     show "3 leave types" beside a tick. Anything already configured is therefore
     already complete for an existing install — the hub never asks HR to redo it.
     """
-    from org.models import ApproverRole, Team
+    from organisation.models import ApproverRole, Team
 
     today = timezone.localdate()
     has_year = FinancialYear.objects.filter(

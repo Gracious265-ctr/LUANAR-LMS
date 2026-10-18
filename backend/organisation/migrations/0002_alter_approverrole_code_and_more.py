@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('org', '0001_initial'),
+        ('organisation', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
             migrations.AlterField(
                 model_name='team',
                 name='campus',
-                field=models.ForeignKey(blank=True, help_text='The campus an academic team sits at; required when the category is Academic and not allowed when it is Administration.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='teams', to='org.campus'),
+                field=models.ForeignKey(blank=True, help_text='The campus an academic team sits at; required when the category is Academic and not allowed when it is Administration.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='teams', to='organisation.campus'),
             ),
             migrations.AlterField(
                 model_name='team',

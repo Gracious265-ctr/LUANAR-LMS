@@ -4,6 +4,7 @@ import { ArrowLeft, Plus } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
+import { canConfigureChains } from "@/lib/team-access";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
 
@@ -30,8 +31,12 @@ export default async function TeamWorkflowsPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
+  const isHr = user.role === "hr";
+  // HR creates teams and designates managers; the manager runs their own team's
+  // chains. A manager reaches only their own team here — ``getTeam`` is scoped
+  // to the teams they manage, so another team 404s before this renders.
+  if (!isHr && user.manages_teams !== true) {
+    redirect("/");
   }
 
   let team: Team;
@@ -49,11 +54,13 @@ export default async function TeamWorkflowsPage({
     error = WORKFLOWS_ERROR;
   }
 
+  const canConfigure = canConfigureChains(isHr);
+
   return (
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}`}
+          href={`/organisation/teams/${team.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -70,13 +77,15 @@ export default async function TeamWorkflowsPage({
               decision rather than an edit to whichever happens to be open.
             </p>
           </div>
-          <Link
-            href={`/dashboard/hr-admin/teams/${team.id}/workflows/new`}
-            className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
-            <Plus className="h-4 w-4" />
-            New workflow
-          </Link>
+          {canConfigure && (
+            <Link
+              href={`/organisation/teams/${team.id}/workflows/new`}
+              className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
+            >
+              <Plus className="h-4 w-4" />
+              New workflow
+            </Link>
+          )}
         </div>
       </div>
 
@@ -104,7 +113,7 @@ export default async function TeamWorkflowsPage({
               >
                 <div>
                   <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}`}
+                    href={`/organisation/teams/${team.id}/workflows/${workflow.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     {workflow.name}
@@ -127,12 +136,14 @@ export default async function TeamWorkflowsPage({
                   >
                     {workflow.is_routing ? "Routing" : "Standby"}
                   </span>
-                  <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}/edit`}
-                    className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Edit steps
-                  </Link>
+                  {canConfigure && (
+                    <Link
+                      href={`/organisation/teams/${team.id}/workflows/${workflow.id}/edit`}
+                      className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                    >
+                      Edit steps
+                    </Link>
+                  )}
                 </div>
               </li>
             ))}
@@ -151,7 +162,14 @@ export default async function TeamWorkflowsPage({
           The applications already inside the current chain keep it, whatever
           happens here.
         </p>
-        <WorkflowRoutingActions team={team} workflows={workflows} />
+        {!isHr ? (
+          <WorkflowRoutingActions team={team} workflows={workflows} />
+        ) : (
+          <p className="text-sm text-text-muted">
+            Pointing the team at a chain is the manager&apos;s call. Ask the
+            manager to switch the team to this chain once its steps are ready.
+          </p>
+        )}
       </div>
     </div>
   );

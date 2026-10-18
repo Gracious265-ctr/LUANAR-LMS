@@ -31,8 +31,16 @@ export default async function EditWorkflowPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
+  // A manager configures their own team's chains; the standalone chain write
+  // refuses HR after the handover. Both reads are scoped to the teams they
+  // manage, and the ownership check below closes the gap between them, so
+  // another team's chain is never editable here. HR is sent back to the chain.
+  if (user.manages_teams !== true) {
+    redirect(
+      user.role === "hr"
+        ? `/organisation/teams/${id}/workflows/${workflowId}`
+        : "/"
+    );
   }
 
   let team;
@@ -64,7 +72,7 @@ export default async function EditWorkflowPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/teams/${team.id}/workflows/${workflow.id}`}
+          href={`/organisation/teams/${team.id}/workflows/${workflow.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />

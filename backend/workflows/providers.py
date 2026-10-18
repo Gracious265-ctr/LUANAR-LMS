@@ -29,14 +29,8 @@ from django.utils.module_loading import import_string
 
 from users.models import User
 
-from org.models import (
-    ApproverRole,
-    CampusRoleAssignment,
-    RoleAssignment,
-    SectionMember,
-    Team,
-    TeamRoleAssignment,
-)
+from organisation.models import ApproverRole, CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
+from workflows.models import SectionMember
 
 
 class WorkflowConfigError(ValueError):
@@ -438,12 +432,12 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         if team.status == Team.Status.DRAFT:
             raise WorkflowConfigError(
                 f"The {team.name} team is still being set up. Ask HR to finish "
-                "configuring it and activate it."
+                "configuring it first."
             )
         if team.status == Team.Status.INACTIVE:
             raise WorkflowConfigError(
-                f"The {team.name} team is inactive. Ask HR to activate it, or to "
-                "move the employee to an active team."
+                f"The {team.name} team is inactive. Ask HR to move the employee "
+                "to a team that is still in force."
             )
         if not team.is_effective:
             today = timezone.localdate()
@@ -466,8 +460,8 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
             )
         if not workflow.is_active:
             raise WorkflowConfigError(
-                f"Workflow '{workflow.name}' is inactive. Ask HR to activate it, "
-                f"or to point the {team.name} team at an active workflow."
+                f"Workflow '{workflow.name}' is not in force. Ask HR to point "
+                f"the {team.name} team at a workflow that is."
             )
         if (
             workflow.effective_from is not None
@@ -475,8 +469,8 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         ):
             raise WorkflowConfigError(
                 f"Workflow '{workflow.name}' does not start until "
-                f"{workflow.effective_from.isoformat()}. Ask HR to activate it "
-                "earlier, or to point the team at an active workflow."
+                f"{workflow.effective_from.isoformat()}. Ask HR to point the team "
+                "at a workflow that starts now."
             )
 
         sections = list(

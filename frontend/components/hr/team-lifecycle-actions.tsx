@@ -2,49 +2,41 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleCheck, CirclePlay, CircleStop } from "lucide-react";
+import { CircleCheck, CircleStop } from "lucide-react";
 
 import type { Team, TeamReadiness } from "@/lib/teams";
-import { activateTeam, deactivateTeam, validateTeam } from "@/lib/teams-client";
+import { deactivateTeam, validateTeam } from "@/lib/teams-client";
 import { STATUS_STYLES } from "@/lib/status-styles";
 
 /**
- * Putting a team into force, and taking it out.
+ * Whether a team can route, and taking it out of service.
  *
- * These are buttons rather than a checkbox because each is a decision with a
- * consequence: activation refuses a chain that cannot route, and retirement
- * stops new applications without touching the ones already inside the team.
- * A form field could do neither.
- *
- * Readiness is asked for rather than guessed, and the answer is a list, so a
- * team with three problems takes one pass instead of three refused clicks.
+ * There is no "put into force" button because there is no such step left: a
+ * team is in force from the moment HR creates it, and that decision was taken
+ * on the create form. What remains here is the readiness check — a list of
+ * everything standing in the way, asked for rather than guessed, so a chain with
+ * three problems takes one pass instead of three refused clicks — and
+ * retirement, which stops new applications without touching the ones already
+ * inside the team.
  */
 export function TeamLifecycleActions({ team }: { team: Team }) {
   const router = useRouter();
   const [readiness, setReadiness] = useState<TeamReadiness | null>(null);
-  const [busy, setBusy] = useState<"" | "validate" | "activate" | "deactivate">(
-    ""
-  );
+  const [busy, setBusy] = useState<"" | "validate" | "deactivate">("");
   const [error, setError] = useState("");
 
-  async function run(kind: "validate" | "activate" | "deactivate") {
+  async function run(kind: "validate" | "deactivate") {
     setError("");
     setBusy(kind);
     try {
       if (kind === "validate") {
         setReadiness(await validateTeam(team.id));
       } else {
-        if (kind === "activate") {
-          await activateTeam(team.id);
-        } else {
-          await deactivateTeam(team.id);
-        }
+        await deactivateTeam(team.id);
         setReadiness(null);
         router.refresh();
       }
     } catch (err) {
-      // A refused activation comes back carrying the reasons, so they are shown
-      // rather than collapsed into "something went wrong".
       const issues = (err as { readiness?: TeamReadiness }).readiness;
       if (issues) {
         setReadiness(issues);
@@ -58,7 +50,6 @@ export function TeamLifecycleActions({ team }: { team: Team }) {
     }
   }
 
-  const isDraft = team.status === "draft";
   const isActive = team.status === "active";
 
   return (
@@ -73,7 +64,7 @@ export function TeamLifecycleActions({ team }: { team: Team }) {
           {busy === "validate" ? "Checking…" : "Check readiness"}
         </button>
 
-        {isActive ? (
+        {isActive && (
           <button
             type="button"
             onClick={() => run("deactivate")}
@@ -82,20 +73,6 @@ export function TeamLifecycleActions({ team }: { team: Team }) {
           >
             <CircleStop className="h-4 w-4" />
             {busy === "deactivate" ? "Retiring…" : "Retire team"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => run("activate")}
-            disabled={busy !== ""}
-            className="inline-flex items-center gap-1.5 rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <CirclePlay className="h-4 w-4" />
-            {busy === "activate"
-              ? "Activating…"
-              : isDraft
-                ? "Put into force"
-                : "Bring back into force"}
           </button>
         )}
       </div>
@@ -120,7 +97,7 @@ function ReadinessReport({ readiness }: { readiness: TeamReadiness }) {
       >
         <span className="inline-flex items-center gap-1.5 font-medium">
           <CircleCheck className="h-4 w-4" />
-          {readiness.team} is ready to put into force.
+          {readiness.team} is ready to route applications.
         </span>
       </div>
     );
@@ -132,7 +109,7 @@ function ReadinessReport({ readiness }: { readiness: TeamReadiness }) {
       className={`rounded-md p-3 text-sm ${STATUS_STYLES.pending}`}
     >
       <p className="font-medium">
-        {readiness.team} cannot be put into force yet. Fix {readiness.issues.length}{" "}
+        {readiness.team} cannot route applications yet. Fix {readiness.issues.length}{" "}
         {readiness.issues.length === 1 ? "problem" : "problems"}:
       </p>
       <ul className="mt-1.5 list-inside list-disc space-y-1">

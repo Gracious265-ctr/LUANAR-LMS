@@ -1,5 +1,5 @@
 import { apiClientUrl } from "./api-client";
-import type { WorkflowMember } from "./team-members";
+import type { WorkflowMemberRef } from "./team-members";
 
 /**
  * A chain's shape, and how it is read and written.
@@ -137,17 +137,19 @@ export interface Workflow {
   team: number | null;
   team_name: string;
   effective_from: string | null;
+  /** The end of the academic calendar this chain was written against, if any. */
+  effective_to: string | null;
   is_active: boolean;
   state: WorkflowState | string;
   is_routing: boolean;
   section_count: number;
   sections: WorkflowSection[];
   /** The normal members of this chain (team members, not step approvers). */
-  members: WorkflowMember[];
+  members: WorkflowMemberRef[];
 }
 
 export interface WorkflowInput {
-  /** Required on create; optional on edit. */
+  /** Required: a chain carries its own name, not the team's. */
   name?: string;
   /** Required on create, and on edit it must name a chain this team already owns. */
   team?: number | null;

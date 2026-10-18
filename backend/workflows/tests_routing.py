@@ -32,10 +32,10 @@ from users.models import EmployeeProfile
 
 from .testing import team_for
 from approvals.models import ApprovalDecision, ApplicationStage
-from org.models import Delegation
-from .models import Reassignment
+from approvals.models import Delegation
+from approvals.models import Reassignment
 from .policies import get_decision_authority
-from .services import (
+from approvals.services import (
     acting_approver_id,
     acting_approver_identity,
     acting_approver_map,

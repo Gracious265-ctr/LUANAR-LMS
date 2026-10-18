@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('leave', '0021_alter_cancellationrequest_status'),
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
         ('workflows', '0031_remove_applicationstage_idx_stage_approver_status_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
@@ -53,7 +53,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='workflowmember',
             name='team',
-            field=models.ForeignKey(help_text='The owning team, copied from the workflow when the membership is written. Denormalised so one employee cannot be a normal member of two workflows of the same team, even under concurrent writes.', on_delete=django.db.models.deletion.CASCADE, related_name='workflow_member_assignments', to='org.team'),
+            field=models.ForeignKey(help_text='The owning team, copied from the workflow when the membership is written. Denormalised so one employee cannot be a normal member of two workflows of the same team, even under concurrent writes.', on_delete=django.db.models.deletion.CASCADE, related_name='workflow_member_assignments', to='organisation.team'),
         ),
         migrations.AlterField(
             model_name='workflowmember',
@@ -63,6 +63,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='workflowmember',
             name='workflow',
-            field=models.ForeignKey(help_text='The workflow whose team this person is a normal member of. Removing the workflow removes the membership with it.', on_delete=django.db.models.deletion.CASCADE, related_name='workflow_members', to='org.workflow'),
+            field=models.ForeignKey(help_text='The workflow whose team this person is a normal member of. Removing the workflow removes the membership with it.', on_delete=django.db.models.deletion.CASCADE, related_name='workflow_members', to='organisation.workflow'),
         ),
     ]

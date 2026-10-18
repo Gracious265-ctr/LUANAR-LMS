@@ -7,6 +7,7 @@ approvals HTTP API (capabilities, list, detail, decision, documents).
 
 from datetime import date, timedelta
 from unittest import mock
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -38,24 +39,21 @@ from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from org.models import (
-    ApproverRole,
-    Section,
-    SectionMember,
-    Team,
-    Workflow,
-)
+from organisation.models import ApproverRole, Team
+from workflows.models import Section, SectionMember, Workflow
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
 )
-from .services import (
+from approvals.services import (
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
     ApprovalValidationError,
-    WorkflowAssignmentError,
     assign_workflow,
     decide,
+)
+from .services import (
+    WorkflowAssignmentError,
 )
 from .policies import get_decision_authority
 
@@ -435,11 +433,11 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         self.assertIn("inactive", str(ctx.exception))
 
     def test_draft_team_raises_config_error(self):
-        """A team still being configured must not route anything.
+        """A row still marked draft must not route anything.
 
-        This is the case the boolean could not express: the team exists and its
-        workflow is live, but HR has not finished staffing it, so routing to it
-        would strand the employee at a step with nobody to act.
+        Nothing writes that state any more — creating a team puts it in force —
+        but an older installation still has the rows, and a team whose chain was
+        never staffed would strand the employee at a step with nobody to act.
         """
         self.admin_team.status = Team.Status.DRAFT
         self.admin_team.save(update_fields=["status"])
@@ -1307,3 +1305,108 @@ class FinalisationWiringTests(ApprovalBase):
             3,
             "the three committed stages survive; only the failing one rolls back",
         )
+
+
+class BulkApprovalAPITests(ApprovalAPITests):
+    """UI/UX Phase 2, spec 3.11 / ops spec 5 — the batch approval endpoint."""
+
+    def bulk_url(self):
+        return "/api/v1/approvals/bulk-decision/"
+
+    def post_bulk(self, **overrides):
+        body = {
+            "action": "approve",
+            "items": [],
+            **overrides,
+        }
+        return self.client.post(self.bulk_url(), body, format="json")
+
+    def test_list_payload_carries_stage_version(self):
+        app = self.make_submitted()
+        response = self.client.get(self.url("?tab=pending"))
+        row = next(r for r in response.data["results"] if r["id"] == str(app.pk))
+        self.assertEqual(row["stage_version"], 1)
+
+    def test_bulk_approve_advances_every_item(self):
+        first = self.make_submitted()
+        second = self.make_second_submitted()
+        response = self.post_bulk(
+            items=[
+                {"id": str(first.pk), "stage_version": 1},
+                {"id": str(second.pk), "stage_version": 1},
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["approved"], 2)
+        self.assertEqual(response.data["failed"], 0)
+        self.assertEqual(response.data["limit"], 25)
+        self.assertTrue(
+            all(item["status"] == "approved" for item in response.data["results"])
+        )
+        self.assertEqual(
+            ApprovalDecision.objects.filter(approver=self.supervisor).count(), 2
+        )
+
+    def test_bulk_partial_success_reports_stage_changed(self):
+        ok = self.make_submitted()
+        stale = self.make_second_submitted()
+        response = self.post_bulk(
+            items=[
+                {"id": str(ok.pk), "stage_version": 1},
+                {"id": str(stale.pk), "stage_version": 999},
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["approved"], 1)
+        self.assertEqual(response.data["failed"], 1)
+        by_id = {item["id"]: item for item in response.data["results"]}
+        self.assertEqual(by_id[str(ok.pk)]["status"], "approved")
+        self.assertEqual(by_id[str(stale.pk)]["reason"], "stage_changed")
+        self.assertEqual(
+            ApprovalDecision.objects.filter(
+                application=stale, approver=self.supervisor
+            ).count(),
+            0,
+        )
+
+    def test_bulk_unknown_item_is_reported_not_found(self):
+        response = self.post_bulk(
+            items=[{"id": str(uuid4()), "stage_version": 1}]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["approved"], 0)
+        self.assertEqual(response.data["failed"], 1)
+        self.assertEqual(response.data["results"][0]["reason"], "not_found")
+
+    def test_bulk_is_approve_only(self):
+        app = self.make_submitted()
+        response = self.post_bulk(
+            action="reject",
+            items=[{"id": str(app.pk), "stage_version": 1}],
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_rejects_empty_selection(self):
+        self.assertEqual(self.post_bulk(items=[]).status_code, 400)
+
+    def test_bulk_rejects_duplicate_ids(self):
+        app = self.make_submitted()
+        response = self.post_bulk(
+            items=[
+                {"id": str(app.pk), "stage_version": 1},
+                {"id": str(app.pk), "stage_version": 1},
+            ]
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_rejects_more_than_the_cap(self):
+        items = [{"id": str(uuid4()), "stage_version": 1} for _ in range(26)]
+        self.assertEqual(self.post_bulk(items=items).status_code, 400)
+
+    def test_bulk_requires_approver_access(self):
+        self.client.force_authenticate(user=self.employee)
+        app = self.make_submitted()
+        response = self.post_bulk(
+            items=[{"id": str(app.pk), "stage_version": 1}]
+        )
+        self.assertEqual(response.status_code, 403)

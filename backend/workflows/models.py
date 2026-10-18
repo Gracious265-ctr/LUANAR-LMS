@@ -1,56 +1,167 @@
-from django.db import models
+from datetime import date
 
+from django.db import models
+from django.utils import timezone
+
+from organisation.models import ApproverRole
 from users.models import User
 
 
-class Reassignment(models.Model):
-    """An HR emergency reassignment of a pending application to an approver.
-
-    ``from_approver`` records who the application was previously with and may be
-    ``None`` when a submitted application had not yet been routed (the first
-    reassignment is effectively an initial assignment). Reassigning atomically
-    writes this history row and updates
-    ``LeaveApplication.current_approver`` — the live responsible-approver spine
-    Unit 21 consumes.
-    """
-
-    application = models.ForeignKey(
-        "leave.LeaveApplication",
-        on_delete=models.PROTECT,
-        related_name="reassignments",
-        help_text="The pending leave application being reassigned.",
-    )
-    from_approver = models.ForeignKey(
-        User,
-        on_delete=models.PROTECT,
-        related_name="reassignments_from",
+class Workflow(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    team = models.ForeignKey(
+        "organisation.Team",
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text="The approver the application was previously assigned to.",
+        related_name="workflows",
     )
-    to_approver = models.ForeignKey(
-        User,
+    effective_from = models.DateField(null=True, blank=True)
+    # The academic calendar the chain is written against: a chain is a
+    # statement about a term, not about forever, so a new one is scoped to the
+    # current academic year's end rather than left open-ended. Blank stays
+    # possible only where an older row predates the field.
+    effective_to = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "workflows_workflow"
+        ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_from__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="workflow_effective_window_ordered",
+            ),
+        ]
+
+    @property
+    def state(self) -> str:
+        if self.effective_from is None:
+            return "draft"
+        if not self.is_active:
+            return "inactive"
+        if self.effective_to is not None and self.effective_to < timezone.localdate():
+            return "inactive"
+        if self.effective_from > timezone.localdate():
+            return "scheduled"
+        return "active"
+
+    @property
+    def is_effective(self) -> bool:
+        """Whether this chain is in force today — window and flag together."""
+        return self.state == "active"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.state})"
+
+
+class Section(models.Model):
+    workflow = models.ForeignKey(
+        Workflow, on_delete=models.CASCADE, related_name="sections"
+    )
+    name = models.CharField(max_length=200)
+    order = models.PositiveIntegerField()
+    approver_role = models.ForeignKey(
+        ApproverRole,
         on_delete=models.PROTECT,
-        related_name="reassignments_to",
-        help_text="The replacement approver who inherits the pending application.",
+        related_name="sections",
     )
-    reason = models.TextField(
-        help_text="HR's mandatory reason for the reassignment.",
-    )
-    decided_by = models.ForeignKey(
-        User,
+    approver = models.ForeignKey(
+        "users.User",
         on_delete=models.PROTECT,
-        related_name="reassignments_decided",
-        help_text="The HR user who performed the reassignment.",
+        null=True,
+        blank=True,
+        related_name="approver_sections",
     )
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+
+    @property
+    def memberships(self):
+        return SectionMember.all_objects.filter(section=self).order_by(
+            "effective_from", "id"
+        )
+
+    class Meta:
+        db_table = "workflows_section"
+        ordering = ["order"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(order__gte=1),
+                name="section_order_gte_1",
+            ),
+            models.UniqueConstraint(
+                fields=["workflow", "order"],
+                name="section_workflow_order_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["workflow", "approver"],
+                name="section_workflow_approver_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["workflow", "approver_role"],
+                name="section_workflow_role_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.order}. {self.name} ({self.approver_role.label})"
+
+
+class OpenSectionMembershipManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(effective_to__isnull=True)
+
+
+class SectionMemberQuerySet(models.QuerySet):
+    def effective_on(self, on: date | None = None) -> "SectionMemberQuerySet":
+        day = on or timezone.localdate()
+        return self.filter(effective_from__lte=day).filter(
+            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=day)
+        )
+
+
+class SectionMember(models.Model):
+    objects = OpenSectionMembershipManager.from_queryset(SectionMemberQuerySet)()
+    all_objects = models.Manager()
+
+    section = models.ForeignKey(
+        "workflows.Section", on_delete=models.CASCADE, related_name="members"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="section_memberships"
+    )
+    effective_from = models.DateField(default=timezone.localdate)
+    effective_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        db_table = "workflows_sectionmember"
+        ordering = ["section", "user", "effective_from"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="sectionmember_effective_window_ordered",
+            ),
+            models.UniqueConstraint(
+                fields=["section", "user"],
+                condition=models.Q(effective_to__isnull=True),
+                name="sectionmember_open_section_user_unique",
+            ),
+        ]
+
+    def is_effective(self, on: date | None = None) -> bool:
+        day = on or timezone.localdate()
+        if self.effective_from > day:
+            return False
+        return self.effective_to is None or self.effective_to >= day
 
     def __str__(self) -> str:
-        application = self.application.reference_number or "Draft"
-        return f"Reassignment({application} → {self.to_approver.get_full_name()})"
+        period = f"{self.effective_from} → {self.effective_to or 'open'}"
+        return f"{self.user.get_full_name()} — {self.section.name} ({period})"
 
 
 class WorkflowMember(models.Model):
@@ -63,13 +174,13 @@ class WorkflowMember(models.Model):
 
     A person is a member of at most one workflow per team
     (``workflow_member_team_user_unique``). The ``team`` column is denormalised
-    from :attr:`org.Workflow.team` at write time so that uniqueness is
+    from :attr:`organisation.Workflow.team` at write time so that uniqueness is
     enforceable at the database level rather than only in a service check that
     two concurrent requests could both pass.
     """
 
     workflow = models.ForeignKey(
-        "org.Workflow",
+        "workflows.Workflow",
         on_delete=models.CASCADE,
         related_name="workflow_members",
         help_text=(
@@ -87,7 +198,7 @@ class WorkflowMember(models.Model):
         ),
     )
     team = models.ForeignKey(
-        "org.Team",
+        "organisation.Team",
         on_delete=models.CASCADE,
         related_name="workflow_member_assignments",
         help_text=(

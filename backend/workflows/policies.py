@@ -17,7 +17,7 @@ from typing import Any
 
 from approvals.models import ApplicationStage, ApprovalDecision
 from leave.models import LeaveApplication
-from org.models import ApproverRole
+from organisation.models import ApproverRole
 from users.models import EmployeeProfile, User
 
 
@@ -108,7 +108,7 @@ def _role_for_stage(stage: ApplicationStage):
     null ``role_ref``, so the snapshotted ``role`` code is looked up instead —
     still reading the *stage*, never a live stage of a running application.
     """
-    from org.models import ApproverRole
+    from organisation.models import ApproverRole
 
     if stage.role_ref_id is not None:
         return stage.role_ref
@@ -199,7 +199,7 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         # A cancellation stage carries only the snapshotted role code and label,
         # so the scope has to be looked up by that code. A role HR has since
         # renamed still resolves, because the code is the snapshot's own value.
-        from org.models import ApproverRole
+        from organisation.models import ApproverRole
 
         role = ApproverRole.objects.filter(code=cancellation_stage.role).first()
         return ViewAccess(
@@ -333,13 +333,8 @@ def user_can_view_team_calendar(user: User, team) -> bool:
         return True
 
     from .models import WorkflowMember  # noqa: PLC0415
-    from org.models import (  # noqa: PLC0415
-        CampusRoleAssignment,
-        RoleAssignment,
-        Section,
-        SectionMember,
-        TeamRoleAssignment,
-    )
+    from organisation.models import CampusRoleAssignment, RoleAssignment, TeamRoleAssignment  # noqa: PLC0415
+    from workflows.models import Section, SectionMember  # noqa: PLC0415
 
     workflow = getattr(team, "workflow", None)
     if workflow is not None:
@@ -368,3 +363,35 @@ def user_can_view_team_calendar(user: User, team) -> bool:
     ).exists():
         return True
     return False
+
+
+def can_manage_team(user, team) -> bool:
+    """Whether ``user`` may manage ``team``'s members and workflows.
+
+    HR and superusers may manage every team. A team manager may manage only the
+    one team they hold the manager designation on (see
+    :func:`organisation.services.is_team_manager`). This is the object-level
+    companion to the coarse ``IsHROrTeamManager`` permission: it answers "…and it
+    is *your* team" for a specific team.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
+        return True
+    from organisation.services import is_team_manager  # noqa: PLC0415
+
+    return is_team_manager(user, team)
+
+
+def can_manage_workflow(user, workflow) -> bool:
+    """Whether ``user`` may manage ``workflow``: true for its owning team's manager."""
+    if workflow is None:
+        return False
+    return can_manage_team(user, workflow.team)
+
+
+def can_manage_section(user, section) -> bool:
+    """Whether ``user`` may manage ``section``: true for its workflow's team manager."""
+    if section is None:
+        return False
+    return can_manage_workflow(user, section.workflow)

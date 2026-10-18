@@ -42,10 +42,11 @@ from workflows.events import (
     register_consumer,
 )
 from approvals.models import ApplicationStage, ApprovalDecision
-from org.models import Delegation, Workflow
-from workflows.models import Reassignment
+from workflows.models import Workflow
+from approvals.models import Delegation
+from approvals.models import Reassignment
 from workflows.providers import DatabaseWorkflowProvider
-from workflows.services import decide, reassign_application
+from approvals.services import decide, reassign_application
 
 User = get_user_model()
 
@@ -113,8 +114,13 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.stub.register_employee(self.employee)
         # The approvers need employee records; the team they belong to is the
         # one HR configures next, so their profiles are placed on it afterwards.
+        # Their category matches the administration team they sit on, the same
+        # way a real placement must.
         for approver in (self.supervisor, self.hod, self.registrar, self.dvc):
-            EmployeeProfile.objects.update_or_create(user=approver, defaults={})
+            EmployeeProfile.objects.update_or_create(
+                user=approver,
+                defaults={"category": EmployeeProfile.Category.ADMINISTRATION},
+            )
         self.employee_profile = EmployeeProfile.objects.create(
             user=self.employee,
             designation="Junior Officer",
@@ -126,7 +132,11 @@ class EndToEndBase(StubProviderMixin, TestCase):
         self.team = self.hr_creates_team(CHAIN, self.chain_roles)
         self.chain = {"id": self.team["workflow"]}
         self.team_id = self.team["id"]
-        self.place_approvers_on_team()
+        # The chain's approvers are institution-wide, so they are exempt from
+        # "an approver must be a member of the team" and resolve straight off
+        # their section appointment. They are deliberately *not* placed on the
+        # roster: a wide approver staffs steps from the Approvers tab and is
+        # refused as a normal member.
         self.place_employee_on_team()
 
     def capture_events(self):
@@ -153,18 +163,17 @@ class EndToEndBase(StubProviderMixin, TestCase):
             deliver_notification(row.pk)
 
     def hr_creates_team(self, roles, approvers):
-        """HR configures the team and its chain, then puts it into force.
+        """HR creates the team and hands it to a manager, who builds the chain.
 
         This is the whole configuration sequence as the product now asks for it:
-        one request describes the team *and* the approval steps it follows,
-        because a chain is not a thing HR creates apart from a team. Each step
-        names one approver, and the team they belong to is what scopes them. The
-        team is then activated — a validated step, so a configuration still being
-        built cannot affect anyone's application.
+        HR creates the team alone and names its manager — which is the moment it
+        is in force — and the manager builds the chain it will route through.
+        Each step names one approver, and the team they belong to is what scopes
+        them.
 
-        Going through the real endpoints keeps the journey honest: an
-        activation the API refuses fails this test rather than being papered
-        over in a fixture.
+        Going through the real endpoints keeps the journey honest: a team the API
+        refuses to create fails this test rather than being papered over in a
+        fixture.
         """
         self.client.force_authenticate(user=self.hr)
         response = self.client.post(
@@ -172,46 +181,77 @@ class EndToEndBase(StubProviderMixin, TestCase):
             {
                 "name": "Administration team",
                 "description": "Administration approval chain",
-                "new_workflow": {
-                    "name": "Administration chain",
-                    "sections": [
-                        {
-                            "name": role.title(),
-                            "approver_role": role,
-                            "approver": approvers[role].id,
-                        }
-                        for role in roles
-                    ],
-                },
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(response.data["status"], "draft")
+        self.assertEqual(response.data["status"], "active")
+        team_id = response.data["id"]
 
-        activated = self.client.post(
-            f"/api/v1/teams/{response.data['id']}/activate/", format="json"
+        manager = self.designate_manager(team_id)
+        self.client.force_authenticate(user=manager)
+        chain = self.client.post(
+            "/api/v1/workflows/",
+            {
+                "team": team_id,
+                "name": "Administration chain",
+                "sections": [
+                    {
+                        "name": role.title(),
+                        "approver_role": role,
+                        "approver": approvers[role].id,
+                    }
+                    for role in roles
+                ],
+            },
+            format="json",
         )
-        self.assertEqual(activated.status_code, 200, activated.data)
-        return response.data
+        self.assertEqual(chain.status_code, 201, chain.data)
 
-    def place_approvers_on_team(self):
-        """Put the chain's approvers on the team, the way HR does it.
-
-        A step's approver is scoped by the team they sit on — that is what
-        ``same_team`` history breadth and the eligibility question are both read
-        from — so the journey places them there before anything is decided.
-        """
         self.client.force_authenticate(user=self.hr)
-        for approver in self.chain_approvers:
-            profile = approver.employee_profile
-            response = self.client.patch(
-                f"/api/v1/employees/{profile.id}/",
-                {"team": self.team_id},
-                format="json",
-            )
-            self.assertEqual(response.status_code, 200, response.data)
-            approver.refresh_from_db()
+        team = self.client.get(f"/api/v1/teams/{team_id}/")
+        self.assertEqual(team.status_code, 200, team.data)
+        return team.data
+
+    def designate_manager(self, team_id):
+        """Name ``team_id``'s manager as HR and return them.
+
+        The manager role is a team-scoped one created here rather than a shipped
+        role, because every shipped role this journey uses is institution-wide
+        and an institution-wide role cannot be a team's manager.
+        """
+        from organisation.models import ApproverRole, Team
+        from organisation.services import create_team_role_assignment
+
+        team = Team.objects.get(pk=team_id)
+        manager_role, _ = ApproverRole.objects.get_or_create(
+            code="team_manager",
+            defaults={
+                "label": "Team Manager",
+                "description": "The team's designated manager.",
+                "history_scope": ApproverRole.HistoryScope.SAME_TEAM,
+                "handles_cancellation": False,
+                "is_institution_wide": False,
+            },
+        )
+        manager = make_user(
+            "manager@luanar",
+            role=User.Role.EMPLOYEE,
+            first_name="Mona",
+            last_name="Manager",
+        )
+        EmployeeProfile.objects.update_or_create(
+            user=manager,
+            defaults={"category": EmployeeProfile.Category.ADMINISTRATION},
+        )
+        create_team_role_assignment(
+            team=team,
+            role=manager_role,
+            user=manager,
+            actor=self.hr,
+            is_team_manager=True,
+        )
+        return manager
 
     def place_employee_on_team(self):
         """Put the applicant on the team, the way HR does it."""

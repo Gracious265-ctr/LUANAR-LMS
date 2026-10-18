@@ -27,15 +27,8 @@ from django.utils import timezone
 
 from users.models import EmployeeProfile
 
-from org.models import (
-    ApproverRole,
-    Campus,
-    RoleAssignment,
-    Section,
-    SectionMember,
-    Team,
-    Workflow,
-)
+from organisation.models import ApproverRole, Campus, RoleAssignment, Team
+from workflows.models import Section, SectionMember, Workflow
 
 DEV_PASSWORD = "testpass123"
 

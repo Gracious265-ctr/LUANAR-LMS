@@ -55,7 +55,9 @@ describe("SetupHub", () => {
     expect(screen.getByRole("heading", { name: "Get started" })).toBeInTheDocument();
     expect(screen.getByText("0 of 5 done")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open a financial year/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Build a team and activate it/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Build a team and its approval chain/ })
+    ).toBeInTheDocument();
   });
 
   it("reports completion from live data", () => {

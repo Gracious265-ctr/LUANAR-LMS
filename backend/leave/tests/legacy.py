@@ -17,15 +17,8 @@ from rest_framework.test import APIClient
 from users.models import EmployeeProfile, User
 
 from audit.models import AuditEntry
-from org.models import (
-    ApproverRole,
-    Campus,
-    RoleAssignment,
-    Section,
-    SectionMember,
-    Team,
-    Workflow,
-)
+from organisation.models import ApproverRole, Campus, RoleAssignment, Team
+from workflows.models import Section, SectionMember, Workflow
 
 from ..admin import (
     FinancialYearAdmin,

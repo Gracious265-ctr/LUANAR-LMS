@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamLifecycleActions } from "@/components/hr/team-lifecycle-actions";
 import { makeTeam } from "@/lib/teams/__fixtures__";
 import type { TeamReadiness } from "@/lib/teams";
-import { activateTeam, deactivateTeam, validateTeam } from "@/lib/teams-client";
+import { deactivateTeam, validateTeam } from "@/lib/teams-client";
 
 const refresh = vi.fn();
 
@@ -16,7 +16,6 @@ vi.mock("@/lib/teams-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/teams-client")>();
   return {
     ...actual,
-    activateTeam: vi.fn(),
     deactivateTeam: vi.fn(),
     validateTeam: vi.fn(),
   };
@@ -24,7 +23,7 @@ vi.mock("@/lib/teams-client", async (importOriginal) => {
 
 const notReady: TeamReadiness = {
   team: "Bunda College Faculty",
-  status: "draft",
+  status: "active",
   ready: false,
   issues: [
     {
@@ -50,14 +49,14 @@ beforeEach(() => {
 });
 
 describe("TeamLifecycleActions", () => {
-  it("lists every reason a team cannot be put into force, in one pass", async () => {
+  it("lists every reason a team cannot route, in one pass", async () => {
     vi.mocked(validateTeam).mockResolvedValue(notReady);
     render(<TeamLifecycleActions team={makeTeam()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Check readiness" }));
 
     expect(
-      await screen.findByText(/Bunda College Faculty cannot be put into force yet/)
+      await screen.findByText(/Bunda College Faculty cannot route applications yet/)
     ).toBeInTheDocument();
     expect(screen.getByText(/Nobody can act on the "Team leader" step/)).toBeInTheDocument();
     expect(
@@ -66,10 +65,10 @@ describe("TeamLifecycleActions", () => {
     expect(screen.getByText(/Fix 2 problems/)).toBeInTheDocument();
   });
 
-  it("says so plainly when a team is ready", async () => {
+  it("says so plainly when a team can route", async () => {
     vi.mocked(validateTeam).mockResolvedValue({
       team: "Bunda College Faculty",
-      status: "draft",
+      status: "active",
       ready: true,
       issues: [],
     });
@@ -78,39 +77,21 @@ describe("TeamLifecycleActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check readiness" }));
 
     expect(
-      await screen.findByText(/Bunda College Faculty is ready to put into force/)
+      await screen.findByText(/Bunda College Faculty is ready to route applications/)
     ).toBeInTheDocument();
   });
 
-  it("shows the reasons a refused activation gave, rather than a bare failure", async () => {
-    // The backend refuses an unready activation with the same issue list the
-    // readiness check returns, so the two cannot disagree about why.
-    vi.mocked(activateTeam).mockRejectedValue(
-      Object.assign(new Error(notReady.issues[0].message), {
-        readiness: notReady,
-      })
-    );
-    render(<TeamLifecycleActions team={makeTeam()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Put into force" }));
+  it("offers no way to put a team into force", () => {
+    // Creating the team already did that, so a second button would be a second
+    // decision about something that is not a decision any more.
+    render(<TeamLifecycleActions team={makeTeam({ status: "active" })} />);
 
     expect(
-      await screen.findByText(/Bunda College Faculty cannot be put into force yet/)
-    ).toBeInTheDocument();
-    expect(refresh).not.toHaveBeenCalled();
+      screen.queryByRole("button", { name: /into force/i })
+    ).not.toBeInTheDocument();
   });
 
-  it("puts a draft team into force and refreshes", async () => {
-    vi.mocked(activateTeam).mockResolvedValue(makeTeam({ status: "active" }));
-    render(<TeamLifecycleActions team={makeTeam({ status: "draft" })} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Put into force" }));
-
-    await waitFor(() => expect(activateTeam).toHaveBeenCalledWith(4));
-    expect(refresh).toHaveBeenCalled();
-  });
-
-  it("offers retirement, not activation, once a team is in force", async () => {
+  it("offers retirement for a team in force", async () => {
     vi.mocked(deactivateTeam).mockResolvedValue(makeTeam({ status: "inactive" }));
     render(
       <TeamLifecycleActions
@@ -118,21 +99,18 @@ describe("TeamLifecycleActions", () => {
       />
     );
 
-    expect(
-      screen.queryByRole("button", { name: "Put into force" })
-    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retire team" }));
 
     await waitFor(() => expect(deactivateTeam).toHaveBeenCalledWith(4));
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("offers to bring a retired team back rather than hiding the action", async () => {
+  it("does not offer to retire a team that is already retired", () => {
     render(<TeamLifecycleActions team={makeTeam({ status: "inactive" })} />);
 
     expect(
-      screen.getByRole("button", { name: "Bring back into force" })
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Retire team" })
+    ).not.toBeInTheDocument();
   });
 
   it("reports a plain failure without pretending it knows the reasons", async () => {

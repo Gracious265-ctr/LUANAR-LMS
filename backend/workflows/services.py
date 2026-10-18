@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication
-from leave.services import date_ranges_overlap
+from leave.services import active_financial_year, date_ranges_overlap
 from users.models import EmployeeProfile, User
 
 from approvals.models import (
@@ -21,21 +21,25 @@ from approvals.models import (
     ApplicationStageApprover,
     ApprovalDecision,
 )
-from org.models import (
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    Delegation,
-    RoleAssignment,
-    Section,
-    SectionMember,
-    Team,
-    TeamRoleAssignment,
-    Workflow,
+from organisation.models import ApproverRole, Campus, CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
+from organisation.services import (
+    RoleActionError,
+    WorkflowMemberError,
+    _employee_profile_for,
+    _lookup_stage_role,
+    _member_display_name,
+    _resolve_stage_role,
+    create_team_role_assignment,
+    is_hr_actor,
+    is_team_manager,
+    wide_approver_ids_for_team,
 )
+from workflows.models import Section, SectionMember, Workflow
+from approvals.models import Delegation
 
-from .models import Reassignment, WorkflowMember
-from .policies import is_self_application
+from approvals.models import Reassignment
+from .models import WorkflowMember
+from .policies import can_manage_team, is_self_application
 from .providers import WorkflowConfigError, resolve_section_approvers
 
 
@@ -59,6 +63,43 @@ class StageSequenceError(ValueError):
         self.field = field
         self.message = message
         self.index = index
+
+
+def _require_can_manage_team(actor, team, error_cls: type[Exception]) -> None:
+    """Refuse ``actor`` unless they are HR or ``team``'s designated manager.
+
+    The service-layer half of the team-management delegation: the API scopes
+    querysets so a manager cannot *reach* another team, and this makes the write
+    itself refuse when it does — a direct service call, an internal helper, or a
+    future endpoint that skipped the scoping. ``error_cls`` lets each family of
+    operations raise the error its caller already translates.
+    """
+    if can_manage_team(actor, team):
+        return
+    raise error_cls(
+        "detail", "You do not have permission to manage this team."
+    )
+
+
+def _require_hr_actor(actor, error_cls: type[Exception]) -> None:
+    """Refuse ``actor`` unless they are HR: the identity/lifecycle guard."""
+    if is_hr_actor(actor):
+        return
+    raise error_cls("detail", "Only HR may perform this action.")
+
+
+def _require_team_manager(actor, team, error_cls: type[Exception]) -> None:
+    """Refuse ``actor`` unless they are the designated manager of ``team``.
+
+    The handover half of the team-management split: HR creates the team and
+    designates the manager, so the operations that follow — building the team's
+    chain, staffing its steps, holding its members — belong to the manager, not
+    to HR. The service layer refuses rather than the API only scoping, so an
+    internal caller cannot widen the delegation by hand.
+    """
+    if is_team_manager(actor, team) or getattr(actor, "is_superuser", False):
+        return
+    raise error_cls("detail", "Only the team manager may manage this team.")
 
 
 def normalize_section_sequence(sections: list[dict]) -> list[dict]:
@@ -184,27 +225,8 @@ def _section_role(section) -> int | str | ApproverRole | None:
     return None
 
 
-def _resolve_stage_role(value) -> ApproverRole | None:
-    """Look up an *active* :class:`ApproverRole` by code or primary key."""
-    role = _lookup_stage_role(value)
-    return role if role is not None and role.is_active else None
 
 
-def _lookup_stage_role(value) -> ApproverRole | None:
-    """Look up an :class:`ApproverRole` by code or primary key, active or not.
-
-    Callers that need to distinguish "deactivated" from "unknown" use this;
-    callers that just need a usable role use :func:`_resolve_stage_role`.
-    """
-    if isinstance(value, ApproverRole):
-        return value
-    if isinstance(value, str) and not value.strip().isdigit():
-        return ApproverRole.objects.filter(code=value).first()
-    try:
-        pk = int(value)
-    except (TypeError, ValueError):
-        return None
-    return ApproverRole.objects.filter(pk=pk).first()
 
 
 def missing_approver_roles(sections) -> list[str]:
@@ -338,196 +360,10 @@ def replace_workflow_sections(workflow: Workflow, sections) -> list[Section]:
     return list(workflow.sections.select_related("approver_role").order_by("order"))
 
 
-class DelegationActionError(ValueError):
-    """Raised when a delegation decision cannot be applied.
-
-    ``field`` is the API field the error belongs to (``"decision_reason"``,
-    ``"delegate"``, or ``"detail"``).
-    """
-
-    def __init__(self, field: str, message: str):
-        super().__init__(message)
-        self.field = field
-        self.message = message
 
 
-def is_approver_user(user) -> bool:
-    """Whether ``user`` currently holds at least one active approver role.
-
-    The one and only definition of "is an approver", replacing every former
-    role-name check. A person is an approver when they can act for at least one
-    section whose :class:`~workflows.models.ApproverRole` is active, or when
-    they hold a wide holding of an active role:
-
-    * a :class:`~workflows.models.SectionMember` row, or
-    * a :class:`~workflows.models.TeamRoleAssignment` row (team-wide), or
-    * a :class:`~workflows.models.CampusRoleAssignment` row (campus-wide), or
-    * a :class:`~workflows.models.RoleAssignment` row (institution-wide).
-
-    The wide holdings belong here for the same reason the section roster does:
-    they are what *resolves* a stage, so a campus registrar whose team's chain
-    names their role with no local appointment is an approver in every sense
-    that matters — they just never appears on a section.
-
-    Deactivating a role therefore retires the approver status it conferred, and
-    ``User.role`` is irrelevant: it records system access, not a place in an
-    approval chain.
-    """
-    if not user or not getattr(user, "is_active", False):
-        return False
-    user_id = user.pk if hasattr(user, "pk") else user
-    if user_id is None:
-        return False
-    if SectionMember.objects.effective_on().filter(
-        user_id=user_id, section__approver_role__is_active=True
-    ).exists():
-        return True
-    if TeamRoleAssignment.objects.filter(
-        user_id=user_id, role__is_active=True
-    ).exists():
-        return True
-    if CampusRoleAssignment.objects.filter(
-        user_id=user_id, role__is_active=True
-    ).exists():
-        return True
-    return RoleAssignment.objects.filter(
-        user_id=user_id, role__is_active=True
-    ).exists()
 
 
-def approver_role_codes_for(user) -> list[str]:
-    """The active approver-role codes ``user`` holds, de-duplicated and sorted.
-
-    Sorted rather than ranked so the answer is stable: a person holding several
-    roles is described the same way on every request, which matters for surfaces
-    that render a single role label (the delegation list) and for API payloads
-    that should not reshuffle between reads.
-    """
-    if not user or not getattr(user, "is_active", False):
-        return []
-    user_id = user.pk if hasattr(user, "pk") else user
-    codes = set(
-        SectionMember.objects.effective_on()
-        .filter(user_id=user_id, section__approver_role__is_active=True)
-        .values_list("section__approver_role__code", flat=True)
-    )
-    codes.update(
-        RoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__code", flat=True)
-    )
-    codes.update(
-        TeamRoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__code", flat=True)
-    )
-    codes.update(
-        CampusRoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__code", flat=True)
-    )
-    return sorted(code for code in codes if code)
-
-
-def approver_role_labels_for(user) -> list[str]:
-    """The active approver-role labels ``user`` holds, in a stable order.
-
-    Used by HR surfaces (the delegate candidate list) so a person is described by
-    the roles they actually hold rather than by a system access level.
-    """
-    if not user or not getattr(user, "is_active", False):
-        return []
-    user_id = user.pk if hasattr(user, "pk") else user
-    labels = set(
-        SectionMember.objects.effective_on()
-        .filter(user_id=user_id, section__approver_role__is_active=True)
-        .values_list("section__approver_role__label", flat=True)
-    )
-    labels.update(
-        RoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__label", flat=True)
-    )
-    labels.update(
-        TeamRoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__label", flat=True)
-    )
-    labels.update(
-        CampusRoleAssignment.objects.filter(
-            user_id=user_id, role__is_active=True
-        ).values_list("role__label", flat=True)
-    )
-    return sorted(label for label in labels if label)
-
-
-def resolve_delegate_user(approver, delegate_pk: int | None):
-    """Return the delegate user when valid, else ``None``.
-
-    A delegate must be an active user holding an approver role and must differ
-    from the approver.
-    """
-    if delegate_pk is None:
-        return None
-    try:
-        delegate = User.objects.get(pk=delegate_pk)
-    except User.DoesNotExist:
-        return None
-    if not is_approver_user(delegate):
-        return None
-    if approver is not None and delegate.pk == approver.pk:
-        return None
-    return delegate
-
-
-def open_request_exists(approver_pk: int) -> bool:
-    """True when ``approver_pk`` already has a request awaiting HR review."""
-    return Delegation.objects.filter(
-        approver_id=approver_pk, status=Delegation.Status.REQUESTED
-    ).exists()
-
-
-def effective_end(ends_on: date | None) -> date:
-    """The inclusive end of a delegation period; open-ended becomes ``date.max``."""
-    return ends_on or date.max
-
-
-def find_conflicting_delegation(
-    delegation_pk: int | None,
-    approver_pk: int,
-    starts_on: date,
-    ends_on: date | None,
-) -> Delegation | None:
-    """Another approved delegation of ``approver_pk`` overlapping the period.
-
-    A blank ``ends_on`` means open-ended (overlaps anything from ``starts_on``
-    onward). The delegation being decided (``delegation_pk``) is excluded, and
-    rejected/cancelled/ended delegations never conflict.
-    """
-    candidates = Delegation.objects.filter(
-        approver_id=approver_pk, status=Delegation.Status.APPROVED
-    )
-    if delegation_pk is not None:
-        candidates = candidates.exclude(pk=delegation_pk)
-    for candidate in candidates:
-        if date_ranges_overlap(
-            starts_on,
-            effective_end(ends_on),
-            candidate.starts_on,
-            effective_end(candidate.ends_on),
-        ):
-            return candidate
-    return None
-
-
-def active_delegation_for(approver_user) -> Delegation | None:
-    """The delegation currently covering ``approver_user``, or ``None``.
-
-    This is the Unit 21 routing boundary: pending approvals assigned to an
-    approver move to the delegate while such a delegation is active, and fall
-    back to the original approver when none is active (ended or cancelled).
-    """
-    return _active_delegation_for_id(approver_user.pk)
 
 
 def _active_delegation_for_id(approver_id: int) -> Delegation | None:
@@ -543,91 +379,6 @@ def _active_delegation_for_id(approver_id: int) -> Delegation | None:
         .order_by("-starts_on")
         .first()
     )
-
-
-def acting_approver_identity(
-    application,
-) -> tuple[int | None, str]:
-    """``(acting_approver_id, name)`` for a single application.
-
-    The display-name counterpart of :func:`acting_approver_id`, for payloads
-    that must show HR *who is actually holding* the application and not only
-    the responsible approver the spine names.
-    """
-    acting_id = acting_approver_id(application)
-    if acting_id is None:
-        return None, ""
-    user = User.objects.filter(pk=acting_id).first()
-    return acting_id, (user.get_full_name() if user is not None else "")
-
-
-def acting_approver_map(
-    applications,
-) -> dict:
-    """``{application_id: (acting_approver_id, name)}`` for a page of rows.
-
-    The bulk counterpart of :func:`acting_approver_identity`: two queries for
-    the whole page (one delegation pass, one user-name pass) instead of two per
-    application. Only applications with a resolvable responsible approver appear
-    in the map, so callers fall back to the single-row resolver for the rest.
-    """
-    responsible: dict = {}
-    for application in applications:
-        approver_id = responsible_approver_id(application)
-        if approver_id is not None:
-            responsible[application.pk] = approver_id
-
-    delegations = active_delegations_for_ids(set(responsible.values()))
-    user_ids = set(responsible.values()) | {
-        delegation.delegate_id
-        for delegation in delegations.values()
-        if delegation.delegate_id is not None
-    }
-    names = {
-        user.pk: user.get_full_name() for user in User.objects.filter(pk__in=user_ids)
-    }
-
-    resolved: dict = {}
-    for application_id, approver_id in responsible.items():
-        delegation = delegations.get(approver_id)
-        if delegation is not None and delegation.delegate_id is not None:
-            resolved[application_id] = (
-                delegation.delegate_id,
-                names.get(delegation.delegate_id, ""),
-            )
-        else:
-            resolved[application_id] = (approver_id, names.get(approver_id, ""))
-    return resolved
-
-
-def active_delegations_for_ids(
-    approver_ids: list[int] | set[int] | tuple[int, ...],
-) -> dict[int, Delegation]:
-    """The active delegation covering each of ``approver_ids``, keyed by user id.
-
-    The batched twin of :func:`_active_delegation_for_id`, for callers that
-    resolve a whole page of applications at once (HR's intervention queue) and
-    would otherwise pay one delegation query per row. Overlapping delegations
-    cannot happen per approver — the one-open-cover rule plus the approve-time
-    overlap check make the newest active row the only one — so a single pass
-    with ``-starts_on`` ordering resolves the same winner per approver.
-    """
-    if not approver_ids:
-        return {}
-    today = timezone.localdate()
-    delegations = (
-        Delegation.objects.filter(
-            approver_id__in=approver_ids,
-            status=Delegation.Status.APPROVED,
-            starts_on__lte=today,
-        )
-        .filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today))
-        .order_by("-starts_on")
-    )
-    resolved: dict[int, Delegation] = {}
-    for delegation in delegations:
-        resolved.setdefault(delegation.approver_id, delegation)
-    return resolved
 
 
 def eligible_approver_ids(application, stage=None) -> list[int]:
@@ -694,941 +445,6 @@ def user_may_act(user, application) -> bool:
     return user_id in acting_approver_ids(application)
 
 
-def responsible_approver_id(application, stage=None) -> int | None:
-    """The person who has taken up the pending stage, or the sole candidate.
-
-    Display only. An unclaimed section can have many candidates, in which case
-    there is no single "responsible" person and this returns ``None``; the
-    payloads render that as the candidate list. Authorisation never reads this.
-
-    ``stage`` is an optional already-loaded :class:`ApplicationStage`.
-    """
-    if application.current_approver_id is not None:
-        return application.current_approver_id
-    if application.current_stage_id is None:
-        return None
-    stage = stage if stage is not None else _current_stage(application)
-    if stage is None:
-        return None
-    if stage.assigned_approver_id is not None:
-        return stage.assigned_approver_id
-    eligible = stage.eligible_approver_ids()
-    return eligible[0] if len(eligible) == 1 else None
-
-
-def acting_approver_id(application, stage=None) -> int | None:
-    """The single user entitled to act now, or ``None`` when several may.
-
-    Display only; see :func:`user_may_act` for the authority check. Returns
-    ``None`` for an unclaimed section with more than one candidate, because
-    naming one of them would be a guess.
-    """
-    acting = acting_approver_ids(application, eligible_approver_ids(application, stage))
-    return acting[0] if len(acting) == 1 else None
-
-
-def acting_approver_predicate(user) -> Q:
-    """Query predicate selecting applications the user may act on now.
-
-    The user may act when the pending stage lists them as eligible — except
-    while an active delegation covers them away — and when the pending stage is
-    eligible to somebody whose active delegation names the user as delegate.
-
-    Written as explicit ``__in`` subqueries on ``current_stage_id`` rather than
-    joins through the multi-valued ``eligible_approvers`` relation: a negated
-    condition across a multi-valued join is the shape Django silently splits
-    into a subquery, and the intent here is worth stating outright.
-    """
-    today = timezone.localdate()
-    delegations = Delegation.objects.filter(
-        status=Delegation.Status.APPROVED,
-        starts_on__lte=today,
-        delegate__isnull=False,
-    ).filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today))
-    delegated_approver_ids = list(
-        delegations.values_list("approver_id", flat=True).distinct()
-    )
-    received_approver_ids = list(
-        delegations.filter(delegate=user)
-        .values_list("approver_id", flat=True)
-        .distinct()
-    )
-    own = Q(
-        current_stage_id__in=ApplicationStageApprover.objects.filter(user=user).values_list(
-            "stage_id", flat=True
-        )
-    )
-    if user.pk in delegated_approver_ids:
-        # This user is away under an active delegation, so their own eligibility
-        # does not put anything in their queue. The exclusion is scoped to
-        # *them*: subtracting every stage that also holds some other away
-        # approver would hide a section from a colleague who is available to act
-        # on it, which matters now that a section holds several people.
-        own = Q(pk__in=[])
-    acting = Q(
-        current_stage_id__in=ApplicationStageApprover.objects.filter(
-            user_id__in=received_approver_ids
-        ).values_list("stage_id", flat=True)
-    ) if received_approver_ids else Q(pk__in=[])
-    return own | acting
-
-
-def require_decision_reason(decision_reason: object) -> str:
-    """Trim and require an HR decision reason; raises ``DelegationActionError``."""
-    reason = (decision_reason or "").strip()
-    if not reason:
-        raise DelegationActionError(
-            "decision_reason", "A decision reason is required."
-        )
-    return reason
-
-
-def delegation_summary(delegation: Delegation) -> str:
-    approver = delegation.approver.get_full_name()
-    delegate = (
-        delegation.delegate.get_full_name()
-        if delegation.delegate_id
-        else "pending"
-    )
-    period = (
-        f"{delegation.starts_on.isoformat()} – "
-        f"{(delegation.ends_on.isoformat() if delegation.ends_on else 'open-ended')}"
-    )
-    return f"Delegation: {approver} → {delegate} ({period})"
-
-
-def _record_delegation_audit(
-    delegation: Delegation, *, action: str, reason: str, before: dict
-) -> None:
-    if delegation.decided_by is None:
-        return
-    after = {
-        "status": delegation.status,
-        "delegate_id": delegation.delegate_id,
-    }
-    record_audit(
-        actor=delegation.decided_by,
-        action=action,
-        target_type=AuditEntry.TargetType.DELEGATION,
-        target_id=delegation.pk,
-        target_summary=delegation_summary(delegation),
-        detail=changed_fields(before, after),
-        reason=reason,
-    )
-
-
-def _overlap_message(delegation: Delegation, conflict: Delegation) -> str:
-    """Human-readable conflict naming the other delegate and their period."""
-    return (
-        f"This period overlaps an approved delegation for "
-        f"{delegation.approver.get_full_name()} delegated to "
-        f"{conflict.delegate.get_full_name()} "
-        f"({conflict.starts_on.isoformat()} to "
-        f"{(conflict.ends_on or 'open-ended')})."
-    )
-
-
-def _lock_for_decision(delegation: Delegation) -> Delegation:
-    """Re-read ``delegation`` under lock, serialising decisions per approver.
-
-    Locking the approver row *before* the delegation row gives every decision
-    for one approver the same lock order, so two concurrent decisions cannot
-    interleave (and cannot deadlock against each other). Locking the delegation
-    alone would not be enough for ``approve``: the overlap check reads the
-    approver's *other* approved rows, which an approver-scoped lock is what
-    actually serialises.
-
-    Must be called inside ``transaction.atomic()``.
-    """
-    User.objects.select_for_update().filter(pk=delegation.approver_id).first()
-    return Delegation.objects.select_for_update().get(pk=delegation.pk)
-
-
-def approve_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
-    """Approve a requested delegation with a concrete delegate and reason."""
-    from notifications.delegations import DELEGATION_APPROVED, notify_delegation
-
-    if delegation.status != Delegation.Status.REQUESTED:
-        raise DelegationActionError(
-            "detail", "Only a requested delegation can be approved."
-        )
-    reason = require_decision_reason(data.get("decision_reason"))
-    delegate_pk = data.get("delegate").pk if data.get("delegate") else None
-    delegate = resolve_delegate_user(delegation.approver, delegate_pk)
-    if delegate is None:
-        raise DelegationActionError(
-            "delegate",
-            "Select an active user with an approver role as the delegate.",
-        )
-    # Cheap pre-check purely for a fast, friendly error on the common case; the
-    # authoritative re-check happens under the approver lock below.
-    conflict = find_conflicting_delegation(
-        delegation.pk, delegation.approver_id, delegation.starts_on, delegation.ends_on
-    )
-    if conflict is not None:
-        raise DelegationActionError("detail", _overlap_message(delegation, conflict))
-    with transaction.atomic():
-        delegation = _lock_for_decision(delegation)
-        if delegation.status != Delegation.Status.REQUESTED:
-            raise DelegationActionError(
-                "detail", "Only a requested delegation can be approved."
-            )
-        conflict = find_conflicting_delegation(
-            delegation.pk,
-            delegation.approver_id,
-            delegation.starts_on,
-            delegation.ends_on,
-        )
-        if conflict is not None:
-            raise DelegationActionError("detail", _overlap_message(delegation, conflict))
-        delegation.delegate = delegate
-        delegation.status = Delegation.Status.APPROVED
-        delegation.decision_reason = reason
-        delegation.decided_by = actor
-        delegation.decided_at = timezone.now()
-        delegation.save(
-            update_fields=[
-                "delegate",
-                "status",
-                "decision_reason",
-                "decided_by",
-                "decided_at",
-                "updated_at",
-            ]
-        )
-        _record_delegation_audit(
-            delegation,
-            action=AuditEntry.Action.APPROVED,
-            reason=reason,
-            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
-        )
-        notify_delegation(delegation.pk, DELEGATION_APPROVED)
-    return delegation
-
-
-def reject_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
-    """Reject a requested delegation with a mandatory reason."""
-    from notifications.delegations import DELEGATION_REJECTED, notify_delegation
-
-    if delegation.status != Delegation.Status.REQUESTED:
-        raise DelegationActionError(
-            "detail", "Only a requested delegation can be rejected."
-        )
-    reason = require_decision_reason(data.get("decision_reason"))
-    with transaction.atomic():
-        delegation = _lock_for_decision(delegation)
-        if delegation.status != Delegation.Status.REQUESTED:
-            raise DelegationActionError(
-                "detail", "Only a requested delegation can be rejected."
-            )
-        delegation.status = Delegation.Status.REJECTED
-        delegation.decision_reason = reason
-        delegation.decided_by = actor
-        delegation.decided_at = timezone.now()
-        delegation.save(
-            update_fields=[
-                "status",
-                "decision_reason",
-                "decided_by",
-                "decided_at",
-                "updated_at",
-            ]
-        )
-        _record_delegation_audit(
-            delegation,
-            action=AuditEntry.Action.REJECTED,
-            reason=reason,
-            before={"status": Delegation.Status.REQUESTED, "delegate_id": None},
-        )
-        notify_delegation(delegation.pk, DELEGATION_REJECTED)
-    return delegation
-
-
-def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
-    """Cancel a scheduled or active approved delegation."""
-    from notifications.delegations import DELEGATION_CANCELLED, notify_delegation
-
-    if delegation.status != Delegation.Status.APPROVED:
-        raise DelegationActionError(
-            "detail", "Only an approved delegation can be cancelled."
-        )
-    if delegation.state == "ended":
-        raise DelegationActionError(
-            "detail", "A completed delegation cannot be cancelled."
-        )
-    reason = require_decision_reason(data.get("decision_reason"))
-    with transaction.atomic():
-        delegation = _lock_for_decision(delegation)
-        # The caller's copy can go stale between the pre-check and this lock.
-        if delegation.status != Delegation.Status.APPROVED:
-            raise DelegationActionError(
-                "detail", "Only an approved delegation can be cancelled."
-            )
-        if delegation.state == "ended":
-            raise DelegationActionError(
-                "detail", "A completed delegation cannot be cancelled."
-            )
-        delegation.status = Delegation.Status.CANCELLED
-        delegation.decision_reason = reason
-        delegation.decided_by = actor
-        delegation.decided_at = timezone.now()
-        delegation.save(
-            update_fields=[
-                "status",
-                "decision_reason",
-                "decided_by",
-                "decided_at",
-                "updated_at",
-            ]
-        )
-        _record_delegation_audit(
-            delegation,
-            action=AuditEntry.Action.CANCELLED,
-            reason=reason,
-            before={"status": Delegation.Status.APPROVED},
-        )
-        notify_delegation(delegation.pk, DELEGATION_CANCELLED)
-    return delegation
-
-
-class ReassignmentError(ValueError):
-    """Raised when a reassignment cannot be applied.
-
-    ``field`` is the API field the error belongs to (``"application"``,
-    ``"to_approver"``, ``"reason"``, or ``"detail"``).
-    """
-
-    def __init__(self, field: str, message: str):
-        super().__init__(message)
-        self.field = field
-        self.message = message
-
-
-def require_reassignment_reason(reason: object) -> str:
-    """Trim and require an HR reassignment reason; raises ``ReassignmentError``."""
-    reason = (reason or "").strip()
-    if not reason:
-        raise ReassignmentError(
-            "reason", "A reassignment reason is required."
-        )
-    return reason
-
-
-class SelfApprovalBlockedError(Exception):
-    """No approver in the remaining chain may act because it is the applicant.
-
-    Raised when every remaining stage of a chain would resolve to the applicant
-    themself, so there is nobody left to route to. The mandatory stage cannot be
-    skipped (invariant 12.3) and the applicant must never approve their own
-    leave, so the operation that would have handed the application to them is
-    refused and rolled back instead. HR must correct the workflow configuration
-    or reassign the application.
-    """
-
-    def __init__(self, messages: list[str]):
-        self.messages = messages
-        super().__init__("; ".join(messages))
-
-
-def is_self_approver(user_id: int | None, application: LeaveApplication) -> bool:
-    """Whether ``user_id`` is the applicant who owns ``application``.
-
-    A thin id-based wrapper over the authoritative
-    :func:`workflows.policies.is_self_application`, for the call sites that hold
-    a user id (a resolved ``StageDefinition.approver_user_id``) rather than a
-    loaded ``User``.
-    """
-    return is_self_application(user_id, application)
-
-
-def reassign_application(
-    *,
-    application: LeaveApplication,
-    to_approver: User,
-    actor: User,
-    reason: object,
-) -> Reassignment:
-    """Reassign a pending application to a replacement approver.
-
-    Validates that the application is pending (``submitted``), the replacement
-    is an active user with an approver role, the replacement differs from the
-    current approver (when one is set) and from the applicant, and that a
-    reason is supplied. On success, records a :class:`Reassignment` history row,
-    moves ``LeaveApplication.current_approver``, and adds the replacement to the
-    open stage's eligibility snapshot.
-
-    The snapshot write is what makes the reassignment actionable: authority is
-    read from the snapshot, not from the spine, so without it the replacement
-    would be named as the owner of the application and still be refused a
-    403. The original members are kept rather than replaced — a section is
-    resolved by whoever acts first, so adding HR's replacement widens the
-    section instead of revoking the colleague who was already on it.
-    """
-    if application.status != LeaveApplication.Status.SUBMITTED:
-        raise ReassignmentError(
-            "application",
-            "Only a pending (submitted) application can be reassigned.",
-        )
-    reason = require_reassignment_reason(reason)
-    if not is_approver_user(to_approver):
-        raise ReassignmentError(
-            "to_approver",
-            "Select an active user with an approver role as the replacement.",
-        )
-    if (
-        application.current_approver is not None
-        and to_approver.pk == application.current_approver.pk
-    ):
-        raise ReassignmentError(
-            "to_approver",
-            "The application is already assigned to this approver.",
-        )
-    if is_self_approver(to_approver.pk, application):
-        raise ReassignmentError(
-            "to_approver",
-            "A pending application cannot be assigned to its own applicant.",
-        )
-    with transaction.atomic():
-        application = LeaveApplication.objects.select_for_update().get(
-            pk=application.pk
-        )
-        if application.status != LeaveApplication.Status.SUBMITTED:
-            raise ReassignmentError(
-                "application",
-                "Only a pending (submitted) application can be reassigned.",
-            )
-        from_approver = application.current_approver
-        reassignment = Reassignment.objects.create(
-            application=application,
-            from_approver=from_approver,
-            to_approver=to_approver,
-            reason=reason,
-            decided_by=actor,
-        )
-        application.current_approver = to_approver
-        application.save(update_fields=["current_approver", "updated_at"])
-        # Authority is read from the stage's eligibility snapshot, so the
-        # replacement has to be added to it. ``get_or_create`` keeps this
-        # idempotent for a second HR intervention that picks the same person.
-        if application.current_stage_id is not None:
-            ApplicationStageApprover.objects.get_or_create(
-                stage_id=application.current_stage_id,
-                user=to_approver,
-            )
-        if actor is not None:
-            record_audit(
-                actor=actor,
-                action=AuditEntry.Action.REASSIGNED,
-                target_type=AuditEntry.TargetType.REASSIGNMENT,
-                target_id=reassignment.pk,
-                target_summary=(
-                    f"Reassignment of {application.reference_number}"
-                ),
-                detail=changed_fields(
-                    {"current_approver_id": from_approver.pk if from_approver else None},
-                    {"current_approver_id": to_approver.pk},
-                ),
-                reason=reason,
-            )
-        # Both approvers' queues just changed; tell them once this is durable.
-        from notifications.reassignments import notify_reassignment
-
-        notify_reassignment(reassignment.pk)
-    return reassignment
-
-
-def assign_workflow(application):
-    """Materialise the configured section chain for ``application``.
-
-    Runs idempotently: if the current submission cycle already has stages, the
-    existing live stage is returned unchanged. Otherwise the workflow provider's
-    section definitions are validated and bulk-created with exactly one ``pending``
-    stage, and ``application.current_stage`` is pointed at it.
-
-    **The chain always starts at section one, and no section is ever skipped.**
-    A step names one person, and if that person is the applicant they cannot act
-    on their own leave, so the provider refuses to resolve the step at all and
-    submission is refused there rather than routing the application past a step
-    (invariants 12.3, 12.7). The old "start after the applicant's last stage,
-    never travelling backwards" rule is gone with the multi-approver sections it
-    existed for: there is nothing to skip, because there is nothing else in a
-    step.
-
-    Raises :class:`WorkflowAssignmentError` when the provider yields no/ill-formed
-    sections or a section cannot be resolved to at least one active user other
-    than the applicant.
-    Returns the first (pending) stage.
-    """
-    from .providers import WorkflowConfigError, get_workflow_provider
-
-    with transaction.atomic():
-        cycle = application.submission_cycle
-        existing = application.stages.filter(submission_cycle=cycle).first()
-        if existing is not None:
-            return application.current_stage
-
-        try:
-            definitions = get_workflow_provider().get_stage_definitions(application)
-        except WorkflowConfigError as exc:
-            raise WorkflowAssignmentError([str(exc)])
-        if not definitions:
-            raise WorkflowAssignmentError(["No workflow sections configured."])
-        orders = [definition.order for definition in definitions]
-        if sorted(orders) != list(range(1, len(definitions) + 1)):
-            raise WorkflowAssignmentError(
-                ["Workflow sections must be ordered 1..N."]
-            )
-        # A section nobody can act for is refused here rather than materialised
-        # and left pending forever. The provider normally raises for this, but
-        # assign_workflow is also reachable with a provider that returns a gap,
-        # and an eligibility row cannot name nobody.
-        unstaffed = [
-            f'No active approver for the "{definition.role_label}" approval section.'
-            for definition in definitions
-            if not definition.approver_user_ids and not definition.skipped
-        ]
-        if unstaffed:
-            raise WorkflowAssignmentError(unstaffed)
-
-        # Every routable definition carries at least one eligible user: the
-        # provider refuses an unsatisfiable section rather than returning a gap,
-        # and it has already removed the applicant. A *skipped* definition
-        # deliberately carries none -- nobody may act there -- so it is exempt
-        # from the check above (Unit 30).
-        #
-        # The chain's shape is therefore decided by the provider, not here. It
-        # starts at section one for an ordinary applicant, at the first stage
-        # above the applicant's own for an approver applicant, and at an appended
-        # HR stage when the applicant holds the final step.
-        last_index = len(definitions) - 1
-        # The one stage that opens pending: the lowest order the provider did not
-        # skip. Every provider must leave at least one routable stage, or there
-        # is nothing to decide -- the HR destination is what stops that happening
-        # when the applicant holds the final step.
-        pending_order = min(
-            (d.order for d in definitions if not d.skipped),
-            default=None,
-        )
-        if pending_order is None:
-            raise WorkflowAssignmentError(
-                ["This workflow has no approval stage left for HR to decide."]
-            )
-        stages = [
-            ApplicationStage(
-                application=application,
-                submission_cycle=cycle,
-                stage_order=definition.order,
-                role=definition.role,
-                role_label=definition.role_label,
-                role_ref_id=definition.role_id,
-                history_scope=definition.history_scope or "",
-                handles_cancellation=definition.handles_cancellation,
-                section_ref_id=definition.section_id,
-                assigned_approver=None,
-                status=_initial_stage_status(definition, pending_order),
-                skip_reason=definition.skip_reason,
-                is_final=index == last_index,
-            )
-            for index, definition in enumerate(definitions)
-        ]
-
-        ApplicationStage.objects.bulk_create(stages)
-
-        # Snapshot who may act on each section, now. This is what makes an
-        # in-flight application immune to later membership edits (invariant
-        # 12.5) and what self-approval is enforced through.
-        ApplicationStageApprover.objects.bulk_create(
-            ApplicationStageApprover(stage=stage, user_id=user_id)
-            for stage, definition in zip(stages, definitions)
-            for user_id in definition.approver_user_ids
-        )
-
-        # The application opens at the stage that was materialised pending, not
-        # at the first stage in the chain: a chain that starts with skipped stages
-        # has to point at the one somebody can act on (Unit 30).
-        opening = next(
-            stage
-            for stage in stages
-            if stage.status == ApplicationStage.Status.PENDING
-        )
-        application.current_stage = opening
-        application.current_approver = None
-        application.save(update_fields=["current_stage", "current_approver", "updated_at"])
-        _record_skipped_stages(application, stages)
-        return opening
-
-
-def _record_skipped_stages(application, stages) -> None:
-    """Audit the stages an application was not routed through (Unit 30).
-
-    Written by the applicant, because the applicant is who caused it: their own
-    position decided the chain. Without this the audit trail would show a chain
-    starting at stage two with nothing saying why, which is the one question an
-    audit exists to answer.
-    """
-    skipped = [
-        {
-            "order": stage.stage_order,
-            "role_label": stage.role_label,
-            "reason": stage.skip_reason,
-        }
-        for stage in stages
-        if stage.status == ApplicationStage.Status.SKIPPED
-    ]
-    if not skipped:
-        return
-    orders = ", ".join(str(entry["order"]) for entry in skipped)
-    record_audit(
-        actor=application.employee,
-        action=AuditEntry.Action.STAGE_SKIPPED,
-        target_type=AuditEntry.TargetType.APPLICATION,
-        target_id=application.pk,
-        target_summary=(
-            f"{application.reference_number}: stage(s) {orders} skipped"
-        ),
-        detail={
-            "stages": skipped,
-            "reason": "The applicant's own position is at or below this stage.",
-        },
-    )
-
-
-def _initial_stage_status(definition, pending_order: int) -> str:
-    """The status a freshly materialised stage starts in.
-
-    Driven by the definition rather than by its position (Unit 30). The provider
-    decides which stage the application actually opens at:
-
-    * a **skipped** stage is born ``SKIPPED`` -- terminal, carrying the reason the
-      provider recorded. It is never pending, so it never reaches an approver's
-      queue and never raises a notification;
-    * the first stage the provider did not skip is ``PENDING`` and the rest are
-      ``WAITING``. For an ordinary applicant that is section one; for an approver
-      applicant it is the first stage above their own.
-    """
-    if definition.skipped:
-        return ApplicationStage.Status.SKIPPED
-    if definition.order == pending_order:
-        return ApplicationStage.Status.PENDING
-    return ApplicationStage.Status.WAITING
-
-
-class ApprovalNotFoundError(Exception):
-    """The application does not exist or is not viewable by the approver."""
-
-
-class ApprovalNotAllowedError(Exception):
-    """The approver may not decide right now; carries a reason code."""
-
-    def __init__(self, reason: str):
-        self.reason = reason
-        super().__init__(reason)
-
-
-class ApprovalStageChangedError(Exception):
-    """The stage was already decided by someone else (stale/conflict, 409)."""
-
-
-class ApprovalConflictError(Exception):
-    """Approving would over-subscribe the applicant's team on some day.
-
-    A hard block enforced at every stage (UI/UX Phase 2, spec 3.2): the same
-    number the team calendar flags is refused here, so a client cannot skip the
-    rule. Carries the :class:`leave.conflicts.TeamConflict` that stopped it.
-    """
-
-    def __init__(self, conflict):
-        self.conflict = conflict
-        super().__init__("approval_conflict")
-
-
-class ApprovalValidationError(ValueError):
-    """Invalid action or comment; carries a dict of field errors."""
-
-    def __init__(self, errors: dict):
-        self.errors = errors
-        super().__init__(str(errors))
-
-
-def _next_activatable_stage(application, decided_stage):
-    """The next stage to activate after ``decided_stage`` was approved.
-
-    The first stage above ``decided_stage`` that is still waiting. A **skipped**
-    stage is never activated (Unit 30): it resolves nobody by construction, so
-    activating it would strand the chain, and continuing past it is the whole
-    point of having skipped it in the first place. It is still looked up under a
-    row lock and its eligibility re-checked, because a stage with no one able to
-    act is a chain that cannot finish and must be reported rather than activated
-    as a dead end.
-
-    Raises ``ApprovalValidationError`` when the chain simply ends or when only
-    skipped stages remain, and :class:`SelfApprovalBlockedError` when the next
-    stage has no eligible approver — which can only happen on a chain materialised
-    before sections, where the applicant used to be skipped forward over.
-
-    Must be called inside ``transaction.atomic()``.
-    """
-    remaining = list(
-        ApplicationStage.objects.select_for_update()
-        .filter(
-            application=application,
-            submission_cycle=application.workflow_chain_cycle,
-            stage_order__gt=decided_stage.stage_order,
-        )
-        .order_by("stage_order")
-    )
-    if not remaining:
-        raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
-
-    candidate = next(
-        (
-            stage
-            for stage in remaining
-            if stage.status == ApplicationStage.Status.WAITING
-        ),
-        None,
-    )
-    if candidate is None:
-        raise ApprovalValidationError({"action": "Workflow chain is incomplete."})
-    if not candidate.eligible_approvers.exists():
-        raise SelfApprovalBlockedError(
-            [
-                "This application cannot be advanced: nobody can act on the "
-                f"{candidate.role_label} stage, so there is no approver left to "
-                "sign it off. An approver cannot approve their own leave "
-                "application, and a mandatory section cannot be skipped. Human "
-                "Resources must appoint another member of that section, or change "
-                "the workflow, before this application can be decided."
-            ]
-        )
-    return candidate
-
-
-def decide(*, application_id, actor, action: str, comment: str = "", expected_version: int):
-    """Record one decision and advance the application (Unit 16, spec 6.3).
-
-    Runs in one transaction under a row lock on both the application and its
-    current stage. Writes exactly one immutable :class:`ApprovalDecision`,
-    transitions stage/application state, increments ``decision_version``, and
-    emits the approval event on commit.
-
-    Raises ``ApprovalNotFoundError`` (404), ``ApprovalValidationError`` (400),
-    ``ApprovalNotAllowedError`` (403) or ``ApprovalStageChangedError`` (409).
-    Returns the persisted application.
-    """
-    from .events import (
-        APPLICATION_FINALISED,
-        DECISION_RECORDED,
-        ApprovalEvent,
-        emit_approval_event,
-    )
-    from .policies import get_decision_authority
-
-    if action not in ApprovalDecision.Action.values:
-        raise ApprovalValidationError({"action": "Must be approve, reject or return_for_correction."})
-
-    comment = (comment or "").strip()
-    if len(comment) > 1000:
-        raise ApprovalValidationError({"comment": "Must be at most 1000 characters."})
-    if action in (ApprovalDecision.Action.REJECT, ApprovalDecision.Action.RETURN_FOR_CORRECTION) and not comment:
-        raise ApprovalValidationError(
-            {"comment": "A comment is required when rejecting or returning for correction."}
-        )
-
-    from .policies import get_decision_authority as _authority
-
-    app = None
-    with transaction.atomic():
-        app = LeaveApplication.objects.select_for_update().filter(id=application_id).first()
-        if app is None:
-            raise ApprovalNotFoundError()
-
-        if app.status == LeaveApplication.Status.CANCELLED:
-            # Unit 18: a withdrawn or cancelled application can never be decided
-            # again; surface as a conflict so clients can refresh.
-            raise ApprovalStageChangedError()
-
-        if app.current_stage_id is None:
-            raise ApprovalNotAllowedError("application_closed")
-
-        stage = (
-            ApplicationStage.objects.select_for_update()
-            .filter(pk=app.current_stage_id)
-            .first()
-        )
-        # The live chain lives under ``workflow_chain_cycle`` (stages are reused
-        # across resubmission cycles per Unit 17); the guard must not compare
-        # against ``app.submission_cycle``, which increments on resubmission.
-        if stage is None or stage.submission_cycle != app.workflow_chain_cycle:
-            raise ApprovalNotAllowedError("application_closed")
-
-        if stage.decision_version != expected_version:
-            raise ApprovalStageChangedError()
-
-        if ApprovalDecision.objects.filter(
-            application=app,
-            approver=actor,
-            submission_cycle=app.submission_cycle,
-        ).exists():
-            raise ApprovalStageChangedError()
-
-        authority = _authority(actor, app)
-        if not authority.can_decide:
-            raise ApprovalNotAllowedError(authority.reason or "not_current_stage")
-        if stage.status != ApplicationStage.Status.PENDING:
-            raise ApprovalNotAllowedError("already_decided")
-
-        if action == ApprovalDecision.Action.APPROVE:
-            # UI/UX Phase 2, spec 3.2: an approval that would leave the
-            # applicant's team over-subscribed on any day is refused, at every
-            # stage, from the same number the team calendar shows. Imported here
-            # because ``leave.conflicts`` reaches back into leave models.
-            from leave.conflicts import find_team_conflict  # noqa: PLC0415
-
-            conflict = find_team_conflict(app)
-            if conflict is not None:
-                raise ApprovalConflictError(conflict)
-
-        before_status = app.status
-        before_order = stage.stage_order
-        before_version = stage.decision_version
-
-        # Claim the stage by acting on it. A section is open to all of its
-        # members, so this is the moment the stage stops being open: the
-        # ``select_for_update`` above is what makes the claim exclusive, and the
-        # optimistic ``decision_version`` check refuses the loser of a race with
-        # 409 rather than letting two people decide the same section.
-        stage.assigned_approver = actor
-        app.current_approver = actor
-
-        ApprovalDecision.objects.create(
-            application=app,
-            stage=stage,
-            approver=actor,
-            approver_name=actor.get_full_name(),
-            role_label=stage.role_label,
-            action=action,
-            comment=comment,
-            submission_cycle=app.submission_cycle,
-        )
-
-        stage.decision_version = before_version + 1
-        next_stage = None
-        if action == ApprovalDecision.Action.APPROVE:
-            stage.status = ApplicationStage.Status.APPROVED
-            if stage.is_final:
-                app.status = LeaveApplication.Status.APPROVED
-            else:
-                next_stage = _next_activatable_stage(app, stage)
-                next_stage.status = ApplicationStage.Status.PENDING
-        elif action == ApprovalDecision.Action.REJECT:
-            stage.status = ApplicationStage.Status.REJECTED
-            app.status = LeaveApplication.Status.REJECTED
-        else:
-            stage.status = ApplicationStage.Status.CORRECTION_REQUESTED
-            app.status = LeaveApplication.Status.CORRECTION_REQUIRED
-
-        # Persist the decided stage first so a single ``pending`` stage always
-        # exists at any one moment (enforced by the partial unique constraint).
-        stage.save(
-            update_fields=[
-                "status",
-                "decision_version",
-                "assigned_approver",
-                "updated_at",
-            ]
-        )
-        if next_stage is not None:
-            next_stage.save(update_fields=["status", "decision_version", "updated_at"])
-            app.current_stage = next_stage
-            # The spine follows the stage. The next section is open, so nobody has
-            # taken it up yet and ``current_approver`` is cleared: its members
-            # are read from the stage's eligibility snapshot.
-            app.current_approver = None
-
-        after_status = app.status
-        after_order = (
-            app.current_stage.stage_order
-            if app.current_stage_id is not None
-            else stage.stage_order
-        )
-        # Unit 23b (D3): stamp the final approval once, in the same save, so the
-        # document can state when the leave was approved and the date can never
-        # disagree with the status.
-        finalised = after_status == LeaveApplication.Status.APPROVED
-        if finalised and app.approved_on is None:
-            app.approved_on = timezone.now()
-        app.save(
-            update_fields=[
-                "status",
-                "current_stage",
-                "current_approver",
-                "approved_on",
-                "updated_at",
-            ]
-        )
-
-        if finalised:
-            # Unit 25 (D4) + Unit 23b (D8): the ledger deduction and the
-            # approved-document record are both business consequences of the
-            # final approval, so they are written inside this transaction and a
-            # failure in either rolls the approval back. The render itself is
-            # enqueued on commit, so the document is a retryable derived
-            # artifact rather than part of the atomic unit.
-            from leave.services.finalise import finalise_approved_application
-
-            finalise_approved_application(app)
-
-        record_audit(
-            actor=actor,
-            action=_audit_action(action),
-            target_type=AuditEntry.TargetType.APPLICATION,
-            target_id=app.pk,
-            target_summary=app.reference_number,
-            detail=changed_fields(
-                {
-                    "status": before_status,
-                    "current_stage_order": before_order,
-                    "decision_version": before_version,
-                },
-                {
-                    "status": after_status,
-                    "current_stage_order": after_order,
-                    "decision_version": stage.decision_version,
-                },
-            ),
-            reason=comment,
-        )
-
-        event = ApprovalEvent(
-            kind=(
-                APPLICATION_FINALISED
-                if after_status == LeaveApplication.Status.APPROVED
-                else DECISION_RECORDED
-            ),
-            application_id=str(app.pk),
-            reference_number=app.reference_number or "",
-            action=action,
-            stage_order=stage.stage_order,
-            role_label=stage.role_label,
-            approver_id=actor.id,
-            approver_name=actor.get_full_name(),
-            comment=comment,
-            submission_cycle=app.submission_cycle,
-        )
-        transaction.on_commit(lambda e=event: emit_approval_event(e))
-
-    return app
-
-
-def _audit_action(action: str) -> str:
-    mapping = {
-        ApprovalDecision.Action.APPROVE: AuditEntry.Action.APPROVED,
-        ApprovalDecision.Action.REJECT: AuditEntry.Action.REJECTED,
-        ApprovalDecision.Action.RETURN_FOR_CORRECTION: AuditEntry.Action.CORRECTION_REQUESTED,
-    }
-    return mapping[action]
-
 # ---------------------------------------------------------------------------
 # Approver roles, role assignments, and teams (HR-managed configuration).
 #
@@ -1636,744 +452,50 @@ def _audit_action(action: str) -> str:
 # records one audit entry, and refuses any state that would leave a workflow
 # stage or a routing decision unresolvable.
 # ---------------------------------------------------------------------------
-class RoleActionError(ValueError):
-    """Raised when an approver-role write cannot be applied.
-
-    ``field`` is the API field the error belongs to (``"detail"`` when the
-    problem is the role's state rather than one submitted value).
-    """
-
-    def __init__(self, field: str, message: str):
-        super().__init__(message)
-        self.field = field
-        self.message = message
-
-
-def role_usage_map(roles) -> dict[int, list[str]]:
-    """``_role_usage`` for a whole queryset, in a fixed number of queries.
-
-    The Roles screen renders usage for every role at once, and the naive
-    per-role version cost one query per blocker per role — 69 queries to
-    serialize six roles, and worse as HR adds more. Collecting each blocker
-    kind for all roles at once and assembling the sentences in Python makes the
-    list cost three queries no matter how many roles it holds.
-    """
-    role_ids = {role.pk for role in roles}
-    usage: dict[int, list[str]] = {pk: [] for pk in role_ids}
-    if not role_ids:
-        return usage
-
-    # A section and its members are one blocker from HR's point of view: the
-    # workflow uses this role. Grouping by workflow and merging into a single
-    # clause avoids telling HR the same workflow is a problem twice.
-    section_rows = (
-        Section.objects.filter(
-            approver_role_id__in=role_ids,
-            workflow__is_active=True,
-            is_active=True,
-        )
-        .values("approver_role_id", "workflow_id", "workflow__name")
-        .annotate(count=Count("id"))
-        .order_by("workflow__name", "workflow_id")
-    )
-    section_counts: dict[tuple[int, str], int] = {}
-    workflow_names: dict[tuple[int, str], str] = {}
-    for row in section_rows:
-        key = (row["approver_role_id"], row["workflow_id"])
-        section_counts[key] = row["count"]
-        workflow_names[key] = row["workflow__name"]
-
-    member_rows = (
-        SectionMember.objects.filter(
-            section__approver_role_id__in=role_ids,
-            section__is_active=True,
-            section__workflow__is_active=True,
-        )
-        .values(
-            "section__approver_role_id",
-            "section__workflow_id",
-        )
-        .annotate(count=Count("id"))
-    )
-    member_counts: dict[tuple[int, str], int] = {
-        (row["section__approver_role_id"], row["section__workflow_id"]): row["count"]
-        for row in member_rows
-    }
-
-    for key, section_total in section_counts.items():
-        parts = [f"{section_total} section" + ("" if section_total == 1 else "s")]
-        members = member_counts.get(key, 0)
-        if members:
-            parts.append(f"{members} member" + ("" if members == 1 else "s"))
-        usage[key[0]].append(
-            f"the '{workflow_names[key]}' workflow ({' and '.join(parts)})"
-        )
-
-    holders = (
-        RoleAssignment.objects.filter(role_id__in=role_ids, user__is_active=True)
-        .select_related("user")
-        .order_by("user_id")
-    )
-    for assignment in holders:
-        name = assignment.user.get_full_name() or assignment.user.username
-        usage[assignment.role_id].append(f"{name}, who holds it institution-wide")
-
-    return usage
-
-
-def _role_usage(role: ApproverRole) -> list[str]:
-    """Human-readable sentences naming everything currently using ``role``.
-
-    Each clause names the specific blocker and its size, so a refused
-    deactivation tells HR exactly which workflows, teams, and people to fix
-    instead of just saying "in use".
-    """
-    return role_usage_map([role]).get(role.pk, [])
-
-
-def ensure_role_not_in_use(role: ApproverRole) -> None:
-    """Refuse while an active workflow stage, team member, or holder uses the role."""
-    clauses = _role_usage(role)
-    if not clauses:
-        return
-    raise RoleActionError(
-        "detail",
-        f"This role cannot be deactivated because it is used by "
-        f"{', and by '.join(clauses)}. Remove those references first, or "
-        "deactivate the workflow or team instead.",
-    )
-
-
-def role_code_from_name(name: object) -> str:
-    """Derive a role's stable code from its name, uniquely.
-
-    The code is what a workflow stage keys off and what historical stage
-    snapshots quote, so it has to exist and has to be unique — but asking HR to
-    type one alongside the name is asking for the same word twice, and for the
-    two to disagree. Deriving it removes that class of mistake entirely.
-
-    Uniqueness is checked against the table rather than assumed, because
-    slugifying two different names ("Head of Department" and "Head of
-    Departments") gives the same code.
-    """
-    cleaned = (name or "").strip() if isinstance(name, str) else ""
-    if not cleaned:
-        raise RoleActionError("label", "Enter a role name.")
-    base = slugify(cleaned)
-    if not base:
-        raise RoleActionError(
-            "label",
-            "The role name must contain a letter or number to form its code.",
-        )
-    code = base[:50]
-    suffix = 2
-    while ApproverRole.objects.filter(code=code).exists():
-        tail = f"-{suffix}"
-        code = f"{base[: 50 - len(tail)]}{tail}"
-        suffix += 1
-    return code
-
-
-def create_approver_role(*, actor, data: dict) -> ApproverRole:
-    """Create one approver role from its name, and audit it.
-
-    Only the name is HR's to give. ``code`` is derived from it (see
-    :func:`role_code_from_name`), and the behavioural fields — history scope,
-    cancellation handling, institution-wide eligibility — are left at their
-    defaults and changed later through the role's own edit, by somebody who has
-    the context to decide them.
-
-    Deriving rather than asking is what keeps a role from existing in two
-    incompatible states: a name that says "Vice Chancellor" beside a code that
-    says ``vc``, where the label is what every screen shows and the code is what
-    every rule reads.
-    """
-    data = dict(data)
-    label = (data.get("label") or "").strip()
-    if not label:
-        raise RoleActionError("label", "Enter a role name.")
-    data["label"] = label
-    data["code"] = role_code_from_name(label)
-    for field in (
-        "history_scope",
-        "handles_cancellation",
-        "is_institution_wide",
-        "is_active",
-    ):
-        data.pop(field, None)
-    with transaction.atomic():
-        role = ApproverRole.objects.create(**data)
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CREATED,
-            target_type=AuditEntry.TargetType.APPROVER_ROLE,
-            target_id=role.pk,
-            target_summary=role.label,
-            detail={"before": None, "after": _role_snapshot(role)},
-        )
-    return role
-
-
-def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRole:
-    """Update a role's editable fields and audit the change.
-
-    ``code`` is immutable once anything references the role, because workflow
-    stages, team members, and historical stage snapshots all key off it; HR
-    edits ``label``, ``description``, ``history_scope``, and
-    ``handles_cancellation`` here. ``is_institution_wide`` is deliberately not
-    one of them: a role's scope is decided by where it is held, on the Approvers
-    page — it becomes institution-wide the moment its first institution-wide
-    holder is assigned, not from a checkbox on this screen.
-
-    ``is_active`` is deliberately *not* handled here: retiring a role runs the
-    in-use check, so it has its own action.
-    """
-    with transaction.atomic():
-        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
-        before = _role_snapshot(role)
-        if "code" in data and data["code"] != before["code"]:
-            raise RoleActionError(
-                "code",
-                "The role code cannot be changed once the role is referenced by a "
-                "workflow stage, a team member, or a role assignment. Create a new "
-                "role instead and retire this one.",
-            )
-        data.pop("code", None)
-        data.pop("is_active", None)
-        if (
-            data.get("is_institution_wide", before["is_institution_wide"])
-            != before["is_institution_wide"]
-        ):
-            raise RoleActionError(
-                "is_institution_wide",
-                "A role's scope is decided on the Approvers page: the role "
-                "becomes institution-wide when its first institution-wide holder "
-                "is assigned there. It is not toggled from the role itself.",
-            )
-        data.pop("is_institution_wide", None)
-        for field, value in data.items():
-            setattr(role, field, value)
-        role.save()
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.UPDATED,
-            target_type=AuditEntry.TargetType.APPROVER_ROLE,
-            target_id=role.pk,
-            target_summary=role.label,
-            detail=changed_fields(before, _role_snapshot(role)),
-        )
-    return role
-
-
-def deactivate_approver_role(*, role: ApproverRole, actor) -> ApproverRole:
-    """Soft-retire a role, refusing while anything still uses it."""
-    if not role.is_active:
-        return role
-    ensure_role_not_in_use(role)
-    with transaction.atomic():
-        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
-        if not role.is_active:
-            return role
-        ensure_role_not_in_use(role)
-        before = _role_snapshot(role)
-        role.is_active = False
-        role.save(update_fields=["is_active", "updated_at"])
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CANCELLED,
-            target_type=AuditEntry.TargetType.APPROVER_ROLE,
-            target_id=role.pk,
-            target_summary=role.label,
-            detail=changed_fields(before, _role_snapshot(role)),
-            reason="Role deactivated by HR.",
-        )
-    return role
-
-
-def _role_snapshot(role: ApproverRole) -> dict:
-    return {
-        "code": role.code,
-        "label": role.label,
-        "description": role.description,
-        "is_active": role.is_active,
-        "history_scope": role.history_scope,
-        "handles_cancellation": role.handles_cancellation,
-        "is_institution_wide": role.is_institution_wide,
-    }
-
-
-def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssignment:
-    """Assign an institution-wide role to a user and audit it.
-
-    The first institution-wide holder is what *makes* a role institution-wide:
-    assigning holder number one to a team role on the Approvers page is the
-    decision that the role covers every application — not a checkbox on the
-    role's own editor (which no longer offers one). The role is promoted in the
-    same atomic step as the holding, and the promotion is refused only while the
-    role is still held on a team or campus, because a role cannot be held wide
-    at a scope *and* institution-wide at once.
-
-    A role has exactly one institution-wide approver: once a holding exists this
-    single write is refused for any other person, naming the current holder. A
-    role is never assigned to a second approver — changing who holds it is a
-    remove first, then a fresh assignment.
-    """
-    with transaction.atomic():
-        role = ApproverRole.objects.select_for_update().get(pk=role.pk)
-        role.full_clean(exclude=["code", "label"])
-        if not role.is_active:
-            raise RoleActionError(
-                "role",
-                f'"{role.label}" is deactivated. Reactivate it in Roles, or pick '
-                "an active role.",
-            )
-        if not role.is_institution_wide:
-            if (
-                TeamRoleAssignment.objects.filter(role=role).exists()
-                or CampusRoleAssignment.objects.filter(role=role).exists()
-            ):
-                raise RoleActionError(
-                    "role",
-                    f'"{role.label}" is already held on a team or campus. Remove '
-                    "those holders under Approvers first — a role held wide at a "
-                    "team or campus cannot be held institution-wide too.",
-                )
-            before = _role_snapshot(role)
-            role.is_institution_wide = True
-            role.save(update_fields=["is_institution_wide", "updated_at"])
-            record_audit(
-                actor=actor,
-                action=AuditEntry.Action.UPDATED,
-                target_type=AuditEntry.TargetType.APPROVER_ROLE,
-                target_id=role.pk,
-                target_summary=role.label,
-                detail=changed_fields(before, _role_snapshot(role)),
-                reason=(
-                    f'"{role.label}" named institution-wide by its first '
-                    "institution-wide holder on the Approvers page."
-                ),
-            )
-        if not user.is_active:
-            raise RoleActionError(
-                "user",
-                f"{user.get_full_name() or user.username} is not an active user. "
-                "Activate the account before assigning a role.",
-            )
-        current_holder = (
-            RoleAssignment.objects.select_for_update().filter(role=role).first()
-        )
-        if current_holder is not None and current_holder.user_id != user.pk:
-            raise RoleActionError(
-                "role",
-                f'"{role.label}" is already held institution-wide by '
-                f"{current_holder.user.get_full_name() or current_holder.user.username}. "
-                "A role has one institution-wide approver; remove that holder under "
-                "Approvers first, then assign another.",
-            )
-        _ensure_single_wide_holding(user, exclude_role=role)
-        assignment, created = RoleAssignment.objects.get_or_create(
-            user=user, role=role
-        )
-        if not created:
-            raise RoleActionError(
-                "user",
-                f"{user.get_full_name() or user.username} already holds the "
-                f"{role.label} role.",
-            )
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CREATED,
-            target_type=AuditEntry.TargetType.APPROVER_ROLE,
-            target_id=role.pk,
-            target_summary=role.label,
-            detail=changed_fields(
-                {},
-                {
-                    "user_id": user.pk,
-                    "user": user.get_full_name() or user.username,
-                    "assignment_id": assignment.pk,
-                },
-            ),
-            reason=(
-                f"{user.get_full_name() or user.username} assigned the "
-                f"{role.label} role institution-wide."
-            ),
-        )
-    return assignment
-
-
-def remove_role_assignment(*, assignment: RoleAssignment, actor) -> RoleAssignment:
-    """Remove an institution-wide role holding and audit it."""
-    with transaction.atomic():
-        user = assignment.user
-        role = assignment.role
-        detail = changed_fields(
-            {
-                "user_id": user.pk,
-                "user": user.get_full_name() or user.username,
-                "assignment_id": assignment.pk,
-            },
-            {},
-        )
-        assignment.delete()
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CANCELLED,
-            target_type=AuditEntry.TargetType.APPROVER_ROLE,
-            target_id=role.pk,
-            target_summary=role.label,
-            detail=detail,
-            reason=(
-                f"{user.get_full_name() or user.username} no longer holds the "
-                f"{role.label} role."
-            ),
-        )
-    return assignment
-
-
-def create_team_role_assignment(
-    *, team: Team, role: ApproverRole, user: User, actor
-) -> TeamRoleAssignment:
-    """Give a role one team-wide holder, replacing any existing one.
-
-    One holder per role per team is a constraint rather than a default: a team
-    whose role has two wide holders would resolve a stage to a person nobody
-    can name, and the resolution rule refuses ties anyway. So writing a second
-    holder *is* the replacement — HR picks the role and the person in one
-    screen, and saving it moves the holding rather than asking for a delete
-    first.
-
-    Refuses an institution-wide role (that holding lives under Approvers), a
-    retired role, and a holder whose category does not match the team's, and
-    audits both the appointment and the replacement.
-    """
-    with transaction.atomic():
-        _ensure_wide_role(role, user, "team")
-        profile = user.employee_profile
-        if profile.category != team.category:
-            raise RoleActionError(
-                "user",
-                f"{user.get_full_name() or user.username} is an "
-                f"{profile.get_category_display()} employee, but \"{team.name}\" "
-                f"is an {team.get_category_display()} team. A team-wide approver "
-                f"must match the team's category.",
-            )
-        _ensure_single_wide_holding(user, exclude_role=role, exclude_team=team)
-        previous = (
-            TeamRoleAssignment.objects.select_for_update()
-            .filter(team=team, role=role)
-            .first()
-        )
-        before = None
-        if previous is not None:
-            if previous.user_id == user.pk:
-                raise RoleActionError(
-                    "user",
-                    f"{user.get_full_name() or user.username} already holds the "
-                    f"{role.label} role on {team.name}.",
-                )
-            before = _team_assignment_snapshot(previous)
-            previous.user = user
-            previous.save(update_fields=["user"])
-            assignment = previous
-        else:
-            assignment = TeamRoleAssignment.objects.create(
-                team=team, role=role, user=user
-            )
-        record_audit(
-            actor=actor,
-            action=(
-                AuditEntry.Action.UPDATED
-                if before is not None
-                else AuditEntry.Action.CREATED
-            ),
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=team.pk,
-            target_summary=team.name,
-            detail=changed_fields(
-                before or {},
-                _team_assignment_snapshot(assignment),
-            ),
-            reason=(
-                f"{user.get_full_name() or user.username} holds {role.label} "
-                f"for the {team.name} team."
-            ),
-        )
-    return assignment
-
-
-def remove_team_role_assignment(*, assignment: TeamRoleAssignment, actor) -> None:
-    """Drop a team-wide holding and audit it."""
-    with transaction.atomic():
-        team = assignment.team
-        role = assignment.role
-        detail = changed_fields(_team_assignment_snapshot(assignment), {})
-        assignment.delete()
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CANCELLED,
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=team.pk,
-            target_summary=team.name,
-            detail=detail,
-            reason=f"{role.label} no longer has a team-wide holder on {team.name}.",
-        )
-
-
-def create_campus_role_assignment(
-    *, campus: Campus, role: ApproverRole, user: User, actor
-) -> CampusRoleAssignment:
-    """Give a role one campus-wide holder, replacing any existing one.
-
-    Scoped to the campus, which is what makes it apply to every team *at* that
-    campus and to no team anywhere else. Same one-holder rule and same
-    replacement semantics as the team-wide holding.
-
-    Every team at a campus is an academic team — an administration team is never
-    campus-based — so the holder is refused unless they are an Academic
-    employee.
-    """
-    with transaction.atomic():
-        _ensure_wide_role(role, user, "campus")
-        profile = user.employee_profile
-        if profile.category != EmployeeProfile.Category.ACADEMIC:
-            raise RoleActionError(
-                "user",
-                f"{user.get_full_name() or user.username} is an "
-                f"{profile.get_category_display()} employee. Every team at a "
-                f"campus is an academic team, so a campus-wide approver must be "
-                f"an Academic employee.",
-            )
-        _ensure_single_wide_holding(user, exclude_role=role, exclude_campus=campus)
-        previous = (
-            CampusRoleAssignment.objects.select_for_update()
-            .filter(campus=campus, role=role)
-            .first()
-        )
-        before = None
-        if previous is not None:
-            if previous.user_id == user.pk:
-                raise RoleActionError(
-                    "user",
-                    f"{user.get_full_name() or user.username} already holds the "
-                    f"{role.label} role at {campus.name}.",
-                )
-            before = _campus_assignment_snapshot(previous)
-            previous.user = user
-            previous.save(update_fields=["user"])
-            assignment = previous
-        else:
-            assignment = CampusRoleAssignment.objects.create(
-                campus=campus, role=role, user=user
-            )
-        record_audit(
-            actor=actor,
-            action=(
-                AuditEntry.Action.UPDATED
-                if before is not None
-                else AuditEntry.Action.CREATED
-            ),
-            target_type=AuditEntry.TargetType.CAMPUS,
-            target_id=campus.pk,
-            target_summary=campus.name,
-            detail=changed_fields(
-                before or {},
-                _campus_assignment_snapshot(assignment),
-            ),
-            reason=(
-                f"{user.get_full_name() or user.username} holds {role.label} "
-                f"at {campus.name}."
-            ),
-        )
-    return assignment
-
-
-def remove_campus_role_assignment(*, assignment: CampusRoleAssignment, actor) -> None:
-    """Drop a campus-wide holding and audit it."""
-    with transaction.atomic():
-        campus = assignment.campus
-        role = assignment.role
-        detail = changed_fields(_campus_assignment_snapshot(assignment), {})
-        assignment.delete()
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CANCELLED,
-            target_type=AuditEntry.TargetType.CAMPUS,
-            target_id=campus.pk,
-            target_summary=campus.name,
-            detail=detail,
-            reason=f"{role.label} no longer has a holder at {campus.name}.",
-        )
-
-
-def _ensure_wide_role(role: ApproverRole, user: User, scope: str) -> None:
-    """The shared preconditions of a team- or campus-wide holding."""
-    scope_label = "team" if scope == "team" else "campus"
-    if not role.is_active:
-        raise RoleActionError(
-            "role",
-            f'"{role.label}" is deactivated. Reactivate it in Roles, or pick '
-            "an active role.",
-        )
-    if role.is_institution_wide:
-        raise RoleActionError(
-            "role",
-            f'"{role.label}" is an institution-wide role. Assign its holder '
-            "under Approvers, not on a "
-            f"{scope_label}.",
-        )
-    if not user.is_active:
-        raise RoleActionError(
-            "user",
-            f"{user.get_full_name() or user.username} is not an active user. "
-            "Activate the account before assigning a role.",
-        )
-    if getattr(user, "employee_profile", None) is None:
-        raise RoleActionError(
-            "user",
-            f"{user.get_full_name() or user.username} has no employee record, so "
-            "there is nothing to hold an approver role with. Complete their "
-            "employee record first.",
-        )
-
-
-def _ensure_single_wide_holding(
-    user: User,
-    *,
-    exclude_role: ApproverRole | None = None,
-    exclude_team: Team | None = None,
-    exclude_campus: Campus | None = None,
-) -> None:
-    """Refuse a person a second wide approver role, anywhere in the school.
-
-    A wide approver is someone a whole scope falls back to, and HR changes them
-    per role per scope; one person covering a role on one team, a role at one
-    campus, *and* a role institution-wide means three sections claim the same
-    person, and a role written onto a team page is how somebody keeps appearing
-    in the other sections' pickers. So a person holds **one** wide approver role,
-    at one of the three scopes — which is also the promise the pickers make:
-    once assigned, somebody is gone from every other wide-approver section.
-
-    The exclusions name the (scope, role) pair this write is replacing: the same
-    role at the same scope is that write's own target (already its holder, or
-    about to be), not a second holding, so a save can still re-point a holding
-    in place.
-    """
-    holdings = RoleAssignment.objects.filter(user=user)
-    if exclude_role is not None:
-        holdings = holdings.exclude(role=exclude_role)
-    holding = holdings.select_related("role").first()
-    if holding is not None:
-        where = f"{holding.role.label} institution-wide"
-    else:
-        team_holdings = TeamRoleAssignment.objects.filter(user=user)
-        if exclude_team is not None and exclude_role is not None:
-            team_holdings = team_holdings.exclude(team=exclude_team, role=exclude_role)
-        holding = team_holdings.select_related("role", "team").first()
-        if holding is not None:
-            where = f"{holding.role.label} as a team-wide approver on {holding.team.name}"
-        else:
-            campus_holdings = CampusRoleAssignment.objects.filter(user=user)
-            if exclude_campus is not None and exclude_role is not None:
-                campus_holdings = campus_holdings.exclude(
-                    campus=exclude_campus, role=exclude_role
-                )
-            holding = campus_holdings.select_related("role", "campus").first()
-            if holding is not None:
-                where = f"{holding.role.label} as a campus-wide approver at {holding.campus.name}"
-            else:
-                where = None
-    if where is not None:
-        raise RoleActionError(
-            "user",
-            f"A person may hold only one wide approver role, and "
-            f"{user.get_full_name() or user.username} already holds {where}. "
-            f"Remove that holding before assigning another one.",
-        )
-
-
-def _team_assignment_snapshot(assignment: TeamRoleAssignment) -> dict:
-    return {
-        "assignment_id": assignment.pk,
-        "role_id": assignment.role_id,
-        "role": assignment.role.label,
-        "user_id": assignment.user_id,
-        "user": assignment.user.get_full_name() or assignment.user.username,
-    }
-
-
-def _campus_assignment_snapshot(assignment: CampusRoleAssignment) -> dict:
-    return {
-        "assignment_id": assignment.pk,
-        "role_id": assignment.role_id,
-        "role": assignment.role.label,
-        "user_id": assignment.user_id,
-        "user": assignment.user.get_full_name() or assignment.user.username,
-    }
-
-
-class CampusActionError(ValueError):
-    """Raised when a campus write cannot be applied."""
-
-    def __init__(self, field: str, message: str):
-        super().__init__(message)
-        self.field = field
-        self.message = message
-
-
-def _campus_snapshot(campus: Campus) -> dict:
-    return {
-        "name": campus.name,
-        "code": campus.code,
-        "description": campus.description,
-        "is_active": campus.is_active,
-    }
-
-
-def create_campus(*, actor, data: dict) -> Campus:
-    """Create a campus and audit it."""
-    with transaction.atomic():
-        campus = Campus.objects.create(**data)
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.CREATED,
-            target_type=AuditEntry.TargetType.CAMPUS,
-            target_id=campus.pk,
-            target_summary=campus.name,
-            detail={"before": None, "after": _campus_snapshot(campus)},
-        )
-    return campus
-
-
-def update_campus(*, campus: Campus, actor, data: dict) -> Campus:
-    """Update a campus and audit the change.
-
-    A campus is PROTECTed from deletion because a team references it, and its
-    code is treated like a role's: once referenced, changing it would leave a
-    team pointing at a code nobody recognises.
-    """
-    with transaction.atomic():
-        campus = Campus.objects.select_for_update().get(pk=campus.pk)
-        before = _campus_snapshot(campus)
-        if "code" in data and data["code"] != before["code"]:
-            if campus.teams.exists():
-                raise CampusActionError(
-                    "code",
-                    "The campus code cannot be changed once a team uses it. "
-                    "Create a new campus instead.",
-                )
-        for field, value in data.items():
-            setattr(campus, field, value)
-        campus.save()
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.UPDATED,
-            target_type=AuditEntry.TargetType.CAMPUS,
-            target_id=campus.pk,
-            target_summary=campus.name,
-            detail=changed_fields(before, _campus_snapshot(campus)),
-        )
-    return campus
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @dataclass(frozen=True)
@@ -2666,17 +788,6 @@ def validate_team(team: Team) -> TeamReadiness:
     return TeamReadiness(team=team, issues=tuple(issues))
 
 
-def _raise_for_readiness(readiness: TeamReadiness, field: str = "status") -> None:
-    """Turn validation issues into the API's refusal for a lifecycle action."""
-    if readiness.ready:
-        return
-    raise TeamActionError(
-        field,
-        " ".join(issue.message for issue in readiness.issues),
-        issues=readiness.issues,
-    )
-
-
 def _unique_workflow_name(base: str, exclude_pk: int | None = None) -> str:
     """A unique workflow name derived from the team being created or edited.
 
@@ -2727,70 +838,43 @@ def _ensure_team_category(team: Team) -> None:
         raise TeamActionError(field, message)
 
 
-def create_team(
-    *, actor, data: dict, workflow_config: dict | None = None
-) -> Team:
-    """Create a team together with the approval chain it routes through.
+def create_team(*, actor, data: dict, manager: dict | None = None) -> Team:
+    """Create a team and, optionally, designate its manager in the same pass.
 
-    ``data`` holds the team's own editable fields. ``workflow_config`` is
-    ``{"name", "sections": [{"name", "approver_role", "approver"}]}`` — the
-    chain, its ordered sections, and the one person who may act at each step, all
-    created as part of the same transaction as the team.
+    ``data`` holds the team's own editable fields. The team's approval chain is
+    deliberately *not* written here: HR creates the team and hands it to a
+    manager, and the manager configures the chain from their own portal. The
+    team is **in force the moment HR creates it** — there is no separate "put
+    into force" step — so it routes as soon as it owns a chain, and sits inert
+    until then purely because there is nothing yet to route through.
 
-    ``workflow_config`` is optional, and a team created without one is a **draft**
-    with no chain. That is the two-page configuration HR performs: the team's
-    identity first, its approval steps second. The gap cannot be reached
-    accidentally because :func:`activate_team` refuses to put a chainless team
-    into force, and a draft routes nothing — so a team is never in force without
-    a chain, while still being a real, inspectable object while it is being
-    built.
+    ``manager`` is ``{"role": <ApproverRole>, "user": <User>}``, the second page
+    of HR's create flow. When given, that team-scoped role is appointed to the
+    person as a team-wide holding and flagged the team's manager, in the same
+    transaction as the team, through
+    :func:`organisation.services.create_team_role_assignment`. Naming the role
+    *and* the person is the whole instruction: the holding is what lets the
+    manager act, so "assign the manager" is not a separate object to keep in
+    step.
 
-    When a chain *is* supplied it is created in the same transaction, so a team
-    and its chain are never two objects to keep in step. Everything lands
-    together or not at all: a half-built team with a chain but no steps is exactly
-    the object that used to look configured and then fail at submission.
-
-    A team created this way starts in ``DRAFT`` and does not route until
-    :func:`activate_team` says it may — being created is not being in force.
+    A team starts **active** whatever else is true of it, and does not route
+    until it owns a chain. Creating it is the act of putting it in force: HR
+    does not confirm that afterwards, and :func:`create_team` never lands a
+    draft.
     """
+    _require_hr_actor(actor, TeamActionError)
     with transaction.atomic():
         data = dict(data)
         data.setdefault("code", _unique_team_code(data.get("name", "")))
-        # A new team is never born in force, whatever the caller sent: routing
-        # is a separate, validated decision.
-        data["status"] = Team.Status.DRAFT
+        # Creating a team *is* putting it in force. HR does not confirm this on
+        # a second screen, and a team left sitting as a draft would be a team
+        # nobody could reach the configuration of, so the draft state has no
+        # work left to do.
+        data["status"] = Team.Status.ACTIVE
 
-        # The team is written first so its chain's steps can be checked against
-        # the team — an approver is only eligible relative to the team they are
-        # appointed for, and the membership is on the employee record. The whole
-        # thing is one transaction, so a bad section list still leaves nothing
-        # behind.
         team = Team(**data)
         _ensure_team_category(team)
         team.save()
-
-        if workflow_config is not None:
-            config = dict(workflow_config)
-            sections_payload = [
-                dict(section, approver=section.get("approver"))
-                for section in config.get("sections") or []
-            ]
-            workflow_name = _unique_workflow_name(
-                config.get("name") or f"{data.get('name', '').strip()} workflow"
-            )
-            workflow = Workflow.objects.create(name=workflow_name, team=team)
-            team.workflow = workflow
-            team.save(update_fields=["workflow", "updated_at"])
-
-            sections = replace_workflow_sections(workflow, sections_payload)
-            _attach_section_approvers(
-                team=team,
-                workflow=workflow,
-                sections=sections,
-                config=sections_payload,
-                actor=actor,
-                place_on_team=True,
-            )
 
         record_audit(
             actor=actor,
@@ -2800,22 +884,13 @@ def create_team(
             target_summary=team.name,
             detail={"before": None, "after": _team_snapshot(team)},
         )
-        if team.workflow_id is not None:
-            record_audit(
+        if manager is not None:
+            create_team_role_assignment(
+                team=team,
+                role=manager["role"],
+                user=manager["user"],
                 actor=actor,
-                action=AuditEntry.Action.CREATED,
-                target_type=AuditEntry.TargetType.WORKFLOW,
-                target_id=team.workflow_id,
-                target_summary=team.workflow.name,
-                detail={
-                    "before": None,
-                    "after": {
-                        "name": team.workflow.name,
-                        "created_with_team": team.name,
-                        "workflow": _workflow_snapshot(team.workflow),
-                    },
-                },
-                reason=f"Created with the {team.name} team.",
+                is_team_manager=True,
             )
     return team
 
@@ -2830,6 +905,7 @@ def _workflow_snapshot(workflow: Workflow) -> dict:
     return {
         "name": workflow.name,
         "effective_from": workflow.effective_from,
+        "effective_to": workflow.effective_to,
         "is_active": workflow.is_active,
         "sections": [
             {
@@ -2897,44 +973,6 @@ def _appoint_institution_wide_holder(*, section: Section, actor=None) -> None:
     add_section_member(section=section, user=holder, actor=actor)
 
 
-def _place_new_team_member(*, team: Team, section: Section, user: User) -> None:
-    """Put ``user`` on a team being created, so their appointment can be judged.
-
-    A team is its members' organisational unit and a newly created team has no
-    roster, so naming somebody one of its approvers is what places them on it.
-    This only ever runs while the team is being created in the same transaction.
-
-    Someone already on a *different* team is refused rather than moved. Silently
-    moving them would leave the team they came from with approvers who can no
-    longer be eligible, and doing that as a side effect of creating some other
-    team is not a change HR should get by accident — it is a deliberate edit to
-    their employee record, and the message says so.
-    """
-    role = section.approver_role
-    if role.is_institution_wide:
-        # An institution-wide holder approves from outside any team, so there is
-        # no membership to establish.
-        return
-
-    profile = getattr(user, "employee_profile", None)
-    if profile is None:
-        # No employee record is a real gap, not a placement problem. Leave it to
-        # ensure_team_eligibility to refuse with its own message.
-        return
-    if profile.team_id == team.pk or profile.team_id is None:
-        profile.team = team
-        profile.save(update_fields=["team"])
-        return
-
-    raise TeamActionError(
-        "approver",
-        f"{user.get_full_name() or user.username} is on "
-        f'"{_team_name(profile)}", so they cannot also be an approver for the '
-        f'"{team.name}" team. Move them to "{team.name}" on their employee '
-        "record first, or appoint someone already on the team.",
-    )
-
-
 def _attach_section_approvers(
     *,
     team: Team,
@@ -2942,7 +980,6 @@ def _attach_section_approvers(
     sections: list[Section],
     config: list[dict],
     actor=None,
-    place_on_team: bool = False,
 ) -> None:
     """Appoint the requested approver on each newly written section.
 
@@ -2952,18 +989,9 @@ def _attach_section_approvers(
     somebody who already holds one on it — the rules live in one place, and this
     path cannot grant something the other path would refuse.
 
-    The team is passed in rather than looked up because the chain is written
-    *before* the team row exists; the team the approver is checked against is the
-    one being created.
-
-    ``place_on_team`` is set only by :func:`create_team`. A team *is* its members'
-    organisational unit, and a team being created has no roster yet, so naming
-    someone as one of its approvers is what puts them on it — otherwise the one
-    request that configures a whole team could never succeed, because every
-    approver would be refused for belonging to the very team being built. It is
-    deliberately not set when rewriting an existing chain: re-pointing a step must
-    never quietly move an employee to another team, which is a separate,
-    deliberate change to their employee record.
+    The team is passed in rather than looked up because a chain may be written
+    alongside a team being created; the team the approver is checked against is
+    the one the chain belongs to.
     """
     # Paired by position, not by name: two steps may legitimately share a label
     # (same role, same "Approval" text twice in a row), and matching on the
@@ -3004,8 +1032,6 @@ def _attach_section_approvers(
                 f"Approver {user_pk} is missing or is not an active user. Pick "
                 "an active employee, or activate their account first.",
             )
-        if place_on_team:
-            _place_new_team_member(team=team, section=section, user=user)
         ensure_membership_allowed(section, user)
         if (
             section.approver_id == user.pk
@@ -3020,44 +1046,33 @@ def _attach_section_approvers(
 
 
 def update_team(
-    *, team: Team, actor, data: dict, workflow_config: dict | None = None
+    *, team: Team, actor, data: dict, manager: dict | None = None
 ) -> Team:
-    """Update a team's editable fields, and optionally the steps of its chain.
+    """Update a team's editable fields and, optionally, its designated manager.
 
-    ``status`` is not editable here. Lifecycle moves go through
-    :func:`activate_team` / :func:`deactivate_team` so each one is validated,
-    refused when the configuration cannot support it, and audited as the
-    distinct event it is — a PATCH that quietly flipped a team to active would
-    be a team no one decided to put in force.
+    ``status`` is not editable here. Teams start in force when HR creates them,
+    and the one move left — retirement — goes through :func:`deactivate_team`,
+    so it is audited as the distinct event it is rather than being a PATCH that
+    quietly takes a team out of service.
 
-    ``workflow`` is editable here, and means "route this team through that
-    workflow" — not "adopt somebody else's chain". The workflow named must be
-    one the team already owns (:attr:`Workflow.team`), so pointing a team at a
-    chain is how HR moves from a draft to a replacement workflow without any
-    chance of two teams sharing one.
+    ``workflow`` is not editable here either. Routing a team through one of its
+    chains is the manager's decision and goes through :func:`route_team`; the
+    chain's steps are configured by the manager through the workflow endpoints.
+    Keeping both out of a generic PATCH means editing a team's name can never
+    quietly re-route it.
 
-    ``workflow_config`` replaces the chain's *steps*, not the chain itself: a
-    team's chain belongs to it, so the only edit available is the same edit the
-    form used to create it. Sections are identified by their (role, name) pair,
-    so reordering keeps each step's roster while a role or name change rebuilds
-    that step empty. Removing a step an in-flight application is waiting on is
-    refused by the ``PROTECT`` on ``ApplicationStage.section_ref``, so an edit
-    here cannot rewrite the past.
+    ``manager`` is the same ``{"role", "user"}`` instruction as on
+    :func:`create_team`: the role is appointed to the person as a team-wide
+    holding and designated the team's manager. Passing it re-designates the
+    manager without touching anything else.
     """
+    _require_hr_actor(actor, TeamActionError)
     with transaction.atomic():
         team = Team.objects.select_for_update().get(pk=team.pk)
         before = _team_snapshot(team)
         for field, value in data.items():
-            if field == "status":
+            if field in ("status", "workflow"):
                 continue
-            if field == "workflow" and value is not None:
-                if getattr(value, "team_id", None) != team.pk:
-                    raise TeamActionError(
-                        "workflow",
-                        "A team can only route through a workflow it owns. "
-                        "Create the workflow under this team first, then point "
-                        "the team at it.",
-                    )
             setattr(team, field, value)
         _ensure_team_category(team)
         team.save()
@@ -3070,13 +1085,68 @@ def update_team(
             detail=changed_fields(before, _team_snapshot(team)),
         )
 
-        if workflow_config is not None:
-            _replace_team_chain(
+        if manager is not None:
+            create_team_role_assignment(
                 team=team,
+                role=manager["role"],
+                user=manager["user"],
                 actor=actor,
-                config=workflow_config,
+                is_team_manager=True,
             )
     return team
+
+
+def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
+    """Point a team at one of the chains it owns, as the team's manager.
+
+    Routing is the manager's call: they build the team's chains and decide which
+    one is in force. The workflow named must be one the team already owns
+    (:attr:`Workflow.team`), so "route through this chain instead" can never
+    become "adopt somebody else's chain" — which would strand every application
+    inside the old one at a step nobody staffs.
+
+    HR stays out of this deliberately: HR creates the team and assigns its
+    manager, and the manager owns the routing decision from then on.
+    """
+    _require_team_manager(actor, team, TeamActionError)
+    with transaction.atomic():
+        team = Team.objects.select_for_update().get(pk=team.pk)
+        if workflow is None or workflow.team_id != team.pk:
+            raise TeamActionError(
+                "workflow",
+                "A team can only route through a workflow it owns. Create the "
+                "workflow under this team first, then point the team at it.",
+            )
+        if team.workflow_id == workflow.pk:
+            return team
+        before = _team_snapshot(team)
+        team.workflow = workflow
+        team.save(update_fields=["workflow", "updated_at"])
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=team.pk,
+            target_summary=team.name,
+            detail=changed_fields(before, _team_snapshot(team)),
+            reason=f'Routed through "{workflow.name}".',
+        )
+    return team
+
+
+def academic_calendar_end() -> date | None:
+    """The last day of the academic calendar a chain is written against.
+
+    The configured academic year — the active
+    :class:`leave.models.FinancialYear` — is what "the end of the academic
+    calendar" means here: a chain is a statement about a term, so a new one
+    runs to the end of the current year rather than open-ended. Nothing
+    configured means no boundary at all (``None``), which is what an
+    installation that has not set up its year should get rather than a crash
+    in a create.
+    """
+    year = active_financial_year()
+    return year.end_date if year is not None else None
 
 
 def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
@@ -3094,17 +1164,35 @@ def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
     configuration is one implementation whether HR is editing the chain they
     just created or the one a team has used for a year.
     """
+    _require_team_manager(actor, team, WorkflowActionError)
     with transaction.atomic():
         payload = dict(data)
         sections_payload = payload.pop("sections", None)
         members_payload = payload.pop("members", None)
-        name = _unique_workflow_name(
-            str(payload.get("name") or f"{team.name} workflow").strip()
-        )
+        # A chain is named for what it approves, not for the team it hangs off:
+        # a team has several chains over a year, and "<team name> workflow"
+        # cannot be told apart from the team itself or from the replacement
+        # beside it. The name is the caller's to give.
+        raw_name = str(payload.get("name") or "").strip()
+        if not raw_name:
+            raise WorkflowActionError(
+                "name",
+                "Every workflow needs a name of its own. Name it for what it "
+                "approves — a chain named after its team cannot be told apart "
+                "from the team, or from the replacement chain beside it.",
+            )
         workflow = Workflow(
-            name=name,
+            name=_unique_workflow_name(raw_name),
             team=team,
-            effective_from=payload.get("effective_from"),
+            # In force from today unless the caller says otherwise, and running
+            # to the end of the academic calendar: a chain is written against
+            # a term, so it does not outlive one by default.
+            effective_from=payload.get("effective_from") or timezone.localdate(),
+            effective_to=(
+                payload.get("effective_to")
+                if payload.get("effective_to") is not None
+                else academic_calendar_end()
+            ),
             is_active=payload.get("is_active", True),
         )
         workflow.save()
@@ -3154,6 +1242,7 @@ def update_workflow(*, workflow: Workflow, actor, data: dict) -> Workflow:
     to a team (an approver must be a member of it), so there is nothing to check
     an edit against.
     """
+    _require_can_manage_team(actor, workflow.team, WorkflowActionError)
     with transaction.atomic():
         locked = Workflow.objects.select_for_update().get(pk=workflow.pk)
         team = locked.team
@@ -3219,129 +1308,6 @@ class WorkflowActionError(ValueError):
         self.message = message
 
 
-def _replace_team_chain(*, team: Team, actor, config: dict) -> None:
-    """Write the steps of the chain this team owns.
-
-    A team created without one — page 1 of the team form, saved before its steps
-    were known — gets its chain created here, so "save the team again with the
-    steps" is the same action whether or not the team already had a chain. A team
-    that already has one has it rewritten in place, through
-    :func:`replace_workflow_sections`, so section identity, ordering, and the
-    ``PROTECT`` guard on a step a live application points at are one
-    implementation rather than two that can drift.
-    """
-    config = dict(config)
-    sections_payload = [
-        dict(section, approver=section.get("approver"))
-        for section in config.get("sections") or []
-    ]
-
-    workflow = team.workflow
-    created = False
-    if workflow is None:
-        workflow = Workflow.objects.create(
-            name=_unique_workflow_name(
-                str(config.get("name") or f"{team.name} workflow").strip()
-            ),
-            team=team,
-        )
-        team.workflow = workflow
-        team.save(update_fields=["workflow"])
-        created = True
-    elif workflow.team_id != team.pk:
-        workflow.team = team
-        workflow.save(update_fields=["team"])
-
-    before = {} if created else _workflow_snapshot(workflow)
-    try:
-        sections = replace_workflow_sections(workflow, sections_payload)
-    except StageSequenceError as exc:
-        raise TeamActionError(exc.field, exc.message)
-    if config.get("name") and not created:
-        workflow.name = _unique_workflow_name(
-            str(config["name"]).strip(), exclude_pk=workflow.pk
-        )
-        workflow.save(update_fields=["name"])
-    _attach_section_approvers(
-        team=team,
-        workflow=workflow,
-        sections=sections,
-        config=sections_payload,
-        actor=actor,
-    )
-
-    record_audit(
-        actor=actor,
-        action=AuditEntry.Action.CREATED if created else AuditEntry.Action.UPDATED,
-        target_type=AuditEntry.TargetType.WORKFLOW,
-        target_id=workflow.pk,
-        target_summary=workflow.name,
-        detail=changed_fields(
-            before, _workflow_snapshot(workflow)
-        )
-        | {"team": team.name},
-        reason=(
-            f"Approval chain created with the {team.name} team."
-            if created
-            else f"Approval steps changed on the {team.name} team."
-        ),
-    )
-
-
-def activate_team(*, team: Team, actor) -> Team:
-    """Put a draft team into force, refusing a team that cannot route.
-
-    This is the moment a team starts affecting real applications, so it is a
-    separate action rather than a field edit, and it is refused unless the team
-    passes :func:`validate_team` in full. A team left in ``DRAFT`` on failure is
-    the useful outcome: HR keeps the configuration they wrote and is told
-    exactly what to fix, instead of having a live team that strands applications
-    at a step with no approver.
-
-    The team is locked for the duration so two HR users activating at once
-    cannot both pass validation and produce two contradictory audit entries.
-
-    Activating also dates the workflow when it has never been dated. A workflow
-    with a null ``effective_from`` still routes today, but it reads as a draft,
-    so a chain that is demonstrably in force would be labelled as one — giving
-    the date is what makes the workflow and its team agree.
-    """
-    with transaction.atomic():
-        locked = Team.objects.select_for_update().get(pk=team.pk)
-        if locked.status == Team.Status.ACTIVE:
-            return locked
-        if locked.status == Team.Status.INACTIVE:
-            raise TeamActionError(
-                "status",
-                f'The {locked.name} team has been retired and cannot be '
-                "reactivated. Create it again, or point the employees at an "
-                "active team.",
-            )
-
-        readiness = validate_team(locked)
-        _raise_for_readiness(readiness)
-
-        previous = locked.status
-        locked.status = Team.Status.ACTIVE
-        if locked.workflow is not None and locked.workflow.effective_from is None:
-            locked.workflow.effective_from = timezone.localdate()
-            locked.workflow.save(update_fields=["effective_from"])
-        locked.save(update_fields=["status", "updated_at"])
-
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.ACTIVATED,
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=locked.pk,
-            target_summary=locked.name,
-            detail=changed_fields(
-                {"status": previous}, {"status": Team.Status.ACTIVE}
-            ),
-            reason=f"{locked.name} validated and put into force.",
-        )
-    return locked
-
-
 def deactivate_team(*, team: Team, actor) -> Team:
     """Retire a team from routing, keeping its configuration and its history.
 
@@ -3352,6 +1318,7 @@ def deactivate_team(*, team: Team, actor) -> Team:
     routing *new* applications the moment this returns, and everything that
     pointed at it keeps resolving.
     """
+    _require_hr_actor(actor, TeamActionError)
     with transaction.atomic():
         locked = Team.objects.select_for_update().get(pk=team.pk)
         if locked.status == Team.Status.INACTIVE:
@@ -3710,6 +1677,7 @@ def add_section_member(
     outgoing person's period is closed on the day of the handover, so the record
     of who held the step still answers every date.
     """
+    _require_can_manage_team(actor, team_for_section(section), TeamActionError)
     today = timezone.localdate()
     starts = effective_from or today
     if starts > today:
@@ -3816,6 +1784,9 @@ def remove_section_member(
     never took effect, so it is removed outright rather than left as a row that
     says somebody held a step they never held.
     """
+    _require_can_manage_team(
+        actor, team_for_section(membership.section), TeamActionError
+    )
     with transaction.atomic():
         locked = SectionMember.objects.select_for_update().get(pk=membership.pk)
         section = locked.section
@@ -3903,144 +1874,14 @@ def workflow_section_roles(workflow: Workflow) -> list[ApproverRole]:
     return [by_id[role_id] for role_id in role_ids if role_id in by_id]
 
 
-class WorkflowMemberError(ValueError):
-    """Raised when a team-member or workflow-member write cannot be applied.
-
-    ``field`` is the API field the error belongs to, matching
-    :class:`TeamActionError` so viewsets can map both the same way.
-    """
-
-    def __init__(self, field: str, message: str):
-        super().__init__(message)
-        self.field = field
-        self.message = message
 
 
-def _member_display_name(user: User) -> str:
-    return user.get_full_name() or user.username
 
 
-def wide_approver_ids_for_team(team: Team | None) -> set[int]:
-    """User ids who are wide approvers for ``team``.
-
-    A wide approver staffs a chain without being appointed to its steps: the
-    holder of a team-wide role on this team, the holder of a campus-wide role
-    at the team's campus, or the holder of an institution-wide role. They are
-    the deliberate exception to "one employee sits on one chain per team": a
-    team building a second chain reuses its registrar or bursar, it does not
-    move them off the first chain.
-    """
-    if team is None:
-        return set()
-    ids = set(
-        RoleAssignment.objects.filter(
-            role__is_institution_wide=True, user__is_active=True
-        ).values_list("user_id", flat=True)
-    )
-    ids.update(
-        TeamRoleAssignment.objects.filter(
-            team=team, user__is_active=True
-        ).values_list("user_id", flat=True)
-    )
-    if team.campus_id is not None:
-        ids.update(
-            CampusRoleAssignment.objects.filter(
-                campus_id=team.campus_id, user__is_active=True
-            ).values_list("user_id", flat=True)
-        )
-    return ids
 
 
-def _employee_profile_for(user: User):
-    profile = getattr(user, "employee_profile", None)
-    if profile is None:
-        profile = EmployeeProfile.objects.filter(user=user).select_related("user").first()
-    return profile
 
 
-def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
-    """Place an active employee on a team as a normal member.
-
-    Team membership is the eligibility pool for workflow membership and for
-    approver eligibility: the employee's :attr:`EmployeeProfile.team` is the
-    single record of which team's approval chain their leave routes through.
-
-    Membership is scoped two ways. The team's **category** decides who may
-    belong: an academic team takes academic employees, an administration team
-    takes administration employees, and a mismatch is refused rather than
-    allowed to sit on the roster until routing surprises someone. And a **wide
-    approver** — institution-wide, team-wide on this team, or campus-wide at
-    this team's campus — is not a normal member: they staff steps from the
-    Approvers tab and are kept out of the roster, so being an approver never
-    also quietly routes someone's leave as a member.
-
-    Somebody already on a different team is refused rather than moved. Moving
-    an employee off another team would leave that team with steps whose
-    approvers are no longer members, and it would re-route their leave without
-    HR choosing to — a deliberate edit, not a side effect of filling a roster.
-    """
-    if not user.is_active:
-        raise WorkflowMemberError(
-            "user",
-            f"{_member_display_name(user)} is not an active user. Activate the "
-            "account before adding them to a team.",
-        )
-    profile = _employee_profile_for(user)
-    if profile is None:
-        raise WorkflowMemberError(
-            "user",
-            f"{_member_display_name(user)} has no employee record, so there is "
-            "nothing to place on a team. Complete their employee record first.",
-        )
-    if profile.category != team.category:
-        raise WorkflowMemberError(
-            "user",
-            f'{_member_display_name(user)} is an '
-            f'{profile.get_category_display()} employee, but "{team.name}" is an '
-            f'{team.get_category_display()} team. An '
-            f'{team.get_category_display()} team takes only '
-            f'{team.get_category_display()} employees.',
-        )
-    if user.pk in wide_approver_ids_for_team(team):
-        raise WorkflowMemberError(
-            "user",
-            f"{_member_display_name(user)} is a wide approver for this team, so "
-            "they serve its steps from the Approvers tab rather than as a normal "
-            "member. Remove the holding first if they should sit on the roster.",
-        )
-    with transaction.atomic():
-        locked_profile = EmployeeProfile.objects.select_for_update().get(pk=profile.pk)
-        if locked_profile.team_id == team.pk:
-            return locked_profile
-        if locked_profile.team_id is not None:
-            current_name = (
-                Team.objects.filter(pk=locked_profile.team_id)
-                .values_list("name", flat=True)
-                .first()
-                or "another team"
-            )
-            raise WorkflowMemberError(
-                "user",
-                f'{_member_display_name(user)} is already on "{current_name}". '
-                f'Remove them from that team first, or leave them on '
-                f'"{current_name}" — one employee belongs to one team.',
-            )
-        before_team_id = locked_profile.team_id
-        locked_profile.team = team
-        locked_profile.save(update_fields=["team"])
-        record_audit(
-            actor=actor,
-            action=AuditEntry.Action.UPDATED,
-            target_type=AuditEntry.TargetType.EMPLOYEE,
-            target_id=locked_profile.user_id,
-            target_summary=_member_display_name(locked_profile.user),
-            detail=changed_fields(
-                {"team_id": before_team_id},
-                {"team_id": team.pk, "team": team.name},
-            ),
-            reason=f"Added to the {team.name} team as a normal member.",
-        )
-    return locked_profile
 
 
 def _team_member_blockers(team: Team, user: User) -> list[str]:
@@ -4103,6 +1944,7 @@ def remove_team_member(*, team: Team, user: User, actor) -> None:
     looks staffed and cannot act, so each responsibility is named and must be
     released first.
     """
+    _require_can_manage_team(actor, team, WorkflowMemberError)
     profile = _employee_profile_for(user)
     if profile is None:
         raise WorkflowMemberError(
@@ -4182,6 +2024,7 @@ def assign_workflow_member(
     so the database's conditional uniqueness lets them through.
     """
     team = _workflow_team_or_error(workflow)
+    _require_can_manage_team(actor, team, WorkflowMemberError)
     if not user.is_active:
         raise WorkflowMemberError(
             "user",
@@ -4300,6 +2143,7 @@ def remove_workflow_member(*, member: WorkflowMember, actor) -> None:
             "workflow", "user", "team"
         ).get(pk=member.pk)
         workflow = locked.workflow
+        _require_can_manage_team(actor, locked.team, WorkflowMemberError)
         user = locked.user
         locked.delete()
         record_audit(

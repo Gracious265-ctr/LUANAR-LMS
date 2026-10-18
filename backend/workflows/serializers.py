@@ -9,55 +9,27 @@ from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication, LeaveType
 from users.models import User
 
-from org.models import (
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    Delegation,
-    RoleAssignment,
-    Section,
-    SectionMember,
-    Team,
-    TeamRoleAssignment,
-    Workflow,
+from organisation.models import ApproverRole, Campus, CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
+from workflows.models import Section, SectionMember, Workflow
+
+from .models import WorkflowMember
+from .providers import section_resolution
+from organisation.services import (
+    _resolve_stage_role,
+    add_team_member,
 )
 
-from .models import Reassignment, WorkflowMember
-from .providers import section_resolution
 from .services import (
-    ReassignmentError,
     StageSequenceError,
-    WorkflowMemberError,
-    _resolve_stage_role,
-    _role_usage,
-    acting_approver_identity,
     add_section_member,
-    add_team_member,
-    approver_role_codes_for,
-    approver_role_labels_for,
     assign_workflow_member,
-    create_approver_role,
-    create_campus,
-    create_campus_role_assignment,
-    create_role_assignment,
     create_team,
-    create_team_role_assignment,
     create_workflow,
-    deactivate_approver_role,
-    delegation_summary,
-    is_approver_user,
     normalize_section_sequence,
-    open_request_exists,
-    reassign_application,
-    remove_campus_role_assignment,
     remove_team_member,
-    remove_team_role_assignment,
     remove_workflow_member,
-    role_usage_map,
     sync_workflow_members,
     team_member_summaries,
-    update_campus,
-    update_approver_role,
     update_team,
     update_workflow,
     workflow_member_pool,
@@ -71,36 +43,6 @@ RESOLUTION_LABELS = {
     "institution": "Institution-wide approver",
     "unresolved": "Nobody can act here yet",
 }
-
-
-def _record_delegation_created_audit(delegation: Delegation) -> None:
-    """Audit a delegation request the moment it exists.
-
-    The other three delegation actions are audited by
-    ``workflows.services._record_delegation_audit``; creation is a serializer
-    concern, so it is recorded here in the same transaction. Without it a
-    request would appear in the trail only once HR decided on it, and a request
-    that was never decided would leave no trace at all.
-    """
-    if delegation.requested_by_id is None:
-        return
-    record_audit(
-        actor=delegation.requested_by,
-        action=AuditEntry.Action.CREATED,
-        target_type=AuditEntry.TargetType.DELEGATION,
-        target_id=delegation.pk,
-        target_summary=delegation_summary(delegation),
-        detail=changed_fields(
-            {},
-            {
-                "status": delegation.status,
-                "delegate_id": delegation.delegate_id,
-                "starts_on": delegation.starts_on,
-                "ends_on": delegation.ends_on,
-            },
-        ),
-        reason=delegation.request_reason,
-    )
 
 
 class ApproverRoleCodeField(serializers.Field):
@@ -323,6 +265,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
             "team",
             "team_name",
             "effective_from",
+            "effective_to",
             "is_active",
             "state",
             "is_routing",
@@ -332,6 +275,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "effective_to",
             "state",
             "is_routing",
             "section_count",
@@ -368,473 +312,6 @@ class WorkflowSerializer(serializers.ModelSerializer):
             }
             for row in rows
         ]
-
-
-
-class DelegationSerializer(serializers.ModelSerializer):
-    """HR/approver-facing serializer for delegation requests."""
-
-    approver = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False
-    )
-    delegate = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False, allow_null=True
-    )
-    approver_name = serializers.SerializerMethodField()
-    approver_role = serializers.SerializerMethodField()
-    delegate_name = serializers.SerializerMethodField()
-    requested_by_name = serializers.SerializerMethodField()
-    state = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = Delegation
-        fields = [
-            "id",
-            "approver",
-            "approver_name",
-            "approver_role",
-            "delegate",
-            "delegate_name",
-            "starts_on",
-            "ends_on",
-            "request_reason",
-            "requested_by",
-            "requested_by_name",
-            "decision_reason",
-            "decided_by",
-            "decided_at",
-            "status",
-            "state",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "requested_by",
-            "decision_reason",
-            "decided_by",
-            "decided_at",
-            "status",
-            "created_at",
-            "updated_at",
-        ]
-
-    def get_approver_name(self, obj: Delegation) -> str:
-        return obj.approver.get_full_name()
-
-    def get_approver_role(self, obj: Delegation) -> str:
-        """The approver's primary role code, from the role graph.
-
-        ``User.role`` is only employee/approver/hr, so it cannot name the
-        position somebody approves in. The first active holding supplies the
-        label, falling back to the system role for HR and for a user whose
-        holdings have all been removed.
-        """
-        codes = [
-            code for code in approver_role_codes_for(obj.approver)
-        ]
-        if codes:
-            return codes[0]
-        return obj.approver.role
-
-    def get_delegate_name(self, obj: Delegation) -> str:
-        return obj.delegate.get_full_name() if obj.delegate else ""
-
-    def get_requested_by_name(self, obj: Delegation) -> str:
-        return obj.requested_by.get_full_name()
-
-    def validate(self, attrs: dict) -> dict:
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        is_hr = getattr(user, "role", None) == User.Role.HR
-
-        if is_hr:
-            approver = attrs.get("approver")
-            if approver is None:
-                raise serializers.ValidationError(
-                    {"approver": "Select the approver this delegation is for."}
-                )
-            if not is_approver_user(approver):
-                raise serializers.ValidationError(
-                    {"approver": "Select an active user with an approver role."}
-                )
-        else:
-            approver = user
-            attrs["approver"] = approver
-
-        delegate = attrs.get("delegate")
-        if delegate is not None:
-            if not is_approver_user(delegate):
-                raise serializers.ValidationError(
-                    {"delegate": "Select an active user with an approver role."}
-                )
-            if delegate.pk == approver.pk:
-                raise serializers.ValidationError(
-                    {"delegate": "The delegate must be a different person from the approver."}
-                )
-
-        starts_on = attrs.get("starts_on")
-        ends_on = attrs.get("ends_on")
-        if starts_on is not None and ends_on is not None and ends_on < starts_on:
-            raise serializers.ValidationError(
-                {"ends_on": "End date must be on or after the start date."}
-            )
-
-        if approver is not None and open_request_exists(approver.pk):
-            raise serializers.ValidationError(
-                {"approver": "This approver already has an open delegation request."}
-            )
-
-        return attrs
-
-    def create(self, validated_data: dict) -> Delegation:
-        from notifications.delegations import DELEGATION_REQUESTED, notify_delegation
-
-        request = self.context.get("request")
-        validated_data["requested_by"] = getattr(request, "user", None)
-        try:
-            # The nested atomic block is a savepoint: a lost race against
-            # ``one_open_request_per_approver`` rolls back cleanly instead of
-            # poisoning the outer transaction, so the friendly 400 survives.
-            with transaction.atomic():
-                delegation = super().create(validated_data)
-                _record_delegation_created_audit(delegation)
-                notify_delegation(delegation.pk, DELEGATION_REQUESTED)
-        except IntegrityError:
-            raise serializers.ValidationError(
-                {"approver": "This approver already has an open delegation request."}
-            )
-        return delegation
-
-
-class DelegationActionSerializer(serializers.Serializer):
-    """Payload for the HR approve / reject / cancel delegation actions."""
-
-    decision_reason = serializers.CharField(required=False, allow_blank=True)
-    delegate = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False, allow_null=True
-    )
-
-    def validate_decision_reason(self, value: str) -> str:
-        return (value or "").strip()
-
-
-class ReassignmentSerializer(serializers.ModelSerializer):
-    """HR-facing serializer for emergency reassignment records."""
-
-    application = serializers.PrimaryKeyRelatedField(
-        queryset=LeaveApplication.objects.all()
-    )
-    to_approver = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    reference_number = serializers.SerializerMethodField()
-    employee = serializers.SerializerMethodField()
-    employee_name = serializers.SerializerMethodField()
-    from_approver = serializers.PrimaryKeyRelatedField(read_only=True)
-    from_approver_name = serializers.SerializerMethodField()
-    to_approver_name = serializers.SerializerMethodField()
-    decided_by = serializers.PrimaryKeyRelatedField(read_only=True)
-    decided_by_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Reassignment
-        fields = [
-            "id",
-            "application",
-            "reference_number",
-            "employee",
-            "employee_name",
-            "from_approver",
-            "from_approver_name",
-            "to_approver",
-            "to_approver_name",
-            "reason",
-            "decided_by",
-            "decided_by_name",
-            "created_at",
-        ]
-        read_only_fields = [
-            "created_at",
-        ]
-
-    def get_reference_number(self, obj: Reassignment) -> str:
-        return obj.application.reference_number or ""
-
-    def get_employee(self, obj: Reassignment) -> int:
-        return obj.application.employee_id
-
-    def get_employee_name(self, obj: Reassignment) -> str:
-        return obj.application.employee.get_full_name()
-
-    def get_from_approver_name(self, obj: Reassignment) -> str:
-        return obj.from_approver.get_full_name() if obj.from_approver else ""
-
-    def get_to_approver_name(self, obj: Reassignment) -> str:
-        return obj.to_approver.get_full_name()
-
-    def get_decided_by_name(self, obj: Reassignment) -> str:
-        return obj.decided_by.get_full_name()
-
-    def validate_reason(self, value: str) -> str:
-        return (value or "").strip()
-
-    def create(self, validated_data: dict) -> Reassignment:
-        request = self.context.get("request")
-        try:
-            return reassign_application(
-                application=validated_data["application"],
-                to_approver=validated_data["to_approver"],
-                actor=getattr(request, "user", None),
-                reason=validated_data.get("reason", ""),
-            )
-        except ReassignmentError as exc:
-            raise serializers.ValidationError({exc.field: [exc.message]})
-
-
-class PendingApplicationSerializer(serializers.Serializer):
-    """Read-only representation of one pending (submitted) leave application.
-
-    Reports both the *responsible* approver (the ``current_approver`` spine) and
-    the *acting* approver (Unit 21 routing: the active delegate when one covers
-    them). HR has to see the difference, because reassigning an application to
-    an approver who is themselves away moves the spine without changing who
-    actually acts — the queue would otherwise read as a successful intervention
-    that quietly did nothing.
-    """
-
-    def to_representation(self, instance: LeaveApplication) -> dict:
-        leave_type_name = ""
-        if instance.leave_type_id:
-            names = self.context.get("leave_type_names")
-            if names is not None:
-                leave_type_name = names.get(instance.leave_type_id, "")
-            else:
-                leave_type = LeaveType.objects.filter(
-                    pk=instance.leave_type_id
-                ).first()
-                if leave_type is not None:
-                    leave_type_name = leave_type.name
-        current = instance.current_approver
-        acting_id, acting_name = self._acting_approver(instance)
-        if current is None:
-            is_delegated = acting_id is not None
-        else:
-            is_delegated = acting_id is not None and acting_id != current.pk
-        return {
-            "id": instance.id,
-            "reference_number": instance.reference_number or "",
-            "employee": instance.employee_id,
-            "employee_name": instance.employee.get_full_name(),
-            "leave_type_name": leave_type_name,
-            "start_date": instance.start_date,
-            "end_date": instance.end_date,
-            "calculated_days": instance.calculated_days,
-            "reason": instance.reason,
-            "submitted_at": instance.submitted_at,
-            "current_approver": current.pk if current else None,
-            "current_approver_name": current.get_full_name() if current else "",
-            "acting_approver": acting_id,
-            "acting_approver_name": acting_name,
-            "is_delegated": is_delegated,
-        }
-
-    def _acting_approver(
-        self, instance: LeaveApplication
-    ) -> tuple[int | None, str]:
-        """``(acting_approver_id, acting_approver_name)`` for one application.
-
-        Prefers the page-level map the intervention queue resolves in bulk, so a
-        whole page costs one delegation query plus one user query instead of two
-        per row, and falls back to resolving this one application directly.
-        """
-        resolved = self.context.get("acting_approver_map")
-        if resolved is not None and instance.pk in resolved:
-            return resolved[instance.pk]
-        return acting_approver_identity(instance)
-
-
-class ApproverRoleSerializer(serializers.ModelSerializer):
-    """One HR-managed approver role.
-
-    Reads expose the derived ``is_in_use`` and ``usage`` so the Roles list can
-    say *why* a role cannot be deactivated without HR cross-referencing other
-    screens. Writes never go through the model directly: ``create``/
-    ``update``/``destroy`` delegate to the transactional services so the audit
-    trail and the in-use guard are impossible to bypass from the API.
-    """
-
-    is_in_use = serializers.SerializerMethodField()
-    usage = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ApproverRole
-        fields = [
-            "id",
-            "code",
-            "label",
-            "description",
-            "is_active",
-            "history_scope",
-            "handles_cancellation",
-            "is_institution_wide",
-            "is_in_use",
-            "usage",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["code", "is_in_use", "usage", "created_at", "updated_at"]
-
-    def _usage_for(self, instance: ApproverRole) -> list[str]:
-        """The usage clauses for ``instance``, computed once for the request.
-
-        ``is_in_use`` and ``usage`` expose the same fact, and the Roles screen
-        asks for it for every role at once. Computing it per field, per role,
-        made the list cost one query per blocker per role; this resolves the
-        whole page in three queries and reads the result from the shared
-        serializer context on every subsequent field.
-        """
-        cache = self.context.get("role_usage")
-        if cache is None:
-            siblings = getattr(self.parent, "instance", None)
-            subjects = list(siblings) if getattr(self.parent, "many", False) else [self.instance]
-            cache = role_usage_map(subjects)
-            self.context["role_usage"] = cache
-        return cache.get(instance.pk, [])
-
-    def get_is_in_use(self, instance: ApproverRole) -> bool:
-        return bool(self._usage_for(instance))
-
-    def get_usage(self, instance: ApproverRole) -> list[str]:
-        return self._usage_for(instance)
-
-    def create(self, validated_data: dict) -> ApproverRole:
-        return create_approver_role(
-            actor=self.context["actor"], data=dict(validated_data)
-        )
-
-    def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
-        return update_approver_role(
-            role=instance, actor=self.context["actor"], data=dict(validated_data)
-        )
-
-    def destroy(self, instance: ApproverRole) -> None:
-        """Deactivate rather than delete.
-
-        Roles are referenced by workflow stages, team memberships, and every
-        historical stage snapshot, so hard deletion is never safe. A role also
-        cannot be deactivated while it is still in use, so this doubles as the
-        retire action and surfaces that refusal to the caller.
-        """
-        deactivate_approver_role(role=instance, actor=self.context["actor"])
-
-
-class ApproverRoleWriteSerializer(serializers.Serializer):
-    """Create a role from its name; update it by editing its behaviour.
-
-    ``label`` is the only thing a new role needs, and ``code`` is not accepted:
-    it is derived from the name (see
-    :func:`workflows.services.role_code_from_name`) so the identifier every rule
-    reads cannot drift from the name every screen shows.
-
-    On update, ``label`` is not accepted either — a role's name is what
-    historical stages and audit entries quote, and renaming it would make those
-    quote something that no longer exists. The behavioural fields are editable
-    here because they are decisions rather than identity: who may see history,
-    whether the role decides cancellations, whether it may be held
-    institution-wide.
-
-    ``is_active`` is read-only on purpose. Retirement is the DELETE verb, which
-    runs the in-use guard; accepting it here would let a PATCH retire a role an
-    active workflow, team, or holder still depends on.
-    """
-
-    label = serializers.CharField(
-        max_length=80,
-        required=False,
-        help_text="The role's name, as it appears wherever the role is chosen.",
-    )
-    description = serializers.CharField(
-        max_length=255, required=False, allow_blank=True
-    )
-    is_active = serializers.BooleanField(read_only=True)
-    history_scope = serializers.ChoiceField(
-        choices=ApproverRole.HistoryScope.choices, required=False
-    )
-    handles_cancellation = serializers.BooleanField(required=False)
-    is_institution_wide = serializers.BooleanField(required=False)
-
-    def validate(self, attrs: dict) -> dict:
-        if self.instance is not None:
-            if "label" in attrs and attrs["label"] != self.instance.label:
-                raise serializers.ValidationError(
-                    {
-                        "label": [
-                            "A role's name cannot be changed once it exists. "
-                            "Workflow stages and past decisions quote it. Create a "
-                            "new role instead and retire this one."
-                        ]
-                    }
-                )
-            return attrs
-        if not attrs.get("label", "").strip():
-            raise serializers.ValidationError({"label": ["Enter a role name."]})
-        return attrs
-
-    def create(self, validated_data: dict) -> ApproverRole:
-        return create_approver_role(
-            actor=self.context["actor"], data=dict(validated_data)
-        )
-
-    def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
-        return update_approver_role(
-            role=instance, actor=self.context["actor"], data=dict(validated_data)
-        )
-
-
-class RoleAssignmentSerializer(serializers.ModelSerializer):
-    """A person's institution-wide role holding."""
-
-    # Not filtered on is_active: the service rejects an inactive account with a
-    # sentence HR can act on, which beats DRF's "Invalid pk ... does not exist".
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    role = serializers.PrimaryKeyRelatedField(
-        queryset=ApproverRole.objects.all()
-    )
-    user_name = serializers.SerializerMethodField()
-    role_label = serializers.SerializerMethodField()
-
-    class Meta:
-        model = RoleAssignment
-        fields = [
-            "id",
-            "user",
-            "user_name",
-            "role",
-            "role_label",
-            "created_at",
-        ]
-        read_only_fields = ["created_at"]
-        # Held to the same rule as team memberships: the service owns uniqueness
-        # so the error says who already holds the role.
-        validators: list = []
-
-    def get_user_name(self, instance: RoleAssignment) -> str:
-        return instance.user.get_full_name() or instance.user.username
-
-    def get_role_label(self, instance: RoleAssignment) -> str:
-        return instance.role.label
-
-    def validate(self, attrs: dict) -> dict:
-        # No scope guard here: assigning a team role its first institution-wide
-        # holder is exactly how a role *becomes* institution-wide. The service
-        # owns the real refusals (role already held on a team or campus, role
-        # deactivated, user inactive or already a wide approver).
-        return attrs
-
-    def create(self, validated_data: dict) -> RoleAssignment:
-        return create_role_assignment(
-            user=validated_data["user"],
-            role=validated_data["role"],
-            actor=self.context["actor"],
-        )
 
 
 class SectionMemberWriteSerializer(serializers.ModelSerializer):
@@ -910,41 +387,19 @@ class TeamSectionInputSerializer(serializers.Serializer):
         return role.code
 
 
-class TeamWorkflowInputSerializer(serializers.Serializer):
-    """The approval chain to create alongside a team."""
+class TeamManagerInputSerializer(serializers.Serializer):
+    """The team-wide role holding to designate as a team's manager.
 
-    name = serializers.CharField(
-        max_length=200,
-        required=False,
-        allow_blank=True,
-        help_text=(
-            "Defaults to the team name. Workflow names are unique, so a clash "
-            "is suffixed rather than rejected."
-        ),
-    )
-    sections = TeamSectionInputSerializer(many=True)
+    HR picks a team-scoped approver role and the person who holds it: the role is
+    the capability the manager acts with, the person is who acts. Both are
+    required — a manager without a role could not approve, and a role without a
+    holder names nobody. The role/person/team rules (active, team-scoped, and
+    category-matching) are enforced where every other wide holding is, in
+    :func:`organisation.services.create_team_role_assignment`.
+    """
 
-    def validate_sections(self, value: list[dict]) -> list[dict]:
-        if not value:
-            raise serializers.ValidationError(
-                "At least one approval step is required."
-            )
-        # Steps are numbered by the order they appear in. A team form lists them
-        # top to bottom, so making HR type a separate number for each one would
-        # be a second way of saying the same thing — and a second way to get it
-        # wrong. An explicit order is still accepted for clients that send one.
-        numbered = [
-            {**step, "order": step.get("order") or position}
-            for position, step in enumerate(value, start=1)
-        ]
-        # Reuses the workflow's own sequence rules so a chain written inline is
-        # validated identically to one written on the workflow screen, and both
-        # get numbered in the order given rather than the order submitted.
-        try:
-            normalize_section_sequence(numbered)
-        except StageSequenceError as exc:
-            raise serializers.ValidationError({exc.field: [exc.message]})
-        return numbered
+    role = serializers.PrimaryKeyRelatedField(queryset=ApproverRole.objects.all())
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
 
 
 class WorkflowWriteSerializer(serializers.Serializer):
@@ -969,6 +424,7 @@ class WorkflowWriteSerializer(serializers.Serializer):
         queryset=Team.objects.all(), required=False, allow_null=True
     )
     effective_from = serializers.DateField(required=False, allow_null=True)
+    effective_to = serializers.DateField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False)
     sections = TeamSectionInputSerializer(many=True, required=False)
     # The normal-member pool for this workflow: team members who are not
@@ -1020,6 +476,12 @@ class WorkflowWriteSerializer(serializers.Serializer):
                 "A chain is not switched on or off on its own. Activating or "
                 "retiring a team decides whether its chain is in force, so it "
                 "is done on the team and audited there.",
+            ),
+            (
+                "effective_to",
+                "A chain does not carry its own end date either. It runs to the "
+                "end of the academic calendar, which is read from the academic "
+                "year in force when the chain is created.",
             ),
         ):
             if field in attrs:
@@ -1099,20 +561,15 @@ class TeamSerializer(serializers.ModelSerializer):
             "an institution-wide approver may serve."
         ),
     )
-    # Writable, and deliberately narrow: the workflow named has to be one this
-    # team already owns (the service refuses anything else), so "route through
-    # this chain instead" can never become "adopt somebody else's chain" — which
-    # would strand every application inside the old one at a step nobody staffs.
-    workflow = serializers.PrimaryKeyRelatedField(
-        queryset=Workflow.objects.all(), required=False, allow_null=True
-    )
+    # Read-only: routing is the team manager's decision, made through the
+    # ``route`` action, so a generic PATCH can never re-route a team. The chain
+    # itself is built by the manager through the workflow endpoints.
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
     workflows = serializers.SerializerMethodField()
-    # The chain, written inline. On create it is created with the team, so there
-    # is never a team that exists pointing at a chain HR has not finished
-    # describing. On update it replaces the steps of the chain the team already
-    # has. Either way it is the one and only way a chain is written.
-    new_workflow = TeamWorkflowInputSerializer(write_only=True, required=False)
+    # The manager to designate, written on create (the second page of HR's
+    # flow) or reassigned on update. A team is handed to a manager; the manager
+    # then configures its chain and its members.
+    manager = TeamManagerInputSerializer(write_only=True, required=False)
     # A team no longer holds members itself — its workflow's sections do. These
     # are flattened for display so the team list can show who is on the team
     # without a second request, but they are derived from the sections, so there
@@ -1136,7 +593,7 @@ class TeamSerializer(serializers.ModelSerializer):
             "workflow",
             "workflow_name",
             "workflows",
-            "new_workflow",
+            "manager",
             "status",
             "effective_from",
             "effective_to",
@@ -1155,6 +612,7 @@ class TeamSerializer(serializers.ModelSerializer):
             # neither can happen by accident or without a validation record.
             "status",
             "is_effective",
+            "workflow",
             "workflows",
             "stage_roles",
             "member_count",
@@ -1165,9 +623,35 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs: dict) -> dict:
-        supplied = attrs.pop("new_workflow", None)
-        if supplied is not None:
-            self._new_workflow = supplied
+        # Two fields HR used to write are now refused rather than ignored, so
+        # an old client that still sends one learns the boundary instead of
+        # believing it configured something. Chains are the manager's to build,
+        # and routing is the manager's to choose.
+        initial = getattr(self, "initial_data", None) or {}
+        if "new_workflow" in initial:
+            raise serializers.ValidationError(
+                {
+                    "new_workflow": (
+                        "Approval chains are configured by the team's manager, "
+                        "not by HR. Create the team, assign its manager, and "
+                        "the manager builds the chain from their own portal."
+                    )
+                }
+            )
+        if "workflow" in initial:
+            raise serializers.ValidationError(
+                {
+                    "workflow": (
+                        "Routing is the team manager's decision. HR creates the "
+                        "team and assigns its manager; the manager picks which "
+                        "of the team's chains is in force."
+                    )
+                }
+            )
+
+        manager = attrs.pop("manager", None)
+        if manager is not None:
+            self._manager = manager
 
         campus = self._value(attrs, "campus")
         # A team being placed at a campus is an academic one unless HR says
@@ -1207,17 +691,6 @@ class TeamSerializer(serializers.ModelSerializer):
                         "An administration team is not campus-based. Clear the "
                         "campus, or switch the category to Academic if this "
                         "team should sit at one."
-                    )
-                }
-            )
-
-        if "workflow" in attrs and self.instance is None and attrs["workflow"] is not None:
-            raise serializers.ValidationError(
-                {
-                    "workflow": (
-                        "A new team cannot adopt an existing workflow. Its "
-                        "approval steps are written with it, or added "
-                        "afterwards under the team."
                     )
                 }
             )
@@ -1346,7 +819,7 @@ class TeamSerializer(serializers.ModelSerializer):
         return create_team(
             actor=self.context["actor"],
             data=dict(validated_data),
-            workflow_config=getattr(self, "_new_workflow", None),
+            manager=getattr(self, "_manager", None),
         )
 
     def update(self, instance: Team, validated_data: dict) -> Team:
@@ -1354,7 +827,7 @@ class TeamSerializer(serializers.ModelSerializer):
             team=instance,
             actor=self.context["actor"],
             data=dict(validated_data),
-            workflow_config=getattr(self, "_new_workflow", None),
+            manager=getattr(self, "_manager", None),
         )
 
 
@@ -1381,149 +854,6 @@ class TeamReadinessSerializer(serializers.Serializer):
             }
             for issue in instance.issues
         ]
-
-
-class CampusSerializer(serializers.ModelSerializer):
-    """HR-maintained campus reference data, used to scope teams."""
-
-    class Meta:
-        model = Campus
-        fields = ["id", "name", "code", "description", "is_active", "created_at", "updated_at"]
-        read_only_fields = ["created_at", "updated_at"]
-
-    def validate_code(self, value: str) -> str:
-        cleaned = slugify(value)
-        if not cleaned:
-            raise serializers.ValidationError(
-                "The campus code must be made of letters, numbers, or hyphens."
-            )
-        if cleaned != value:
-            raise serializers.ValidationError(
-                f'Use lowercase letters, numbers, and hyphens only, like "{cleaned}".'
-            )
-        return value
-
-    def validate(self, attrs: dict) -> dict:
-        if self.instance is not None:
-            return attrs
-        code = attrs.get("code")
-        if code and Campus.objects.filter(code=code).exists():
-            raise serializers.ValidationError(
-                {"code": [f'The campus code "{code}" is already in use.']}
-            )
-        return attrs
-
-    def create(self, validated_data: dict) -> Campus:
-        return create_campus(actor=self.context["actor"], data=dict(validated_data))
-
-    def update(self, instance: Campus, validated_data: dict) -> Campus:
-        return update_campus(
-            campus=instance, actor=self.context["actor"], data=dict(validated_data)
-        )
-
-
-class WideRoleAssignmentSerializer(serializers.ModelSerializer):
-    """Shared shape of the team- and campus-wide holding screens.
-
-    Deliberately the same three fields as the institution-wide one — an
-    employee, a role, and the scope it is held at — so "who approves what" is
-    configured the same way wherever it is configured. The service owns
-    uniqueness, so saving a second holder for the same role and scope replaces
-    the first rather than failing; the validator list is emptied for the same
-    reason the institution-wide one is.
-    """
-
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    role = serializers.PrimaryKeyRelatedField(
-        queryset=ApproverRole.objects.all()
-    )
-    user_name = serializers.SerializerMethodField()
-    role_label = serializers.SerializerMethodField()
-
-    def get_user_name(self, instance) -> str:
-        return instance.user.get_full_name() or instance.user.username
-
-    def get_role_label(self, instance) -> str:
-        return instance.role.label
-
-    def validate_role(self, value: ApproverRole) -> ApproverRole:
-        if not value.is_active:
-            raise serializers.ValidationError(
-                f'"{value.label}" is deactivated. Reactivate it in Roles, or '
-                "pick an active role."
-            )
-        if value.is_institution_wide:
-            raise serializers.ValidationError(
-                f'"{value.label}" is an institution-wide role. Assign its '
-                "holder under Approvers, not here."
-            )
-        return value
-
-    def validate_user(self, value: User) -> User:
-        if not value.is_active:
-            raise serializers.ValidationError(
-                f"{value.get_full_name() or value.username} is not an active "
-                "user. Activate the account before assigning a role."
-            )
-        if getattr(value, "employee_profile", None) is None:
-            raise serializers.ValidationError(
-                f"{value.get_full_name() or value.username} has no employee "
-                "record, so there is nothing to hold an approver role with. "
-                "Complete their employee record first."
-            )
-        return value
-
-
-class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
-    """One team-wide holding: this role, on this team, held by this person."""
-
-    class Meta:
-        model = TeamRoleAssignment
-        fields = [
-            "id",
-            "team",
-            "role",
-            "user",
-            "user_name",
-            "role_label",
-            "created_at",
-        ]
-        read_only_fields = ["id", "created_at"]
-        validators: list = []
-
-    def create(self, validated_data: dict) -> TeamRoleAssignment:
-        return create_team_role_assignment(
-            team=validated_data["team"],
-            role=validated_data["role"],
-            user=validated_data["user"],
-            actor=self.context["actor"],
-        )
-
-
-class CampusRoleAssignmentSerializer(WideRoleAssignmentSerializer):
-    """One campus-wide holding, which reaches every team at that campus."""
-
-    class Meta:
-        model = CampusRoleAssignment
-        fields = [
-            "id",
-            "campus",
-            "role",
-            "user",
-            "user_name",
-            "role_label",
-            "created_at",
-        ]
-        read_only_fields = ["id", "created_at"]
-        validators: list = []
-
-    def create(self, validated_data: dict) -> CampusRoleAssignment:
-        return create_campus_role_assignment(
-            campus=validated_data["campus"],
-            role=validated_data["role"],
-            user=validated_data["user"],
-            actor=self.context["actor"],
-        )
 
 
 class TeamMemberSummarySerializer(serializers.Serializer):

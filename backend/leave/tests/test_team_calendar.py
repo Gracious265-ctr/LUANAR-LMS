@@ -16,7 +16,7 @@ from leave.models import LeaveApplication
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 from users.models import EmployeeProfile
 from approvals.models import ApplicationStage
-from workflows.services import ApprovalConflictError, decide
+from approvals.services import ApprovalConflictError, decide
 from workflows.testing import make_team
 
 User = get_user_model()

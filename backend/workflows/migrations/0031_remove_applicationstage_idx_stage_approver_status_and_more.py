@@ -9,7 +9,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('leave', '0020_alter_leaveapplication_current_stage'),
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('notifications', '0009_alter_notificationoutbox_delegation_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
         ('plans', '0004_alter_planapprovalstage_role_ref_and_more'),
         ('users', '0012_alter_employeeprofile_team'),
         ('workflows', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
@@ -98,7 +99,7 @@ class Migration(migrations.Migration):
             migrations.AlterField(
                 model_name='workflowmember',
                 name='team',
-                field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='workflow_member_assignments', to='org.team'),
+                field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='workflow_member_assignments', to='organisation.team'),
             ),
             migrations.RemoveField(
                 model_name='workflow',
@@ -111,7 +112,7 @@ class Migration(migrations.Migration):
             migrations.AlterField(
                 model_name='workflowmember',
                 name='workflow',
-                field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='workflow_members', to='org.workflow'),
+                field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='workflow_members', to='organisation.workflow'),
             ),
             migrations.AlterField(
                 model_name='reassignment',

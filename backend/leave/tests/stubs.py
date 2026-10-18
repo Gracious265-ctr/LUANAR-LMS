@@ -194,7 +194,8 @@ def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | Non
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
-    from org.models import ApproverRole, RoleAssignment, SectionMember
+    from organisation.models import ApproverRole, RoleAssignment
+    from workflows.models import SectionMember
 
     role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
     if role_obj is None:

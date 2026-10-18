@@ -27,7 +27,7 @@ from leave.tests.stubs import (
 )
 from leave.validation.types import ValidationContext
 from approvals.models import ApplicationStage, ApplicationStageApprover
-from workflows.services import assign_workflow
+from approvals.services import assign_workflow
 
 from leave.cancellations.models import (
     CancellationApprovalStage,

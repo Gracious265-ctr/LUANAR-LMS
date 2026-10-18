@@ -40,7 +40,8 @@ from leave.services.submission import (
     submit_application,
 )
 from approvals.models import ApplicationStage
-from workflows.services import decide, ApprovalDecision
+from approvals.models import ApprovalDecision
+from approvals.services import decide
 
 from .stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 

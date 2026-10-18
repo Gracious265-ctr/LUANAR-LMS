@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from users.models import EmployeeProfile
-from org.models import Team
+from organisation.models import Team
 from workflows.policies import user_can_view_team_calendar
 
 from ..conflicts import COUNTED_STATUSES, conflict_threshold

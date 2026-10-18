@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from org.models import ApproverRole
+from organisation.models import ApproverRole
 
 #: The six canonical roles, with the behaviour each one carries. Mirrors what
 #: migration 0011 used to seed, adapted to the current model: roles are HR data,
@@ -126,21 +126,3 @@ WORKFLOW_TEMPLATES: dict[str, WorkflowTemplate] = {
         ),
     ),
 }
-
-
-def workflow_template_config(key: str, team_name: str) -> dict:
-    """The ``workflow_config`` a team created from ``key`` is written with.
-
-    Shaped exactly as :func:`workflows.services.create_team` expects, so a team
-    and its template chain land in one transaction. Every step's ``approver`` is
-    ``None``: the template names roles, and HR appoints people afterwards (or
-    the readiness check reports the gap and activation refuses).
-    """
-    template = WORKFLOW_TEMPLATES[key]
-    return {
-        "name": f"{team_name.strip()} workflow" if team_name.strip() else "Team workflow",
-        "sections": [
-            {"name": name, "approver_role": code, "approver": None}
-            for name, code in template.sections
-        ],
-    }

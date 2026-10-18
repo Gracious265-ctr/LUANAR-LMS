@@ -60,32 +60,32 @@ export const SETUP_STEPS: {
     title: "Open a financial year",
     description:
       "Leave is validated against the active 1 July – 30 June financial year.",
-    href: "/dashboard/hr-admin/calendar",
+    href: "/hr-admin/calendar",
   },
   {
     key: "leave_types",
     title: "Add the leave types",
     description: "The categories staff can apply for, such as annual or maternity.",
-    href: "/dashboard/hr-admin/leave-types",
+    href: "/hr-admin/leave-types",
   },
   {
     key: "entitlements",
     title: "Set grade entitlements",
     description: "How many annual leave days each salary grade is granted.",
-    href: "/dashboard/hr-admin/entitlements",
+    href: "/hr-admin/entitlements",
   },
   {
     key: "roles",
     title: "Define approver roles",
     description: "The positions a workflow step can name, such as Supervisor or HOD.",
-    href: "/dashboard/hr-admin/roles",
+    href: "/organisation/roles",
   },
   {
     key: "teams",
-    title: "Build a team and activate it",
+    title: "Build a team and its approval chain",
     description:
-      "Group staff, staff the approval chain, then put the team into force.",
-    href: "/dashboard/hr-admin/teams",
+      "Group staff, name a manager, then let them staff the approval chain.",
+    href: "/organisation/teams",
   },
 ];
 
