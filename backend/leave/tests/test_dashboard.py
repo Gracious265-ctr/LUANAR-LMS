@@ -1,10 +1,11 @@
 """Tests for ``GET /api/v1/leave/dashboard/`` (Unit 3).
 
 The dashboard is scoped to the signed-in employee by construction, so the two
-themes here are (a) it returns exactly the right sections in the right order
-and (b) it never leaks another employee's leave. The annual balance reads the
-real provider seam and the per-type rings read the employee's own approved
-days, so both are exercised against real rows rather than a stub.
+themes here are (a) it returns exactly the right sections in the right order and
+(b) it never leaks another employee's leave. The annual balance reads the real
+provider seam; the per-type rings read the provider-backed entitlement mapping
+(``GradeLeaveEntitlement`` keyed by the fixture directory's external grade),
+so both are exercised against real rows rather than a stub.
 """
 
 from datetime import date, timedelta
@@ -20,6 +21,7 @@ from leave.cancellations.models import LeaveBalanceTransaction
 from leave.models import (
     FinancialYear,
     GradeEntitlement,
+    GradeLeaveEntitlement,
     LeaveApplication,
     LeaveRule,
     LeaveType,
@@ -36,14 +38,20 @@ TODAY = date(2026, 9, 21)
 EFFECTIVE_FROM = date(2020, 1, 1)
 FY_LABEL = "2026-27"
 
+#: Fixture-directory emails so per-type rings resolve: the fixture provider
+#: grades employee1/employee2 as "B" (directory/fixtures/seed_data.json).
+OWNER_EMAIL = "employee1@test.luanar"
+OTHER_EMAIL = "employee2@test.luanar"
+FIXTURE_GRADE_ID = "B"
+
 
 class DashboardTestBase(TestCase):
     url = "/api/v1/leave/dashboard/"
 
     def setUp(self):
         self.client = APIClient()
-        self.owner = make_user("dashboard-owner@luanar")
-        self.other = make_user("dashboard-other@luanar")
+        self.owner = make_user(OWNER_EMAIL)
+        self.other = make_user(OTHER_EMAIL)
         self._profile(self.owner, grade="B")
         self._profile(self.other, grade="B")
         self.client.force_authenticate(user=self.owner)
@@ -71,13 +79,13 @@ class DashboardTestBase(TestCase):
         )
 
         # A separately-granted type, so per-type rings have something to show.
+        # Per-type entitlements are keyed by the provider's external grade id.
         self.sick = LeaveType.objects.create(name="Sick Leave", code="sick")
-        GradeEntitlement.objects.create(
+        GradeLeaveEntitlement.objects.create(
+            grade_id=FIXTURE_GRADE_ID,
             leave_type=self.sick,
-            grade_start="A",
-            grade_end="Z",
+            financial_year=self.year,
             days=10,
-            effective_from=EFFECTIVE_FROM,
         )
 
     def _profile(self, user, *, grade):
@@ -409,11 +417,34 @@ class DashboardBalanceTests(DashboardTestBase):
             extra = LeaveType.objects.create(
                 name=f"Extra {index}", code=f"extra-{index}"
             )
-            GradeEntitlement.objects.create(
+            GradeLeaveEntitlement.objects.create(
+                grade_id=FIXTURE_GRADE_ID,
                 leave_type=extra,
-                grade_start="A",
-                grade_end="Z",
+                financial_year=self.year,
                 days=5 + index,
-                effective_from=EFFECTIVE_FROM,
             )
         self.assertEqual(len(self.get()["balances"]), 4)
+
+    def test_unconfigured_type_is_omitted_rather_than_zero(self):
+        LeaveType.objects.create(name="Compassionate Leave", code="compassionate")
+
+        labels = [ring["leave_type"] for ring in self.get()["balances"]]
+        self.assertNotIn("Compassionate Leave", labels)
+
+    def test_no_provider_record_means_no_typed_rings(self):
+        # A local profile grade and a typed band are not enough any more: the
+        # per-type rings need a provider record (matched by email) to know the
+        # employee's external grade. The annual ring is unaffected.
+        orphan = make_user("dashboard-owner@luanar")
+        self._profile(orphan, grade="B")
+        GradeEntitlement.objects.create(
+            leave_type=self.sick,
+            grade_start="A",
+            grade_end="Z",
+            days=10,
+            effective_from=EFFECTIVE_FROM,
+        )
+        self.client.force_authenticate(user=orphan)
+
+        labels = [ring["leave_type"] for ring in self.get()["balances"]]
+        self.assertEqual(labels, ["Annual Leave"])

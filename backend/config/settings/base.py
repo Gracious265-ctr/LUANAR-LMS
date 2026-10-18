@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     "documents",
     "audit",
     "launcher",
+    "directory",
+    "org",
 ]
 
 MIDDLEWARE = [
@@ -118,6 +120,12 @@ WORKFLOW_PROVIDER = "workflows.providers.DatabaseWorkflowProvider"
 LEAVE_BALANCE_PROVIDER = (
     "leave.cancellations.providers.LedgerBalanceProvider"
 )
+
+# Organisation data provider (Unit: External Organization Data Provider).
+# The provider supplies employees, grades, org units and role holders; only
+# "fixture" ships for now, "api" is reserved for the real directory and
+# raises until it exists (see directory/factory.py).
+ORG_DATA_BACKEND = env("ORG_DATA_BACKEND", default="fixture")
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

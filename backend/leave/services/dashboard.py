@@ -6,8 +6,10 @@ govern this module and nothing else:
 - Readers are scoped to ``employee=user`` by construction, so an approver who
   is also an employee never sees anybody else's leave here.
 - Balance math is not reimplemented. The annual figure comes from the same
-  provider seam the rest of the system uses; the per-type figures are a plain
-  sum of that employee's own approved days, which is a read, not a ledger.
+  provider seam the rest of the system uses; the per-type figures come from
+  the provider-backed entitlement mapping (``get_entitlement``), whose
+  ``used`` is a plain sum of that employee's own approved days — a read, not
+  a ledger.
 """
 
 from django.db.models import Sum
@@ -16,12 +18,11 @@ from django.utils import timezone
 from workflows.models import ApprovalDecision
 
 from .. import providers as leave_providers
-from ..models import GradeEntitlement, LeaveApplication, LeaveType
+from ..models import LeaveApplication, LeaveType
 from . import (
     active_financial_year,
     financial_year_label,
-    grade_in_range,
-    normalize_grade,
+    get_entitlement,
     resolve_annual_balance_entitlement,
 )
 
@@ -81,33 +82,6 @@ def _serialize_summary(application, leave_type_names, *, include_excerpt=False) 
     }
 
 
-def _typed_entitlements(grade, as_of):
-    """Latest effective typed band per leave type covering ``grade``.
-
-    Returns ``(leave_type, rule)`` pairs, ordered by type name so the rings are
-    deterministic before the page caps them.
-    """
-    key = normalize_grade(grade)
-    if key is None:
-        return []
-
-    latest: dict[int, GradeEntitlement] = {}
-    queryset = GradeEntitlement.objects.filter(
-        effective_from__lte=as_of, leave_type__isnull=False
-    ).select_related("leave_type")
-    for rule in queryset:
-        if not grade_in_range(key, rule.grade_start, rule.grade_end):
-            continue
-        existing = latest.get(rule.leave_type_id)
-        if existing is None or rule.effective_from > existing.effective_from:
-            latest[rule.leave_type_id] = rule
-
-    return sorted(
-        ((rule.leave_type, rule) for rule in latest.values()),
-        key=lambda pair: pair[0].name,
-    )
-
-
 def _approved_days_for_type(user, leave_type_id, financial_year_label) -> int:
     """Sum of the employee's approved days of one type in a financial year."""
     if financial_year_label is None:
@@ -157,15 +131,21 @@ def build_balances(user) -> list[dict]:
         )
         rings.append({"leave_type": label, "used": used, "total": total})
 
+    # Per-type rings come from the provider-backed entitlement mapping; an
+    # unconfigured (grade, type, year) omits its ring instead of showing a
+    # false zero.
     annual_type_id = annual_rule.leave_type_id if annual_rule is not None else None
-    for leave_type, rule in _typed_entitlements(grade, as_of):
+    for leave_type in LeaveType.objects.filter(is_active=True).order_by("name"):
         if leave_type.pk == annual_type_id:
+            continue
+        total = get_entitlement(user, leave_type, year)
+        if total is None:
             continue
         rings.append(
             {
                 "leave_type": leave_type.name,
                 "used": _approved_days_for_type(user, leave_type.pk, fy_label),
-                "total": rule.days,
+                "total": total,
             }
         )
 

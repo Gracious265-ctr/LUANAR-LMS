@@ -183,6 +183,53 @@ class FinancialYear(models.Model):
         return f"{self.start_date} – {self.end_date}{status}"
 
 
+class GradeLeaveEntitlement(models.Model):
+    """Days of one leave type granted to one external grade in one year.
+
+    The organisation data provider is the source of an employee's grade, so
+    this table is keyed by the provider's external grade id rather than by a
+    local grade range (``GradeEntitlement``). ``get_entitlement`` answers
+    from this mapping; "no row" means not configured and is reported as
+    ``None``, never as zero.
+    """
+
+    grade_id = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="External grade identifier from the organisation provider.",
+    )
+    leave_type = models.ForeignKey(
+        LeaveType,
+        on_delete=models.PROTECT,
+        related_name="grade_leave_entitlements",
+    )
+    financial_year = models.ForeignKey(
+        FinancialYear,
+        on_delete=models.PROTECT,
+        related_name="grade_leave_entitlements",
+    )
+    days = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["grade_id", "leave_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["grade_id", "leave_type", "financial_year"],
+                name="gradeleaveentitlement_grade_type_year_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(days__gte=1),
+                name="gradeleaveentitlement_days_gte_1",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.grade_id}: {self.days} {self.leave_type.name} days "
+            f"({self.financial_year})"
+        )
+
+
 class PublicHoliday(models.Model):
     """A configured public-holiday date (named, occurs at most once)."""
 

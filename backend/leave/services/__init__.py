@@ -6,7 +6,14 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from django.utils.text import slugify
 
-from ..models import FinancialYear, GradeEntitlement, LeaveRule, LeaveType, PublicHoliday
+from ..models import (
+    FinancialYear,
+    GradeEntitlement,
+    GradeLeaveEntitlement,
+    LeaveRule,
+    LeaveType,
+    PublicHoliday,
+)
 
 
 def normalize_grade(grade: str) -> str | None:
@@ -420,6 +427,36 @@ def public_holidays_between(start: date, end: date):
     This is the configuration boundary later working-day calculations consume.
     """
     return PublicHoliday.objects.filter(date__gte=start, date__lte=end).order_by("date")
+
+
+def get_entitlement(user, leave_type, financial_year) -> int | None:
+    """Days of ``leave_type`` granted to ``user`` for one financial year.
+
+    The employee's grade comes from the organisation data provider (matched
+    by email), not from the local profile, so the answer is read from
+    :class:`~leave.models.GradeLeaveEntitlement` against the provider's
+    external grade id. ``None`` means "not configured" — callers omit the
+    ring rather than showing a false zero. Any unresolved step (no local
+    user, no provider record, no grade, no configured row) is ``None``.
+    """
+    if user is None or leave_type is None or financial_year is None:
+        return None
+
+    from directory.services import find_provider_employee_for_user
+
+    record = find_provider_employee_for_user(user)
+    if record is None or not record.grade_id:
+        return None
+
+    return (
+        GradeLeaveEntitlement.objects.filter(
+            grade_id=record.grade_id,
+            leave_type=leave_type,
+            financial_year=financial_year,
+        )
+        .values_list("days", flat=True)
+        .first()
+    )
 
 
 # Imported last so ``dashboard`` can read the names above from this package

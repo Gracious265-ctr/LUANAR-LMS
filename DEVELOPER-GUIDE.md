@@ -64,6 +64,8 @@ database directly; it always goes through the Django API.
 | `backend/documents` | The official approved-leave **PDF** generator + template |
 | `backend/notifications` | Notification outbox + email sending (composers write rows, `tasks.py` sends them via django-q2) |
 | `backend/audit` | The immutable **AuditEvent** trail + HR audit view |
+| `backend/directory` | The **organisation data provider** seam: provider contract + dataclasses, the `ORG_DATA_BACKEND` factory, the placeholder fixture directory (employees, grades, org units, role holders) and the `sync_org_structure` command |
+| `backend/org` | The mirrored organisation tree (`OrgUnit`): the provider sync that creates/updates units and appoints `designated_approver` from role holders |
 
 ### The standard layout inside one app
 
@@ -101,6 +103,9 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | Logic of **submitting** an application | `backend/leave/services/submission.py` |
 | Logic of **saving changes / resubmitting** an application | `backend/leave/services/resubmission.py` |
 | Entitlement/rules resolution helpers (which grade get which days) | `backend/leave/services/__init__.py` |
+| Per-type leave entitlement mapping (external grade + type + year → days) and `get_entitlement` | `backend/leave/models.py` (`GradeLeaveEntitlement`), `backend/leave/services/__init__.py` (`get_entitlement`) |
+| The organisation data source (employees, grades, org units, role holders) and its contract | `backend/directory/provider.py`, `backend/directory/fixtures/seed_data.json`, `backend/directory/factory.py` (`ORG_DATA_BACKEND` in `backend/config/settings/base.py`) |
+| Syncing the org tree / who a unit's designated approver is | `backend/org/services.py`, command `backend/directory/management/commands/sync_org_structure.py` |
 | Working-day / weekend / holiday calculation | `backend/leave/services/working_days.py` |
 | Reference numbers (e.g. `LV-2026-27-…`) | `backend/leave/services/references.py` |
 | Supporting-document lifecycle (upload/replace/delete rules) | `backend/leave/services/documents.py` |

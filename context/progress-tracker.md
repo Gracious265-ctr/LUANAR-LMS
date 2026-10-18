@@ -4,6 +4,22 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- **Unit — External Organization Data Provider — DONE (2026-10-18)** — refinement
+  unit `context/refinement/05-org-data-provider.md`. Introduces the
+  organisation data-provider seam: `directory` app (provider ABC + dataclasses,
+  settings-driven factory, fixture provider + placeholder seed data,
+  `sync_org_structure` command), `ORG_DATA_BACKEND` setting, `GradeLeaveEntitlement`
+  mapping + `get_entitlement`, and the dashboard's typed rings switched to it.
+  Developer decisions at planning: (1) a minimal `OrgUnit` is created in a new
+  `org` app (the org-tree blueprint it assumed does not exist yet); (2)
+  employee identity reconciles **by email** (fixture employees carry the seeded
+  demo users' addresses; no `external_employee_id` schema change); (3) the
+  dashboard patch is a **hard switch of typed rings only** — annual ring stays
+  ledger/band-based; (4) `GradeLeaveEntitlement` lives in `leave` (the
+  `leave_config` app the spec named does not exist; `LeaveType`/`FinancialYear`
+  live in `leave`). See "Completed (Unit — External Organization Data Provider)
+  (2026-10-18)" at the end of this file.
+
 - **Unit 4 — Leave Plans App — DONE (2026-10-17)** — refinement
   unit `context/refinement/04-leave-plans-app.md`. A self-service Leave Plan
   (employee personal scheduling reminder; never submitted, never approved) that
@@ -5634,3 +5650,87 @@ five employees on the team; `check_schema_drift` → "No schema drift detected".
 Fresh-run and re-run (idempotent) both green. `manage.py test workflows plans
 users` → **773 tests OK**. Documented in `README.md` ("Demo data (development
 only)") and the `DEVELOPER-GUIDE.md` commands table.
+
+## Completed (Unit — External Organization Data Provider) (2026-10-18)
+
+**Goal.** One seam between the system and the university's organisation data —
+employees, grades, org units, role holders — swappable behind a single setting
+(`ORG_DATA_BACKEND`), with a placeholder fixture directory so the sync, the
+grade→entitlement mapping and the Leave dashboard work end to end before any
+real directory exists.
+
+**Delivered.**
+- **New `directory` app (the provider boundary).**
+  - `provider.py`: frozen dataclasses `EmployeeRecord`, `GradeRecord`,
+    `OrgUnitRecord`, `RoleHolder` + ABC `OrganizationDataProvider` with
+    `get_employee`, `get_employees(branch, home_unit_id)`, `get_grade`,
+    `get_grades`, `get_org_units`, `get_role_holders`.
+  - `factory.py::get_organization_provider()`: `"fixture"` → fixture provider;
+    `"api"` and unknown values raise `ImproperlyConfigured` loudly (never a
+    silent fixture fallback — the spec's §4.4 test 5). No `ApiOrganizationDataProvider`
+    class exists (no dead code).
+  - `fixtures/provider.py` + `fixtures/seed_data.json`: placeholder institution
+    tree (1 institution, 2 campuses, 1 faculty, 2 academic + 2 admin departments
+    — one with a team, one without, plus a team unit), 6 grades, 8 employees
+    whose emails match the seeded demo users, role holders for all six roles
+    with **one intentionally vacant** (`UNIT-DEPT-FIN` manager).
+  - `services.py`: email-based identity reconciliation —
+    `find_provider_employee_for_user` / `get_local_user_for_external_employee`.
+  - `management/commands/sync_org_structure.py`: factory → sync → summary.
+- **New `org` app (the spec's `backend/org/services.py` home).** Minimal
+  `OrgUnit` (`external_id` unique, `unit_type` choices, `name`, `parent` self-FK,
+  `has_teams`, `designated_approver` FK) — the minimum of the unbuilt org-tree
+  blueprint the sync needed; `services.py::sync_org_structure_from_provider`
+  (atomic, two-pass so provider list order doesn't matter, `update_or_create`
+  on `external_id` = idempotent, role holders resolve by email, vacant or
+  unresolvable → `designated_approver=None`, returns `{created, updated,
+  role_linked, vacant}`); admin; migration `0001_initial`.
+- **Setting.** `ORG_DATA_BACKEND = env(...)` defaulting to `"fixture"` in
+  `config/settings/base.py` beside the other provider settings; both apps in
+  `INSTALLED_APPS`.
+- **`leave` additions.** `GradeLeaveEntitlement` (`grade_id` external id +
+  `leave_type` FK + `financial_year` FK + `days`, unique triple, days ≥ 1)
+  with migration `0020_gradeleaveentitlement` and a plain ModelAdmin;
+  `services/__init__.py::get_entitlement(user, leave_type, financial_year)` —
+  provider record by email → external grade → mapping row; every unresolved
+  step is `None`, never 0/exception.
+- **Dashboard patch (typed rings only).** `leave/services/dashboard.py`:
+  `_typed_entitlements` (band lookup) removed; per-type rings now iterate
+  active leave types and call `get_entitlement`, **omitting** the ring on
+  `None` (no false zero). The annual ring, its ledger-backed `used`, and the
+  `no profile grade → []` guard are unchanged.
+
+**Adaptations to the real codebase** (vs the spec's aspirational paths):
+- `OrgUnit`/`org` app did not exist (org-tree blueprint unbuilt) — created
+  minimally exactly where the spec places the sync (`backend/org/services.py`).
+- Identity linkage: reconciled **by email** (agreed at planning) — no
+  `User.external_employee_id` migration; fixture employees carry the seeded
+  users' addresses so the whole chain resolves in dev today. The one place to
+  change when a real directory ships is `directory/services.py`.
+- `GradeLeaveEntitlement` lives in `leave`, not the spec's `leave_config`
+  (that app does not exist yet; `LeaveType`/`FinancialYear` live in `leave`).
+- The spec's "submission-blocking behaviour fires against synced data"
+  checklist item is half-deferred: vacancy → `designated_approver=None` on
+  synced data is tested; the org-tree blueprint's submission block does not
+  exist yet to exercise.
+- Annual ring intentionally not switched (spec checklist only covers per-type
+  rings; the annual ring is ledger-backed and authoritative).
+
+**Tests** (70 across the unit's surface): `directory/tests/` — fixture
+contract/cross-reference consistency for every method (27), factory default +
+`api`/unknown raising (4), email reconciliation (9); `org/tests/test_sync.py`
+(8: first-run create, second-run update-not-duplicate, provider restores
+hand-edits, parents/flags, role-holder resolution, vacancy clears, unresolvable
+→ vacant, summary shape); `leave/tests/test_entitlements.py` (6: configured
+days, unconfigured type/grade/year → None, no provider record → None, blanks);
+`leave/tests/test_dashboard.py` reworked (owner/other are fixture emails, sick
+ring from `GradeLeaveEntitlement`, cap test reseeded, plus new: unconfigured
+type omitted, no-provider-record user gets annual only).
+
+**Verification.** `manage.py check` clean; `makemigrations --check` clean;
+backend full suite **1470 tests OK**; targeted new/affected suites **70 OK**.
+Live dev DB: `migrate` applied (`leave.0020`, `org.0001`), `sync_org_structure`
+ran — first run `9 created, 0 updated, 7 role-linked, 1 vacant`, second run
+`0 created, 9 updated, 7 role-linked, 1 vacant` (idempotent). Docs updated:
+`DEVELOPER-GUIDE.md` (two app rows + four "I want to change" rows),
+`context/architecture.md` (backend tree).

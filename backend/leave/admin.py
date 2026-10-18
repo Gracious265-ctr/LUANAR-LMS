@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from .models import (
     FinancialYear,
     GradeEntitlement,
+    GradeLeaveEntitlement,
     LeaveRule,
     LeaveType,
     PublicHoliday,
@@ -226,3 +227,10 @@ class PublicHolidayAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(GradeLeaveEntitlement)
+class GradeLeaveEntitlementAdmin(admin.ModelAdmin):
+    list_display = ("grade_id", "leave_type", "financial_year", "days")
+    list_filter = ("financial_year", "leave_type")
+    search_fields = ("grade_id",)
