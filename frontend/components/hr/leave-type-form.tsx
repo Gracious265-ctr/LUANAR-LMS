@@ -48,13 +48,13 @@ export function LeaveTypeForm({
         </p>
         <div className="mt-4 flex items-center gap-3">
           <Link
-            href="/dashboard/hr-admin/entitlements"
+            href="/hr-admin/entitlements"
             className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
           >
             Go to Entitlements
           </Link>
           <Link
-            href="/dashboard/hr-admin/leave-types"
+            href="/hr-admin/leave-types"
             className="rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             Back to Leave Types
@@ -83,7 +83,7 @@ export function LeaveTypeForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/dashboard/hr-admin/leave-types");
+        router.push("/hr-admin/leave-types");
         router.refresh();
       }
     } catch (err) {
@@ -145,7 +145,7 @@ export function LeaveTypeForm({
           </Button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/leave-types"
+            href="/hr-admin/leave-types"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

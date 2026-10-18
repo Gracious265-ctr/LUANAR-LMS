@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ('leave', '0006_leave_validation_submission'),
-        ('org', '0001_initial'),
+        ('organisation', '0001_initial'),
     ]
 
     operations = [
@@ -37,8 +37,8 @@ class Migration(migrations.Migration):
                     ('updated_at', models.DateTimeField(auto_now=True)),
                     ('application', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='stages', to='leave.leaveapplication')),
                     ('assigned_approver', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to=settings.AUTH_USER_MODEL)),
-                    ('role_ref', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='org.approverrole')),
-                    ('section_ref', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='org.section')),
+                    ('role_ref', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='organisation.approverrole')),
+                    ('section_ref', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='organisation.section')),
                 ],
                 options={'db_table': 'workflows_applicationstage', 'ordering': ['application', 'submission_cycle', 'stage_order']},
             ),

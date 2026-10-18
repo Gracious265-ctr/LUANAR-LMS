@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LeaveApplicationForm } from "@/components/leave/LeaveApplicationForm";
@@ -109,6 +109,11 @@ describe("LeaveApplicationForm", () => {
     );
 
     render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
+
+    // The uploader lives on the wizard's documents step; an attached document
+    // keeps that step visible, so two Nexts reach it.
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
 
     expect(await screen.findByText(/drag & drop files/i)).toBeInTheDocument();
     expect(

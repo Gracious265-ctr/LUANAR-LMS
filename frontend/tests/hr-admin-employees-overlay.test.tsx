@@ -9,7 +9,7 @@ import { EmployeesSection } from "@/components/hr/EmployeesSection";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/employees" },
+  pathnameRef: { current: "/hr-admin/employees" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -96,7 +96,7 @@ describe("EmployeesSection — wave 2", () => {
 
     expect(
       screen.getByRole("link", { name: /Jane Dean/ }).getAttribute("href")
-    ).toBe("/dashboard/hr-admin/employees/1");
+    ).toBe("/hr-admin/employees/1");
   });
 
   it("says which slice of the staff list is on screen when unfiltered", () => {
@@ -114,7 +114,7 @@ describe("EmployeesSection — wave 2", () => {
     fireEvent.click(screen.getByRole("button", { name: /New employee/ }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/employees?search=dean&employee=new"
+      "/hr-admin/employees?search=dean&employee=new"
     );
   });
 
@@ -178,7 +178,7 @@ describe("EmployeesSection — wave 2", () => {
       fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/employees"
+        "/hr-admin/employees"
       );
     });
   });

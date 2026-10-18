@@ -39,7 +39,7 @@ export default async function LeaveRulesPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const params = await searchParams;
@@ -78,7 +78,7 @@ export default async function LeaveRulesPage({
       query.set("effective", value);
     }
     const qs = query.toString();
-    return `/dashboard/hr-admin/leave-rules${qs ? `?${qs}` : ""}`;
+    return `/hr-admin/leave-rules${qs ? `?${qs}` : ""}`;
   }
 
   return (
@@ -150,7 +150,7 @@ export default async function LeaveRulesPage({
             rules={rules.results}
             leaveTypes={leaveTypes?.results ?? []}
             today={currentDateIso()}
-            clearFiltersHref="/dashboard/hr-admin/leave-rules"
+            clearFiltersHref="/hr-admin/leave-rules"
             heading={
               effective === "all"
                 ? "All rules"

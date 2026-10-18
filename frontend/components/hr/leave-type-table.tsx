@@ -47,7 +47,7 @@ export function LeaveTypeTable({
       <TableBody>
         {leaveTypes.map((leaveType) => {
           const annual = isAnnualLeaveType(leaveType);
-          const editHref = `/dashboard/hr-admin/leave-types/${leaveType.id}/edit`;
+          const editHref = `/hr-admin/leave-types/${leaveType.id}/edit`;
 
           return (
             <TableRow key={leaveType.id}>
@@ -84,7 +84,7 @@ export function LeaveTypeTable({
               <TableCell className="text-right">
                 {annual ? (
                   <Link
-                    href="/dashboard/hr-admin/entitlements"
+                    href="/hr-admin/entitlements"
                     className="text-xs text-text-muted underline underline-offset-2 hover:text-text-primary"
                   >
                     Edit days

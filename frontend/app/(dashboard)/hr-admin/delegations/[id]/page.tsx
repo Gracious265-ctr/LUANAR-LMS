@@ -21,7 +21,7 @@ export default async function DelegationDetailPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let delegation;
@@ -47,7 +47,7 @@ export default async function DelegationDetailPage({
         {employeesError && (
           <Card>
             <Link
-              href="/dashboard/hr-admin/delegations"
+              href="/hr-admin/delegations"
               className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
             >
               <ArrowLeft className="h-4 w-4" />

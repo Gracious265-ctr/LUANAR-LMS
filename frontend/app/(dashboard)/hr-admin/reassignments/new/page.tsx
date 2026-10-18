@@ -24,7 +24,7 @@ export default async function ShimPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const params = await searchParams;
@@ -32,10 +32,10 @@ export default async function ShimPage({
     typeof params.application === "string" ? params.application : "";
 
   if (!applicationId) {
-    redirect("/dashboard/hr-admin/reassignments");
+    redirect("/hr-admin/reassignments");
   }
 
   redirect(
-    `/dashboard/hr-admin/reassignments?reassign=${encodeURIComponent(applicationId)}`
+    `/hr-admin/reassignments?reassign=${encodeURIComponent(applicationId)}`
   );
 }

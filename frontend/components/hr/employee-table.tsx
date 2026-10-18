@@ -59,7 +59,7 @@ export function EmployeeTable({
           >
             <TableCell>
               <Link
-                href={`/dashboard/hr-admin/employees/${employee.id}`}
+                href={`/hr-admin/employees/${employee.id}`}
                 className="flex items-center gap-2 font-medium text-brand-primary hover:text-brand-primary-hover"
               >
                 <Avatar
@@ -92,7 +92,7 @@ export function EmployeeTable({
             </TableCell>
             <TableCell className="text-right">
               <EditActionLink
-                href={`/dashboard/hr-admin/employees/${employee.id}`}
+                href={`/hr-admin/employees/${employee.id}`}
               />
             </TableCell>
           </TableRow>

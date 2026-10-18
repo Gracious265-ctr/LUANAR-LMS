@@ -23,11 +23,19 @@ Update this file after every meaningful implementation change.
     persist across years), deactivates the previous active year, and is a no-op
     if the active year starts after today. `leave/tests/test_setup.py` (16 tests);
     `leave workflows audit` = 1133 tests OK; `makemigrations --check` clean.
-  - **P2 backend bulk approvals — DONE.** `workflows/approval_views.py`
-    `BulkApprovalDecisionAPIView` (+ serializers, `_bulk_error`), route
-    `approvals/bulk-decision/` (approve-only, cap 25, dedupe, own transaction +
-    audit per item → partial success); `BulkApprovalAPITests` (7);
-    `workflows.tests_approvals` = 69 OK.
+  - **P2 backend bulk approvals — DONE (2026-10-15).** The earlier "DONE"
+    claim was inaccurate: no bulk code existed in git history when restructure
+    Phase 0 audited it, so it was reimplemented rather than assumed.
+    `workflows/approval_views.py` now has `BulkApprovalDecisionAPIView` +
+    `BulkApprovalInputSerializer`/`BulkDecisionItemSerializer`
+    (`BULK_APPROVAL_LIMIT = 25`), routed at `approvals/bulk-decision/`
+    (registered before the `<str:pk>` routes). Approve-only, cap 25, empty/
+    duplicate/>25 all 400; each item runs the locked `decide` in its own
+    transaction → partial success, reporting `{results:[{id,status,reason?}],
+    approved, failed, limit}`. `list_item` now surfaces `stage_version` (the
+    pending stage's `decision_version`) and the pending list `select_related`s
+    `current_stage`. `workflows.tests_approvals.BulkApprovalAPITests` (9);
+    `workflows.tests_approvals` = 91 OK.
   - **P3 frontend setup hub — DONE.** `lib/setup.ts` (pure types/constants),
     `lib/setup-server.ts`, `lib/setup-client.ts`, proxy routes
     `app/api/hr/setup/{apply-defaults,rollover}`, `SetupHub.tsx`, restructured
@@ -49,17 +57,17 @@ Update this file after every meaningful implementation change.
     `tests/employee-form.test.tsx` updated (21 OK with the overlay suite);
     full frontend suite 951 OK (one load-only timing flake in the untouched
     entitlement form, passes isolated).
-  - **P6 ops inline + bulk approve — DONE.** Backend: `list_item` now carries
-    `stage_version` (the current stage's `decision_version`), and the pending
-    list `select_related` includes `current_stage`; a test asserts it. Frontend:
-    `lib/approvals/types.ts`/`service.ts` gain the bulk types +
-    `approveApprovals`, proxy `app/api/approvals/bulk-decision/`,
-    `BulkApproveDialog` (typed `APPROVE` confirmation, per-item results shown as
-    a partial-success toast), and selection (checkbox column, mobile row
-    checkbox, "Select all on this page", `N of 25 selected`, cap disables
-    further picks) on the pending tab of `approvals-list.tsx`. Tests:
-    `tests/approvals-list.test.tsx` 10 OK; backend `workflows.tests_approvals`
-    70 OK; full frontend suite 955 OK.
+  - **P6 ops inline + bulk approve — DONE (2026-10-15).** `lib/approvals/types.ts`
+    gains `stage_version` on the list item + the `BulkApproval*` types;
+    `lib/approvals/service.ts` gains `approveApprovals`; proxy
+    `app/api/approvals/bulk-decision/route.ts`; and `approvals-list.tsx` wires
+    the pending tab's selection (row checkboxes on desktop + mobile,
+    "Select all on this page", "N of 25 selected", cap disables further picks,
+    "Approve selected") to the `BulkApproveDialog` (typed `APPROVE`
+    confirmation). Successful items toast a count; failures render an `Alert`
+    listing each reference and its reason. `tests/approvals-list.test.tsx` = 12
+    OK; full frontend suite 960 OK / 111 files; `build`/`lint`/`typecheck:test`
+    clean.
   - **P7 nav/IA + polish + docs — DONE.** HR rail split into everyday
     destinations (Setup, Employees, Teams, Approvers, Campuses) plus a folded
     **Advanced** group (Roles, Leave Types, Entitlements, Leave Rules, Calendar,
@@ -72,6 +80,33 @@ Update this file after every meaningful implementation change.
   - **All 7 phases DONE.** Remaining: final full-suite verification.
 
 - **Unit 5 — System Restructure into Feature Modules + App Launcher — IMPLEMENTED (2026-10-13)** — refinement unit `context/refinement/05-system-restructure-app-launcher.md`. Reorganized backend into `leave` (unchanged), new `approvals` (stages/decisions), new `org` (org/teams/roles/assignments), `documents` (unchanged), with shared infra `users/notifications/audit`. Created `launcher` app with `/api/v1/apps/launcher/` aggregator returning role-filtered apps with badge counts. Frontend: app registry (`lib/apps-registry.ts`, `lib/launcher.ts`), launcher UI (`components/launcher/*`), and module-scoped shells (`ModuleShell`) with per-module layouts and "← All Apps" navigation. (Launcher landing location corrected on 2026-10-14 — see troubleshooting note: the page lives at `/(launcher)/page.tsx` on `/` with its own minimal shell, not `/(dashboard)/page.tsx`.) TypeScript and ESLint pass. Migrations created for new apps; import paths updated across codebase. (Full backend test suite migration state requires clean DB in this environment, but core restructuring per spec is complete.)
+
+- **System Restructure — Phase 0 (stabilize) — DONE (2026-10-15)** — pre-work
+  for the independent-app refactor (`context/refinement/05-...`). Fixed the
+  regressions left by the broken merge and made the two suites trustworthy as a
+  baseline:
+  - **Migration reversibility.** Reverted `workflows/0026` and
+    `users/0010` to plain, fully-reversible ops (dev DB is disposable); the
+    30-test `workflows.tests_migrations` suite passes.
+  - **Launcher owns `/`.** Deleted the route-colliding `app/page.tsx`;
+    `/` is now the `(launcher)` route with no build warnings.
+  - **Bulk approvals implemented.** The audit found the P2/P6 "DONE" claims
+    false (no bulk code in git history) and the two frontend artifacts dead
+    orphans; rather than delete-and-forget, the feature was built end-to-end
+    (see P2/P6). Frontend suite **960 OK / 111 files**.
+  - **Service stubs fixed.** `approvals/services.py`, `org/services.py`,
+    `launcher/services.py` now import real primitives (`is_approver_user`,
+    `role == "hr"`); launcher smoke test: employee → `leave,documents`,
+    HR/superuser → all apps.
+  - **Multi-step leave form implemented** (refinement 04 §3.4-§3.6) — see the
+    Unit 5 item-4 note below; `Stepper` gained opt-in step-click props, and
+    `LeaveTypeSelect` became parent-owned. 8 previously-failing
+    `tests/leave-application-form-steps.test.tsx` now pass.
+  - **Test infra.** `vitest.config.ts` sets `testTimeout`/`hookTimeout` = 15s;
+    the 3 timeout flakes (`entitlement-form`, `hr-admin-form-overlays`,
+    `plan-form`) pass under load. `npm run build`, `npm run lint`,
+    `typecheck:test` all clean. Backend baseline `test workflows audit` =
+    **645 OK**, `makemigrations --check` clean.
 
 - **System Admin Dashboard (Django Admin Extension) — COMPLETED (2026-10-11)**
   — refinement unit
@@ -193,8 +228,10 @@ Update this file after every meaningful implementation change.
     `BalanceCard`; tests added. Item 4 **done** — `LeaveApplicationForm` now a
     4-step flow (horizontal `Stepper size="sm"` with clickable settled steps,
     per-step validation gating, documents step `skipped` when not required);
-    `Stepper` gained an opt-in `onStepClick`, `LeaveTypeSelect` an
-    `onSelectedType` callback. Item 5 **done** — autosave failures raise a
+    `Stepper` gained opt-in `onStepClick`/`isStepClickable`/`stepAriaLabel`
+    props and `LeaveTypeSelect` became parent-owned (optional `types`/`loading`/
+    `error`; the form owns the list so the skipped-steps logic can read
+    `requiresDocuments`). Item 5 **done** — autosave failures raise a
     `pushToast` (success stays silent; 800ms debounce unchanged). Item 6
     **done** — `GET /api/v1/leave/me/form-defaults/` (`LeaveFormDefaultsView`)
     returns the last-used leave type, the next working day (weekends + public
@@ -5342,3 +5379,293 @@ before this pass; `system_admin` 35/35, leave 476/476, workflows+approvals
 419/419). `manage.py check` and `makemigrations --check` clean. Frontend
 `instrumentation-client.ts` gained `export {}`, fixing
 `TS2306: File is not a module` in `typecheck:test`; its 3 Vitest tests pass.
+
+## Completed — Phase 2c Domain-Logic Split: `approvals` + `organisation` (2026-10-15)
+
+Moved the approval-execution and organisation-administration code out of the
+`workflows` monolith into their feature apps (§3.1). Every HTTP URL path, route
+`reverse()` name, payload, and status code is unchanged; this is a pure
+code-ownership move on top of the Phase 2b model moves.
+
+**`approvals`** now owns: the delegation / reassignment / execution / decision
+services (`approvals/services.py`), the approval + delegation + reassignment
+serializers, the approval endpoints (former `workflows/approval_views.py`) and
+the `DelegationViewSet` / `ReassignmentViewSet` (`approvals/views.py`), the
+former `approval_payloads.py` (`approvals/payloads.py`), the delegation /
+reassignment admins, and `approvals/urls.py` (registered in `config/urls.py`
+before `workflows.urls`). `workflows/approval_views.py` /
+`workflows/approval_payloads.py` were removed.
+
+**`organisation`** now owns: the approver-role, role-assignment,
+team-role-assignment, campus-role-assignment and campus services and their
+serializers, the matching viewsets (`ApproverRole`, `RoleAssignment`,
+`TeamRoleAssignment`, `CampusRoleAssignment`, `Campus`), the matching admins,
+and `organisation/urls.py` (registered in `config/urls.py`).
+
+**Boundary decisions (documented in `architecture.md` §3.1).** `TeamViewSet`
+stays in `workflows/views.py` because `POST/PATCH /teams/` create/rewrite the
+team's chain and share the URL with the team-admin actions; the pure team code
+lives in `organisation` and is imported by `workflows` (`workflows →
+organisation`). One read-only model exception: `organisation/services.py` reads
+`workflows.models` (`Section`/`SectionMember`/`Workflow`) for approver-role usage
+checks — a model reference only, never a service/view import.
+
+**Verified.** `manage.py check` clean; `makemigrations --check` → "No changes
+detected"; `workflows.tests_routing` 15 OK, `tests_approvals` 91 OK,
+`tests_self_approval` 34 OK, `tests_roles`+`tests_teams`+
+`tests_team_configuration`+`tests_workflow_members` 308 OK, `workflows.tests`
+142 OK, `leave`+`notifications`+`plans`+`users`+`audit` 787 OK. Still pending
+for the final sweep: the full `workflows` suite including `tests_migrations`,
+and the frontend `npm test` / lint / build.
+
+## In progress — Phase 2d Frontend Feature-Module Reorg (2026-10-15)
+
+Pages move from the flat `/dashboard/**` tree onto one module root per module.
+Old paths keep working via `next.config.ts` redirects. The legacy `/dashboard/**`
+tree keeps `DashboardShell`; each module root renders a module-scoped
+`ModuleShell` (its own nav + an "← All Apps" link back to `/`).
+
+- **Shell split.** `(dashboard)/layout.tsx` is now only the auth guard; the
+  original `DashboardShell` moved to a new `dashboard/layout.tsx` scoped to the
+  legacy tree, so module pages no longer render two sidebars.
+- **leave — DONE.** Pages moved to `/leave` (`drafts`, `new`, `[id]/edit`,
+  `[id]/review`, `[id]/submitted`, `applications/[id]`); `apps-registry` leave
+  route now `/leave`; ~50 link/redirect/test refs updated. `npm test` 960 OK,
+  lint/typecheck/build clean.
+- **approvals — DONE.** `/dashboard/approvals` → `/approvals`,
+  `/dashboard/cover` → `/approvals/cover` (incl. `[id]`); approver-only
+  redirects now go to `/`. Focused approvals suites 80 OK, lint/typecheck/build
+  clean.
+- **organisation — DONE.** `teams`, `campuses`, `roles`, `approvers` moved from
+  `/dashboard/hr-admin/*` to `/organisation/*`; new `/organisation` index
+  redirects to `/organisation/teams`; module nav wired to all four sections;
+  registry route `/organisation`. Unauthorized-role guards now go to `/`.
+- **hr-admin — DONE.** All remaining `/dashboard/hr-admin/**` (employees,
+  leave-rules, leave-types, entitlements, calendar, leave-document-template,
+  delegations, reassignments, plans, audit) moved to `/hr-admin/**`; registry
+  route `/hr-admin`. Legacy redirect added after the organisation-specific ones.
+- **documents — DONE.** Added a minimal `/documents` landing page (documents
+  are attached to leave/approval records; no standalone library or list
+  endpoint exists yet) and pointed the registry route at `/documents`.
+- **Legacy tree** (`/dashboard`, `/dashboard/account`, `/dashboard/admin`,
+  `/dashboard/plans`) is intentionally retained with `DashboardShell`; every
+  old module path redirects to its module root. Full frontend suite green
+  (960/960) and `npm run build` clean after all five modules.
+- **Post-login landing — DONE.** `app/(auth)/login/page.tsx` now defaults the
+  post-login redirect to the launcher `/` (was `/dashboard`); explicit
+  `?redirect=` still wins. New `tests/login-page.test.tsx` (2) locks it in.
+- **Backend verification — DONE.** Full `uv run manage.py test workflows`
+  (incl. `tests_migrations`) = **620 tests OK**, exit 0 (~26 min).
+- **Launcher endpoint defect — FIXED (2026-10-15).** The proxy (`apps/launcher/`)
+  never matched the backend (`launcher/`), so the launcher grid was empty for
+  every role. Registered `path("apps/launcher/", ...)`; added backend
+  `launcher/tests.py` (8: per-role app sets + badge flow-through) and frontend
+  `tests/launcher-proxy.test.ts` + `tests/app-launcher-grid.test.tsx` (grid
+  renders cards, badge count, drops unknown keys, empty/failure states).
+- **HR admin list key warning — FIXED (2026-10-15).**
+  `hr-admin/employees` passed its search `<form>` (2+ siblings) to the client
+  `EmployeesSection` via a JSX `filter` slot; across the RSC boundary React
+  treated the form's children as an unkeyed list ("Each child in a list should
+  have a unique key prop"). Same latent bug on `hr-admin/calendar` →
+  `HolidaysSection`. Fix follows the pattern already documented in
+  `TeamsSection`: the client sections render their own controls from plain data
+  (`EmployeesSection` owns the `?search` form; `HolidaysSection` takes
+  `availableYears` and owns the `?year` form). Pages still own the URLs.
+  Updated `tests/hr-admin-form-overlays.test.tsx`; full suite 971 pass,
+  lint/typecheck/build clean.
+- **Module layouts RSC boundary error — FIXED (2026-10-15).**
+  The five module layouts (`leave`, `approvals`, `organisation`, `documents`,
+  `hr-admin`) were server components passing `navItems` (with lucide `icon`
+  component references) to `ModuleShell`, a client component. React Server
+  Components cannot serialize component objects across that boundary →
+  "Only plain objects can be passed to Client Components from Server Components".
+  Fix: added `"use client";` to each module layout so the icons stay in client
+  scope. Verified end-to-end by logging in through the frontend and fetching
+  `/hr-admin` (200, no error) plus every other module root.
+- **Missing `/leave` index — FIXED (2026-10-15).**
+  The restructure pointed the launcher registry and the leave sidebar at
+  `/leave`, but no `app/(dashboard)/leave/page.tsx` existed (the canonical
+  landing is `/leave/drafts`). Added `leave/page.tsx` redirecting to
+  `/leave/drafts`, mirroring the `organisation/page.tsx` → `/organisation/teams`
+  pattern. Verified `/leave` now returns 307 → `/leave/drafts` (200).
+- **Launcher card hydration error — FIXED (2026-10-15).**
+  `components/launcher/app-card.tsx` wrapped its `<div>` children in a `<p>`
+  (invalid nesting → React hydration error); the outer element is now a `<div>`.
+  `tests/app-launcher-grid.test.tsx` gained a guard that fails if React logs an
+  invalid-nesting message (verified it catches the regression).
+- **`components/ui/` purity — FIXED.** `components/ui/Stepper.tsx` imported
+  `formatDateTime` from `@/lib/tracking/format` (a feature module). Moved the
+  generic `formatDate`/`formatDateTime` to `lib/format.ts`, repointed all 17
+  importers, and deleted `lib/tracking/format.ts`. `components/ui/` now imports
+  only generic primitives.
+- **Legacy shim — KEPT (decision).** `/dashboard` (+ account, admin/users,
+  plans) and the 11 legacy→module redirects stay as-is; non-module pages have no
+  module root of their own and old bookmarks keep working.
+- **Remaining:** manual click-through (human step) for the §5 checklist; nothing
+  else outstanding in Phase 2d.
+
+## Completed — Separation of Duties: HR and the Team Manager (2026-10-17)
+
+The API now enforces a strict handover. HR creates a team and names its manager,
+and keeps the team's identity, wide-role holdings, and which chain routes; the
+manager alone runs their own team's roster, chains, and step approvers. The
+frontend now offers each role only the actions the server will accept.
+
+### Backend enforcement
+- New `workflows/permissions.py::IsTeamManagerOnly`: `has_permission` is active
+  AND (superuser → allow) AND (HR → refuse) AND (has at least one managed team);
+  `has_object_permission` resolves the team from the object via
+  `.workflow` / `.team` / `.section`. HR → 403, a non-manager or a member with no
+  managed team → 403, and a manager of *another* team passes the coarse check
+  then 404s through the scoped queryset.
+- `workflows/views.py` `get_permissions` maps the write actions to manager-only
+  (WorkflowViewSet create/update/partial_update/members/remove_member;
+  TeamViewSet members/member_candidates/workflow_members_pool + remove_member;
+  SectionMemberViewSet create/destroy); reads stay `IsHROrTeamManager`.
+- `workflows/services.py` gains `_require_team_manager`, used by
+  `create_workflow` — its view has no object, so object-level checks never fire
+  and a service guard is the only thing that can refuse HR. The other member
+  services deliberately keep `_require_can_manage_team` so the HR-admin
+  employee/team move flows (`users/serializers.py`) that call them with an HR
+  actor still work: the permission layer is the enforcement boundary.
+- **DRF gotcha:** `self.action` is the viewset *method name*, not the
+  `url_path`, so the `get_permissions` mappings match `"members"`,
+  `"member_candidates"`, `"workflow_members_pool"`.
+
+### Backend tests
+- New `workflows/tests_separation_of_duties.py`,
+  `workflows/tests_team_management.py`, `workflows/tests_workflow_members.py`
+  (35 + 61 OK) pin HR refusal and manager success end-to-end.
+- Rewired the existing suites to act through a designated team manager
+  (`dvc` role, `create_team_role_assignment(..., is_team_manager=True)`, a fresh
+  manager per team to satisfy the one-wide-role-anywhere invariant) and to name
+  the new manager-owned tests accordingly: `tests_teams.py` (103 OK),
+  `tests_team_configuration.py` (95 OK), and the legacy
+  `workflows/tests.py` (142 OK; `test_hr_can_create_a_workflow_for_a_team` →
+  `test_manager_can_create_a_workflow_for_a_team`, likewise for editing steps).
+- Full backend green: `workflows` 655 OK; `audit tests organisation` 73 OK;
+  `users approvals leave` 632 OK; `notifications documents plans system_admin
+  launcher config` 210 OK.
+
+### Frontend
+- New pure `lib/team-access.ts`: `visibleTeamTabs(isHr)` (HR → `overview` +
+  `approvers`; manager → `overview` + `steps` + `members`), `canConfigureChains`
+  (manager), `canRouteTeam` (HR).
+- Page gating mirrors the API: the team detail tabs are filtered and its "New
+  workflow" link is manager-only (the manager-only member-candidate feed is not
+  fetched for HR); the workflows list hides "New workflow"/"Edit steps" from HR;
+  the workflow detail hides "Edit steps" from HR; the new/edit workflow pages
+  guard to managers and send HR back to the team's chain list / the workflow.
+- `tests/team-access.test.ts` (6) and `tests/team-page-access.test.tsx` (4)
+  pin the split. Full frontend suite 990 OK; tsc/eslint/`build` clean.
+- Updated the stale `tests/module-layouts-client.test.ts` canary (≥5 → ≥4):
+  the organisation module no longer passes icon components to `ModuleShell` —
+  its `layout-client.tsx` maps icon *names* in the browser — so only four
+  module layouts carry the RSC serialization hazard the guard watches.
+
+### Follow-up — chainless team creation, manager-owned chains and routing
+- HR no longer configures approval steps at all. `create_team` writes a team
+  **without** a chain (a draft), optionally designating the manager in the same
+  pass; `TeamSerializer` refuses `new_workflow`/`workflow` from HR with a 400
+  keyed on that field, and `workflow` is read-only. The manager builds and edits
+  chains through `POST /api/v1/workflows/` and `PATCH /api/v1/workflows/{id}/`
+  (`WorkflowWriteSerializer`, `create_workflow`/`update_workflow`), and chooses
+  which of the team's chains is in force through `POST /api/v1/teams/{id}/route/`
+  (`route_team`; audit `TEAM` UPDATED, reason `Routed through "<name>".`). Routing
+  a team at a chain it does not own, or as HR, is refused.
+- Bug fix in `workflows/views.py`: `WorkflowViewSet.create/update` now also catch
+  `TeamActionError`, so a chain write that fails a membership / one-stage-per-
+  workflow rule surfaces as a 400 keyed on the field instead of an uncaught 500.
+- Tests rewritten to the new contract: `workflows/tests.py`
+  `WorkflowSerializerAtomicityTests` now drives `WorkflowWriteSerializer`;
+  `audit/tests.py` creates the team as HR, designates a manager, and builds the
+  chain as the manager; `tests/test_end_to_end.py` `hr_creates_team` now does the
+  same handover. Added `TeamRoutingAPITests` (manager assignment on create,
+  manager reassignment, manager route + audit, HR route→403, cross-team route→400).
+  New helper `designate_manager` in the end-to-end spine uses a team-scoped
+  `team_manager` role, since every shipped role in that journey is institution-wide
+  and an institution-wide role cannot be a team's manager.
+- Frontend cleanup: deleted the unused `components/hr-admin/team-form.tsx` and the
+  dead `TeamWorkflowInput`/`TeamSectionInput` types plus `TeamInput.new_workflow?`
+  in `lib/teams.ts`; `canRouteTeam` is manager-only (the earlier "(HR)" note was
+  inverted). Backend `workflows audit tests` 728 OK;
+  `tests_teams` 108 OK and `tests_team_configuration` 95 OK; frontend team/
+  workflow tests green, `tsc`/`eslint` clean.
+
+### Follow-up — a team manager can actually reach and run their team
+- **Bug fixed:** a designated manager was an ordinary employee account, so
+  `organisation.services.can_access_org` (HR/staff only) left the Organisation
+  app out of the launcher entirely — the manager had no way to reach the roster
+  and chains only they may write. It now also admits anyone who manages at least
+  one team (`managed_team_ids_for`). The launcher module still holds no access
+  rules of its own; each module answers `can_access_*`.
+- **Auto-activation:** `create_team` now puts a team **active** when it is
+  handed to a manager in the same request (audit `TEAM` ACTIVATED), instead of
+  always landing a draft. A team with no manager stays a `DRAFT`, because nobody
+  may configure it yet; `activate_team` still refuses a chainless draft, so the
+  HR-only validation path is unchanged. The manager then builds and *routes* the
+  chain, which is the manager's activation — `route` was already manager-only.
+- Not a hazard: an unstaffed step does not silently strand applications —
+  `DatabaseWorkflowProvider` refuses the submission naming the step, so routing a
+  half-built chain surfaces as a loud, fixable error. The team detail "steps" tab
+  copy was corrected to say so (it claimed an unstaffed step "blocks
+  activation", which is no longer the gate).
+- Tests: `launcher.tests.LauncherEndpointTests.test_a_designated_team_manager_reaches_their_team`
+  pins the app set (an ordinary employee is still `{"leave", "documents"}`;
+  a manager gains `organisation`, and `approvals` because a manager holds a real
+  approver role). `TeamRoutingAPITests` gains the active-on-create and
+  still-a-draft-without-a-manager pair. Backend
+  `workflows organisation launcher users tests audit` 900 OK; frontend `tsc` /
+  `eslint` clean and team/workflow suites green.
+
+### Follow-up — a team member must share the *manager's* category
+- The roster's eligibility rule is now measured against the **team manager's**
+  own `EmployeeProfile.category`, not the `Team.category` field. Two call sites
+  agreed on the rule: `organisation.services.add_team_member` (the write) and
+  `TeamViewSet.member_candidates` (the picker), both now going through the new
+  `organisation.services.team_manager_profile(team)`. A team not yet handed to
+  a manager has no manager, so its own category stands in — reachable only in
+  the service, since the `members`/`member-candidates` endpoints refuse HR.
+- In practice the two categories already coincide: `create_team_role_assignment`
+  refuses a holder whose category differs from the team's, and the manager is
+  designated through that path. This makes the stated rule the one actually
+  coded rather than an implicit consequence.
+- Refusal message now names the governing category ("…takes only
+  Administration employees") instead of restating the team's category twice.
+- Frontend: `TeamMembersPanel` scope copy updated to "share your category as
+  this team's manager". `tests/team-members-panel.test.tsx` assertion updated.
+- Tests: 5 added to `workflows.tests_team_management.TeamManagementDelegationTests`
+  (same-category added, other category refused naming the manager's category,
+  picker offers only the manager's category, managerless fallback in the
+  service); one wording assertion in `tests_workflow_members` updated.
+  Verified: 904-test run had exactly one failure (that wording assertion),
+  since fixed — `workflows.tests_workflow_members users` 217 OK, and the three
+  modules that call `add_team_member` (`tests_separation_of_duties`,
+  `tests_team_management`, `tests_workflow_members`) plus `tests_teams`,
+  `tests_team_configuration` and `organisation` 305 OK.
+
+### Bug — the roster picker was empty for every team manager
+- **Symptom.** A manager opened their team's Members tab and the picker read
+  "No employees to add to this team", with nobody offered. The backend was not
+  the cause: `member-candidates` returned 8 candidates for the administration
+  manager and 9 for the academic one against the real dev database.
+- **Cause.** `teams/[id]/page.tsx` is a **Server Component**, and it filled the
+  picker by calling `listTeamMemberCandidates` from `lib/team-members-client`,
+  which is a *browser* helper: a bare relative `fetch("/api/hr/teams/<id>/member-candidates")`.
+  From a Server Component that request carries no `Authorization` header — the
+  `/api/hr/...` proxy answers 401 — and the call site's `.catch(() => [])`
+  turned the failure into a silent empty list. Every other read on that page
+  goes through `apiClientUrl`, which reads the token off the request cookies
+  explicitly, which is why the team itself rendered while its candidates did not.
+- **Fix.** Moved `listTeamMemberCandidates` into `lib/teams.ts` beside
+  `getTeam`/`listTeamWorkflows`, reading `/api/v1/teams/<id>/member-candidates/`
+  through `apiClientUrl`; removed it (and its now-unused type import) from
+  `lib/team-members-client.ts`, which keeps only the browser *writes*. The
+  page's fallback now `console.error`s instead of swallowing the reason, so the
+  next failure of this kind is visible rather than silent.
+- **Verified on the running app**, not just in tests: requesting
+  `/organisation/teams/2?tab=members` as that manager now renders all 8
+  candidates. Frontend: `tsc`/`eslint` clean, 68 team/roster/workflow tests pass,
+  including two new ones in `tests/team-page-access.test.tsx` — the panel mock
+  now records the `candidates` length, so "the read reaches the picker" is
+  asserted, and HR is asserted not to read candidates at all.

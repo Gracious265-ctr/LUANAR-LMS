@@ -247,7 +247,7 @@ describe("TrackingView · rejected", () => {
     ).toBeInTheDocument();
 
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
-    expect(link).toHaveAttribute("href", "/dashboard/leave/app-rejected/edit");
+    expect(link).toHaveAttribute("href", "/leave/app-rejected/edit");
   });
 
   it("hides the resubmit button when can_resubmit is false", async () => {
@@ -276,7 +276,7 @@ describe("TrackingView · correction", () => {
     expect(panel.getByText("Stage 3 · Registrar")).toBeInTheDocument();
     expect(panel.getByText("Dr. Joyce Phiri")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
-    expect(link).toHaveAttribute("href", "/dashboard/leave/app-correction/edit");
+    expect(link).toHaveAttribute("href", "/leave/app-correction/edit");
   });
 });
 
@@ -521,7 +521,7 @@ describe("TrackingView · page states", () => {
       await screen.findByText("This application is still a draft")
     ).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Open draft" });
-    expect(link).toHaveAttribute("href", "/dashboard/leave/app-draft-id/edit");
+    expect(link).toHaveAttribute("href", "/leave/app-draft-id/edit");
   });
 
   it("renders the network-error state and retries", async () => {

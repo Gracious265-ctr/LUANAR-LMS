@@ -13,7 +13,7 @@ export default async function LeaveDocumentTemplatePage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let template;

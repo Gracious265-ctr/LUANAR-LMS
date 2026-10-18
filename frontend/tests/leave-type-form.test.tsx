@@ -31,7 +31,7 @@ describe("LeaveTypeForm", () => {
 
     const cancel = screen.getByRole("link", { name: "Cancel" });
     expect(cancel.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/leave-types"
+      "/hr-admin/leave-types"
     );
   });
 
@@ -63,7 +63,7 @@ describe("LeaveTypeForm", () => {
     ).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Go to Entitlements" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/entitlements"
+      "/hr-admin/entitlements"
     );
   });
 });

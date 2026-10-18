@@ -23,7 +23,7 @@ const TABS: { value: StateFilter; label: string }[] = [
 ];
 
 /** Where the tabs' "All" tab points, and the escape hatch out of a filter. */
-const ALL_STATES_HREF = "/dashboard/hr-admin/delegations";
+const ALL_STATES_HREF = "/hr-admin/delegations";
 
 export default async function DelegationsPage({
   searchParams,
@@ -36,7 +36,7 @@ export default async function DelegationsPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const params = await searchParams;

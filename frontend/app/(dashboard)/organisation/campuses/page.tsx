@@ -26,7 +26,7 @@ export default async function CampusesPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const [campusesResult, teamsResult] = await Promise.all([
@@ -52,7 +52,7 @@ export default async function CampusesPage() {
           </p>
         </div>
         <Link
-          href="/dashboard/hr-admin/campuses/new"
+          href="/organisation/campuses/new"
           className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
         >
           <Plus className="h-4 w-4" />

@@ -100,7 +100,7 @@ export function EntitlementForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/dashboard/hr-admin/entitlements");
+        router.push("/hr-admin/entitlements");
         router.refresh();
       }
     } catch {
@@ -194,7 +194,7 @@ export function EntitlementForm({
           </Button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/entitlements"
+            href="/hr-admin/entitlements"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

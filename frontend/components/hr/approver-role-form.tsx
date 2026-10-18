@@ -79,7 +79,7 @@ export function ApproverRoleForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/dashboard/hr-admin/roles");
+        router.push("/organisation/roles");
         router.refresh();
       }
     } catch (err) {
@@ -243,7 +243,7 @@ export function ApproverRoleForm({
           </button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/roles"
+            href="/organisation/roles"
             className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             Cancel

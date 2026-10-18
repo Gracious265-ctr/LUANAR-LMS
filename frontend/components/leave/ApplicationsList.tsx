@@ -31,7 +31,7 @@ interface OverlayTarget {
  * The open application lives in the URL (`?compose=1`, `?edit=<id>`,
  * `&stage=review`) rather than in component state, so a refresh resumes the
  * same application, the Back button steps out of it, and the old
- * `/dashboard/leave/new` and `/dashboard/leave/{id}/edit` links keep working
+ * `/leave/new` and `/leave/{id}/edit` links keep working
  * through the redirect shims in those routes.
  */
 export function ApplicationsList() {
@@ -62,15 +62,15 @@ export function ApplicationsList() {
   const targetId = target?.applicationId;
 
   const openNew = useCallback(() => {
-    router.push("/dashboard/leave/drafts?compose=1");
+    router.push("/leave/drafts?compose=1");
   }, [router]);
 
   const openExisting = useCallback(
     (applicationId: string, nextStage: LeaveOverlayStage) => {
       router.push(
         nextStage === "form"
-          ? `/dashboard/leave/drafts?edit=${applicationId}`
-          : `/dashboard/leave/drafts?edit=${applicationId}&stage=${nextStage}`
+          ? `/leave/drafts?edit=${applicationId}`
+          : `/leave/drafts?edit=${applicationId}&stage=${nextStage}`
       );
     },
     [router]
@@ -91,8 +91,8 @@ export function ApplicationsList() {
       if (!id) return;
       router.replace(
         nextStage === "form"
-          ? `/dashboard/leave/drafts?edit=${id}`
-          : `/dashboard/leave/drafts?edit=${id}&stage=${nextStage}`
+          ? `/leave/drafts?edit=${id}`
+          : `/leave/drafts?edit=${id}&stage=${nextStage}`
       );
     },
     [router, targetId]
@@ -109,7 +109,7 @@ export function ApplicationsList() {
       router.back();
       return;
     }
-    router.replace("/dashboard/leave/drafts");
+    router.replace("/leave/drafts");
   }, [router]);
 
   useEffect(() => {

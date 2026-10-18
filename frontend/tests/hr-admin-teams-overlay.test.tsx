@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApproverRole } from "@/lib/approver-roles";
+import type { Employee } from "@/lib/employees";
 
 import { makeCampus, makeTeam } from "@/lib/teams/__fixtures__";
-import { createTeam, listEligibleApprovers } from "@/lib/teams-client";
+import { createTeam } from "@/lib/teams-client";
 
 import { TeamsSection } from "@/components/hr/TeamsSection";
 
@@ -16,7 +17,7 @@ const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
     refresh: vi.fn(),
   },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/teams" },
+  pathnameRef: { current: "/organisation/teams" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,13 +32,9 @@ vi.mock("@/lib/teams-client", async (importOriginal) => {
     ...actual,
     createTeam: vi.fn(),
     updateTeam: vi.fn(),
-    listEligibleApprovers: vi.fn(),
   };
 });
 
-// `code` rather than `key`: the chain seeds a new step with `roles[0].code`,
-// so a role fixture without one leaves the select on no value and the submit
-// never gets past the "every step needs a role" check.
 const roles: ApproverRole[] = [
   {
     id: 1,
@@ -55,6 +52,24 @@ const roles: ApproverRole[] = [
   },
 ];
 
+const manager: Employee = {
+  id: 3,
+  user_id: 3,
+  email: "jane.dean@luanar.ac.mw",
+  first_name: "Jane",
+  last_name: "Dean",
+  full_name: "Jane Dean",
+  role: "employee",
+  approver_roles: [],
+  designation: "Dean",
+  category: "administration",
+  grade: "",
+  appointment_date: null,
+  team: null,
+  team_name: "",
+  is_active: true,
+};
+
 const campusList = [makeCampus()];
 
 function renderSection(
@@ -66,19 +81,27 @@ function renderSection(
       campuses={campusList}
       roles={roles}
       rolesError=""
+      employees={[manager]}
+      wideHolderUserIds={[]}
       {...props}
     />,
   );
 }
 
 /**
- * A create only records what the team is: name, category and campus. The
- * approval chain is built afterwards from the team's own page, so the overlay
- * never crosses a second step.
+ * Walks the two-step create: the details, then the manager the team is handed
+ * to. Only after both does the team get written.
  */
-function fillCreateForm() {
+function completeCreateForm() {
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "Physics" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByLabelText("Manager role"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("Manager"), {
+    target: { value: "3" },
   });
 }
 
@@ -86,14 +109,6 @@ describe("TeamsSection — wave 2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
-    vi.mocked(listEligibleApprovers).mockResolvedValue([
-      {
-        id: 3,
-        full_name: "Jane Dean",
-        email: "jane.dean@luanar.ac.mw",
-        designation: "Dean",
-      },
-    ]);
     vi.stubGlobal("history", { ...window.history, length: 2 });
     // Stands in for the browser: stepping back drops the overlay param. Without
     // it the dialog never unmounts and Radix leaves the page `aria-hidden`.
@@ -121,7 +136,7 @@ describe("TeamsSection — wave 2", () => {
       screen
         .getByRole("link", { name: /Bunda College Faculty/ })
         .getAttribute("href"),
-    ).toBe("/dashboard/hr-admin/teams/4");
+    ).toBe("/organisation/teams/4");
   });
 
   it("renders the retired/in-force toggle from the page's filters data", () => {
@@ -134,12 +149,12 @@ describe("TeamsSection — wave 2", () => {
       filters: [
         {
           label: "In force and draft",
-          href: "/dashboard/hr-admin/teams",
+          href: "/organisation/teams",
           current: false,
         },
         {
           label: "Including retired",
-          href: "/dashboard/hr-admin/teams?retired=1",
+          href: "/organisation/teams?retired=1",
           current: true,
         },
       ],
@@ -154,8 +169,8 @@ describe("TeamsSection — wave 2", () => {
       "Including retired",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
-      "/dashboard/hr-admin/teams",
-      "/dashboard/hr-admin/teams?retired=1",
+      "/organisation/teams",
+      "/organisation/teams?retired=1",
     ]);
     expect(links[0]).not.toHaveAttribute("aria-current");
     expect(links[1]).toHaveAttribute("aria-current", "page");
@@ -176,7 +191,7 @@ describe("TeamsSection — wave 2", () => {
     fireEvent.click(screen.getByRole("button", { name: /New team/ }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/teams?status=retired&team=new",
+      "/organisation/teams?status=retired&team=new",
     );
   });
 
@@ -204,8 +219,8 @@ describe("TeamsSection — wave 2", () => {
       ],
     });
 
-    fillCreateForm();
-    fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
+    completeCreateForm();
+    fireEvent.click(screen.getByRole("button", { name: /^Save team$/ }));
 
     await waitFor(() => expect(createTeam).toHaveBeenCalled());
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
@@ -227,8 +242,8 @@ describe("TeamsSection — wave 2", () => {
       ],
     });
 
-    fillCreateForm();
-    fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
+    completeCreateForm();
+    fireEvent.click(screen.getByRole("button", { name: /^Save team$/ }));
 
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
     expect(screen.queryByText(/not in this table/i)).toBeNull();
@@ -262,5 +277,23 @@ describe("TeamsSection — wave 2", () => {
     expect(
       screen.queryByText("Unable to load approver roles. Please try again."),
     ).toBeNull();
+  });
+
+  it("hides the create trigger from a caller who cannot create teams", () => {
+    // A manager reads and operates their team but does not create teams, so the
+    // list is still theirs while the one action the server would refuse is not.
+    renderSection({ canCreate: false });
+
+    expect(screen.queryByRole("button", { name: /New team/ })).toBeNull();
+    expect(screen.getByText("Bunda College Faculty")).toBeInTheDocument();
+  });
+
+  it("does not open the create form for a manager even with the overlay param", () => {
+    // `?team=new` is a URL a manager could type; gating only the button would
+    // still let them open a form whose submit the server rejects.
+    searchParamsRef.current = new URLSearchParams("team=new");
+    renderSection({ canCreate: false });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

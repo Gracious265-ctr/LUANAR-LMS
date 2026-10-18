@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 import type { BadgeTone } from "@/components/ui/badge";
 import { badgeVariants } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib/tracking/format";
+import { formatDateTime } from "@/lib/format";
 import { eventIcon, eventTitle } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 

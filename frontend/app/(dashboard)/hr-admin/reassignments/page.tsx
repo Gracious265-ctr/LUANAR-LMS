@@ -31,7 +31,7 @@ export default async function ReassignmentsPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const { reassign } = await searchParams;

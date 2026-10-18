@@ -14,6 +14,12 @@ export interface DjangoUser {
    * that predate the field, so callers treat it as optional.
    */
   is_superuser?: boolean;
+  /**
+   * Whether this account is the designated manager of at least one team. Drives
+   * the "My Team" navigation entry for a non-HR account. Optional so older
+   * responses/tests that predate the field stay valid.
+   */
+  manages_teams?: boolean;
 }
 
 export interface DjangoTokens {

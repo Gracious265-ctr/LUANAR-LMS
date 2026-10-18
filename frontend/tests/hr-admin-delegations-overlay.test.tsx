@@ -14,7 +14,7 @@ import { DelegationsSection } from "@/components/hr/DelegationsSection";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/delegations" },
+  pathnameRef: { current: "/hr-admin/delegations" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -78,7 +78,7 @@ function renderSection(props: Partial<Parameters<typeof DelegationsSection>[0]> 
       employees={employees}
       stateFilter=""
       heading="All delegations"
-      clearFiltersHref="/dashboard/hr-admin/delegations"
+      clearFiltersHref="/hr-admin/delegations"
       {...props}
     />
   );
@@ -118,7 +118,7 @@ describe("DelegationsSection — wave 2", () => {
     renderSection();
 
     const link = screen.getByRole("link", { name: /Jane Dean/ });
-    expect(link.getAttribute("href")).toBe("/dashboard/hr-admin/delegations/1");
+    expect(link.getAttribute("href")).toBe("/hr-admin/delegations/1");
   });
 
   it("opens the create form from the trigger, keeping the state filter", () => {
@@ -128,7 +128,7 @@ describe("DelegationsSection — wave 2", () => {
     fireEvent.click(screen.getByRole("button", { name: /New delegation request/ }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/delegations?state=active&delegation=new"
+      "/hr-admin/delegations?state=active&delegation=new"
     );
   });
 
@@ -140,10 +140,10 @@ describe("DelegationsSection — wave 2", () => {
     // owns every href and decides which tab is current.
     renderSection({
       tabs: [
-        { label: "All", href: "/dashboard/hr-admin/delegations", current: false },
+        { label: "All", href: "/hr-admin/delegations", current: false },
         {
           label: "Active",
-          href: "/dashboard/hr-admin/delegations?state=active",
+          href: "/hr-admin/delegations?state=active",
           current: true,
         },
       ],
@@ -155,8 +155,8 @@ describe("DelegationsSection — wave 2", () => {
 
     expect(tabs.map((tab) => tab.textContent)).toEqual(["All", "Active"]);
     expect(tabs.map((tab) => tab.getAttribute("href"))).toEqual([
-      "/dashboard/hr-admin/delegations",
-      "/dashboard/hr-admin/delegations?state=active",
+      "/hr-admin/delegations",
+      "/hr-admin/delegations?state=active",
     ]);
     expect(tabs[0]).not.toHaveAttribute("aria-current");
     expect(tabs[1]).toHaveAttribute("aria-current", "page");
@@ -244,7 +244,7 @@ describe("DelegationsSection — wave 2", () => {
       fireEvent.click(screen.getByRole("button", { name: "Show all states" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/delegations"
+        "/hr-admin/delegations"
       );
     });
   });

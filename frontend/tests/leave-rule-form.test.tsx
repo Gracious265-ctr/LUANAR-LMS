@@ -76,7 +76,7 @@ describe("LeaveRuleForm", () => {
 
     const cancel = screen.getByRole("link", { name: "Cancel" });
     expect(cancel.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/leave-rules"
+      "/hr-admin/leave-rules"
     );
   });
 

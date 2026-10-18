@@ -56,7 +56,7 @@ export function PublicHolidayForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/dashboard/hr-admin/calendar");
+        router.push("/hr-admin/calendar");
         router.refresh();
       }
     } catch (err) {
@@ -102,7 +102,7 @@ export function PublicHolidayForm({
           </Button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/calendar"
+            href="/hr-admin/calendar"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

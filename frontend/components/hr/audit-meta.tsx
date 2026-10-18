@@ -200,21 +200,21 @@ function auditChangesValue(value: unknown, field: string): string {
 export function auditEditHref(entry: AuditEntry): string | null {
   switch (entry.target_type) {
     case "team":
-      return `/dashboard/hr-admin/teams/${entry.target_id}`;
+      return `/organisation/teams/${entry.target_id}`;
     case "leavetype":
-      return `/dashboard/hr-admin/leave-types/${entry.target_id}/edit`;
+      return `/hr-admin/leave-types/${entry.target_id}/edit`;
     case "leaverule":
-      return `/dashboard/hr-admin/leave-rules/${entry.target_id}/edit`;
+      return `/hr-admin/leave-rules/${entry.target_id}/edit`;
     case "entitlement":
-      return `/dashboard/hr-admin/entitlements/${entry.target_id}/edit`;
+      return `/hr-admin/entitlements/${entry.target_id}/edit`;
     case "financialyear":
-      return `/dashboard/hr-admin/calendar/financial-years/${entry.target_id}/edit`;
+      return `/hr-admin/calendar/financial-years/${entry.target_id}/edit`;
     case "publicholiday":
-      return `/dashboard/hr-admin/calendar/holidays/${entry.target_id}/edit`;
+      return `/hr-admin/calendar/holidays/${entry.target_id}/edit`;
     case "employee":
-      return `/dashboard/hr-admin/employees/${entry.target_id}`;
+      return `/hr-admin/employees/${entry.target_id}`;
     case "document-template":
-      return "/dashboard/hr-admin/leave-document-template";
+      return "/hr-admin/leave-document-template";
     // A plan is read through its own page, so an entry links there rather than
     // to the HR sweep: the entry names one plan, not the list.
     case "plan":

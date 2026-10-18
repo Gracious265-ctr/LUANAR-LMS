@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
         ('plans', '0003_assigned_approver_nullable'),
     ]
 
@@ -15,11 +15,11 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='planapprovalstage',
             name='role_ref',
-            field=models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='plan_approval_stages', to='org.approverrole'),
+            field=models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='plan_approval_stages', to='organisation.approverrole'),
         ),
         migrations.AlterField(
             model_name='planapprovalstage',
             name='section_ref',
-            field=models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='plan_approval_stages', to='org.section'),
+            field=models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='plan_approval_stages', to='organisation.section'),
         ),
     ]

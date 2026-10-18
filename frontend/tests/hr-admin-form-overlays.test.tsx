@@ -19,7 +19,7 @@ import { pickDate, pickDateRange } from "./helpers/date";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/calendar" },
+  pathnameRef: { current: "/hr-admin/calendar" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -62,7 +62,7 @@ const years: FinancialYear[] = [
 describe("HR admin form overlays", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    pathnameRef.current = "/dashboard/hr-admin/calendar";
+    pathnameRef.current = "/hr-admin/calendar";
     searchParamsRef.current = new URLSearchParams();
     vi.mocked(createLeaveType).mockResolvedValue(leaveTypes[0]);
     vi.mocked(updateLeaveType).mockResolvedValue(leaveTypes[1]);
@@ -73,7 +73,7 @@ describe("HR admin form overlays", () => {
 
   describe("LeaveTypesSection", () => {
     beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/leave-types";
+      pathnameRef.current = "/hr-admin/leave-types";
     });
 
     it("renders the table with no overlay open", () => {
@@ -88,7 +88,7 @@ describe("HR admin form overlays", () => {
 
       expect(
         screen.getByRole("link", { name: "Maternity leave" }).getAttribute("href")
-      ).toBe("/dashboard/hr-admin/leave-types/2/edit");
+      ).toBe("/hr-admin/leave-types/2/edit");
     });
 
     it("turns the pencil into a button that targets the row id", () => {
@@ -97,7 +97,7 @@ describe("HR admin form overlays", () => {
       fireEvent.click(screen.getByRole("button", { name: "Edit Maternity leave" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/leave-types?leaveType=2"
+        "/hr-admin/leave-types?leaveType=2"
       );
     });
 
@@ -107,7 +107,7 @@ describe("HR admin form overlays", () => {
       fireEvent.click(screen.getByRole("button", { name: /New leave type/ }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/leave-types?leaveType=new"
+        "/hr-admin/leave-types?leaveType=new"
       );
     });
 
@@ -170,7 +170,7 @@ describe("HR admin form overlays", () => {
       // The lone JSDOM history entry takes close's replace fallback; either way
       // the point is that it did not `push` the user off the list.
       expect(routerMock.replace).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/leave-types"
+        "/hr-admin/leave-types"
       );
       expect(routerMock.push).not.toHaveBeenCalled();
     });
@@ -199,7 +199,7 @@ describe("HR admin form overlays", () => {
       fireEvent.click(screen.getByRole("button", { name: /New holiday/ }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/calendar?year=2026&holiday=new"
+        "/hr-admin/calendar?year=2026&holiday=new"
       );
     });
 
@@ -213,7 +213,7 @@ describe("HR admin form overlays", () => {
       fireEvent.click(screen.getByRole("button", { name: "Show all years" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/calendar?year=2026"
+        "/hr-admin/calendar?year=2026"
       );
     });
 
@@ -286,17 +286,16 @@ describe("HR admin form overlays", () => {
       expect(screen.queryByText(/not in this table/i)).toBeNull();
     });
 
-    it("renders the filter in the slot the section provides", () => {
+    it("renders the year filter before the table it narrows", () => {
       render(
         <HolidaysSection
           holidays={holidays}
           yearFilter=""
-          filter={<span>filter goes here</span>}
+          availableYears={["2025", "2026"]}
         />
       );
 
-      // Before the table, so the control stays attached to what it narrows.
-      const filter = screen.getByText("filter goes here");
+      const filter = screen.getByRole("button", { name: "Filter" });
       const name = screen.getByText("Independence Day");
       expect(filter.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING)
         .toBeTruthy();
@@ -348,7 +347,7 @@ describe("HR admin form overlays", () => {
       fireEvent.click(screen.getByRole("button", { name: /New financial year/ }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/calendar?year=2026&financialYear=new"
+        "/hr-admin/calendar?year=2026&financialYear=new"
       );
     });
 

@@ -119,7 +119,7 @@ export function ApprovalDetail({
             This application is not available to you, or it no longer exists.
           </p>
           <Link
-            href="/dashboard/approvals"
+            href="/approvals"
             className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -163,7 +163,7 @@ export function ApprovalDetail({
     <div className="mx-auto max-w-5xl space-y-6 pb-24 lg:pb-6">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Link
-          href="/dashboard/approvals"
+          href="/approvals"
           className="inline-flex items-center gap-1 font-medium text-brand-primary hover:underline"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />

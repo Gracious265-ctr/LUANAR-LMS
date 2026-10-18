@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     "django_q",
     # Local apps
     "users",
-    "org",
+    "organisation",
     "approvals",
     "leave",
     "workflows",

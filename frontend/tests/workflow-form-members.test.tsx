@@ -161,15 +161,10 @@ describe("WorkflowForm members section", () => {
           members: [
             {
               id: 1,
-              workflow: 1,
-              workflow_name: "Academic approval",
               user: 31,
-              user_name: "Ruth Member",
-              user_email: "ruth@test.luanar",
-              designation: "Lecturer",
+              full_name: "Ruth Member",
+              email: "ruth@test.luanar",
               team: 4,
-              team_name: "Bunda College Faculty",
-              added_by: 1,
               created_at: "2026-01-01T00:00:00Z",
             },
           ],

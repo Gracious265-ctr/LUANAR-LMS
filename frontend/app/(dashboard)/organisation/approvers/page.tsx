@@ -59,7 +59,7 @@ export default async function ApproversPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const params = await searchParams;
@@ -168,7 +168,7 @@ export default async function ApproversPage({
       query.set("campus", String(campusFilter));
     return {
       ...filter,
-      href: `/dashboard/hr-admin/approvers?${query.toString()}`,
+      href: `/organisation/approvers?${query.toString()}`,
       current: scope === filter.value,
     };
   });
@@ -266,7 +266,7 @@ export default async function ApproversPage({
             somewhere, so there is nothing to hold until the role exists.
           </p>
           <Link
-            href="/dashboard/hr-admin/roles/new"
+            href="/organisation/roles/new"
             className="mt-3 inline-block rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
           >
             New role
@@ -339,5 +339,10 @@ function toHolding(
     user: assignment.user,
     user_name: assignment.user_name,
     role_label: assignment.role_label,
+    // Only a team-wide holding carries the manager designation; the other two
+    // scopes have no such concept, so the field is simply absent.
+    ...(assignment as TeamRoleAssignment).is_team_manager !== undefined
+      ? { is_team_manager: (assignment as TeamRoleAssignment).is_team_manager }
+      : {},
   };
 }

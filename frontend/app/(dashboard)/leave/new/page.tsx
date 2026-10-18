@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
  * URL working.
  */
 export default async function NewLeavePage() {
-  redirect("/dashboard/leave/drafts?compose=1");
+  redirect("/leave/drafts?compose=1");
 }

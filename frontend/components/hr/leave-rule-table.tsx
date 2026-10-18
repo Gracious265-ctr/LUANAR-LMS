@@ -60,7 +60,7 @@ export function LeaveRuleTable({
             >
               <TableCell>
                 <Link
-                  href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
+                  href={`/hr-admin/leave-rules/${rule.id}/edit`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {rule.leave_type_name}
@@ -98,7 +98,7 @@ export function LeaveRuleTable({
                   />
                 ) : (
                   <EditActionLink
-                    href={`/dashboard/hr-admin/leave-rules/${rule.id}/edit`}
+                    href={`/hr-admin/leave-rules/${rule.id}/edit`}
                   />
                 )}
               </TableCell>

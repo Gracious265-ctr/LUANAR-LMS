@@ -7,7 +7,7 @@ import type {
   TrackingApprover,
   TrackingResponse,
 } from "@/lib/tracking/types";
-import { formatDateTime } from "@/lib/tracking/format";
+import { formatDateTime } from "@/lib/format";
 
 /**
  * Adapters from each real payload shape into the generic `Step[]` the Stepper

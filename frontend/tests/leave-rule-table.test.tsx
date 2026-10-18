@@ -65,7 +65,7 @@ describe("LeaveRuleTable", () => {
 
     const link = screen.getByRole("link", { name: "Annual leave" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/leave-rules/1/edit"
+      "/hr-admin/leave-rules/1/edit"
     );
   });
 

@@ -100,6 +100,12 @@ export interface TeamRoleAssignment {
   user: number;
   user_name: string;
   role_label: string;
+  /**
+   * The team's single designated manager. Set through `set-manager`, which
+   * clears the flag from any other holder on the team, so at most one holding
+   * carries it at a time.
+   */
+  is_team_manager: boolean;
   created_at: string;
 }
 

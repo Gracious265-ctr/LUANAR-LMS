@@ -98,8 +98,12 @@ async function send<T>(
 ): Promise<T> {
   const response = await fetch(endpoint, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    // A body-less POST (the set-manager actions) must not claim to carry JSON:
+    // an empty body with that content type is a malformed request to a parser
+    // that is never going to be asked for the data anyway.
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (response.status === 204) {
     return undefined as T;
@@ -132,6 +136,33 @@ export async function createTeamRoleAssignment(input: {
 
 export async function removeTeamRoleAssignment(id: number | string): Promise<void> {
   await send<void>(`/api/hr/team-role-assignments/${id}`, "DELETE");
+}
+
+/**
+ * Designate a team-wide holding as its team's manager.
+ *
+ * One manager per team: the backend clears the flag from the team's other
+ * holders, so this is the "make this person the manager" action rather than a
+ * toggle that could leave two. Returns the updated holding so the caller can
+ * show the new state without a full re-read.
+ */
+export async function setTeamManager(
+  id: number | string
+): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    `/api/hr/team-role-assignments/${id}/set-manager`,
+    "POST"
+  );
+}
+
+/** Remove the manager designation from this holding (the team keeps none). */
+export async function clearTeamManager(
+  id: number | string
+): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    `/api/hr/team-role-assignments/${id}/clear-manager`,
+    "POST"
+  );
 }
 
 /** The same contract as the team-wide holding, scoped to a campus. */

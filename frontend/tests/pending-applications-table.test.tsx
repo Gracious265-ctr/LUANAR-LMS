@@ -94,7 +94,7 @@ describe("PendingApplicationsTable", () => {
 
     const link = screen.getByRole("link", { name: "Reassign" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/reassignments/new?application=app-1"
+      "/hr-admin/reassignments/new?application=app-1"
     );
   });
 

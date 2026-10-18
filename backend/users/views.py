@@ -37,8 +37,8 @@ from .throttles import (
     PasswordSetRequestRateThrottle,
 )
 
-from org.models import Team
-from workflows.services import wide_approver_ids_for_team
+from organisation.models import Team
+from organisation.services import wide_approver_ids_for_team
 
 User = get_user_model()
 

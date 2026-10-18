@@ -93,7 +93,7 @@ class CancellationEmailBase(StubProviderMixin, TestCase):
         return submit_application(user=self.employee, application_id=app.pk)
 
     def make_approved(self):
-        from workflows.services import assign_workflow
+        from approvals.services import assign_workflow
 
         start = TODAY + timedelta(days=15)
         app = LeaveApplication.objects.create(

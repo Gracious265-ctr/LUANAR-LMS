@@ -1,7 +1,7 @@
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 
 /**
- * Mirrors `app/(dashboard)/dashboard/hr-admin/page.tsx`: heading followed by a
+ * Mirrors `app/(dashboard)/hr-admin/page.tsx`: heading followed by a
  * three-column grid of ten navigation tiles.
  */
 export default function Loading() {

@@ -12,7 +12,7 @@ export default async function LeaveTypesPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let leaveTypes;

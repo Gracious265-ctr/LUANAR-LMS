@@ -46,12 +46,16 @@ luanar-leave-system/
 │
 ├── backend/
 │   ├── config/
-│   ├── users/
-│   ├── leave/
-│   ├── workflows/
-│   ├── notifications/
-│   ├── documents/
-│   ├── audit/
+│   ├── users/          # accounts, profiles, authentication
+│   ├── organisation/   # org structure: approver roles, campuses, teams, assignments
+│   ├── workflows/      # workflow definitions: chains, sections, membership, resolution
+│   ├── approvals/      # approval execution: stages, decisions, delegation, reassignment
+│   ├── leave/          # leave applications, types, balances, validation
+│   ├── plans/          # leave-day plans
+│   ├── documents/      # supporting and generated documents
+│   ├── notifications/  # notification records and dispatch
+│   ├── audit/          # append-only audit log
+│   ├── launcher/       # app-launcher aggregator endpoint (no models)
 │   └── ...
 │
 ├── storage/
@@ -59,9 +63,47 @@ luanar-leave-system/
 │
 └── docs/
     └── ...
-````
+```
 
 The exact Django app names may change during implementation, but the responsibility boundaries must remain clear.
+
+---
+
+### 3.1 Feature-Module Boundaries
+
+The backend is partitioned into feature apps. Each app owns its models, services, serializers, views, and URLs, and is consumed by other apps **only through its service layer** — never by importing another app's views or serializers. The frontend mirrors these boundaries with a matching folder key (`leave`, `approvals`, `organisation`, `documents`, `hr-admin`).
+
+| Module key | Backend app | Owns | May depend on |
+| --- | --- | --- | --- |
+| `leave` | `backend/leave/` | `LeaveApplication`, `LeaveType`, balances/history, working-day and financial-year calculation, overlap/public-holiday validation, submit/correct/resubmit/cancel orchestration | `workflows`, `approvals`, `organisation`, `documents`, `notifications`, `audit` |
+| `approvals` | `backend/approvals/` | `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`, `Delegation`, `Reassignment`; chain execution, stage transitions, skip and self-approval rules, delegation eligibility, HR final approval | `organisation`, `workflows`, `leave`, `documents`, `notifications`, `audit` |
+| `organisation` | `backend/organisation/` | `ApproverRole`, `Campus`, `Team`, `RoleAssignment`, `TeamRoleAssignment`, `CampusRoleAssignment`; team/role/campus administration; approver resolution | `users`, `audit` |
+| `workflows` | `backend/workflows/` | `Workflow`, `Section`, `SectionMember`, `WorkflowMember`; workflow/section definitions, validation, and approver resolution | `organisation`, `users`, `audit` |
+| `hr-admin` | spans `backend/users/` + `organisation`/`leave` admin endpoints | employee management, leave-type and grade-rule administration, HR setup | `users`, `organisation`, `leave` |
+| `documents` | `backend/documents/` | supporting and generated documents (metadata + storage references) | `leave`, `approvals`, `notifications`, `audit` |
+| `notifications` | `backend/notifications/` | notification records and dispatch | `users` |
+| `audit` | `backend/audit/` | append-only audit records | — (leaf) |
+| `launcher` | `backend/launcher/` | app-launcher aggregation only (no models) | every feature module (read-only) |
+| `users` | `backend/users/` | accounts, profiles, authentication | `organisation`, `audit` |
+
+Dependency rules:
+
+* Dependencies are **one-directional**: `approvals → organisation`, `approvals → workflows`, `workflows → organisation`, and `leave → approvals/workflows/organisation`. No reverse imports.
+* `launcher` is a **read-only aggregator**: it imports each module's access/badge helpers and is imported by nothing.
+* `notifications`, `audit`, and `documents` are shared infrastructure. Feature modules may import them, but they never own feature business rules.
+
+#### Team / approver-view exceptions
+
+Two organisation-owned surfaces cannot be moved out of `workflows` without changing the public API, so they are documented exceptions rather than clean cuts:
+
+* **`TeamViewSet` stays in `workflows`.** `POST /teams/` and `PATCH /teams/{id}/` create and rewrite the team's approval chain, so the endpoint is chain orchestration living on the same URL as the pure team-admin actions. To keep every path and `reverse()` name byte-identical the class remains in `workflows/views.py`, while the pure team/role/campus code (serializers, services, the other viewsets, URLs) lives in `organisation` and is imported by `workflows` — direction `workflows → organisation`, as the table requires.
+* **`organisation` reads `workflows` models for approver-role usage.** `role_usage_map` / `ensure_role_not_in_use` scan `Section` / `SectionMember` / `Workflow` to report where a role is still in use. This is a read-only, model-level reference (`organisation/services.py` imports `workflows.models`); there is no `organisation → workflows` service or view dependency.
+
+#### Organisation rename
+
+The organisation app was previously named `org`. It is renamed to **`organisation`** (app label, Python package, imports, and migration dependencies). The frontend registry key and module route follow the same name (`organisation`, `/organisation`). This is the **only deliberate *name* change** in the restructure.
+
+Frontend pages move from their flat pre-restructure paths onto one **module root** per module: `/leave`, `/approvals`, `/organisation`, `/documents`, `/hr-admin` (the launcher owns `/`). During the migration the old `/dashboard/**` paths keep working via `next.config.ts` redirects, and the legacy `/dashboard/**` tree keeps the original `DashboardShell`; each module root renders a module-scoped `ModuleShell` (its own nav plus an "← All Apps" link back to `/`).
 
 ---
 
@@ -129,6 +171,8 @@ Responsibilities:
 * API validation.
 
 All authoritative business decisions must originate from the backend.
+
+These responsibilities are partitioned across the feature apps described in §3.1: workflow **definitions** live in `workflows`, approval **execution** in `approvals`, organisation structure in `organisation`, and leave-domain behaviour in `leave`. The partitioning is a code-ownership boundary; it does not change which layer is authoritative.
 
 ---
 
@@ -208,6 +252,8 @@ Examples:
 | Document metadata                       | Database |
 
 The database must remain the authoritative source for system state.
+
+Each table is owned by exactly one app — the app whose models define it (see §3.1). Cross-app references are by foreign key only; an app never writes another app's tables directly. Physical table names retain their historical prefixes (for example `workflows_*`) where they predate the app split: the split is a **logical (model/state) ownership boundary**, not necessarily a mechanical renaming of existing tables, and moving a model between apps must preserve its `db_table` so no data is lost.
 
 ---
 

@@ -254,6 +254,7 @@ export function makeListItem(
     working_days: 5,
     submitted_at: "2026-09-21T09:12:00Z",
     status: "pending",
+    stage_version: 1,
     my_decision: null,
     ...overrides,
   };

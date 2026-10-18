@@ -19,14 +19,14 @@ export default async function NewCampusPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   return (
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/hr-admin/campuses"
+          href="/organisation/campuses"
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />

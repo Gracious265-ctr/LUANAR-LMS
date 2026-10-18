@@ -3,8 +3,20 @@ import { redirect } from "next/navigation";
 
 import { CampusQuickAdd } from "@/components/hr/campus-form";
 import { TeamsSection } from "@/components/hr/TeamsSection";
-import type { ApproverRole } from "@/lib/approver-roles";
-import { listApproverRoles } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
+import {
+  listApproverRoles,
+  listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
+} from "@/lib/approver-roles";
+import type { Employee } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
@@ -31,17 +43,36 @@ async function TeamsPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
+  const isHr = user.role === "hr";
+  if (!isHr && user.manages_teams !== true) {
+    redirect("/");
+  }
+  if (!isHr && user.manages_teams === true) {
+    // Managers see only their team. Landing on the list that contains a single
+    // owned team is convenient; redirect straight to it.
+    const teams = await listTeams().catch(() => [] as Team[]);
+    if (teams.length === 1) {
+      redirect(`/organisation/teams/${teams[0].id}`);
+    }
   }
 
   const { retired } = await searchParams;
   const showRetired = retired === "1";
 
   // The create overlay needs its option set on the page, so it is read here
-  // rather than on open: the campuses an academic team may sit at, and the
-  // approver roles its chain picks one of per step.
-  const [teamsResult, campusesResult, rolesResult] = await Promise.all([
+  // rather than on open: the campuses an academic team may sit at, the
+  // team-scoped approver roles its manager may hold, the employees who may be
+  // that manager, and every current wide holder — a person holds only one wide
+  // approver role, so those are excluded from the manager picker.
+  const [
+    teamsResult,
+    campusesResult,
+    rolesResult,
+    employeesResult,
+    institutionHoldingsResult,
+    teamHoldingsResult,
+    campusHoldingsResult,
+  ] = await Promise.all([
     listTeams({ includeInactive: showRetired }).then(
       (value) => ({ value, error: "" }),
       () => ({ value: [] as Team[], error: TEAMS_ERROR })
@@ -54,11 +85,31 @@ async function TeamsPage({
       (value) => ({ value, error: "" }),
       () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
     ),
+    listAllEmployees().catch(() => [] as Employee[]),
+    listRoleAssignments().catch(() => [] as RoleAssignment[]),
+    listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[]),
+    listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
   ]);
 
+  // The manager picker offers team-scoped roles only: an institution-wide role
+  // is held outside any one team, so it cannot be the role a manager holds.
+  const managerRoles = rolesResult.value.filter(
+    (role) => role.is_active && !role.is_institution_wide
+  );
+
+  const wideHolderUserIds = Array.from(
+    new Set(
+      [
+        ...institutionHoldingsResult,
+        ...teamHoldingsResult,
+        ...campusHoldingsResult,
+      ].map((assignment) => assignment.user)
+    )
+  );
+
   const filters = [
-    { label: "In force and draft", href: "/dashboard/hr-admin/teams", current: !showRetired },
-    { label: "Including retired", href: "/dashboard/hr-admin/teams?retired=1", current: showRetired },
+    { label: "In force and draft", href: "/organisation/teams", current: !showRetired },
+    { label: "Including retired", href: "/organisation/teams?retired=1", current: showRetired },
   ];
 
   return (
@@ -78,29 +129,34 @@ async function TeamsPage({
           <TeamsSection
             teams={teamsResult.value}
             campuses={campusesResult.value}
-            roles={rolesResult.value}
+            roles={managerRoles}
             rolesError={rolesResult.error}
+            employees={employeesResult}
+            wideHolderUserIds={wideHolderUserIds}
             error={teamsResult.error}
             filters={filters}
+            canCreate={isHr}
           />
         </div>
 
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-lg font-semibold text-text-primary">Campuses</h3>
-            <Link
-              href="/dashboard/hr-admin/campuses"
-              className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-            >
-              Manage campuses
-            </Link>
+        {isHr && (
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-lg font-semibold text-text-primary">Campuses</h3>
+              <Link
+                href="/organisation/campuses"
+                className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+              >
+                Manage campuses
+              </Link>
+            </div>
+            {campusesResult.error ? (
+              <p className="text-sm text-status-rejected">{campusesResult.error}</p>
+            ) : (
+              <CampusQuickAdd campuses={campusesResult.value} />
+            )}
           </div>
-          {campusesResult.error ? (
-            <p className="text-sm text-status-rejected">{campusesResult.error}</p>
-          ) : (
-            <CampusQuickAdd campuses={campusesResult.value} />
-          )}
-        </div>
+        )}
       </div>
     </FadeIn>
   );

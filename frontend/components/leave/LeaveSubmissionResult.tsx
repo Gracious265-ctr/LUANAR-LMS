@@ -32,7 +32,7 @@ export function LeaveSubmissionResult({
   onNotSubmitted,
 }: LeaveSubmissionResultProps) {
   const router = useRouter();
-  const resolvedDone = onDone ?? (() => router.push("/dashboard/leave/drafts"));
+  const resolvedDone = onDone ?? (() => router.push("/leave/drafts"));
   // No-op by default, so an un-submitted application leaves the confirmation
   // message on screen rather than navigating out from under the caller.
   const resolvedNotSubmitted = onNotSubmitted ?? (() => {});
@@ -125,7 +125,7 @@ export function SubmittedClient({ applicationId }: { applicationId: string }) {
     <LeaveSubmissionResult
       applicationId={applicationId}
       onNotSubmitted={() =>
-        router.replace(`/dashboard/leave/${applicationId}/review`)
+        router.replace(`/leave/${applicationId}/review`)
       }
     />
   );

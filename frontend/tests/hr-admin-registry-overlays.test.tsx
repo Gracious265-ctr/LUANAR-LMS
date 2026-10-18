@@ -22,7 +22,7 @@ import { RolesSection } from "@/components/hr/RolesSection";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/roles" },
+  pathnameRef: { current: "/organisation/roles" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -140,7 +140,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
   describe("EntitlementsSection", () => {
     beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/entitlements";
+      pathnameRef.current = "/hr-admin/entitlements";
     });
 
     it("renders the table with no overlay open", () => {
@@ -155,7 +155,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
       expect(screen.getByRole("link", { name: "G–H" })).toHaveAttribute(
         "href",
-        "/dashboard/hr-admin/entitlements/3/edit"
+        "/hr-admin/entitlements/3/edit"
       );
     });
 
@@ -165,7 +165,7 @@ describe("HR admin registry overlays — wave 1", () => {
       fireEvent.click(screen.getByRole("button", { name: "New entitlement" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/entitlements?entitlement=new"
+        "/hr-admin/entitlements?entitlement=new"
       );
     });
 
@@ -216,7 +216,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
   describe("LeaveRulesSection", () => {
     beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/leave-rules";
+      pathnameRef.current = "/hr-admin/leave-rules";
     });
 
     it("renders the table and a custom heading", () => {
@@ -241,7 +241,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
       expect(screen.getByRole("link", { name: "Annual leave" })).toHaveAttribute(
         "href",
-        "/dashboard/hr-admin/leave-rules/7/edit"
+        "/hr-admin/leave-rules/7/edit"
       );
     });
 
@@ -253,7 +253,7 @@ describe("HR admin registry overlays — wave 1", () => {
       fireEvent.click(screen.getByRole("button", { name: "Edit Annual leave rule" }));
 
       expect(routerMock.push).toHaveBeenCalledWith(
-        "/dashboard/hr-admin/leave-rules?rule=7"
+        "/hr-admin/leave-rules?rule=7"
       );
     });
 
@@ -276,7 +276,7 @@ describe("HR admin registry overlays — wave 1", () => {
           rules={[]}
           leaveTypes={leaveTypes}
           today="2026-06-01"
-          clearFiltersHref="/dashboard/hr-admin/leave-rules"
+          clearFiltersHref="/hr-admin/leave-rules"
         />
       );
 
@@ -284,7 +284,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Show all rules" }));
 
-      expect(routerMock.push).toHaveBeenCalledWith("/dashboard/hr-admin/leave-rules");
+      expect(routerMock.push).toHaveBeenCalledWith("/hr-admin/leave-rules");
     });
 
     it("omits the escape hatch when there is nowhere to clear to", () => {
@@ -344,7 +344,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
   describe("RolesSection", () => {
     beforeEach(() => {
-      pathnameRef.current = "/dashboard/hr-admin/roles";
+      pathnameRef.current = "/organisation/roles";
     });
 
     it("renders the table with the holders it was given", () => {
@@ -359,7 +359,7 @@ describe("HR admin registry overlays — wave 1", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Edit Dean of faculty" }));
 
-      expect(routerMock.push).toHaveBeenCalledWith("/dashboard/hr-admin/roles?role=12");
+      expect(routerMock.push).toHaveBeenCalledWith("/organisation/roles?role=12");
     });
 
     it("seeds the edit form from the row", () => {

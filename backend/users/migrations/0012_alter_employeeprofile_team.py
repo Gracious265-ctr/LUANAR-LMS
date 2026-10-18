@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
         ('users', '0011_drop_stale_supervisor_column'),
     ]
 
@@ -15,6 +15,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='employeeprofile',
             name='team',
-            field=models.ForeignKey(blank=True, help_text='The team this employee belongs to. The team selects the approval workflow applied to their leave; blank means the employee cannot submit until HR assigns them to a team.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='members', to='org.team'),
+            field=models.ForeignKey(blank=True, help_text='The team this employee belongs to. The team selects the approval workflow applied to their leave; blank means the employee cannot submit until HR assigns them to a team.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='members', to='organisation.team'),
         ),
     ]

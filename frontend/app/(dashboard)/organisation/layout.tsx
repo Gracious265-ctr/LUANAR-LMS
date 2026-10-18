@@ -1,19 +1,40 @@
-import { Building2, Users } from "lucide-react";
-import { ModuleShell, type NavItem } from "@/components/module-shell";
+import { getCurrentUser } from "@/lib/auth";
+import { OrganisationLayoutClient, type ServerNavItem } from "./layout-client";
 
-const navItems: NavItem[] = [
-  { href: "/org", label: "Organization", icon: Building2 },
-  { href: "/teams", label: "Teams", icon: Users },
-];
-
-export default function OrgLayout({
+export default async function OrganisationLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getCurrentUser();
+  const isHr = user?.role === "hr";
+
+  const navItems: ServerNavItem[] = [
+    { href: "/organisation/teams", label: "Teams", iconName: "Users" as const },
+    ...(isHr
+      ? ([
+          {
+            href: "/organisation/campuses",
+            label: "Campuses",
+            iconName: "Building2" as const,
+          },
+          {
+            href: "/organisation/roles",
+            label: "Approver Roles",
+            iconName: "ShieldCheck" as const,
+          },
+          {
+            href: "/organisation/approvers",
+            label: "Role Assignments",
+            iconName: "UserCheck" as const,
+          },
+        ] as ServerNavItem[])
+      : []),
+  ];
+
   return (
-    <ModuleShell navItems={navItems} moduleName="Organization">
+    <OrganisationLayoutClient navItems={navItems}>
       {children}
-    </ModuleShell>
+    </OrganisationLayoutClient>
   );
 }

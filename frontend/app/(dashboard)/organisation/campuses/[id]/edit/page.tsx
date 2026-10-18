@@ -27,7 +27,7 @@ export default async function EditCampusPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let campus;
@@ -41,7 +41,7 @@ export default async function EditCampusPage({
     <div className="space-y-6">
       <div>
         <Link
-          href={`/dashboard/hr-admin/campuses/${campus.id}`}
+          href={`/organisation/campuses/${campus.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />

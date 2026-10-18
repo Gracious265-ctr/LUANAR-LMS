@@ -1,38 +1,37 @@
 import { Calendar, ShieldCheck, Building2, FileStack, Users } from "lucide-react";
 
-// NOTE: routes currently point at the pre-restructure pages under `/dashboard`
-// because the module pages (`/leave`, `/approvals`, ...) have not been moved
-// yet. Swap each `route` to its module root once that module's pages land.
+// Each app now points at its own module root; the legacy `/dashboard/**`
+// pages are kept working through `next.config.ts` redirects.
 export const APPS_REGISTRY = {
   leave: {
     name: "Leave Applications",
     description: "Submit and track your leave requests",
     icon: Calendar,
-    route: "/dashboard",
+    route: "/leave",
   },
   approvals: {
     name: "Approvals",
     description: "Review and decide on leave requests assigned to you",
     icon: ShieldCheck,
-    route: "/dashboard/approvals",
+    route: "/approvals",
   },
-  org: {
+  organisation: {
     name: "Organization",
     description: "Manage units, approvers, and teams",
     icon: Building2,
-    route: "/dashboard/hr-admin/teams",
+    route: "/organisation",
   },
   documents: {
     name: "Documents",
     description: "Manage supporting documents",
     icon: FileStack,
-    route: "/dashboard",
+    route: "/documents",
   },
   "hr-admin": {
     name: "HR Administration",
     description: "Manage employees, grades, and leave rules",
     icon: Users,
-    route: "/dashboard/hr-admin",
+    route: "/hr-admin",
   },
 } as const;
 

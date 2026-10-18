@@ -18,8 +18,8 @@ export default async function ShimPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
-  redirect(`/dashboard/hr-admin/entitlements?entitlement=new`);
+  redirect(`/hr-admin/entitlements?entitlement=new`);
 }

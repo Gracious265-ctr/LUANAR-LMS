@@ -86,11 +86,11 @@ def plan_view_access(user: User, plan: LeaveDayPlan) -> PlanViewAccess | None:
 def user_is_approver(user: User) -> bool:
     """Whether ``user`` may use the plans approvals API.
 
-    Delegated from the workflows app so "is an approver" has exactly one
+    Delegated from the organisation app so "is an approver" has exactly one
     definition: holding at least one active approver role, as a section member or
     as an institution-wide role assignee.
     """
-    from workflows.services import is_approver_user
+    from organisation.services import is_approver_user
 
     return is_approver_user(user)
 

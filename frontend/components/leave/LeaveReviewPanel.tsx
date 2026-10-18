@@ -245,7 +245,7 @@ function BackToEdit({
 
   return (
     <Link
-      href={`/dashboard/leave/${applicationId}/edit`}
+      href={`/leave/${applicationId}/edit`}
       className={
         button
           ? "inline-flex items-center gap-1.5 px-4 py-2.5 rounded-md border border-input-border bg-input-background text-sm font-medium text-text-primary hover:bg-surface-hover transition-colors"

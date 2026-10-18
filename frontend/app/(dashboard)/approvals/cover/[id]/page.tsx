@@ -23,7 +23,7 @@ export default async function CoverDetailPage({
   params: Promise<{ id: string }>;
 }) {
   if (!canRequestCover(await loadApprovalCapabilities())) {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const { id } = await params;

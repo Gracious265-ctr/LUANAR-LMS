@@ -190,14 +190,14 @@ export function ApplicationCard({
           ) : (
             <>
               <Link
-                href={`/dashboard/leave/${application.id}/edit`}
+                href={`/leave/${application.id}/edit`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-button-secondary hover:bg-button-secondary-hover text-text-primary border border-border-default transition-colors"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Edit
               </Link>
               <Link
-                href={`/dashboard/leave/${application.id}/review`}
+                href={`/leave/${application.id}/review`}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   canReview
                     ? "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
@@ -254,7 +254,7 @@ export function ApplicationCard({
       ) : (
         <div className="flex items-center gap-2">
           <Link
-            href={`/applications/${application.id}`}
+            href={`/leave/applications/${application.id}`}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover transition-colors"
           >
             <Eye className="h-3.5 w-3.5" />

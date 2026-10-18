@@ -9,12 +9,14 @@ import {
 import type { ApproverRole } from "@/lib/approver-roles";
 import type { Employee } from "@/lib/employees";
 import {
+  clearTeamManager,
   createCampusRoleAssignment,
   createRoleAssignment,
   createTeamRoleAssignment,
   removeCampusRoleAssignment,
   removeRoleAssignment,
   removeTeamRoleAssignment,
+  setTeamManager,
 } from "@/lib/approver-roles-client";
 
 const refresh = vi.fn();
@@ -35,6 +37,8 @@ vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
     removeTeamRoleAssignment: vi.fn(),
     createCampusRoleAssignment: vi.fn(),
     removeCampusRoleAssignment: vi.fn(),
+    setTeamManager: vi.fn(),
+    clearTeamManager: vi.fn(),
   };
 });
 
@@ -231,6 +235,51 @@ describe("WideHoldingPanel", () => {
     await waitFor(() =>
       expect(removeCampusRoleAssignment).toHaveBeenCalledWith(78)
     );
+  });
+
+  it("lets HR designate a team-wide holder as the team's manager", async () => {
+    vi.mocked(setTeamManager).mockResolvedValue({} as never);
+    renderPanel("team", { scopeId: 4, holdings: [supervisorHolding] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Make manager" }));
+
+    await waitFor(() => expect(setTeamManager).toHaveBeenCalledWith(78));
+    expect(clearTeamManager).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("shows who the manager is, and lets HR take the designation away", async () => {
+    vi.mocked(clearTeamManager).mockResolvedValue({} as never);
+    const managerHolding: WideHolding = {
+      ...supervisorHolding,
+      is_team_manager: true,
+    };
+    renderPanel("team", { scopeId: 4, holdings: [managerHolding] });
+
+    // The designation is visible, not just implied by the button.
+    expect(screen.getByText("Manager")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Make manager" })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove as manager" })
+    );
+
+    await waitFor(() => expect(clearTeamManager).toHaveBeenCalledWith(78));
+    expect(setTeamManager).not.toHaveBeenCalled();
+  });
+
+  it("offers the manager control only on the team scope", () => {
+    renderPanel("institution", { holdings: [institutionHolding] });
+    expect(
+      screen.queryByRole("button", { name: "Make manager" })
+    ).not.toBeInTheDocument();
+
+    renderPanel("campus", { scopeOptions: campuses, holdings: [supervisorHolding] });
+    expect(
+      screen.queryByRole("button", { name: "Make manager" })
+    ).not.toBeInTheDocument();
   });
 
   it("writes an institution-wide holding from a chosen role, without asking for a scope", async () => {

@@ -23,7 +23,7 @@ export default async function EntitlementsPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const { grade } = await searchParams;

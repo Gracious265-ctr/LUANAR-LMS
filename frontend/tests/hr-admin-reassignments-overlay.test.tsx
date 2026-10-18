@@ -12,7 +12,7 @@ import { selectOption } from "./helpers/select";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/dashboard/hr-admin/reassignments" },
+  pathnameRef: { current: "/hr-admin/reassignments" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -85,7 +85,7 @@ function renderSection(overrides: Partial<Parameters<typeof ReassignmentsSection
 describe("ReassignmentsSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    pathnameRef.current = "/dashboard/hr-admin/reassignments";
+    pathnameRef.current = "/hr-admin/reassignments";
     searchParamsRef.current = new URLSearchParams();
     vi.mocked(reassignApplication).mockResolvedValue({
       id: 1,
@@ -120,7 +120,7 @@ describe("ReassignmentsSection", () => {
     );
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/reassignments?reassign=app-1"
+      "/hr-admin/reassignments?reassign=app-1"
     );
   });
 
@@ -170,7 +170,7 @@ describe("ReassignmentsSection", () => {
     // The lone JSDOM history entry takes close's replace fallback; either way
     // the point is that it did not `push` the user off the queue.
     expect(routerMock.replace).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/reassignments"
+      "/hr-admin/reassignments"
     );
     expect(routerMock.push).not.toHaveBeenCalled();
   });
@@ -183,7 +183,7 @@ describe("ReassignmentsSection", () => {
 
     // Cancel is a button here, not a link: the overlay owns dismissal.
     expect(routerMock.replace).toHaveBeenCalledWith(
-      "/dashboard/hr-admin/reassignments"
+      "/hr-admin/reassignments"
     );
     expect(reassignApplication).not.toHaveBeenCalled();
   });

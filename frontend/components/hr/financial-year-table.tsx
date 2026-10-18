@@ -60,7 +60,7 @@ export function FinancialYearTable({
             >
               <TableCell>
                 <Link
-                  href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
+                  href={`/hr-admin/calendar/financial-years/${year.id}/edit`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {year.start_date}
@@ -95,7 +95,7 @@ export function FinancialYearTable({
                     label={`Edit ${year.start_date} financial year`}
                   />
                 ) : (
-                  <EditActionLink href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`} />
+                  <EditActionLink href={`/hr-admin/calendar/financial-years/${year.id}/edit`} />
                 )}
               </TableCell>
             </TableRow>

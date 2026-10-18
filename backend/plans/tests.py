@@ -28,7 +28,8 @@ from leave.models import LeaveType
 from leave.tests.stubs import TODAY, _leave_types, make_user
 from notifications.models import NotificationOutbox
 from users.models import EmployeeProfile, User
-from org.models import Delegation, SectionMember
+from workflows.models import SectionMember
+from approvals.models import Delegation
 from workflows.providers import DatabaseWorkflowProvider
 from workflows.testing import (
     appoint_approver_to_section,

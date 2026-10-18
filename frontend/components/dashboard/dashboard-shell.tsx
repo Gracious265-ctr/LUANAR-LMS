@@ -52,6 +52,8 @@ interface User {
   full_name: string;
   /** The bootstrap administrator; unlocks user management. */
   is_superuser?: boolean;
+  /** The designated manager of at least one team; unlocks the "My Team" entry. */
+  manages_teams?: boolean;
 }
 
 interface DashboardShellProps {
@@ -101,6 +103,10 @@ export function DashboardShell({
   const showHR = user.role === HR_ROLE;
   const showCover = isApprover;
   const showAdmin = user.is_superuser === true;
+  // A team manager is not an HR account, so HR's full "Human Resources" group
+  // is not theirs. They get the one destination their designation unlocks: the
+  // team they manage.
+  const showTeamManager = !showHR && user.manages_teams === true;
 
   // A drawer left open across a navigation would sit on top of the page the user
   // just asked for. Radix already handles Escape and the backdrop, and it locks
@@ -131,6 +137,7 @@ export function DashboardShell({
         showCover={showCover}
         showHR={showHR}
         showAdmin={showAdmin}
+        showTeamManager={showTeamManager}
         open
       />
     </>
@@ -154,6 +161,7 @@ export function DashboardShell({
             showCover={showCover}
             showHR={showHR}
             showAdmin={showAdmin}
+            showTeamManager={showTeamManager}
           />
         </div>
 
@@ -237,6 +245,7 @@ const Sidebar = memo(function Sidebar({
   showCover,
   showHR,
   showAdmin,
+  showTeamManager,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -248,6 +257,7 @@ const Sidebar = memo(function Sidebar({
   showCover: boolean;
   showHR: boolean;
   showAdmin: boolean;
+  showTeamManager: boolean;
 }) {
   return (
     <nav
@@ -267,6 +277,7 @@ const Sidebar = memo(function Sidebar({
         showCover={showCover}
         showHR={showHR}
         showAdmin={showAdmin}
+        showTeamManager={showTeamManager}
         open={open}
       />
     </nav>
@@ -289,6 +300,7 @@ const NavLinks = memo(function NavLinks({
   showCover,
   showHR,
   showAdmin,
+  showTeamManager,
   open,
 }: {
   currentPath: string;
@@ -298,6 +310,7 @@ const NavLinks = memo(function NavLinks({
   showCover: boolean;
   showHR: boolean;
   showAdmin: boolean;
+  showTeamManager: boolean;
   open: boolean;
 }) {
   return (
@@ -312,14 +325,14 @@ const NavLinks = memo(function NavLinks({
       <Option
         Icon={FileText}
         title="My Applications"
-        href="/dashboard/leave/drafts"
+        href="/leave/drafts"
         currentPath={currentPath}
         open={open}
       />
       <Option
         Icon={Calendar}
         title="New Application"
-        href="/dashboard/leave/new"
+        href="/leave/new"
         currentPath={currentPath}
         open={open}
       />
@@ -333,7 +346,7 @@ const NavLinks = memo(function NavLinks({
         <Option
           Icon={UserCheck}
           title="Request Cover"
-          href="/dashboard/cover"
+          href="/approvals/cover"
           currentPath={currentPath}
           open={open}
         />
@@ -357,6 +370,15 @@ const NavLinks = memo(function NavLinks({
           open={open}
         />
       )}
+      {showTeamManager && (
+        <Option
+          Icon={Users}
+          title="My Team"
+          href="/organisation/teams"
+          currentPath={currentPath}
+          open={open}
+        />
+      )}
       {showHR && (
         <>
           {open && (
@@ -367,105 +389,105 @@ const NavLinks = memo(function NavLinks({
           <Option
             Icon={ShieldCheck}
             title="HR Administration"
-            href="/dashboard/hr-admin"
+            href="/hr-admin"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={User}
             title="Employees"
-            href="/dashboard/hr-admin/employees"
+            href="/hr-admin/employees"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={Building2}
             title="Campuses"
-            href="/dashboard/hr-admin/campuses"
+            href="/organisation/campuses"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={UserCheck}
             title="Approvers"
-            href="/dashboard/hr-admin/approvers"
+            href="/organisation/approvers"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={CalendarRange}
             title="Entitlements"
-            href="/dashboard/hr-admin/entitlements"
+            href="/hr-admin/entitlements"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={ClipboardList}
             title="Leave Rules"
-            href="/dashboard/hr-admin/leave-rules"
+            href="/hr-admin/leave-rules"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={Users}
             title="Teams"
-            href="/dashboard/hr-admin/teams"
+            href="/organisation/teams"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={UserCog}
             title="Roles"
-            href="/dashboard/hr-admin/roles"
+            href="/organisation/roles"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={Tags}
             title="Leave Types"
-            href="/dashboard/hr-admin/leave-types"
+            href="/hr-admin/leave-types"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={CalendarDays}
             title="Calendar"
-            href="/dashboard/hr-admin/calendar"
+            href="/hr-admin/calendar"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={UserCheck}
             title="Delegations"
-            href="/dashboard/hr-admin/delegations"
+            href="/hr-admin/delegations"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={ArrowLeftRight}
             title="Reassignments"
-            href="/dashboard/hr-admin/reassignments"
+            href="/hr-admin/reassignments"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={FileText}
             title="Document Template"
-            href="/dashboard/hr-admin/leave-document-template"
+            href="/hr-admin/leave-document-template"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={NotebookTabs}
             title="Leave Day Plans"
-            href="/dashboard/hr-admin/plans"
+            href="/hr-admin/plans"
             currentPath={currentPath}
             open={open}
           />
           <Option
             Icon={History}
             title="Audit View"
-            href="/dashboard/hr-admin/audit"
+            href="/hr-admin/audit"
             currentPath={currentPath}
             open={open}
           />

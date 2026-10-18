@@ -108,7 +108,7 @@ export function LeaveRuleForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/dashboard/hr-admin/leave-rules");
+        router.push("/hr-admin/leave-rules");
         router.refresh();
       }
     } catch (err) {
@@ -290,7 +290,7 @@ export function LeaveRuleForm({
           </Button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/leave-rules"
+            href="/hr-admin/leave-rules"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

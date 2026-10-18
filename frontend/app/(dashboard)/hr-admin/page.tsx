@@ -13,7 +13,7 @@ export default async function HRAdminPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   return (
@@ -28,7 +28,7 @@ export default async function HRAdminPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           <Link
-            href="/dashboard/hr-admin/employees"
+            href="/hr-admin/employees"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -40,7 +40,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/entitlements"
+            href="/hr-admin/entitlements"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -54,7 +54,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/leave-rules"
+            href="/hr-admin/leave-rules"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -67,7 +67,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/leave-types"
+            href="/hr-admin/leave-types"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -79,7 +79,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/roles"
+            href="/organisation/roles"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -94,7 +94,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/teams"
+            href="/organisation/teams"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -107,7 +107,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/calendar"
+            href="/hr-admin/calendar"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -121,7 +121,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/delegations"
+            href="/hr-admin/delegations"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -134,7 +134,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/reassignments"
+            href="/hr-admin/reassignments"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -147,7 +147,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/leave-document-template"
+            href="/hr-admin/leave-document-template"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -162,7 +162,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/plans"
+            href="/hr-admin/plans"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">
@@ -175,7 +175,7 @@ export default async function HRAdminPage() {
             </p>
           </Link>
           <Link
-            href="/dashboard/hr-admin/audit"
+            href="/hr-admin/audit"
             className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle transition-colors hover:bg-surface-hover"
           >
             <div className="mb-3 inline-flex rounded-lg bg-brand-primary-subtle p-2 text-brand-primary">

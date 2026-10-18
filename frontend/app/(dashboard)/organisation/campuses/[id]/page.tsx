@@ -50,7 +50,7 @@ export default async function CampusPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let campus: Campus;
@@ -118,7 +118,7 @@ export default async function CampusPage({
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/hr-admin/campuses"
+          href="/organisation/campuses"
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -150,7 +150,7 @@ export default async function CampusPage({
             </p>
           </div>
           <Link
-            href={`/dashboard/hr-admin/campuses/${campus.id}/edit`}
+            href={`/organisation/campuses/${campus.id}/edit`}
             className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             <Pencil className="h-4 w-4" />
@@ -186,7 +186,7 @@ export default async function CampusPage({
               >
                 <div>
                   <Link
-                    href={`/dashboard/hr-admin/teams/${team.id}`}
+                    href={`/organisation/teams/${team.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     {team.name}

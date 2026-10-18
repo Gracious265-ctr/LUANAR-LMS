@@ -61,7 +61,7 @@ export function TeamTable({ teams }: { teams: Team[] }) {
             <tr key={team.id} className="hover:bg-surface-hover">
               <th scope="row" className="px-4 py-3 font-normal">
                 <Link
-                  href={`/dashboard/hr-admin/teams/${team.id}`}
+                  href={`/organisation/teams/${team.id}`}
                   className="font-medium text-text-primary hover:text-brand-primary"
                 >
                   {team.name}

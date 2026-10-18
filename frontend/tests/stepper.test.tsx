@@ -8,7 +8,7 @@ import {
   chainFromWorkflow,
   stepsFromCancellation,
 } from "@/lib/chain-steps";
-import { formatDateTime } from "@/lib/tracking/format";
+import { formatDateTime } from "@/lib/format";
 import type { ApprovalStage } from "@/lib/approvals/types";
 import type { CancellationStage } from "@/lib/cancellations/types";
 import type { PlanStage } from "@/lib/plans/types";

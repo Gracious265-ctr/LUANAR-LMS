@@ -117,7 +117,7 @@ def _leave_type_name(application) -> str:
 
 
 def _load_reassignment(reassignment_id: int):
-    from workflows.models import Reassignment
+    from approvals.models import Reassignment
 
     reassignment = (
         Reassignment.objects.select_related(

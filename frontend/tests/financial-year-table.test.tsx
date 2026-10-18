@@ -38,7 +38,7 @@ describe("FinancialYearTable", () => {
 
     const link = screen.getByRole("link", { name: "2025-07-01" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/calendar/financial-years/1/edit"
+      "/hr-admin/calendar/financial-years/1/edit"
     );
   });
 

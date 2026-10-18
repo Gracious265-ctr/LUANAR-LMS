@@ -23,10 +23,10 @@ export const BULK_CONFIRM_WORD = "APPROVE";
  * The confirmation gate in front of a batch approval.
  *
  * Approving many applications is one click with no per-row comment to slow it
- * down, so the pause is explicit: HR types the word before the button unlocks.
- * The batch is approve-only and capped by the server, and every item is still a
- * separate audited decision, but the typed word is what keeps a mis-click from
- * sweeping a queue.
+ * down, so the pause is explicit: the approver types the word before the button
+ * unlocks. The batch is approve-only and capped by the server, and every item is
+ * still a separate audited decision, but the typed word is what keeps a
+ * mis-click from sweeping a queue.
  */
 export function BulkApproveDialog({
   open,

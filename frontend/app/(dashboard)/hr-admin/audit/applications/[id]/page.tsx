@@ -19,7 +19,7 @@ export default async function AuditApplicationDetailPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   let application;
@@ -34,7 +34,7 @@ export default async function AuditApplicationDetailPage({
       <div className="space-y-6">
         <div>
           <Link
-            href="/dashboard/hr-admin/audit"
+            href="/hr-admin/audit"
             className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
           >
             <ArrowLeft className="h-4 w-4" />

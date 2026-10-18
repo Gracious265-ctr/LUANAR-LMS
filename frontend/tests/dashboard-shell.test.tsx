@@ -53,6 +53,16 @@ const mockHRUser = {
   full_name: "Test HR",
 };
 
+// A team manager is an ordinary account flagged for managing a team, not an HR
+// account: the server reports the designation as data.
+const mockTeamManagerUser = {
+  id: 4,
+  email: "manager@test.luanar",
+  role: "employee",
+  full_name: "Test Manager",
+  manages_teams: true,
+};
+
 /**
  * Renders the shell with the approver access the layout already resolved on
  * the server, so the sidebar is settled on the first paint and no read is
@@ -133,7 +143,7 @@ describe("DashboardShell", () => {
     renderShell(mockHRUser);
 
     const link = screen.getByRole("link", { name: "Audit View" });
-    expect(link).toHaveAttribute("href", "/dashboard/hr-admin/audit");
+    expect(link).toHaveAttribute("href", "/hr-admin/audit");
   });
 
   it("shows Request Cover to an approver but not to an ordinary employee", () => {
@@ -141,7 +151,7 @@ describe("DashboardShell", () => {
 
     expect(screen.getByRole("link", { name: "Request Cover" })).toHaveAttribute(
       "href",
-      "/dashboard/cover"
+      "/approvals/cover"
     );
     unmount();
 
@@ -158,7 +168,7 @@ describe("DashboardShell", () => {
     // HR gets both: the management list and their own cover page.
     expect(screen.getByRole("link", { name: "Delegations" })).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/delegations"
+      "/hr-admin/delegations"
     );
     expect(screen.getByRole("link", { name: "Request Cover" })).toBeInTheDocument();
   });
@@ -168,12 +178,49 @@ describe("DashboardShell", () => {
 
     expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/teams"
+      "/organisation/teams"
     );
     expect(screen.getByRole("link", { name: "Roles" })).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/roles"
+      "/organisation/roles"
     );
+  });
+
+  it("offers a team manager My Team, pointing at the same list", () => {
+    renderShell(mockTeamManagerUser);
+
+    expect(screen.getByRole("link", { name: "My Team" })).toHaveAttribute(
+      "href",
+      "/organisation/teams"
+    );
+  });
+
+  it("does not give a team manager HR's group or its Teams item", () => {
+    // The designation unlocks one destination, not the HR area. `Teams` is HR's
+    // list link; a manager reaches the same list as `My Team`, with the
+    // create/edit controls the server would refuse hidden from them.
+    renderShell(mockTeamManagerUser);
+
+    expect(
+      screen.queryByRole("link", { name: "HR Administration" })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Teams" })).not.toBeInTheDocument();
+  });
+
+  it("does not offer My Team to HR, whose Teams item already covers it", () => {
+    renderShell(mockHRUser, { isApprover: true });
+
+    expect(
+      screen.queryByRole("link", { name: "My Team" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer My Team to an account the server does not flag", () => {
+    renderShell(mockUser);
+
+    expect(
+      screen.queryByRole("link", { name: "My Team" })
+    ).not.toBeInTheDocument();
   });
 
   it("renders a sign-out control", () => {
@@ -303,7 +350,7 @@ describe("DashboardShell mobile drawer", () => {
     // The point of sharing NavLinks: HR destinations must not be rail-only.
     expect(
       within(drawer).getByRole("link", { name: "Audit View" })
-    ).toHaveAttribute("href", "/dashboard/hr-admin/audit");
+    ).toHaveAttribute("href", "/hr-admin/audit");
     expect(within(drawer).getByRole("link", { name: "Teams" })).toBeInTheDocument();
   });
 
@@ -371,7 +418,7 @@ describe("DashboardShell mobile drawer", () => {
     // Next's router is the only party that knows a navigation happened, and it
     // reports it by changing the value `usePathname` returns.
     act(() => {
-      currentPath = "/dashboard/leave/new";
+      currentPath = "/leave/new";
       rerender(
         <DashboardShell user={mockUser} isApprover={false} pendingApprovals={0}>
           <div>Test content</div>

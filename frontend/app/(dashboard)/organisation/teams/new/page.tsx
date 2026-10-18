@@ -19,8 +19,8 @@ export default async function ShimPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
-  redirect("/dashboard/hr-admin/teams?team=new");
+  redirect("/organisation/teams?team=new");
 }

@@ -12,13 +12,13 @@ export const metadata = {
 /**
  * The approver's own cover page, the target of the "Request Cover" sidebar item.
  *
- * Same panel as the Cover tab on /dashboard/approvals. It exists as its own
+ * Same panel as the Cover tab on /approvals. It exists as its own
  * route so the sidebar can link straight to it and highlight it, which a
  * `?view=cover` query on the approvals page could not do.
  */
 export default async function CoverPage() {
   if (!canRequestCover(await loadApprovalCapabilities())) {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const { delegations, candidates, error } = await loadCoverData();

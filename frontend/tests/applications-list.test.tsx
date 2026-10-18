@@ -21,7 +21,7 @@ const { pushMock, replaceMock, backMock, searchParamsMock } = vi.hoisted(() => (
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard/leave/drafts",
+  usePathname: () => "/leave/drafts",
   useRouter: () => ({
     push: pushMock,
     replace: replaceMock,
@@ -94,7 +94,7 @@ describe("ApplicationsList", () => {
     expect(screen.getByText("LV-2026-27-000001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
       "href",
-      "/applications/submitted-1"
+      "/leave/applications/submitted-1"
     );
     expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
   });
@@ -170,7 +170,7 @@ describe("ApplicationsList overlay entry points", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /new application/i }));
 
-    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?compose=1");
+    expect(pushMock).toHaveBeenCalledWith("/leave/drafts?compose=1");
   });
 
   it("opens an existing draft in the overlay from the card's Edit action", async () => {
@@ -179,7 +179,7 @@ describe("ApplicationsList overlay entry points", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-1");
+    expect(pushMock).toHaveBeenCalledWith("/leave/drafts?edit=draft-1");
   });
 
   it("opens the review stage directly from the card's Review action", async () => {
@@ -189,7 +189,7 @@ describe("ApplicationsList overlay entry points", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     expect(pushMock).toHaveBeenCalledWith(
-      "/dashboard/leave/drafts?edit=draft-1&stage=review"
+      "/leave/drafts?edit=draft-1&stage=review"
     );
   });
 

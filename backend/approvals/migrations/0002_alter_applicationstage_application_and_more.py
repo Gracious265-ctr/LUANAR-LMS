@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('approvals', '0001_initial'),
         ('leave', '0021_alter_cancellationrequest_status'),
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -60,12 +60,12 @@ class Migration(migrations.Migration):
             migrations.AlterField(
                 model_name='applicationstage',
                 name='role_ref',
-                field=models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='org.approverrole'),
+                field=models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='organisation.approverrole'),
             ),
             migrations.AlterField(
                 model_name='applicationstage',
                 name='section_ref',
-                field=models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed; the snapshotted role fields stay authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='org.section'),
+                field=models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed; the snapshotted role fields stay authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='organisation.section'),
             ),
             migrations.AlterField(
                 model_name='applicationstage',

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import type { ApproverRole } from "@/lib/approver-roles";
+import type { Employee } from "@/lib/employees";
 import type { Campus, Team } from "@/lib/teams";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
@@ -26,9 +27,16 @@ export interface TeamStatusFilter {
 export interface TeamsSectionProps {
   teams: Team[];
   campuses: Campus[];
-  /** Every approver role: the chain builder picks one per step. */
+  /** The active team-scoped roles: the manager picker offers one per team. */
   roles: ApproverRole[];
   rolesError: string;
+  /** Everyone the manager picker may offer, scoped to the team's category there. */
+  employees: Employee[];
+  /**
+   * Every current wide approver, whatever their scope. A person holds only one
+   * wide approver role, so these are excluded from the manager picker.
+   */
+  wideHolderUserIds: number[];
   /**
    * The retired/in-force toggle.
    *
@@ -41,6 +49,12 @@ export interface TeamsSectionProps {
    */
   filters?: TeamStatusFilter[];
   error?: string;
+  /**
+   * Whether the caller may create teams. HR only: a team manager reads and
+   * operates their team but does not create teams or edit their identity.
+   * Defaults to true so the HR list renders unchanged.
+   */
+  canCreate?: boolean;
 }
 
 /**
@@ -61,8 +75,11 @@ export function TeamsSection({
   campuses,
   roles,
   rolesError,
+  employees,
+  wideHolderUserIds,
   filters = [],
   error,
+  canCreate = true,
 }: TeamsSectionProps) {
   const router = useRouter();
   const overlay = useOverlayParam(TEAM_PARAM);
@@ -77,14 +94,16 @@ export function TeamsSection({
             team&apos;s chain decides who approves their application.
           </p>
         </div>
-        <Button
-          variant="primary"
-          onClick={overlay.openCreate}
-          className="shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          New team
-        </Button>
+        {canCreate && (
+          <Button
+            variant="primary"
+            onClick={overlay.openCreate}
+            className="shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            New team
+          </Button>
+        )}
       </div>
 
       {filters.length > 0 && (
@@ -118,27 +137,31 @@ export function TeamsSection({
         <TeamTable teams={teams} />
       )}
 
-      <AdminFormOverlay
-        open={overlay.isOpen}
-        targetKey={overlay.target}
-        size="lg"
-        title="New team"
-        description="A team starts as a draft and routes nothing until it is validated and activated. Name each step and choose at least one person to start on it."
-        onOpenChange={(open) => {
-          if (!open) overlay.close();
-        }}
-      >
-        <TeamForm
-          campuses={campuses}
-          roles={roles}
-          rolesError={rolesError}
-          onSuccess={() => {
-            overlay.close();
-            router.refresh();
+      {canCreate && (
+        <AdminFormOverlay
+          open={overlay.isOpen}
+          targetKey={overlay.target}
+          size="lg"
+          title="New team"
+          description="A team starts as a draft and routes nothing until its manager builds and routes a chain. Describe the team, then assign the manager who runs its members, chains, and routing."
+          onOpenChange={(open) => {
+            if (!open) overlay.close();
           }}
-          onCancel={overlay.close}
-        />
-      </AdminFormOverlay>
+        >
+          <TeamForm
+            campuses={campuses}
+            roles={roles}
+            rolesError={rolesError}
+            employees={employees}
+            wideHolderUserIds={wideHolderUserIds}
+            onSuccess={() => {
+              overlay.close();
+              router.refresh();
+            }}
+            onCancel={overlay.close}
+          />
+        </AdminFormOverlay>
+      )}
     </>
   );
 }

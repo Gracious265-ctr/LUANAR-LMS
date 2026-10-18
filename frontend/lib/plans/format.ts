@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime } from "@/lib/tracking/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 
 /** Africa/Blantyre date helpers (shared with the approvals desk). */
 export { formatDate, formatDateTime };

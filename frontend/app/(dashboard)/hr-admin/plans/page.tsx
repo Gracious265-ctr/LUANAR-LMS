@@ -22,7 +22,7 @@ export default async function HRPlansPage() {
     redirect("/login");
   }
   if (user.role !== HR_ROLE) {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   return (

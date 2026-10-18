@@ -100,7 +100,7 @@ export function EmployeeForm({
       if (onSuccess) {
         onSuccess(data as Employee);
       } else {
-        router.push("/dashboard/hr-admin/employees");
+        router.push("/hr-admin/employees");
         router.refresh();
       }
     } catch {
@@ -253,7 +253,7 @@ export function EmployeeForm({
           </Button>
         ) : (
           <Link
-            href="/dashboard/hr-admin/employees"
+            href="/hr-admin/employees"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

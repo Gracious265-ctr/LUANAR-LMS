@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
-import type { Employee } from "@/lib/employees";
-import type { TeamMemberSummary } from "@/lib/team-members";
+import type { TeamMemberCandidate, TeamMemberSummary } from "@/lib/team-members";
 import {
   addTeamMember,
   listTeamMembers,
@@ -30,7 +29,7 @@ export function TeamMembersPanel({
   candidates,
 }: {
   team: { id: number; name: string };
-  candidates: Employee[];
+  candidates: TeamMemberCandidate[];
 }) {
   const router = useRouter();
   const [members, setMembers] = useState<TeamMemberSummary[] | null>(null);
@@ -293,7 +292,7 @@ export function TeamMembersPanel({
                   : "Choose an employee..."}
               </option>
               {candidates.map((person) => (
-                <option key={person.id} value={person.user_id}>
+                <option key={person.id} value={person.id}>
                   {person.full_name}
                   {person.designation ? ` — ${person.designation}` : ""}
                 </option>
@@ -305,16 +304,17 @@ export function TeamMembersPanel({
               disabled={selectedCandidate === "" || busyId !== null}
               className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add to team
+              Add Members
             </button>
           </div>
 
           <p className="text-xs text-text-muted">
-            Only employees without a team who match this team&apos;s category are
-            offered here, and never a wide approver — approvers are managed on
-            the Approvers tab. Removing someone is refused while they still tie
-            to this team — a step appointment, a team-wide role, an open
-            approver period, or a place on one of its chains.
+            Only employees without a team who share your category as this
+            team&apos;s manager are offered here, and never a wide approver —
+            approvers are managed on the Approvers tab. Removing someone is
+            refused while they still tie to this team — a step appointment, a
+            team-wide role, an open approver period, or a place on one of its
+            chains.
           </p>
         </>
       )}

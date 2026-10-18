@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
-import { ApproverRoleTable } from "@/components/hr/approver-role-table";
+import { RolesSection } from "@/components/hr/RolesSection";
 import type {
   ApproverRole,
   CampusRoleAssignment,
@@ -28,7 +28,7 @@ async function RolesPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   // One read for the roles, and one for every wide holding at all three
@@ -116,13 +116,13 @@ async function RolesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/dashboard/hr-admin/approvers"
+            href="/organisation/approvers"
             className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             Approvers
           </Link>
           <Link
-            href="/dashboard/hr-admin/roles/new"
+            href="/organisation/roles/new"
             className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
           >
             <Plus className="h-4 w-4" />
@@ -147,7 +147,7 @@ async function RolesPage() {
           </div>
         )}
         {!rolesError && (
-          <ApproverRoleTable
+          <RolesSection
             roles={roles}
             assignments={assignments}
             teamHoldings={teamHoldings}

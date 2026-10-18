@@ -28,7 +28,7 @@ describe("LeaveTypeTable", () => {
 
     const link = screen.getByRole("link", { name: "Maternity leave" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/leave-types/2/edit"
+      "/hr-admin/leave-types/2/edit"
     );
   });
 
@@ -50,7 +50,7 @@ describe("LeaveTypeTable", () => {
 
     const editDays = screen.getByRole("link", { name: "Edit days" });
     expect(editDays.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/entitlements"
+      "/hr-admin/entitlements"
     );
   });
 
@@ -59,10 +59,10 @@ describe("LeaveTypeTable", () => {
 
     expect(
       screen.getByRole("link", { name: "Maternity leave" })
-    ).toHaveAttribute("href", "/dashboard/hr-admin/leave-types/2/edit");
+    ).toHaveAttribute("href", "/hr-admin/leave-types/2/edit");
     expect(
       screen.getByRole("link", { name: "Edit", description: "Edit record" })
-    ).toHaveAttribute("href", "/dashboard/hr-admin/leave-types/2/edit");
+    ).toHaveAttribute("href", "/hr-admin/leave-types/2/edit");
     expect(screen.getByText("Active")).toBeInTheDocument();
   });
 });

@@ -132,7 +132,7 @@ function LeaveApplicationOverlayInner({
     setDraftId(id);
     // `replace`, not `push`: the user opened the overlay deliberately, so a
     // refresh should resume this draft rather than re-trigger the Back button.
-    router.replace(`/dashboard/leave/drafts?edit=${id}`);
+    router.replace(`/leave/drafts?edit=${id}`);
   };
 
   const handleSubmitted = (id: string) => {

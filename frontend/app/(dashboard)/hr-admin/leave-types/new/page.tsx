@@ -18,8 +18,8 @@ export default async function ShimPage() {
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
-  redirect(`/dashboard/hr-admin/leave-types?leaveType=new`);
+  redirect(`/hr-admin/leave-types?leaveType=new`);
 }

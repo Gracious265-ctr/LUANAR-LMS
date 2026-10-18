@@ -22,7 +22,7 @@ import { FormError } from "@/components/ui/form-error";
 import { Textarea } from "@/components/ui/textarea";
 
 /** Where the standalone form returns to, and what Cancel links back to. */
-const LIST_ROUTE = "/dashboard/hr-admin/reassignments";
+const LIST_ROUTE = "/hr-admin/reassignments";
 
 export function ReassignmentForm({
   application,

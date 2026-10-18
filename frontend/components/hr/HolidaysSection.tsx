@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
@@ -13,6 +13,13 @@ import { Alert } from "@/components/ui/alert";
 import { PublicHolidayForm } from "@/components/hr/public-holiday-form";
 import { PublicHolidayTable } from "@/components/hr/public-holiday-table";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /** Query key for the holiday overlay. Distinct from `?year` and from `financialYear`. */
 export const HOLIDAY_PARAM = "holiday";
@@ -31,23 +38,20 @@ export const HOLIDAY_PARAM = "holiday";
 export function HolidaysSection({
   holidays,
   yearFilter,
-  filter,
+  availableYears = [],
 }: {
   holidays: PublicHoliday[];
   /** The page's active `?year` filter, used only to explain the not-found case. */
   yearFilter: string;
   /**
-   * The page's year filter, rendered between the header and the table it
-   * narrows. Passed in as a slot because the filter is a GET form the server
-   * page owns, while the header, table, and overlay belong together here.
-   *
-   * Pass data rather than markup where you can. JSX authored in the page's
-   * server component and rendered inside this client component crosses the RSC
-   * boundary, where React stops recognising statically written siblings and
-   * warns that each child in the list needs a key — which is why the teams and
-   * delegations sections take `filters`/`tabs` as data instead.
+   * The years the filter offers, as plain data. The year filter is a GET form
+   * rendered here rather than passed in as a JSX slot: markup authored in the
+   * page's server component and rendered inside this client component crosses
+   * the RSC boundary, where React stops recognising statically written siblings
+   * and warns that each child in the list needs a key. Passing data keeps the
+   * array on this side of the boundary, and the page still owns the `?year` URL.
    */
-  filter?: ReactNode;
+  availableYears?: string[];
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(HOLIDAY_PARAM);
@@ -84,7 +88,37 @@ export function HolidaysSection({
         </Button>
       </div>
 
-      {filter}
+      {/* A plain GET form, so submitting it navigates to the `year` parameter
+          alone and drops any open overlay key. That is harmless because the
+          filter sits behind the modal and cannot be reached while it is open;
+          it would need to carry the overlay key forward if the two ever became
+          usable together. */}
+      <form method="get" className="mb-4 flex items-center gap-2">
+        <Select name="year" defaultValue={yearFilter}>
+          <SelectTrigger size="sm" aria-label="Year" className="w-auto py-1.5">
+            <SelectValue placeholder="All years" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">All years</SelectItem>
+            {availableYears.map((year) => (
+              <SelectItem key={year} value={year}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="submit" variant="secondary" size="sm">
+          Filter
+        </Button>
+        {yearFilter && (
+          <Link
+            href="/hr-admin/calendar"
+            className="rounded-md px-2 py-1.5 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+          >
+            Clear
+          </Link>
+        )}
+      </form>
 
       {createdHidden && (
         <Alert tone="info" className="mb-4 flex-col items-start">

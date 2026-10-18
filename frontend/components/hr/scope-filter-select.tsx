@@ -33,7 +33,7 @@ export function ScopeFilterSelect({
   const router = useRouter();
 
   function goTo(next: string) {
-    router.push(`/dashboard/hr-admin/approvers?scope=${scope}${next}`);
+    router.push(`/organisation/approvers?scope=${scope}${next}`);
   }
 
   return (

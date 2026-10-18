@@ -61,7 +61,7 @@ export function EntitlementTable({
             >
               <TableCell>
                 <Link
-                  href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                  href={`/hr-admin/entitlements/${rule.id}/edit`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {rule.grade_start}–{rule.grade_end}
@@ -91,7 +91,7 @@ export function EntitlementTable({
                   />
                 ) : (
                   <EditActionLink
-                    href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                    href={`/hr-admin/entitlements/${rule.id}/edit`}
                   />
                 )}
               </TableCell>

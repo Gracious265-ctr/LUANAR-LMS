@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
 
-import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import type { ApproverRole, CampusRoleAssignment, RoleAssignment, TeamRoleAssignment } from "@/lib/approver-roles";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { ApproverRoleForm } from "@/components/hr/approver-role-form";
@@ -32,13 +32,25 @@ export const APPROVER_ROLE_PARAM = "role";
 export function RolesSection({
   roles,
   assignments,
+  teamHoldings,
+  campusHoldings,
+  teamNameById,
+  campusNameById,
 }: {
   roles: ApproverRole[];
   /**
    * Institution-wide holdings keyed by role id. The table's holders column reads
    * this, so it has to travel with the rows rather than being dropped.
    */
-  assignments: Record<number, RoleAssignment[]>;
+  assignments?: Record<number, RoleAssignment[]>;
+  /** Team-wide holdings, keyed by role id. Absent means "none". */
+  teamHoldings?: Record<number, TeamRoleAssignment[]>;
+  /** Campus-wide holdings, keyed by role id. Absent means "none". */
+  campusHoldings?: Record<number, CampusRoleAssignment[]>;
+  /** Team names, keyed by team id, so a team-wide holder reads as a person. */
+  teamNameById?: Record<number, string>;
+  /** Campus names, keyed by campus id, so a campus-wide holder reads as a person. */
+  campusNameById?: Record<number, string>;
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(APPROVER_ROLE_PARAM);
@@ -73,6 +85,10 @@ export function RolesSection({
             <ApproverRoleTable
         roles={roles}
         assignments={assignments}
+        teamHoldings={teamHoldings}
+        campusHoldings={campusHoldings}
+        teamNameById={teamNameById}
+        campusNameById={campusNameById}
         onEdit={overlay.openEdit}
       />
 

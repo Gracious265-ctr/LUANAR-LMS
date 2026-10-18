@@ -1,3 +1,5 @@
+"use client";
+
 import { Users, Settings } from "lucide-react";
 import { ModuleShell, type NavItem } from "@/components/module-shell";
 

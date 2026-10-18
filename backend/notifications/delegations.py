@@ -114,7 +114,7 @@ def compose_body(delegation, kind: str, role_label: str) -> str:
 
 
 def _load_delegation(delegation_id: int):
-    from org.models import Delegation
+    from approvals.models import Delegation
 
     delegation = (
         Delegation.objects.select_related("approver", "delegate")

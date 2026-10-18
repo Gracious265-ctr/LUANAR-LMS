@@ -3,7 +3,7 @@ import { AlertCircle, CornerUpLeft } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-import { formatDateTime } from "@/lib/tracking/format";
+import { formatDateTime } from "@/lib/format";
 import type { TrackingResponse } from "@/lib/tracking/types";
 import { STATUS_BORDER, STATUS_STYLES, STATUS_TEXT } from "@/lib/status-styles";
 
@@ -96,7 +96,7 @@ export function OutcomePanel({ data }: { data: TrackingResponse }) {
 
       {resubmission.can_resubmit && (
         <Link
-          href={`/dashboard/leave/${data.application.id}/edit`}
+          href={`/leave/${data.application.id}/edit`}
           className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-primary-hover focus-ring sm:w-auto"
         >
           Edit &amp; resubmit

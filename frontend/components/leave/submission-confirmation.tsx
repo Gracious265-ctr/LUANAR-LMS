@@ -127,19 +127,19 @@ export function SubmissionConfirmation({
       ) : (
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
-            href="/dashboard/leave/drafts"
+            href="/leave/drafts"
             className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
           >
             View my applications
           </Link>
           <Link
-            href={`/applications/${application.id}`}
+            href={`/leave/applications/${application.id}`}
             className="px-4 py-2 rounded-md border border-brand-primary-border bg-brand-primary-subtle text-brand-primary font-medium text-sm hover:bg-brand-primary-muted transition-colors"
           >
             Track this application
           </Link>
           <Link
-            href="/dashboard"
+            href="/"
             className="px-4 py-2 rounded-md border border-input-border bg-input-background text-text-primary font-medium text-sm hover:bg-surface-hover transition-colors"
           >
             Back to dashboard

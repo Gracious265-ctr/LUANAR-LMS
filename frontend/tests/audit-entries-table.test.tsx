@@ -152,15 +152,15 @@ it("links editable targets to their edit page", () => {
     expect(links).toHaveLength(3);
     expect(links[0]).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/leave-rules/7/edit"
+      "/hr-admin/leave-rules/7/edit"
     );
     expect(links[1]).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/employees/42"
+      "/hr-admin/employees/42"
     );
     expect(links[2]).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/calendar/financial-years/abc/edit"
+      "/hr-admin/calendar/financial-years/abc/edit"
     );
   });
 

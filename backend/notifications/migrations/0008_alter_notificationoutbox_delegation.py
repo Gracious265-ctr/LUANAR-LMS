@@ -8,13 +8,13 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('notifications', '0007_remove_notificationoutbox_one_notification_subject_and_more'),
-        ('org', '0002_alter_approverrole_code_and_more'),
+        ('organisation', '0002_alter_approverrole_code_and_more'),
     ]
 
     operations = [
         migrations.AlterField(
             model_name='notificationoutbox',
             name='delegation',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='notification_outbox_rows', to='org.delegation'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='notification_outbox_rows', to='organisation.delegation'),
         ),
     ]

@@ -1,5 +1,6 @@
 import { apiClientUrl } from "./api-client";
 import type { TeamCategory } from "./team-category";
+import type { TeamMemberCandidate } from "./team-members";
 
 // The category vocabulary is client-safe and lives beside this module, not
 // inside it: this file reads Django through `api-client`, which is server-only,
@@ -29,7 +30,7 @@ export const TEAM_STATUS_CODES: TeamStatus[] = ["draft", "active", "inactive"];
 
 
 /**
- * One problem standing between a team and being put into force. A code rather
+ * One problem standing between a team and being able to route. A code rather
  * than a message so a screen can decide *where* to point: an unstaffed step is
  * shown against its section, a date problem against the date field.
  */
@@ -160,18 +161,6 @@ export interface Team {
   updated_at: string;
 }
 
-/** One step as typed on a team's chain. */
-export interface TeamSectionInput {
-  name: string;
-  approver_role: string;
-  /**
-   * The one person appointed to the step, by user id. Omitted to leave an
-   * existing step's approver alone, which is how an edit that only renames a
-   * step does not unappoint the person on it.
-   */
-  approver?: number | null;
-}
-
 /** One person the backend says may be appointed to a step of a team's chain. */
 export interface EligibleApprover {
   id: number;
@@ -192,20 +181,6 @@ export interface EligibleApprovers {
   candidates: EligibleApprover[];
 }
 
-/**
- * A team's approval chain, written inline.
- *
- * On create the chain is built with the team. On update it replaces the steps of
- * the chain the team already has — there is nowhere else a chain is created or
- * edited, because a chain is not a thing HR manages apart from the team it
- * belongs to.
- */
-export interface TeamWorkflowInput {
-  /** Optional on update; defaults to the chain's existing name. */
-  name?: string;
-  sections: TeamSectionInput[];
-}
-
 export interface TeamInput {
   name: string;
   description?: string;
@@ -216,17 +191,10 @@ export interface TeamInput {
   effective_from?: string | null;
   effective_to?: string | null;
   /**
-   * The chain this team routes through. On create it must be omitted — a new
-   * team cannot adopt a chain that already exists, because that chain belongs
-   * to whichever team it was built for. On edit it must name one the team
-   * already owns, which is how HR points a team at its replacement chain.
+   * Manager assignment for team creation. Team-scoped approver role and
+   * category-matching employee.
    */
-  workflow?: number | null;
-  /**
-   * The team's approval chain. Omitted to leave the existing chain's steps
-   * untouched; a team's chain can never be swapped for somebody else's.
-   */
-  new_workflow?: TeamWorkflowInput;
+  manager?: { role: number; user: number };
 }
 
 export interface Campus {
@@ -303,6 +271,24 @@ export async function listTeamWorkflows(
 
 export async function getTeam(id: number | string): Promise<Team> {
   return apiClientUrl<Team>(`/api/v1/teams/${id}/`);
+}
+
+/**
+ * Who may be added to this team's roster.
+ *
+ * Read here rather than through `/api/hr/...`: this is the team *page's* data,
+ * fetched in a Server Component, where a bare relative `fetch` carries no
+ * `Authorization` header and the proxy answers 401 — which used to arrive as an
+ * empty picker rather than an error. `apiClientUrl` reads the token off the
+ * request cookies explicitly, the way every other read on that page does. The
+ * roster *writes* stay on the client helpers, which run in the browser.
+ */
+export async function listTeamMemberCandidates(
+  team: number | string
+): Promise<TeamMemberCandidate[]> {
+  return apiClientUrl<TeamMemberCandidate[]>(
+    `/api/v1/teams/${team}/member-candidates/`
+  );
 }
 
 export async function listCampuses(includeInactive = false): Promise<Campus[]> {

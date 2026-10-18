@@ -40,7 +40,7 @@ describe("FinalizedLeaveTable", () => {
     });
     expect(link).toHaveAttribute(
       "href",
-      "/dashboard/hr-admin/audit/applications/10"
+      "/hr-admin/audit/applications/10"
     );
   });
 

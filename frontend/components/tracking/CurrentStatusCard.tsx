@@ -1,4 +1,4 @@
-import { formatDateTime } from "@/lib/tracking/format";
+import { formatDateTime } from "@/lib/format";
 import { STATUS_META } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 import type { ReactNode } from "react";

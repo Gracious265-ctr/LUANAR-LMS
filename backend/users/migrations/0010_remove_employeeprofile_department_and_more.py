@@ -3,20 +3,17 @@
 
 The same operations once lived in a ``0009_remove_employeeprofile_department_
 and_more`` migration. When ``0009_merge_20261002_1912`` took the ``0009`` slot
-that file was renumbered to ``0010``, but databases that had already applied the
-old ``0009`` kept its row in ``django_migrations`` and had the ``department_id``
-column and ``users_department`` table dropped. Re-running a plain ``RemoveField``
-/``DeleteModel`` against those databases fails with ``column "department_id" ...
-does not exist``.
+that file was renumbered to ``0010``.
 
-``IF EXISTS`` matters for the same reason it does in ``0011``: a database built
-fresh from the current migrations still has both, so the drops are real there,
-while a database that ran the ghost ``0009`` finds nothing to drop and proceeds.
-The model state is identical either way, so ``makemigrations --check`` stays
-clean.
-
-Reverse is a no-op: the free-text column the old ``0008`` converted is gone, and
-restoring an empty reference column would restore drift rather than data.
+These are plain, fully reversible operations. Earlier revisions used
+``SeparateDatabaseAndState`` with ``IF EXISTS`` SQL and a no-op reverse to
+tolerate a legacy development database that had already run the ghost ``0009``
+(the ``department_id`` column and ``users_department`` table already gone). That
+no-op reverse broke the migration tests, which rewind ``users`` to ``0004``: the
+reverse has to recreate ``users_department`` and ``department_id`` so
+``0008``'s ``RenameField`` can unwind again. ``users.0010`` only ever applies on
+a fresh database from here on, so the ``IF EXISTS`` guard is no longer needed to
+move forward.
 """
 
 from django.db import migrations, models
@@ -30,22 +27,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.SeparateDatabaseAndState(
-            state_operations=[
-                migrations.RemoveField(
-                    model_name="employeeprofile",
-                    name="department",
-                ),
-            ],
-            database_operations=[
-                migrations.RunSQL(
-                    sql=(
-                        "ALTER TABLE users_employeeprofile "
-                        "DROP COLUMN IF EXISTS department_id CASCADE;"
-                    ),
-                    reverse_sql=migrations.RunSQL.noop,
-                ),
-            ],
+        migrations.RemoveField(
+            model_name="employeeprofile",
+            name="department",
         ),
         migrations.AlterField(
             model_name="employeeprofile",
@@ -59,17 +43,7 @@ class Migration(migrations.Migration):
                 max_length=200,
             ),
         ),
-        migrations.SeparateDatabaseAndState(
-            state_operations=[
-                migrations.DeleteModel(
-                    name="Department",
-                ),
-            ],
-            database_operations=[
-                migrations.RunSQL(
-                    sql="DROP TABLE IF EXISTS users_department CASCADE;",
-                    reverse_sql=migrations.RunSQL.noop,
-                ),
-            ],
+        migrations.DeleteModel(
+            name="Department",
         ),
     ]

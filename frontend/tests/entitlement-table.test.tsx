@@ -49,7 +49,7 @@ describe("EntitlementTable", () => {
 
     const link = screen.getByRole("link", { name: "A–C" });
     expect(link.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/entitlements/1/edit"
+      "/hr-admin/entitlements/1/edit"
     );
   });
 

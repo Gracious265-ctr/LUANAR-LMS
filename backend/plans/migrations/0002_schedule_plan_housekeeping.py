@@ -42,7 +42,7 @@ def delete_housekeeping_schedule(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("django_q", "0001_initial"),
+        ("django_q", "0011_auto_20200628_1055"),
         ("plans", "0001_initial"),
     ]
 

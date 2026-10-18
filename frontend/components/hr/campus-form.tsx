@@ -18,7 +18,7 @@ import { createCampus, updateCampus } from "@/lib/teams-client";
 export function CampusForm({
   campus,
   onSaved,
-  returnTo = "/dashboard/hr-admin/campuses",
+  returnTo = "/organisation/campuses",
 }: {
   campus?: Campus | null;
   /** Called after a successful save, in place of navigating away. */
@@ -168,7 +168,7 @@ export function CampusQuickAdd({ campuses }: { campuses: Campus[] }) {
             {campuses.map((campus) => (
               <li key={campus.id}>
                 <a
-                  href={`/dashboard/hr-admin/campuses/${campus.id}`}
+                  href={`/organisation/campuses/${campus.id}`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {campus.name}

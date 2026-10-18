@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { Search } from "lucide-react";
 
 import { EmployeesSection } from "@/components/hr/EmployeesSection";
 import { getCurrentUser } from "@/lib/auth";
@@ -9,8 +8,6 @@ import {
   gradeOptionsFromEntitlements,
   listEntitlements,
 } from "@/lib/entitlements";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FadeIn } from "@/components/motion/FadeIn";
 
@@ -25,7 +22,7 @@ export default async function EmployeesPage({
     redirect("/login");
   }
   if (user.role !== "hr") {
-    redirect("/dashboard");
+    redirect("/");
   }
 
   const { search } = await searchParams;
@@ -64,29 +61,6 @@ export default async function EmployeesPage({
             gradeOptions={gradeOptions}
             search={query}
             error={error}
-            filter={
-              // This JSX is authored in a server component and rendered inside the
-              // client `EmployeesSection`, so it crosses the RSC boundary. The
-              // boundary re-creates these elements without the dev runtime's
-              // "written as static siblings" flag, which makes React treat them as
-              // a list and demand keys. The keys below are what satisfies that;
-              // without them React warns "Each child in a list should have a
-              // unique key prop" and names this section.
-              <form method="get" className="mb-4 flex max-w-md items-center gap-2">
-                <div key="search-field" className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-                  <Input
-                    name="search"
-                    defaultValue={query}
-                    placeholder="Search name, email, team..."
-                    className="pl-9 pr-3"
-                  />
-                </div>
-                <Button key="search-submit" type="submit" variant="secondary">
-                  Search
-                </Button>
-              </form>
-            }
           />
         </Card>
       </div>

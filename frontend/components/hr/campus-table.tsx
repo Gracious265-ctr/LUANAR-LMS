@@ -63,7 +63,7 @@ export function CampusTable({
               <tr key={campus.id} className="hover:bg-surface-page">
                 <td className="px-4 py-3">
                   <Link
-                    href={`/dashboard/hr-admin/campuses/${campus.id}`}
+                    href={`/organisation/campuses/${campus.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
                   >
                     {campus.name}
@@ -85,7 +85,7 @@ export function CampusTable({
                       {atCampus.map((team) => (
                         <li key={team.id} className="text-xs">
                           <Link
-                            href={`/dashboard/hr-admin/teams/${team.id}`}
+                            href={`/organisation/teams/${team.id}`}
                             className="text-text-secondary hover:text-brand-primary"
                           >
                             {team.name}

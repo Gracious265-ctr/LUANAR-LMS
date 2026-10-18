@@ -55,7 +55,7 @@ describe("ApplicationCard (draft)", () => {
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /edit/i })).toHaveAttribute(
       "href",
-      "/dashboard/leave/draft-1/edit"
+      "/leave/draft-1/edit"
     );
   });
 
@@ -125,7 +125,7 @@ describe("ApplicationCard (non-draft)", () => {
     expect(screen.getByText("Pending Approval")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
       "href",
-      "/applications/app-1"
+      "/leave/applications/app-1"
     );
   });
 

@@ -193,7 +193,7 @@ describe("DelegationForm", () => {
 
     const cancel = screen.getByRole("link", { name: "Cancel" });
     expect(cancel.getAttribute("href")).toBe(
-      "/dashboard/hr-admin/delegations"
+      "/hr-admin/delegations"
     );
   });
 

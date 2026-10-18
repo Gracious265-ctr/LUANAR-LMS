@@ -325,7 +325,7 @@ export function ApproverRoleTable({
                       />
                     ) : (
                       <EditActionLink
-                        href={`/dashboard/hr-admin/roles/${role.id}/edit`}
+                        href={`/organisation/roles/${role.id}/edit`}
                       />
                     )}
                     <RetireRoleButton role={role} />
