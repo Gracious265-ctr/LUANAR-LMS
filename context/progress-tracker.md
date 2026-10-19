@@ -5691,3 +5691,95 @@ frontend now offers each role only the actions the server will accept.
   including two new ones in `tests/team-page-access.test.tsx` — the panel mock
   now records the `candidates` length, so "the read reaches the picker" is
   asserted, and HR is asserted not to read candidates at all.
+
+### Polish — module pages looked unstyled next to the dashboard
+- **Symptom.** After the app-launcher restructure, the module roots (`/leave`,
+  `/approvals`, `/organisation`, `/documents`, `/hr-admin`) rendered a different,
+  much cruder shell: a plain rail with no brand-tinted active link, no header,
+  and a `<main>` with **no padding**, so tables sat flush against the viewport
+  edge. It read as "not looking good" beside `/dashboard`.
+- **Cause.** The restructure introduced a second shell, `ModuleShell`
+  (`components/module-shell.tsx`), that was a stub — `bg-card`/`hover:bg-accent`
+  links and an unpadded `<main>` — rather than a port of `DashboardShell`'s
+  language.
+- **Fix.** Rewrote `ModuleShell` to mirror `DashboardShell`: the same 256px
+  `sticky top-0 h-screen` rail (`border-border-default bg-surface-card p-2`),
+  the brand-tinted active link (`border-l-2 border-brand-primary
+  bg-brand-primary-subtle text-brand-primary shadow-sm`, exact-path match with
+  `aria-current="page"`), an "All Apps" link back to the launcher, a header
+  (`z-header`, module name, theme toggle) and a padded, scrolling
+  `<main className="flex-1 overflow-auto p-4 sm:p-6">`. Below the 960px `md`
+  breakpoint the rail collapses into the same Radix dialog drawer the dashboard
+  uses (menu trigger in the header, drawer closes on route change), so no
+  destination is unreachable. Standardised the module name to "Organisation"
+  (was "Organization") in `layout-client.tsx` and `lib/apps-registry.ts`.
+  Also removed two invalid utility classes from the login card
+  (`mini-h-screen`, `mb-6s`) and an empty spacer `<div>`.
+- **Tests.** New `tests/module-shell.test.tsx` (4 cases: nav + header render,
+  active link marking, launcher link, mobile drawer wiring). Verified: `tsc`
+  clean, `eslint` clean (only the pre-existing `STATUS_STYLES` warning), full
+  Vitest **989 passed / 118 files**.
+
+### Feature — workflow steps: no step name, scoped wide-approver visibility + auto-fill
+- **Ask.** (1) Remove the free-text step-name field from workflow steps. (2)
+  When a wide approver role is chosen, fill in the approver name automatically.
+  (3) Scope which roles each team may choose: an institution-wide role only for
+  Administration-team workflows, a team-wide role only for the team that holds
+  it, and a campus-wide role only for academic teams at its campus.
+- **Step name.** Dropped the "Step name" input and the `name` field on the
+  draft step. `Section.name` stays on the model and the backend already falls
+  back to the role's label (`normalize_section_sequence`), so a saved step is
+  never nameless — no backend change. The step is identified by its role.
+- **Wide visibility.** `components/hr/workflow-form.tsx` now reads all three
+  wider scopes (`listRoleAssignments`, `listTeamRoleAssignments`,
+  `listCampusRoleAssignments`; the latter two are new client readers in
+  `lib/approver-roles-client.ts`, backed by the existing `/api/hr` proxies).
+  `offeredRoles` is the roles a team may use: a plain role (held wide nowhere)
+  serves every team; an institution-wide role only an administration team; a
+  team-wide role only the team that holds it; a campus-wide role only academic
+  teams at its campus. A role claimed wide elsewhere is not offered — it is that
+  team's or campus's to use.
+- **Wide auto-fill.** The step's approver field is locked to the wide holder's
+  name (scope-specific note). Only the institution-wide holder is *written* to
+  the payload, matching the existing backend rule. Team-wide and campus-wide
+  steps are shown staffed but sent `approver: null`: those resolve without an
+  appointment, so writing a name is exactly what `ensure_team_eligibility`
+  refuses. A selected role that is no longer offered stays visible for an
+  existing chain so editing never hides the role it uses.
+- **Tests.** Updated `tests/workflow-form-members.test.tsx` (mock the two new
+  readers): institution fill unchanged, the academic-team institution role is
+  now asserted *not offered* rather than unstaffed, and new cases for a
+  team-wide holder (locked, payload unstaffed), a campus-wide holder, and a role
+  another team holds wide (not offered). Verified: `tsc` clean, `eslint` clean,
+  12 workflow-form cases + 83 related approver/team cases pass.
+- **Bug — only institution-wide filled, team/campus did not.** The two new
+  client readers GET `/api/hr/team-role-assignments/` and
+  `/api/hr/campus-role-assignments/`, but those proxy routes exported **POST
+  only** (no `GET`), so every read 405'd and the effect's `.catch` turned it into
+  an empty list — team- and campus-wide holders silently never arrived.
+  `role-assignments` already had `GET`, which is why institution-wide worked.
+  Added the missing `GET` handlers (forwarding `team`/`campus`/`page` like the
+  existing readers).
+- **Root cause of "only institution-wide works" — manager 403, not just 405.**
+  The chain builder is a *manager's* screen: the new/edit workflow pages redirect
+  anyone whose `manages_teams` is not true, so HR never reaches the form and the
+  acting user is always a team manager. `managed_team_ids_for` only returns teams
+  where the user holds a `TeamRoleAssignment(..., is_team_manager=True)`, so HR
+  (no such row) is redirected away. But all three wide-holding viewsets
+  (`RoleAssignmentViewSet`, `TeamRoleAssignmentViewSet`,
+  `CampusRoleAssignmentViewSet`) were gated by `IsHRRole`, so a manager's `GET`
+  on *all three* — institution-wide included — answered **403**. Confirmed by
+  curl: HR → 200 on all three; the ICT and Food Science managers → 403 on all
+  three (both through `/api/hr/*` and direct). So none of the wide lists loaded
+  for the manager; the earlier "institution-wide filled" was the section's own
+  `approver` being shown after the backend had auto-appointed the institution
+  holder on a previous save, not the form reading the holding.
+- **Fix.** The three wide viewsets now allow `IsHROrTeamManager` for reads and
+  keep writes HR-only: class permission is `IsHROrTeamManager`, and
+  `get_permissions` returns `[IsAuthenticated, IsHROnly]` for `create`/`destroy`,
+  mirroring `ApproverRoleViewSet`. Reading is all a manager needs to scope the
+  offered roles and fill a holder; appointing one is still HR's call.
+- **Tests.** New `WideHolderReadPermissionTests` in `tests_workflow_members.py`:
+  a manager may list every wide holding (200) and may not `POST` one (403).
+  Verified: `workflows.tests_workflow_members` + `organisation` **63 passed**.
+  curl: manager GET of all three proxies → 200; manager POST team → 403.

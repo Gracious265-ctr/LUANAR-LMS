@@ -129,17 +129,28 @@ class RoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Institution-wide role holdings (HR only).
+    """Institution-wide role holdings.
 
     Institution-wide roles need no per-application row: the provider checks
     holders of an active institution-wide role whenever a stage's role has no
     team member. Registrars are the canonical case — a single institution-wide
     registrar handles every leave application.
+
+    A team manager may **read** the holdings: their team's chain builder has to
+    show an institution-wide step's holder so the role can be filled in. Only HR
+    may change a holding.
     """
 
     serializer_class = RoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
     http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_permissions(self):
+        # Reading tells a manager which roles their chain may use; appointing a
+        # holder is HR's call, so the writes stay HR-only.
+        if self.action in ("create", "destroy"):
+            return [permissions.IsAuthenticated(), IsHROnly()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = RoleAssignment.objects.select_related("user", "role")
@@ -183,17 +194,26 @@ class TeamRoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Team-wide role holdings (HR only).
+    """Team-wide role holdings.
 
     One holder per role per team, and writing a second one replaces the first:
     the screen is a pick-a-role, pick-a-person form, and asking HR to delete
     before they can change their mind is a step that only exists to satisfy the
     database. The service audits both the appointment and the replacement.
+
+    A team manager may **read** the holdings — their team's chain builder scopes
+    which roles it offers from which teams hold one, and shows the holder on a
+    team-wide step. Only HR may change a holding.
     """
 
     serializer_class = TeamRoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
     http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("create", "destroy"):
+            return [permissions.IsAuthenticated(), IsHROnly()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = TeamRoleAssignment.objects.select_related(
@@ -268,16 +288,22 @@ class CampusRoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Campus-wide role holdings (HR only).
+    """Campus-wide role holdings.
 
     Scoped to a campus, so the same holding resolves for every team *at* that
     campus and for no team anywhere else. Same one-holder, replace-on-save
-    contract as the team-wide holding.
+    contract as the team-wide holding. A manager may read the holdings and only
+    HR may change one.
     """
 
     serializer_class = CampusRoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
     http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in ("create", "destroy"):
+            return [permissions.IsAuthenticated(), IsHROnly()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = CampusRoleAssignment.objects.select_related(

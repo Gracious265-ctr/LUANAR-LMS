@@ -855,6 +855,42 @@ class WorkflowMemberScenarioTests(TestCase):
         )
 
 
+class WideHolderReadPermissionTests(MemberAPIBase):
+    """A team manager may read the wide holdings but not change them.
+
+    The chain builder is a manager's screen, and it scopes which roles it offers
+    — and fills in a holder — from the institution-, team-, and campus-wide
+    holdings. Reading them therefore has to answer to a manager; appointing or
+    removing a holder stays HR's call.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.urls = {
+            "team": "/api/v1/team-role-assignments/",
+            "campus": "/api/v1/campus-role-assignments/",
+            "institution": "/api/v1/role-assignments/",
+        }
+
+    def test_manager_may_list_every_wide_holding(self):
+        for scope, url in self.urls.items():
+            with self.subTest(scope=scope):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_manager_may_not_change_a_wide_holding(self):
+        role = ensure_roles("supervisor")["supervisor"]
+        response = self.client.post(
+            self.urls["team"],
+            {"team": self.team.pk, "role": role.pk, "user": self.alice.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(
+            TeamRoleAssignment.objects.filter(team=self.team, role=role).exists()
+        )
+
+
 class WideHolderCategoryTests(MemberAPIBase):
     """A wide approver belongs to the same half of the institution they cover.
 

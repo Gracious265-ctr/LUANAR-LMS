@@ -27,21 +27,56 @@ export type { HistoryScope } from "./approver-role-scopes";
 export async function listRoleAssignments(
   roleId?: number | string
 ): Promise<RoleAssignment[]> {
-  const rows: RoleAssignment[] = [];
+  return readAllPages<RoleAssignment>(
+    "/api/hr/role-assignments/",
+    roleId === undefined ? {} : { role: String(roleId) }
+  );
+}
+
+/**
+ * Who holds each role across a whole team, today.
+ *
+ * The team-wide twin of the institution-wide read above, and read for the same
+ * reason: the step form has to know whether a wide role belongs to the team it
+ * is shaping — and whether a wide role is claimed by some *other* team, in which
+ * case it is that team's to use and not this one's.
+ */
+export async function listTeamRoleAssignments(
+  team?: number | string
+): Promise<TeamRoleAssignment[]> {
+  return readAllPages<TeamRoleAssignment>(
+    "/api/hr/team-role-assignments/",
+    team === undefined ? {} : { team: String(team) }
+  );
+}
+
+/** The campus-wide twin, reaching every academic team at that campus. */
+export async function listCampusRoleAssignments(
+  campus?: number | string
+): Promise<CampusRoleAssignment[]> {
+  return readAllPages<CampusRoleAssignment>(
+    "/api/hr/campus-role-assignments/",
+    campus === undefined ? {} : { campus: String(campus) }
+  );
+}
+
+/** Every page of one paginated ``/api/hr`` reader, in one list. */
+async function readAllPages<T>(
+  path: string,
+  filters: Record<string, string> = {}
+): Promise<T[]> {
+  const rows: T[] = [];
   let page = 1;
   for (;;) {
-    const params = new URLSearchParams();
-    if (roleId !== undefined) {
-      params.set("role", String(roleId));
-    }
+    const params = new URLSearchParams(filters);
     params.set("page", String(page));
-    const response = await fetch(`/api/hr/role-assignments/?${params}`);
+    const response = await fetch(`${path}?${params}`);
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(apiErrorMessage(data));
     }
     const data = (await response.json()) as {
-      results?: RoleAssignment[];
+      results?: T[];
       next?: string | null;
     };
     const batch = data.results ?? [];
