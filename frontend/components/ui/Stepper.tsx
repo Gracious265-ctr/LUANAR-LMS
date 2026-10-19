@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Clock, Minus, X } from "lucide-react";
 
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/tracking/format";
 import { STATUS_TEXT } from "@/lib/status-styles";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/badge";
@@ -51,17 +51,6 @@ export interface StepperProps {
   size?: "sm" | "md";
   /** false where there is no person per step (e.g. an onboarding checklist). */
   showAvatars?: boolean;
-  /**
-   * When provided, the node of each jumpable step becomes a button that calls
-   * this with the step. Used by flows that let the user step back to an earlier
-   * point (the leave application wizard); approval chains pass nothing and stay
-   * read-only.
-   */
-  onStepClick?: (step: Step) => void;
-  /** Which steps may be jumped to. Defaults to completed and current. */
-  isStepClickable?: (step: Step) => boolean;
-  /** Accessible name for a jumpable node. Defaults to the step label. */
-  stepAriaLabel?: (step: Step) => string;
 }
 
 const STATUS_ICON = {
@@ -112,9 +101,6 @@ export function Stepper({
   orientation = "auto",
   size = "md",
   showAvatars = true,
-  onStepClick,
-  isStepClickable,
-  stepAriaLabel,
 }: StepperProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -147,17 +133,6 @@ export function Stepper({
         const nodeSize = compact ? "h-6 w-6" : "h-8 w-8";
         const Icon = STATUS_ICON[step.status];
         const showAvatar = showAvatars && Boolean(step.actor);
-        const clickable = Boolean(
-          onStepClick &&
-            (isStepClickable
-              ? isStepClickable(step)
-              : step.status === "completed" || step.status === "current")
-        );
-        const nodeWrapperClass = cn(
-          "relative z-10 shrink-0",
-          horizontal && "self-center",
-          auto && "md:self-center"
-        );
 
         const node =
           showAvatar ? (
@@ -240,19 +215,7 @@ export function Stepper({
               </>
             )}
 
-            {clickable ? (
-              <button
-                type="button"
-                aria-label={stepAriaLabel ? stepAriaLabel(step) : step.label}
-                onClick={() => onStepClick?.(step)}
-                className={cn(
-                  nodeWrapperClass,
-                  "inline-flex cursor-pointer rounded-full transition-opacity hover:opacity-80 focus-ring"
-                )}
-              >
-                {node}
-              </button>
-            ) : expandable ? (
+            {expandable ? (
               <button
                 type="button"
                 aria-expanded={open}
@@ -267,7 +230,15 @@ export function Stepper({
                 {node}
               </button>
             ) : (
-              <span className={nodeWrapperClass}>{node}</span>
+              <span
+                className={cn(
+                  "relative z-10 shrink-0",
+                  horizontal && "self-center",
+                  auto && "md:self-center"
+                )}
+              >
+                {node}
+              </span>
             )}
 
             <div

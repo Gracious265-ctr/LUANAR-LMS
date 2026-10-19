@@ -87,7 +87,7 @@ describe("ApprovalsWorkspace", () => {
     expect(screen.getByText("Jane Dean")).toBeInTheDocument();
     // A row links into the approver's own view, never the HR review page.
     expect(screen.getByRole("link", { name: "Jane Dean" }).getAttribute("href")).toBe(
-      "/approvals/cover/9"
+      "/dashboard/cover/9"
     );
   });
 

@@ -1,7 +1,6 @@
 import logging
 from datetime import date, datetime
 
-from django.db.models import Prefetch
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
@@ -17,10 +16,7 @@ from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
-    SupportingDocument,
 )
 from ..permissions import IsOwner
 from ..serializers import (
@@ -28,8 +24,6 @@ from ..serializers import (
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
-    LeaveRuleSerializer,
-    LeaveTypeSerializer,
     PublicHolidaySerializer,
 )
 from ..services import (
@@ -39,7 +33,7 @@ from ..services import (
 )
 from ..services.storage import delete_document
 from ..services.working_days import calculate_working_days, holidays_in_range
-from .documents import SupportingDocumentFeedView, SupportingDocumentViewSet
+from .documents import SupportingDocumentViewSet
 
 logger = logging.getLogger(__name__)
 
@@ -91,23 +85,6 @@ class GradeEntitlementViewSet(
             }
         )
 
-class LeaveTypeViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for leave types (no hard delete)."""
-
-    serializer_class = LeaveTypeSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        return LeaveType.objects.all()
-
-
 class EmployeeLeaveTypeViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -130,34 +107,6 @@ class EmployeeLeaveTypeViewSet(
         profile = getattr(self.request.user, "employee_profile", None)
         grade = getattr(profile, "grade", None) if profile else None
         return leave_types_available_to(grade)
-
-
-class LeaveRuleViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for effective-dated leave rules (no hard delete)."""
-
-    serializer_class = LeaveRuleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        queryset = LeaveRule.objects.all()
-        leave_type = self.request.query_params.get("leave_type")
-        if leave_type:
-            queryset = queryset.filter(
-                leave_type=positive_int(leave_type, "leave_type")
-            )
-        effective = self.request.query_params.get("effective")
-        if effective == "current":
-            queryset = queryset.filter(effective_from__lte=timezone.localdate())
-        elif effective == "upcoming":
-            queryset = queryset.filter(effective_from__gt=timezone.localdate())
-        return queryset
 
 
 class FinancialYearViewSet(
@@ -205,27 +154,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
-        qs = LeaveApplication.objects.filter(
-            employee=self.request.user
-        ).prefetch_related(
-            Prefetch(
-                "documents",
-                queryset=SupportingDocument.objects.filter(
-                    status=SupportingDocument.Status.ACTIVE
-                ),
-                to_attr="active_documents",
-            )
-        )
+        qs = LeaveApplication.objects.filter(employee=self.request.user)
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
-        # `My Applications` hides saved drafts so they only surface on the
-        # dedicated Drafts view; `exclude_status` accepts a comma-separated list.
-        exclude_status = self.request.query_params.get("exclude_status")
-        if exclude_status:
-            excluded = [s.strip() for s in exclude_status.split(",") if s.strip()]
-            if excluded:
-                qs = qs.exclude(status__in=excluded)
         return qs
 
     def perform_create(self, serializer):
@@ -245,13 +177,15 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
             instance.save(update_fields=["calculated_days"])
 
-    #: Statuses an employee may still edit (Unit 25 D7). ``REJECTED`` is
-    #: editable because the applicant may choose to rework a rejected
-    #: application and resubmit it; ``resubmit`` then re-validates, advances
-    #: ``submission_cycle`` and freezes a new revision.
+    #: Statuses an employee may still edit (Unit 25 D7). ``CORRECTION_REQUIRED``
+    #: is editable because that is the whole point of returning an application
+    #: for correction; the employee edits, then calls ``resubmit`` which
+    #: re-validates, advances ``submission_cycle`` and freezes a new revision.
+    #: The frontend already assumed this (``LeaveApplicationForm.tsx`` treats
+    #: ``correction_required`` as editable and omits it from READ_ONLY_STATUSES).
     EDITABLE_STATUSES = (
         LeaveApplication.Status.DRAFT,
-        LeaveApplication.Status.REJECTED,
+        LeaveApplication.Status.CORRECTION_REQUIRED,
     )
 
     def update(self, request, *args, **kwargs):

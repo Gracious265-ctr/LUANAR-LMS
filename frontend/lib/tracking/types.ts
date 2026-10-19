@@ -2,6 +2,7 @@ export type TrackingStatus =
   | "pending"
   | "approved"
   | "rejected"
+  | "correction_required"
   | "cancelled";
 
 /**
@@ -15,6 +16,7 @@ export type StageState =
   | "approved"
   | "awaiting"
   | "rejected"
+  | "returned"
   | "skipped"
   | "upcoming";
 
@@ -22,6 +24,7 @@ export type EventType =
   | "submitted"
   | "approved"
   | "rejected"
+  | "correction_requested"
   | "resubmitted"
   | "reassigned";
 
@@ -65,7 +68,8 @@ export interface TrackingOutcome {
   role_label: string;
   approver_name: string;
   decided_at: string;
-  reason: string;
+  reason?: string;
+  comment?: string;
 }
 
 export interface ResubmissionInfo {
@@ -123,6 +127,7 @@ export interface TrackingResponse {
   stages: TrackingStage[];
   events: TrackingEvent[];
   rejection: TrackingOutcome | null;
+  correction: TrackingOutcome | null;
   resubmission: ResubmissionInfo;
   /** Unit 19 addition: the employee's active supporting documents. */
   documents: TrackingDocument[];

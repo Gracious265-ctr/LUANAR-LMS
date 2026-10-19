@@ -155,12 +155,11 @@ class StubRulesProvider:
         return self.employees.get(user.id)
 
     def get_leave_type_rules(self, leave_type_id: int, as_of: date):
+        # Mirrors the database provider: only a missing id returns None, and
+        # ``as_of`` is no longer a gate since effective dating was retired.
         for rules in self.leave_types:
-            if rules.id != leave_type_id:
-                continue
-            if not rules.is_active or rules.effective_from > as_of:
-                return None
-            return rules
+            if rules.id == leave_type_id:
+                return rules
         return None
 
     def get_financial_year_for(self, d: date):
@@ -194,8 +193,13 @@ def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | Non
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
-    from organisation.models import ApproverRole, RoleAssignment
-    from workflows.models import SectionMember
+    from workflows.models import (
+        SectionMember,
+    )
+    from organisation.models import (
+        ApproverRole,
+        RoleAssignment,
+    )
 
     role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
     if role_obj is None:
@@ -418,28 +422,26 @@ class StubWorkflowProvider:
         )
 
 
-def ensure_annual_leave_rule(leave_type_id: int = 1) -> None:
-    """Give ``leave_type_id`` a real leave rule that deducts annual leave.
+def ensure_annual_leave_type(leave_type_id: int = 1) -> None:
+    """Make ``leave_type_id`` a live type that deducts annual leave.
 
     An application a test builds directly carries no submission snapshot, so
     cancellation restoration resolves through the documented fallback: the
-    current HR-configured rule. With no rule the answer is deliberately "does
-    not deduct", because a cancellation must never invent a restoration the
-    configuration never granted. So a test that wants a restoration has to
-    configure the rule, exactly as HR would in the application.
+    currently configured type. With no consuming type the answer is
+    deliberately "does not deduct", because a cancellation must never invent a
+    restoration the configuration never granted. So a test that wants a
+    restoration has to configure the type, exactly as HR would in the Leave
+    Configuration app (there is no separate rule row to configure any more).
     """
-    from leave.models import LeaveRule, LeaveType
+    from leave_config.models import LeaveType
 
     LeaveType.objects.update_or_create(
         id=leave_type_id,
-        defaults={"code": "annual", "name": "Annual leave"},
-    )
-    LeaveRule.objects.update_or_create(
-        leave_type_id=leave_type_id,
-        effective_from=date(2026, 1, 1),
         defaults={
+            "code": "annual",
+            "name": "Annual leave",
             "max_duration_days": 30,
-            "min_notice_days": 5,
+            "notice_days": 5,
             "requires_supporting_document": False,
             "eligibility_rules": [],
             "consumes_annual_entitlement": True,

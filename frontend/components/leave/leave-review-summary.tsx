@@ -50,7 +50,7 @@ export function LeaveReviewSummary({
           </button>
         ) : (
           <Link
-            href={`/leave/${application.id}/edit`}
+            href={`/dashboard/leave/${application.id}/edit`}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-text-link hover:text-text-link-hover"
           >
             <Pencil className="h-3.5 w-3.5" />

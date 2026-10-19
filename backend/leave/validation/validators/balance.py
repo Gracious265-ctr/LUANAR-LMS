@@ -4,7 +4,7 @@ Code: INSUFFICIENT_BALANCE.
 
 Runs only for annual-deducting leave types with a resolved financial year (D4).
 The balance is **the approved-deduction balance** asked of the provider via
-``get_available_balance``; pending/rejected applications are
+``get_available_balance``; pending/rejected/correction-required applications are
 deliberately not consulted. This validator never writes anything.
 """
 

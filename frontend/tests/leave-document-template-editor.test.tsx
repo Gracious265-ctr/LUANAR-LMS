@@ -12,7 +12,7 @@ let user: ReturnType<typeof userEvent.setup>;
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/hr-admin/leave-document-template" },
+  pathnameRef: { current: "/dashboard/hr-admin/leave-document-template" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -236,7 +236,7 @@ describe("LeaveDocumentTemplateEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /preview/i }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/hr-admin/leave-document-template?preview=1"
+      "/dashboard/hr-admin/leave-document-template?preview=1"
     );
   });
 
@@ -272,7 +272,7 @@ describe("LeaveDocumentTemplateEditor", () => {
     // The lone JSDOM history entry takes close's replace fallback; either way
     // the point is that it did not `push` the user off the page.
     expect(routerMock.replace).toHaveBeenCalledWith(
-      "/hr-admin/leave-document-template"
+      "/dashboard/hr-admin/leave-document-template"
     );
     expect(routerMock.push).not.toHaveBeenCalled();
   });

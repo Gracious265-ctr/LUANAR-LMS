@@ -47,10 +47,10 @@ class LeaveSummaryCountTests(TestCase):
         response = client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_pending_counts_submitted_and_rejected(self):
+    def test_pending_counts_submitted_and_correction_required(self):
         self.application(LeaveApplication.Status.SUBMITTED, start=self.today)
         self.application(
-            LeaveApplication.Status.REJECTED, start=self.today
+            LeaveApplication.Status.CORRECTION_REQUIRED, start=self.today
         )
         self.assertEqual(self.get()["pending_applications"], 2)
 
@@ -58,6 +58,7 @@ class LeaveSummaryCountTests(TestCase):
         for terminal in (
             LeaveApplication.Status.DRAFT,
             LeaveApplication.Status.APPROVED,
+            LeaveApplication.Status.REJECTED,
             LeaveApplication.Status.CANCELLED,
         ):
             with self.subTest(status=terminal):
@@ -115,6 +116,7 @@ class LeaveSummaryCountTests(TestCase):
     def test_upcoming_ignores_unapproved_leave_in_the_window(self):
         for in_motion in (
             LeaveApplication.Status.SUBMITTED,
+            LeaveApplication.Status.CORRECTION_REQUIRED,
             LeaveApplication.Status.REJECTED,
             LeaveApplication.Status.DRAFT,
             LeaveApplication.Status.CANCELLED,

@@ -3,11 +3,12 @@
 ``manage.py makemigrations --check`` compares the model against the migration
 *state* — never against the database — so a migration edited after it had
 already been applied leaves the physical schema behind with nothing to notice.
-``plans.0003_assigned_approver_nullable`` repairs one such case: the column
-``plans_planapprovalstage.assigned_approver_id`` was created ``NOT NULL``,
-the migration file was later changed to ``null=True``, and Django never
-re-runs a migration it has recorded as applied. Submission 500'd on the
-resulting ``IntegrityError``.
+A column created ``NOT NULL`` and later edited to ``null=True`` is the classic
+case: Django never re-runs a migration it has recorded as applied, so the
+database keeps the old constraint and writes fail on the resulting
+``IntegrityError`` long after the models look correct. (A one-off repair
+migration is the fix; this command is how such drift is found in the first
+place.)
 
 Run this against a persistent database (development or production). Against a
 database that was just built from the migrations it is always clean, which is

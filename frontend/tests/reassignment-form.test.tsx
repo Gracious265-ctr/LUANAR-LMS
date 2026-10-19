@@ -219,7 +219,7 @@ describe("ReassignmentForm", () => {
 
     const cancel = screen.getByRole("link", { name: "Cancel" });
     expect(cancel.getAttribute("href")).toBe(
-      "/hr-admin/reassignments"
+      "/dashboard/hr-admin/reassignments"
     );
   });
 });

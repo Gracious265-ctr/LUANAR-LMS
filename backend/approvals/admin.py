@@ -1,7 +1,8 @@
 from django.contrib import admin
 
-from approvals.models import Delegation, Reassignment
 from organisation.services import approver_role_codes_for
+
+from .models import Delegation, Reassignment
 
 
 @admin.register(Delegation)

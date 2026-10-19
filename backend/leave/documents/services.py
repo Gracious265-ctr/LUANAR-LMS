@@ -2,7 +2,7 @@
 
 One small command layer between the ``SupportingDocumentViewSet`` and the
 storage adapter. It owns the editable-status gate, the draft (hard delete)
-versus rejected (retire-only) split, atomic replacement, and the audit
+versus correction (retire-only) split, atomic replacement, and the audit
 entries written in the same transaction as every mutation.
 
 File validation is centralized here so every write path (upload, remove,
@@ -29,7 +29,7 @@ from ..services.storage import (
 logger = logging.getLogger(__name__)
 
 EDITABLE_STATUSES = frozenset(
-    {LeaveApplication.Status.DRAFT, LeaveApplication.Status.REJECTED}
+    {LeaveApplication.Status.DRAFT, LeaveApplication.Status.CORRECTION_REQUIRED}
 )
 
 
@@ -44,9 +44,8 @@ class DocumentNotActiveError(Exception):
 def ensure_editable(application) -> None:
     """Raise ``DocumentNotEditableError`` unless the application is editable.
 
-    Editable statuses are exactly ``draft`` and ``rejected`` (a rejected
-    applicant may rework and resubmit); this is the single source of "read-only
-    while under review / after approval".
+    Editable statuses are exactly ``draft`` and ``correction_required``; this
+    is the single source of "read-only while under review / after approval".
     """
     if application.status not in EDITABLE_STATUSES:
         raise DocumentNotEditableError()
@@ -96,7 +95,7 @@ def remove(user, application, document) -> None:
     """Remove a document from an editable application.
 
     A draft removal is destructive-by-nature: the row is hard-deleted and the
-    storage object removed. A rejected removal retires the row (the storage
+    storage object removed. A correction removal retires the row (the storage
     object is kept so the previous submission's snapshot still resolves).
     """
     ensure_editable(application)
@@ -137,7 +136,7 @@ def remove(user, application, document) -> None:
 
 
 def replace(user, application, document, file) -> SupportingDocument:
-    """Replace a document on a ``rejected`` application.
+    """Replace a document on a ``correction_required`` application.
 
     Valid only when the application is editable and **not** a draft — a draft
     replaces via remove + upload. The new file is uploaded first, then the old
@@ -145,7 +144,7 @@ def replace(user, application, document, file) -> SupportingDocument:
     transaction so a storage failure never leaves a dangling pair.
     """
     ensure_editable(application)
-    if application.status != LeaveApplication.Status.REJECTED:
+    if application.status != LeaveApplication.Status.CORRECTION_REQUIRED:
         raise DocumentNotEditableError()
     if document.status != SupportingDocument.Status.ACTIVE:
         raise DocumentNotActiveError()

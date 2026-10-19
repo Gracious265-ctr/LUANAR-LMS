@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import {
@@ -41,13 +41,6 @@ export interface LeaveApplicationOverlayProps {
    * through, and the URL has to name the draft from then on.
    */
   onStageChange?: (stage: LeaveOverlayStage, applicationId?: string) => void;
-  /**
-   * Whether creating a draft should rewrite the address bar to
-   * `?edit=<id>`. True on the list surfaces, which resume from the query
-   * string; false on the dedicated `/leave/new` page, which owns the whole
-   * route and has no list underneath to come back to.
-   */
-  syncUrl?: boolean;
 }
 
 const TITLES: Record<LeaveOverlayStage, { title: string; description: string }> = {
@@ -101,10 +94,8 @@ function LeaveApplicationOverlayInner({
   onOpenChange,
   onSubmitted,
   onStageChange,
-  syncUrl = true,
 }: LeaveApplicationOverlayProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const [stage, setStage] = useState<LeaveOverlayStage>(initialStage ?? "form");
   const [draftId, setDraftId] = useState<string | null>(
     mode === "edit" ? (applicationId ?? null) : null
@@ -139,10 +130,9 @@ function LeaveApplicationOverlayInner({
 
   const handleDraftCreated = (id: string) => {
     setDraftId(id);
-    if (!syncUrl) return;
     // `replace`, not `push`: the user opened the overlay deliberately, so a
     // refresh should resume this draft rather than re-trigger the Back button.
-    router.replace(`${pathname}?edit=${id}`);
+    router.replace(`/dashboard/leave/drafts?edit=${id}`);
   };
 
   const handleSubmitted = (id: string) => {

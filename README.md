@@ -121,11 +121,13 @@ uv run manage.py qcluster
 `config.settings.test` pins `sync` back to `False`, because the suite asserts
 that a render is *enqueued* and then runs it explicitly.
 
-**Scheduled jobs** (plan housekeeping: lapsing overdue blocks and block
-confirmation reminders) are a `django_q.Schedule` row created by
-`plans/migrations/0002_schedule_plan_housekeeping.py`, daily at 06:00. A schedule
-needs a live worker — `uv run manage.py qcluster` — so run one in any environment
-where reminders should actually fire.
+**Scheduled jobs** (Leave Plan housekeeping) are a `django_q.Schedule` row created by
+`plans/migrations/0002_schedule_plan_check.py` — a daily run of
+`plans.tasks.check_and_notify_plans`. In one idempotent pass it emails the
+reminder for plans whose notice window just opened, chases a still-unconverted
+plan once after five days, and marks plans whose dates have passed as missed. A
+schedule needs a live worker — `uv run manage.py qcluster` — so run one in any
+environment where reminders should actually fire.
 
 ### 6. Email Notifications
 
@@ -185,9 +187,10 @@ could not be generated. Everything else in the system works without them.
 
 ## First account
 
-There is no seed command and no fixture users. A fresh database has the schema
-and **nothing else** — no approver roles, teams, campuses, workflows, leave
-types, or accounts. Create the bootstrap administrator to inspect the Django
+A fresh database has the schema and **nothing else** — no approver roles, teams,
+campuses, workflows, leave types, or accounts. (There is one optional demo seed
+for development — see [Demo data](#demo-data-development-only) below — but it is
+not part of onboarding.) Create the bootstrap administrator to inspect the Django
 admin (including the Django-Q2 queue and task results) and to reach
 `/dashboard/admin/users`, where HR accounts are created:
 
@@ -226,6 +229,28 @@ in. If the mail is lost, the employee's row has a **Send password link** action.
 
 In order: superuser, then employees, then approver roles, then the campus and its
 team members, then the financial year.
+
+### Demo data (development only)
+
+To skip that setup and get something routable to click through, there is one
+optional command that builds a full demo team against the **dev** database:
+
+```bash
+cd backend
+uv run manage.py seed_demo_data
+```
+
+It creates the Supervisor/HOD/Registrar approver roles, a "Registry Services"
+administration team with a Supervisor → HOD → Registrar workflow, a supervisor
+and registrar account, five ordinary employees, and baseline leave configuration
+(an active financial year, a plannable Annual Leave type and the grade band that
+offers it). The existing superuser (`admin@test.luanar`) is appointed **HOD** —
+HOD is configuration, not `User.role`, so it is conferred by that section
+appointment and also gives the account a Team Plans scope.
+
+Every account is seeded with the password `testpass123`. The command is
+idempotent, so it is safe to re-run. It is for development and testing only —
+it is not the path real users are onboarded through.
 
 Once someone is signed in they can change their own password from **My Account**
 in the sidebar. It asks for the current password, emails the account a notice,
@@ -331,6 +356,13 @@ All API endpoints are versioned under `/api/v1/`:
 | GET | `/api/v1/finalized-leave/` | Finalized (submitted) leave applications, newest submission first, with employee, leave type, dates/days, reference, and current approver; `employee=` name/email search (HR-only) |
 | GET | `/api/v1/finalized-leave/{id}/` | One submitted application with its documents, reassignment history, and oldest-first audit trail (HR-only; 404 for draft ids) |
 | GET | `/api/v1/leave-applications/{id}/tracking/` | Track an application: full approval workflow, current stage, decisions and activity (owner-only; 404 for others, 409 `application_not_submitted` for drafts) |
+| GET | `/api/v1/plans/` | List the caller's leave plans, soonest start first (paginated, owner-only) |
+| POST | `/api/v1/plans/` | Create a personal leave plan (`leave_type`, `planned_start_date`, `planned_end_date`, optional `notes`); returns a non-blocking `overlap_warning` when it overlaps another plan |
+| GET | `/api/v1/plans/{id}/` | Retrieve one of the caller's plans (owner-only; 404 for others) |
+| DELETE | `/api/v1/plans/{id}/` | Cancel the caller's own open plan (idempotent) |
+| POST | `/api/v1/plans/{id}/apply/` | Convert a live plan into a draft leave application and return its `application_id` (owner-only; 400 for a plan that is no longer open) |
+| GET | `/api/v1/plans/team/` | Scoped team plans calendar for a month (`scope=`, `month=YYYY-MM`); visibility is assignment-driven (own team, assigned teams/campus, or institution-wide) |
+| GET | `/api/v1/plans/scope-options/` | Calendar scopes the caller may view (`team:<id>`, `campus:<id>`, `institution`) |
 
 ## Git Workflow
 

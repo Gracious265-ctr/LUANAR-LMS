@@ -5,13 +5,13 @@ import { DelegationTable } from "@/components/hr/delegation-table";
 import type { DelegateCandidate, Delegation } from "@/lib/delegations";
 import { Card } from "@/components/ui/card";
 
-export const COVER_BASE_HREF = "/approvals/cover";
+export const COVER_BASE_HREF = "/dashboard/cover";
 
 /**
  * An approver's own cover view.
  *
- * Rendered both as the "Cover" tab of /approvals and as the
- * dedicated /approvals/cover route the sidebar links to, so the two entry points
+ * Rendered both as the "Cover" tab of /dashboard/approvals and as the
+ * dedicated /dashboard/cover route the sidebar links to, so the two entry points
  * share one implementation. Data arrives as props because both callers are
  * server components; the list endpoint scopes a non-HR caller to the delegations
  * they are a party to, so this shows both the cover the approver handed over and

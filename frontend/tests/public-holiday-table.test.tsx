@@ -23,7 +23,7 @@ describe("PublicHolidayTable", () => {
 
     const link = screen.getByRole("link", { name: "Independence Day" });
     expect(link.getAttribute("href")).toBe(
-      "/hr-admin/calendar/holidays/4/edit"
+      "/dashboard/hr-admin/calendar/holidays/4/edit"
     );
   });
 

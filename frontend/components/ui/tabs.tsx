@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  *
  * The app has two tab treatments, so `TabsList` and `TabsTrigger` take a
  * matching `variant`:
- *  - `underline` (default): bottom-border indicator, used by the plans
+ *  - `underline` (default): bottom-border indicator, used by the leave
  *    workspaces.
  *  - `segmented`: filled pills inside a bordered container, used by the
  *    approvals and cancellation list views.

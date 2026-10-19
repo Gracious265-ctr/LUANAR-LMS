@@ -14,7 +14,7 @@ const ROOT = process.cwd();
  * a trace that points at an innocent page.
  *
  * The escape hatch is a pure sibling module (`team-category.ts`,
- * `leave-rules-pure.ts`, the `*-client.ts` proxies). Type-only imports are
+ * `leave-config.ts`, the `*-client.ts` proxies). Type-only imports are
  * erased and are fine; a value import is not. This test is the guard rail:
  * the mistake is silent in `tsc` and loud in the browser, so it is checked
  * here rather than discovered on a page.
@@ -124,7 +124,8 @@ describe("server-only modules stay out of client bundles", () => {
     // does not quietly disable the rest of this suite.
     expect(serverOnly.has(join(LIB, "api-client.ts"))).toBe(true);
     expect(serverOnly.has(join(LIB, "teams.ts"))).toBe(true);
-    expect(serverOnly.has(join(LIB, "leave-rules.ts"))).toBe(true);
+    expect(serverOnly.has(join(LIB, "entitlements.ts"))).toBe(true);
+    expect(serverOnly.has(join(LIB, "leave-config-server.ts"))).toBe(true);
   });
 
   it("finds no client component that value-imports from that closure", () => {

@@ -150,17 +150,14 @@ it("links editable targets to their edit page", () => {
 
     const links = screen.getAllByRole("link", { name: "Edit" });
     expect(links).toHaveLength(3);
-    expect(links[0]).toHaveAttribute(
-      "href",
-      "/hr-admin/leave-rules/7/edit"
-    );
+    expect(links[0]).toHaveAttribute("href", "/leave-config");
     expect(links[1]).toHaveAttribute(
       "href",
-      "/hr-admin/employees/42"
+      "/dashboard/hr-admin/employees/42"
     );
     expect(links[2]).toHaveAttribute(
       "href",
-      "/hr-admin/calendar/financial-years/abc/edit"
+      "/dashboard/hr-admin/calendar/financial-years/abc/edit"
     );
   });
 

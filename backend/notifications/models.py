@@ -2,9 +2,9 @@
 
 Each row is one email — the delivery record for a single subject/party pair:
 a leave decision (``application``), a delegation lifecycle event
-(``delegation``), a reassignment (``reassignment``), a leave day plan
-(``plan``/``plan_block``), a cancellation (``cancellation``), or an account
-login itself (``user``).
+(``delegation``), a reassignment (``reassignment``), a leave plan reminder
+(``plan``), a cancellation (``cancellation``), or an account login itself
+(``user``).
 
 * **Append-only** — queryset-wide ``update``/``delete`` are rejected, mirroring
   the balance-ledger discipline. Row state moves ``pending → sent|failed`` only
@@ -87,14 +87,7 @@ class NotificationOutbox(models.Model):
         blank=True,
     )
     plan = models.ForeignKey(
-        "plans.LeaveDayPlan",
-        on_delete=models.PROTECT,
-        related_name="notification_outbox_rows",
-        null=True,
-        blank=True,
-    )
-    plan_block = models.ForeignKey(
-        "plans.LeavePlanBlock",
+        "plans.LeavePlan",
         on_delete=models.PROTECT,
         related_name="notification_outbox_rows",
         null=True,
@@ -125,7 +118,7 @@ class NotificationOutbox(models.Model):
         "'approver' / 'delegate' for a delegation email, "
         "'from_approver' / 'to_approver' for a reassignment email, "
         "'employee' or the workflow role for a cancellation email, "
-        "'owner' for a leave day plan lifecycle email, or "
+        "'employee' for a leave plan reminder email, or "
         "'account' for a password-set email.",
     )
     recipient_email = models.EmailField()
@@ -156,7 +149,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=True,
                         reassignment__isnull=True,
                         plan__isnull=True,
-                        plan_block__isnull=True,
                         cancellation__isnull=True,
                         user__isnull=True,
                     )
@@ -165,7 +157,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=False,
                         reassignment__isnull=True,
                         plan__isnull=True,
-                        plan_block__isnull=True,
                         cancellation__isnull=True,
                         user__isnull=True,
                     )
@@ -174,7 +165,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=True,
                         reassignment__isnull=False,
                         plan__isnull=True,
-                        plan_block__isnull=True,
                         cancellation__isnull=True,
                         user__isnull=True,
                     )
@@ -183,7 +173,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=True,
                         reassignment__isnull=True,
                         plan__isnull=False,
-                        plan_block__isnull=True,
                         cancellation__isnull=True,
                         user__isnull=True,
                     )
@@ -192,16 +181,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=True,
                         reassignment__isnull=True,
                         plan__isnull=True,
-                        plan_block__isnull=False,
-                        cancellation__isnull=True,
-                        user__isnull=True,
-                    )
-                    | models.Q(
-                        application__isnull=True,
-                        delegation__isnull=True,
-                        reassignment__isnull=True,
-                        plan__isnull=True,
-                        plan_block__isnull=True,
                         cancellation__isnull=False,
                         user__isnull=True,
                     )
@@ -210,7 +189,6 @@ class NotificationOutbox(models.Model):
                         delegation__isnull=True,
                         reassignment__isnull=True,
                         plan__isnull=True,
-                        plan_block__isnull=True,
                         cancellation__isnull=True,
                         user__isnull=False,
                     )
@@ -237,14 +215,9 @@ class NotificationOutbox(models.Model):
                 name="one_outbox_row_per_reassignment_kind_role",
             ),
             models.UniqueConstraint(
-                fields=["plan", "kind", "submission_cycle", "role_label"],
+                fields=["plan", "kind"],
                 condition=models.Q(plan__isnull=False),
-                name="one_outbox_row_per_plan_kind_cycle_role",
-            ),
-            models.UniqueConstraint(
-                fields=["plan_block", "kind", "role_label"],
-                condition=models.Q(plan_block__isnull=False),
-                name="one_outbox_row_per_plan_block_kind_role",
+                name="one_outbox_row_per_plan_kind",
             ),
             models.UniqueConstraint(
                 fields=["cancellation", "kind", "role_label"],

@@ -1,14 +1,15 @@
 from django.contrib import admin
 
+from teams.models import Team, TeamRoleAssignment
+
 from .models import (
     ApproverRole,
     Campus,
     CampusRoleAssignment,
     RoleAssignment,
-    Team,
-    TeamRoleAssignment,
 )
 from .services import ensure_role_not_in_use
+
 
 @admin.register(ApproverRole)
 class ApproverRoleAdmin(admin.ModelAdmin):
@@ -67,12 +68,11 @@ class CampusAdmin(admin.ModelAdmin):
 class TeamAdmin(admin.ModelAdmin):
     """Deliberately not a lifecycle editor.
 
-    A team is in force the moment HR creates it, so there is no "put into force"
-    for the admin to perform. The one move that still takes a team out of
-    service — retirement — goes through ``workflows.services.deactivate_team``,
-    audited as its own event. An admin form that just wrote ``status`` would be
-    a way around that, so the field is read-only here and the button is the
-    API's action.
+    Retiring a team is a *decision* about real applications, so it goes through
+    ``workflows.services.deactivate_team``: audited as its own event. A team is
+    put in force by creating it. An admin form that just wrote ``status`` would
+    be a way around the audit trail, so the field is read-only here and the
+    buttons are the API's actions.
     """
 
     list_display = (
@@ -80,12 +80,13 @@ class TeamAdmin(admin.ModelAdmin):
         "code",
         "category",
         "campus",
-                "status",
+        "workflow",
+        "status",
         "effective_window",
     )
     list_filter = ("status", "category", "campus")
     search_fields = ("name", "code", "description")
-    raw_id_fields = ("campus",)
+    raw_id_fields = ("workflow", "campus")
     ordering = ("name",)
     readonly_fields = ("status", "created_at", "updated_at")
 

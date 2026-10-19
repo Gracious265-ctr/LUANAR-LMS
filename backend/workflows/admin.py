@@ -4,7 +4,8 @@ from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet
 
 from organisation.models import ApproverRole
-from workflows.models import Section, SectionMember, Workflow
+
+from .models import Section, SectionMember, Workflow
 
 
 class SectionForm(forms.ModelForm):
@@ -156,14 +157,9 @@ class WorkflowAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        # The audit trail is the record of why a chain looked the way it did.
+        # PROTECTed by Team.workflow, and the audit trail is the record of why
+        # a chain looked the way it did.
         return False
-
-
-
-
-
-
 
 
 @admin.register(Section)

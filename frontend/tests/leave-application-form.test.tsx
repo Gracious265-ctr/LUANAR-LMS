@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LeaveApplicationForm } from "@/components/leave/LeaveApplicationForm";
@@ -67,7 +67,7 @@ describe("LeaveApplicationForm", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(["submitted", "approved", "cancelled"])(
+  it.each(["submitted", "approved", "rejected", "cancelled"])(
     "shows a read-only notice when editing a %s application",
     async (statusName) => {
       mockApi(application(statusName));
@@ -87,9 +87,9 @@ describe("LeaveApplicationForm", () => {
     }
   );
 
-  it("keeps the uploader editable and explains Replace on a rejected edit", async () => {
+  it("keeps the uploader editable and explains Replace on a correction edit", async () => {
     mockApi(
-      application("rejected", {
+      application("correction_required", {
         documents: [
           {
             id: "doc-1",
@@ -110,14 +110,9 @@ describe("LeaveApplicationForm", () => {
 
     render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
 
-    // The uploader lives on the wizard's documents step; an attached document
-    // keeps that step visible, so two Nexts reach it.
-    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
-
     expect(await screen.findByText(/drag & drop files/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/this application was rejected/i)
+      screen.getByText(/returned for correction/i)
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/application no longer editable/i)

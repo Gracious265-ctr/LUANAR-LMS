@@ -6,12 +6,12 @@ from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from audit.services import current_actor, record_audit
 
+from leave_config.models import LeaveType
+
 from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
     SupportingDocument,
 )
@@ -19,13 +19,12 @@ from ..services import (
     ANNUAL_LEAVE_CODES,
     find_overlapping_financial_year,
     find_overlapping_rule,
+    find_annual_leave_type,
     is_annual_leave_identity,
     is_annual_leave_type,
     normalize_grade,
     normalize_leave_code,
     provision_annual_leave,
-    resolve_leave_rule,
-    find_annual_leave_type,
     resolve_grade_entitlement,
 )
 from ..services.storage import safe_signed_document_url
@@ -133,119 +132,25 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
     def create(self, validated_data):
         with transaction.atomic():
             validated_data["leave_type"] = provision_annual_leave(
-                effective_from=validated_data["effective_from"],
                 days=validated_data["days"],
                 actor=current_actor(self),
             )
             return super().create(validated_data)
 
 
-class LeaveTypeSerializer(AuditedModelSerializer):
-    """HR-facing serializer for leave types (registry entries)."""
-
-    target_type = AuditEntry.TargetType.LEAVE_TYPE
-    audit_fields = ["name", "code", "is_active"]
-
-    class Meta:
-        model = LeaveType
-        fields = [
-            "id",
-            "name",
-            "code",
-            "is_active",
-        ]
-
-    def validate(self, attrs: dict) -> dict:
-        name = self._value(attrs, "name")
-        name = (name or "").strip()
-        if not name:
-            raise serializers.ValidationError({"name": "Name is required."})
-        attrs["name"] = name
-
-        provided_code = self._value(attrs, "code")
-        normalized = normalize_leave_code(provided_code)
-        effective_code = normalized or slugify(name)
-        if not effective_code:
-            raise serializers.ValidationError(
-                {"name": "Name must contain letters or numbers."}
-            )
-        attrs["code"] = effective_code
-
-        self._reject_annual_leave(name, effective_code)
-
-        queryset = LeaveType.objects.all()
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.filter(name=name).exists():
-            raise serializers.ValidationError(
-                {"name": "A leave type with this name already exists."}
-            )
-        if queryset.filter(code=effective_code).exists():
-            raise serializers.ValidationError(
-                {"code": "A leave type with this code already exists."}
-            )
-
-        return attrs
-
-    def _reject_annual_leave(self, name: str, effective_code: str) -> None:
-        """Refuse to create or rename the canonical annual leave type.
-
-        Annual leave is not a registry entry HR curates here: it is provisioned
-        by saving an entitlement (:func:`~leave.services.provision_annual_leave`)
-        and it is edited by editing that entitlement. Two guards are needed and
-        they are different failures.
-
-        *Editing* the existing annual type is refused on **any** field, because
-        a partially-editable type is a trap — ``is_active`` looks like an
-        ordinary flag and retiring annual leave silently empties every
-        employee's leave selection.
-
-        *Creating* something that would become the annual type is refused on the
-        identity of the row, so HR cannot make a second, competing "Annual
-        Leave" and leave :func:`~leave.services.find_annual_leave_type` to pick
-        between them.
-        """
-        if self.instance is not None:
-            if is_annual_leave_type(self.instance):
-                raise serializers.ValidationError(
-                    {
-                        "name": (
-                            "Annual leave is created and maintained from "
-                            "Entitlements, not from Leave Types. Edit the "
-                            "entitlement for the grade range to change the days "
-                            "an employee is granted."
-                        )
-                    }
-                )
-            return
-
-        if is_annual_leave_identity(name, effective_code):
-            field = "code" if effective_code in ANNUAL_LEAVE_CODES else "name"
-            raise serializers.ValidationError(
-                {
-                    field: (
-                        f'"{name}" is reserved for annual leave, which is '
-                        "created automatically when you add an entitlement. Add "
-                        "an entitlement instead, or name a different leave type."
-                    )
-                }
-            )
-
-
 class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
     """Read-only, employee-facing view of leave types.
 
-    Resolves ``max_duration_days`` and ``requires_supporting_document`` from
-    the currently effective ``LeaveRule`` so employees see the live policy
-    instead of a hard-coded list.
+    Every rule on here is read straight off ``leave_config.LeaveType`` — the
+    registry that owns them (refinement unit 06) — so the catalog shows the live
+    policy rather than a hard-coded list.
 
     ``entitlement_days`` is the effective days granted to the viewer's grade by
     this type, so the selection can display "X days" without making the employee
-    cross-reference the balance card.
+    cross-reference the balance card. Entitlement itself is grade-based and
+    lives in ``leave.GradeLeaveEntitlement``, never on the type (§1.3).
     """
 
-    max_duration_days = serializers.SerializerMethodField()
-    requires_supporting_document = serializers.SerializerMethodField()
     entitlement_days = serializers.SerializerMethodField()
 
     class Meta:
@@ -254,18 +159,16 @@ class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "code",
+            "color",
+            "description",
             "max_duration_days",
             "requires_supporting_document",
             "entitlement_days",
+            # Leave Plans (unit 04) only offer types flagged plannable, and use
+            # the notice window to explain when a reminder will fire.
+            "plannable",
+            "notice_days",
         ]
-
-    def get_max_duration_days(self, obj: LeaveType):
-        rule = resolve_leave_rule(obj)
-        return rule.max_duration_days if rule else None
-
-    def get_requires_supporting_document(self, obj: LeaveType):
-        rule = resolve_leave_rule(obj)
-        return rule.requires_supporting_document if rule else False
 
     def get_entitlement_days(self, obj: LeaveType):
         request = self.context.get("request")
@@ -277,60 +180,6 @@ class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
             grade, leave_type=obj, as_of=None
         ) if grade else None
         return entitlement.days if entitlement else None
-
-
-class LeaveRuleSerializer(AuditedModelSerializer):
-    """HR-facing serializer for effective-dated leave rules."""
-
-    target_type = AuditEntry.TargetType.LEAVE_RULE
-    audit_fields = [
-        "leave_type_id",
-        "max_duration_days",
-        "eligibility",
-        "eligibility_rules",
-        "min_notice_days",
-        "requires_supporting_document",
-        "consumes_annual_entitlement",
-        "effective_from",
-    ]
-
-    leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
-    leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
-
-    class Meta:
-        model = LeaveRule
-        fields = [
-            "id",
-            "leave_type",
-            "leave_type_code",
-            "leave_type_name",
-            "max_duration_days",
-            "eligibility",
-            "eligibility_rules",
-            "min_notice_days",
-            "requires_supporting_document",
-            "consumes_annual_entitlement",
-            "effective_from",
-        ]
-
-    def validate_max_duration_days(self, value: int) -> int:
-        if value is None or value < 1:
-            raise serializers.ValidationError(
-                "Max duration must be at least 1 day."
-            )
-        return value
-
-    def validate_min_notice_days(self, value: int) -> int:
-        if value is None or value < 0:
-            raise serializers.ValidationError(
-                "Minimum notice must be 0 or more days."
-            )
-        return value
-
-    def validate_effective_from(self, value):
-        if value is None:
-            raise serializers.ValidationError("Effective date is required.")
-        return value
 
 
 class FinancialYearSerializer(AuditedModelSerializer):
@@ -483,49 +332,6 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
         return {"id": str(obj.replaced_by_id), "file_name": obj.replaced_by.file_name}
 
 
-class SupportingDocumentFeedSerializer(SupportingDocumentSerializer):
-    """One row of the caller's supporting-document list (documents module).
-
-    The same file payload as the per-application serializer, plus a compact
-    ``application`` reference so the feed can name and link each document back
-    to the application it was attached to. Unlike the per-application serializer
-    it does **not** mint a signed URL: signing is a storage round-trip per
-    document, and a list must not pay it once per row. ``file_url`` is left
-    empty; the client opens a row on demand through the per-document endpoint,
-    which signs exactly one URL.
-    """
-
-    application = serializers.SerializerMethodField()
-
-    class Meta(SupportingDocumentSerializer.Meta):
-        fields = SupportingDocumentSerializer.Meta.fields + ["application"]
-
-    def get_file_url(self, obj) -> str:
-        return ""
-
-    def get_application(self, obj):
-        return {
-            "id": str(obj.application_id),
-            "reference_number": obj.application.reference_number,
-            "status": obj.application.status,
-        }
-
-
-class SupportingDocumentSummarySerializer(SupportingDocumentSerializer):
-    """Nested document row that never mints a signed URL.
-
-    The applicant surfaces (the applications list, and the compose overlay's
-    review summary) only ever show a document's name, size and status; none of
-    them opens the file. Signing is a storage round-trip per document, so
-    nesting the signing serializer would make an application with attachments
-    slow to load — catastrophically so when storage is unreachable. The
-    documents module signs a single URL on click instead.
-    """
-
-    def get_file_url(self, obj) -> str:
-        return ""
-
-
 class LeaveApplicationSerializer(serializers.ModelSerializer):
     documents = serializers.SerializerMethodField()
 
@@ -543,6 +349,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "reason",
             "status",
             "reference_number",
+            "source_plan",
             "created_at",
             "updated_at",
             "submitted_at",
@@ -556,6 +363,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "financial_year_label",
             "status",
             "reference_number",
+            "source_plan",
             "employee",
             "created_at",
             "updated_at",
@@ -564,10 +372,6 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
 
     def get_documents(self, obj) -> list:
         """The active working set; retired rows are never nested here."""
-        prefetched = getattr(obj, "active_documents", None)
-        documents = (
-            prefetched
-            if prefetched is not None
-            else obj.documents.filter(status="active")
-        )
-        return SupportingDocumentSummarySerializer(documents, many=True).data
+        return SupportingDocumentSerializer(
+            obj.documents.filter(status="active"), many=True
+        ).data

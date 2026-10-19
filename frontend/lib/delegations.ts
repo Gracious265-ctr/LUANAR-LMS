@@ -111,7 +111,7 @@ export interface CoverData {
 /**
  * The approver's own delegations plus the candidate list, loaded server-side.
  *
- * Shared by the Cover tab on the approvals page and the dedicated /approvals/cover
+ * Shared by the Cover tab on the approvals page and the dedicated /dashboard/cover
  * route so both entry points derive from one implementation. The list is best
  * effort: a failure degrades to a retry prompt rather than failing the whole page,
  * since a request form is still usable without the existing rows.

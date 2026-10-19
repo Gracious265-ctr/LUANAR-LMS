@@ -20,16 +20,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 
 from organisation.models import ApproverRole, RoleAssignment
-from organisation.services import (
-    RoleActionError,
-    approver_role_codes_for,
-    approver_role_labels_for,
-    create_approver_role,
-    deactivate_approver_role,
-    ensure_role_not_in_use,
-    is_approver_user,
-    update_approver_role,
-)
+from organisation.services import RoleActionError, approver_role_codes_for, approver_role_labels_for, create_approver_role, deactivate_approver_role, ensure_role_not_in_use, is_approver_user, update_approver_role
 from .testing import (
     DEV_PASSWORD,
     ensure_roles,

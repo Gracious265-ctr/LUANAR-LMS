@@ -23,7 +23,7 @@ export const COVER_PARAM = "cover";
  * string: every host resolves the current user through `cookies()`, so these
  * routes are never prerendered and there is no static shell to defer the client
  * component out of. If one of them ever becomes static, this needs wrapping,
- * the same way `/leave/drafts` is.
+ * the same way `/dashboard/leave/drafts` is.
  *
  * There is no old `new` route to redirect, because the form used to be
  * rendered inline and never had a URL of its own.

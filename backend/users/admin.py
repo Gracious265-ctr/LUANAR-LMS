@@ -1,12 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from system_admin.actions import (
-    grant_staff_access,
-    grant_superuser,
-    revoke_superuser,
-)
-
 from .models import EmployeeProfile, User
 
 
@@ -14,7 +8,6 @@ from .models import EmployeeProfile, User
 class UserAdmin(BaseUserAdmin):
     """Admin for the custom user model with role visibility."""
 
-    actions = [grant_superuser, revoke_superuser, grant_staff_access]
     list_display = [
         "username",
         "email",

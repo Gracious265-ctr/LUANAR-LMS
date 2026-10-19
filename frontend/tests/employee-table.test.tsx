@@ -71,7 +71,7 @@ describe("EmployeeTable", () => {
     render(<EmployeeTable employees={[activeEmployee]} />);
 
     const link = screen.getByRole("link", { name: "Test Lead" });
-    expect(link.getAttribute("href")).toBe("/hr-admin/employees/1");
+    expect(link.getAttribute("href")).toBe("/dashboard/hr-admin/employees/1");
   });
 
   it("renders an empty state when there are no employees", () => {

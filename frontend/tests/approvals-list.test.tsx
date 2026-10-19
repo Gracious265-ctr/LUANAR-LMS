@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApprovalsList } from "@/components/approvals/approvals-list";
 import { makeListResponse, makeListItem } from "@/lib/approvals/__fixtures__";
-import { approveApprovals, fetchApprovals } from "@/lib/approvals/service";
+import { fetchApprovals, approveApprovals } from "@/lib/approvals/service";
 
 vi.mock("@/lib/approvals/service", () => ({
   fetchApprovals: vi.fn(),
@@ -30,7 +30,7 @@ describe("ApprovalsList", () => {
     expect(screen.getByText("Decided by me")).toBeInTheDocument();
 
     const link = container.querySelector(
-      'a[href="/approvals/app-1"]'
+      'a[href="/dashboard/approvals/app-1"]'
     );
     expect(link).not.toBeNull();
     expect(mockedFetchApprovals).toHaveBeenCalledWith("pending", "", 1);
@@ -160,7 +160,7 @@ describe("ApprovalsList", () => {
     expect(screen.getByText("25 of 25 selected")).toBeInTheDocument();
   });
 
-  it("approves the selection through the confirmation dialog", async () => {
+  it("approves the selected applications through the confirmation gate", async () => {
     mockedFetchApprovals.mockResolvedValue({
       ok: true,
       data: makeListResponse([makeListItem()]),
@@ -183,8 +183,7 @@ describe("ApprovalsList", () => {
     );
     await user.click(screen.getByRole("button", { name: "Approve selected" }));
 
-    expect(await screen.findByText("Approve 1 application?")).toBeInTheDocument();
-    await user.type(screen.getByLabelText("Type to confirm"), "APPROVE");
+    await user.type(await screen.findByLabelText("Type to confirm"), "APPROVE");
     await user.click(screen.getByRole("button", { name: "Approve 1" }));
 
     await waitFor(() =>

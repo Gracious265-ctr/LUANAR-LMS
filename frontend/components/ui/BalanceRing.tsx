@@ -1,90 +1,74 @@
 import { cn } from "@/lib/utils";
 
-interface BalanceRingProps {
-  /** Days already consumed from the entitlement. */
-  used: number;
-  /** Gross entitlement the ring is measured against. */
-  total: number;
-  /** Human label for the balance, e.g. "Annual leave". */
-  label?: string;
-  /** Outer diameter in pixels. */
-  size?: number;
-  /** Arc thickness in pixels. */
-  strokeWidth?: number;
-  className?: string;
-}
-
 /**
- * A small SVG radial progress dial for a leave balance.
+ * A single conic progress ring for one leave balance: `used` days swept in the
+ * brand colour out of `total`. Built from plain SVG strokes (no chart library)
+ * so it renders on the server and needs no layout measurement — the arc is a
+ * `stroke-dasharray` on a circle rather than a path.
  *
- * Deliberately pairs with — never replaces — the numeric balance already on
- * screen: the ring is the glance-able cue, the "N of M days remaining" text
- * beside it is the exact figure. The filled arc shows the *remaining* share of
- * the entitlement, so a full dial means a full balance and it empties as days
- * are consumed; the arc uses the brand primary stroke and the remaining track
- * the muted stroke, both theme tokens so the dial follows light/dark mode.
+ * A zero `total` (an employee with no entitlement for that type) renders as an
+ * empty track with a `0` centre instead of a divide-by-zero sweep.
  */
 export function BalanceRing({
+  label,
   used,
   total,
-  label,
-  size = 56,
-  strokeWidth = 6,
   className,
-}: BalanceRingProps) {
-  const safeTotal = Math.max(total, 0);
-  const safeUsed = Math.min(Math.max(used, 0), safeTotal);
-  const remaining = Math.max(safeTotal - safeUsed, 0);
-  const remainingRatio = safeTotal > 0 ? remaining / safeTotal : 0;
-
-  const radius = (size - strokeWidth) / 2;
+}: {
+  label: string;
+  used: number;
+  total: number;
+  className?: string;
+}) {
+  const size = 120;
+  const stroke = 10;
+  const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - remainingRatio);
-  const center = size / 2;
-
-  const description = `${remaining} of ${safeTotal} days remaining`;
+  const ratio = total > 0 ? Math.min(Math.max(used / total, 0), 1) : 0;
+  const remaining = Math.max(total - used, 0);
 
   return (
-    <div className={cn("flex items-center gap-3", className)} role="img" aria-label={label ? `${label}: ${description}` : description}>
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        className="shrink-0 -rotate-90"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          strokeWidth={strokeWidth}
-          className="stroke-muted"
-        />
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          className="stroke-primary transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
-        />
-      </svg>
-      <div className="min-w-0">
-        {label && (
-          <p className="text-xs font-medium text-text-secondary truncate">
-            {label}
-          </p>
-        )}
-        <p className="text-sm font-semibold tracking-tight text-text-primary">
-          {remaining}
-          <span className="text-text-muted font-normal"> of {safeTotal} days</span>
-        </p>
+    <div className={cn("flex flex-col items-center gap-2", className)}>
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          role="img"
+          aria-label={`${label}: ${used} of ${total} days used`}
+          className="-rotate-90"
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            strokeWidth={stroke}
+            stroke="var(--color-muted)"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            stroke="var(--color-primary)"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - ratio)}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-xl font-semibold text-text-primary">
+            {remaining}
+          </span>
+          <span className="text-xs text-text-muted">days left</span>
+        </div>
       </div>
+      <span className="text-sm font-medium text-text-secondary">{label}</span>
+      <span className="text-xs text-text-muted">
+        {used} of {total} days used
+      </span>
     </div>
   );
 }

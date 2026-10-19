@@ -153,6 +153,7 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         self.assertEqual(len(data["stages"]), 4)
         self.assertGreaterEqual(len(data["events"]), 1)
         self.assertIsNone(data["rejection"])
+        self.assertIsNone(data["correction"])
         self.assertEqual(data["resubmission"]["count"], 0)
         self.assertFalse(data["resubmission"]["can_resubmit"])
 
@@ -288,6 +289,27 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         self.assertEqual(rejection["reason"], "Unsupported dates")
         self.assertIn("reason", rejection)
         self.assertNotIn("comment", rejection)
+        self.assertIsNone(response.data["correction"])
+
+    def test_correction_payload_uses_comment_key(self):
+        app = self.make_submitted()
+        self.approve(app, self.supervisor)
+        self.approve(app, self.hod)
+        decide(
+            application_id=app.pk,
+            actor=self.registrar,
+            action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+            comment="Fix the dates",
+            expected_version=1,
+        )
+        response = self.client.get(self.url(app.id))
+        correction = response.data["correction"]
+        self.assertEqual(correction["stage_order"], 3)
+        self.assertEqual(correction["role_label"], "Registrar")
+        self.assertEqual(correction["comment"], "Fix the dates")
+        self.assertIn("comment", correction)
+        self.assertNotIn("reason", correction)
+        self.assertIsNone(response.data["rejection"])
 
     def test_outcomes_are_null_after_resubmission(self):
         app = self.make_submitted()
@@ -302,6 +324,7 @@ class TrackingOwnershipTests(TrackingEndpointTests):
         resubmit_application(user=self.owner, application_id=app.pk)
         response = self.client.get(self.url(app.id))
         self.assertIsNone(response.data["rejection"])
+        self.assertIsNone(response.data["correction"])
         self.assertEqual(response.data["resubmission"]["count"], 1)
         audit_row = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.APPLICATION,

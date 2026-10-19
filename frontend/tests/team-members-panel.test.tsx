@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeamMembersPanel } from "@/components/hr/team-members-panel";
-import type { TeamMemberCandidate, TeamMemberSummary } from "@/lib/team-members";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
+import type { TeamMemberSummary } from "@/lib/team-members";
 import {
   addTeamMember,
   listTeamMembers,
@@ -66,14 +67,17 @@ const routed = makeMember({
   workflow_memberships: [{ workflow_id: 1, workflow_name: "Academic approval" }],
 });
 
-const unassigned: TeamMemberCandidate = {
-  // The candidate endpoint returns the *user id* the add writes, so the picker
-  // and the write speak the same identifier.
-  id: 99,
+const unassigned = makeEmployee({
+  // A record's id (the profile pk) is deliberately different from its user_id
+  // (the account it belongs to): the add picker writes a user id, and a test
+  // that let them coincide could not tell the two apart.
+  id: 30,
+  user_id: 99,
   full_name: "Sam Candidate",
-  email: "sam@test.luanar",
   designation: "Assistant",
-};
+  team: null,
+  team_name: "",
+});
 
 const team = { id: 4, name: "Bunda College Faculty" };
 
@@ -138,7 +142,7 @@ describe("TeamMembersPanel", () => {
     fireEvent.change(screen.getByLabelText("Employee to add to this team"), {
       target: { value: "99" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add Members" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to team" }));
 
     await waitFor(() => expect(addTeamMember).toHaveBeenCalledWith(4, 99));
     expect(refresh).toHaveBeenCalled();
@@ -158,6 +162,7 @@ describe("TeamMembersPanel", () => {
         name: "Remove Ruth Member from Bunda College Faculty",
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     expect(
       await screen.findByText(/still holds an open approver period/)
@@ -171,12 +176,12 @@ describe("TeamMembersPanel", () => {
     expect(
       screen.getByRole("option", { name: /Sam Candidate/ })
     ).toBeInTheDocument();
-    // The picker's promise is scoped by the manager's own category and by who
-    // is already its wide approver. The server read those filters (the panel is
+    // The picker's promise is scoped by the team's category and by who is
+    // already its wide approver. The server read those filters (the panel is
     // handed the filtered candidates), and the copy names the scope rather
     // than implying the whole directory is on offer.
     expect(
-      screen.getByText(/who share your category as this team's manager/)
+      screen.getByText(/who match this team's category are offered here/)
     ).toBeInTheDocument();
   });
 });

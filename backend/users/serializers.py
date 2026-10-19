@@ -5,8 +5,8 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
-from organisation.models import Team
-from organisation.services import WorkflowMemberError, approver_role_codes_for, add_team_member
+from teams.models import Team
+from organisation.services import approver_role_codes_for
 
 from .models import EmployeeProfile
 from .services import request_password_set
@@ -48,11 +48,14 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.get_full_name()
 
     def get_manages_teams(self, obj: User) -> bool:
-        """Whether this account is the designated manager of at least one team.
+        """Whether the account is the designated manager of at least one team.
 
-        Read by the dashboard navigation to offer a "My team" entry to a team
-        manager. A manager is not an HR account, so without this the only route
-        to their team's members and workflows would be typing the address.
+        Read-only and server-derived. It rides on the profile payload because
+        the sidebar needs it in the first paint — a manager is an ordinary
+        ``employee``, so their system role alone cannot tell the rail to offer
+        the way into the Workflows module. Imported lazily to keep ``users``
+        from importing ``organisation`` (which imports ``users.models``) at
+        module load.
         """
         from organisation.services import managed_team_ids_for
 
@@ -354,11 +357,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop("user", {})
         email = user_data["email"]
         role = user_data.get("role") or User.Role.EMPLOYEE
-        # The team is not a bare field write: it is a placement, and a placement
-        # has rules a bare ``EmployeeProfile.team = team`` would skip (category
-        # match, one team per person, a wide approver is not a roster member). It
-        # is popped here and applied through the guarded service below.
-        team = validated_data.pop("team", None)
 
         with transaction.atomic():
             user = User.objects.filter(
@@ -381,8 +379,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 user.save()
 
             instance = EmployeeProfile.objects.create(user=user, **validated_data)
-            if team is not None:
-                self._apply_team(team=team, user=user, instance=instance)
             self._audit(instance, action=AuditEntry.Action.CREATED, before=None)
 
             # A new account cannot sign in until someone sets its password, and
@@ -399,11 +395,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         before = self._snapshot(instance)
         user_data = validated_data.pop("user", {})
         user = instance.user
-        # Whether the payload mentions the team at all: an absent key means
-        # "leave it alone" on a PATCH, and only a supplied value is a change to
-        # route through the services.
-        team_provided = "team" in validated_data
-        team = validated_data.pop("team", None)
 
         with transaction.atomic():
             if "email" in user_data:
@@ -430,20 +421,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 setattr(instance, attr, value)
             instance.save()
 
-            # A placement, a removal, and a move all go through the guarded
-            # services, which audit the change with its reason. Inside this
-            # transaction, so a refusal on the second step of a move undoes the
-            # first.
-            if team_provided:
-                self._move_team(instance=instance, user=user, new_team=team)
-
             after = self._snapshot(instance)
-            if team_provided:
-                # The team's own audit (before/after and reason) belongs to the
-                # service that wrote it; dropping it here keeps one authoritative
-                # entry instead of a second, thinner one.
-                before.pop("team", None)
-                after.pop("team", None)
             self._audit(
                 instance,
                 action=AuditEntry.Action.UPDATED,
@@ -451,44 +429,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 after=after,
             )
         return instance
-
-    def _apply_team(self, *, team: Team, user: User, instance: EmployeeProfile) -> None:
-        """Place ``user`` on ``team`` through the guarded membership service."""
-        try:
-            add_team_member(team=team, user=user, actor=current_actor(self))
-        except WorkflowMemberError as exc:
-            raise serializers.ValidationError({exc.field: exc.message})
-        instance.refresh_from_db(fields=["team"])
-
-    def _move_team(
-        self, *, instance: EmployeeProfile, user: User, new_team: Team | None
-    ) -> None:
-        """Apply a team change through the guarded services.
-
-        A placement, a removal and a move are each refused for the same reasons
-        the member panel refuses them — a category mismatch, a person already on
-        another team, or a removal while responsibilities remain — and the
-        services are the single source of those rules.
-        """
-        from workflows.services import remove_team_member
-
-        old_team = instance.team
-        if new_team is not None and old_team is not None and new_team.pk == old_team.pk:
-            return
-        actor = current_actor(self)
-        try:
-            if new_team is None and old_team is not None:
-                remove_team_member(team=old_team, user=user, actor=actor)
-            elif new_team is not None and old_team is None:
-                add_team_member(team=new_team, user=user, actor=actor)
-            elif new_team is not None and old_team is not None:
-                # One employee belongs to one team, so a move is a removal
-                # followed by a placement.
-                remove_team_member(team=old_team, user=user, actor=actor)
-                add_team_member(team=new_team, user=user, actor=actor)
-        except WorkflowMemberError as exc:
-            raise serializers.ValidationError({exc.field: exc.message})
-        instance.refresh_from_db(fields=["team"])
 
     def _snapshot(self, instance: EmployeeProfile) -> dict:
         user = instance.user

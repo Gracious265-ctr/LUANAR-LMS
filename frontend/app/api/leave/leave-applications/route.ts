@@ -2,16 +2,11 @@ import { proxyRequest } from "../_lib/proxy";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const params = new URLSearchParams();
   const status = url.searchParams.get("status");
-  if (status) params.set("status", status);
-  const excludeStatus = url.searchParams.get("exclude_status");
-  if (excludeStatus) params.set("exclude_status", excludeStatus);
-  const query = params.toString();
-  return proxyRequest(
-    "GET",
-    query ? `leave-applications/?${query}` : "leave-applications/"
-  );
+  const path = status
+    ? `leave-applications/?status=${encodeURIComponent(status)}`
+    : "leave-applications/";
+  return proxyRequest("GET", path);
 }
 
 export async function POST(request: Request) {

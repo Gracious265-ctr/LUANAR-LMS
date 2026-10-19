@@ -4,12 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 
-import type { TeamMemberCandidate, TeamMemberSummary } from "@/lib/team-members";
+import type { Employee } from "@/lib/employees";
+import type { TeamMemberSummary } from "@/lib/team-members";
 import {
   addTeamMember,
   listTeamMembers,
   removeTeamMember,
 } from "@/lib/team-members-client";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import { Input } from "@/components/ui/input";
+import { Alert, EmptyState } from "@/components/ui/states";
 
 const PAGE_SIZE = 10;
 
@@ -29,7 +35,7 @@ export function TeamMembersPanel({
   candidates,
 }: {
   team: { id: number; name: string };
-  candidates: TeamMemberCandidate[];
+  candidates: Employee[];
 }) {
   const router = useRouter();
   const [members, setMembers] = useState<TeamMemberSummary[] | null>(null);
@@ -132,11 +138,7 @@ export function TeamMembersPanel({
 
   return (
     <div className="space-y-3">
-      {error && (
-        <p className="rounded-md border border-border-default bg-surface-muted px-3 py-2 text-sm text-status-rejected">
-          {error}
-        </p>
-      )}
+      {error && <Alert tone="error">{error}</Alert>}
 
       {members === null && !error ? (
         <p className="text-sm text-text-muted">Loading the roster...</p>
@@ -148,7 +150,7 @@ export function TeamMembersPanel({
                 Search members
               </label>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-              <input
+              <Input
                 id="roster-search"
                 value={search}
                 onChange={(event) => {
@@ -156,7 +158,7 @@ export function TeamMembersPanel({
                   resetPage();
                 }}
                 placeholder="Search by name, email, or designation..."
-                className="w-full rounded-md border border-input-border bg-input-background py-2 pl-9 pr-3 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                className="pl-9"
               />
             </div>
             <label className="sr-only" htmlFor="roster-filter">
@@ -180,16 +182,15 @@ export function TeamMembersPanel({
           </div>
 
           {count === 0 ? (
-            <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-              Nobody&apos;s leave routes through this team yet. Add someone
-              below, and their submissions will follow the chain this team
-              routes through.
-            </p>
+            <EmptyState
+              title="No members yet"
+              description="Nobody's leave routes through this team yet. Add someone below, and their submissions will follow the chain this team routes through."
+            />
           ) : filtered.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-              No members match this search. Try a different name or clear the
-              filter.
-            </p>
+            <EmptyState
+              title="No members match this search"
+              description="Try a different name or clear the filter."
+            />
           ) : (
             <ul className="divide-y divide-border-default rounded-md border border-border-default">
               {pageRows.map((member) => (
@@ -201,19 +202,19 @@ export function TeamMembersPanel({
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-text-primary">
                       {member.full_name}
                       {!member.is_active && (
-                        <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-text-muted">
+                        <Badge size="sm" tone="muted">
                           Inactive
-                        </span>
+                        </Badge>
                       )}
                       {member.is_section_approver && (
-                        <span className="rounded-full bg-brand-secondary-subtle px-2 py-0.5 text-xs font-medium text-brand-secondary">
+                        <Badge size="sm" tone="info">
                           Step approver
-                        </span>
+                        </Badge>
                       )}
                       {member.team_role && (
-                        <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-text-secondary">
+                        <Badge size="sm" tone="neutral">
                           {member.team_role}
-                        </span>
+                        </Badge>
                       )}
                     </p>
                     <p className="text-xs text-text-muted">
@@ -230,15 +231,16 @@ export function TeamMembersPanel({
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void remove(member)}
+                  <ConfirmButton
+                    size="sm"
+                    onConfirm={() => remove(member)}
                     disabled={busyId === member.id}
+                    loading={busyId === member.id}
+                    prompt={`Remove ${member.full_name} from ${team.name}?`}
                     aria-label={`Remove ${member.full_name} from ${team.name}`}
-                    className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyId === member.id ? "Removing..." : "Remove"}
-                  </button>
+                    Remove
+                  </ConfirmButton>
                 </li>
               ))}
             </ul>
@@ -250,27 +252,27 @@ export function TeamMembersPanel({
                 {filtered.length} member{filtered.length === 1 ? "" : "s"}
               </p>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                   disabled={safePage === 1}
-                  className="rounded-md border border-border-default px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Previous
-                </button>
+                </Button>
                 <span className="px-2 text-xs text-text-muted">
                   Page {safePage} of {pageCount}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() =>
                     setPage((current) => Math.min(pageCount, current + 1))
                   }
                   disabled={safePage === pageCount}
-                  className="rounded-md border border-border-default px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Next
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -292,29 +294,26 @@ export function TeamMembersPanel({
                   : "Choose an employee..."}
               </option>
               {candidates.map((person) => (
-                <option key={person.id} value={person.id}>
+                <option key={person.id} value={person.user_id}>
                   {person.full_name}
                   {person.designation ? ` — ${person.designation}` : ""}
                 </option>
               ))}
             </select>
-            <button
-              type="button"
+            <Button
               onClick={() => void addCandidate()}
               disabled={selectedCandidate === "" || busyId !== null}
-              className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Add Members
-            </button>
+              Add to team
+            </Button>
           </div>
 
           <p className="text-xs text-text-muted">
-            Only employees without a team who share your category as this
-            team&apos;s manager are offered here, and never a wide approver —
-            approvers are managed on the Approvers tab. Removing someone is
-            refused while they still tie to this team — a step appointment, a
-            team-wide role, an open approver period, or a place on one of its
-            chains.
+            Only employees without a team who match this team&apos;s category are
+            offered here, and never a wide approver — approvers are managed on
+            the Approvers tab. Removing someone is refused while they still tie
+            to this team — a step appointment, a team-wide role, an open
+            approver period, or a place on one of its chains.
           </p>
         </>
       )}

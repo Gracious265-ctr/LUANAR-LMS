@@ -21,7 +21,7 @@ const { pushMock, replaceMock, backMock, searchParamsMock } = vi.hoisted(() => (
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/leave/drafts",
+  usePathname: () => "/dashboard/leave/drafts",
   useRouter: () => ({
     push: pushMock,
     replace: replaceMock,
@@ -123,7 +123,7 @@ describe("ApplicationsList stage URL sync", () => {
     fireEvent.click(screen.getByRole("button", { name: "to review" }));
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/leave/drafts?edit=draft-9&stage=review"
+      "/dashboard/leave/drafts?edit=draft-9&stage=review"
     );
   });
 
@@ -135,7 +135,7 @@ describe("ApplicationsList stage URL sync", () => {
     fireEvent.click(screen.getByRole("button", { name: "to done" }));
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/leave/drafts?edit=draft-9&stage=done"
+      "/dashboard/leave/drafts?edit=draft-9&stage=done"
     );
   });
 
@@ -147,7 +147,7 @@ describe("ApplicationsList stage URL sync", () => {
     fireEvent.click(screen.getByRole("button", { name: "to form" }));
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/leave/drafts?edit=draft-9"
+      "/dashboard/leave/drafts?edit=draft-9"
     );
   });
 
@@ -161,7 +161,7 @@ describe("ApplicationsList stage URL sync", () => {
     // `?compose=1` carries no application id, so without the reported one the
     // URL could not name the draft the user just created.
     expect(replaceMock).toHaveBeenCalledWith(
-      "/leave/drafts?edit=draft-9&stage=review"
+      "/dashboard/leave/drafts?edit=draft-9&stage=review"
     );
   });
 
@@ -189,6 +189,6 @@ describe("ApplicationsList stage URL sync", () => {
     fireEvent.click(screen.getByRole("button", { name: "close" }));
 
     expect(backMock).not.toHaveBeenCalled();
-    expect(replaceMock).toHaveBeenCalledWith("/leave/drafts");
+    expect(replaceMock).toHaveBeenCalledWith("/dashboard/leave/drafts");
   });
 });

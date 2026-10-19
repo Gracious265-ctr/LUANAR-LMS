@@ -256,6 +256,21 @@ class SessionEvictionTests(ChangePasswordBase):
         # cannot even parse; the base view's 401 is the canonical one.
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_a_refresh_token_for_a_deleted_user_is_a_401_not_a_500(self):
+        # A signed-in user whose account is deleted — routine when a database is
+        # reset — holds a refresh token naming a user that no longer exists.
+        # With ``CHECK_REVOKE_TOKEN`` on, SimpleJWT's refresh serializer would
+        # raise ``User.DoesNotExist`` looking the user up, which is a 500 for
+        # what is really just a stale session. The access path already answers
+        # "User not found"; the refresh path must agree.
+        _, refresh = self.tokens_for()
+        self.user.delete()
+
+        fresh = APIClient()  # type: ignore[assignment]
+        response = fresh.post(REFRESH_URL, {"refresh": refresh}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 class MissingFingerprintTests(ChangePasswordBase):
     """A token with no fingerprint must not be a way around the watermark.

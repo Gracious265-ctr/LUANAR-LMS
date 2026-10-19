@@ -77,7 +77,7 @@ export function DelegationForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/hr-admin/delegations");
+        router.push("/dashboard/hr-admin/delegations");
         router.refresh();
       }
     } catch (err) {
@@ -192,7 +192,7 @@ export function DelegationForm({
           </Button>
         ) : (
           <Link
-            href="/hr-admin/delegations"
+            href="/dashboard/hr-admin/delegations"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

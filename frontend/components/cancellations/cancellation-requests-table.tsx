@@ -245,7 +245,7 @@ function RowLink({
 }) {
   return (
     <Link
-      href={`/approvals/${row.application_id}?cancellation=${row.request_id}`}
+      href={`/dashboard/approvals/${row.application_id}?cancellation=${row.request_id}`}
     >
       {children}
     </Link>

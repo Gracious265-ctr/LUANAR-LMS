@@ -1,4 +1,5 @@
 from django.urls import include, path
+from django.views.generic import RedirectView
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
 from .views import (
@@ -6,29 +7,18 @@ from .views import (
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
-    LeaveRuleViewSet,
-    LeaveTypeViewSet,
     PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
-from .views.calendar import TeamLeaveCalendarView
-from .views.documents import SupportingDocumentFeedView
-from .views.me import FormDefaultsView, LeaveSummaryView
+from .views.dashboard import LeaveDashboardView
+from .views.me import LeaveSummaryView
 from .views.resubmit import LeaveApplicationResubmitView
-from .views.setup import (
-    ApplyDefaultsView,
-    RolloverView,
-    SetupStatusView,
-    SetupTemplatesView,
-)
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
 app_name = "leave"
 
 hr_router = SimpleRouter()
 hr_router.register("entitlements", GradeEntitlementViewSet, basename="entitlement")
-hr_router.register("leave-types", LeaveTypeViewSet, basename="leave-type")
-hr_router.register("leave-rules", LeaveRuleViewSet, basename="leave-rule")
 hr_router.register("financial-years", FinancialYearViewSet, basename="financial-year")
 hr_router.register("public-holidays", PublicHolidayViewSet, basename="public-holiday")
 
@@ -59,22 +49,9 @@ urlpatterns = [
         name="leave-me-summary",
     ),
     path(
-        "leave/me/form-defaults/",
-        FormDefaultsView.as_view(),
-        name="leave-me-form-defaults",
-    ),
-    path("setup/status/", SetupStatusView.as_view(), name="setup-status"),
-    path("setup/templates/", SetupTemplatesView.as_view(), name="setup-templates"),
-    path(
-        "setup/apply-defaults/",
-        ApplyDefaultsView.as_view(),
-        name="setup-apply-defaults",
-    ),
-    path("setup/rollover/", RolloverView.as_view(), name="setup-rollover"),
-    path(
-        "calendar/team/",
-        TeamLeaveCalendarView.as_view(),
-        name="team-leave-calendar",
+        "leave/dashboard/",
+        LeaveDashboardView.as_view(),
+        name="leave-dashboard",
     ),
     path(
         "leave-applications/<uuid:pk>/submit/",
@@ -90,6 +67,20 @@ urlpatterns = [
     path("", include("leave.cancellations.urls")),
     path("", include(hr_router.urls)),
     path("", include(application_router.urls)),
+    # Refinement unit 06 retired the HR leave-types CRUD: leave types are now
+    # configured in the Leave Configuration app. The endpoint answers with a
+    # redirect rather than a 404 so a bookmarked or scripted call still lands
+    # somewhere useful.
+    path(
+        "leave-types/",
+        RedirectView.as_view(pattern_name="leave-config-type-list", permanent=False),
+        name="legacy-leave-type-list",
+    ),
+    path(
+        "leave-rules/",
+        RedirectView.as_view(pattern_name="leave-config-type-list", permanent=False),
+        name="legacy-leave-rule-list",
+    ),
     path(
         "employee/leave-types/",
         employee_leave_types,
@@ -109,10 +100,5 @@ urlpatterns = [
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/replace/",
         supporting_doc_replace,
         name="supportingdocument-replace",
-    ),
-    path(
-        "leave-documents/",
-        SupportingDocumentFeedView.as_view(),
-        name="supportingdocument-feed",
     ),
 ]

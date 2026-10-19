@@ -491,7 +491,7 @@ function ApprovalTableRow({
         )}
         <TableCell className="font-medium text-text-primary">
           <Link
-            href={`/approvals/${row.id}`}
+            href={`/dashboard/approvals/${row.id}`}
             className="after:absolute after:inset-0 after:content-['']"
           >
             {row.reference}
@@ -553,7 +553,7 @@ function ApprovalTableRow({
       <div className="flex items-start gap-3">
         {tab === "pending" && <div className="pt-0.5">{checkbox}</div>}
         <Link
-          href={`/approvals/${row.id}`}
+          href={`/dashboard/approvals/${row.id}`}
           className="flex min-w-0 flex-1 items-center justify-between gap-3"
         >
           <div className="min-w-0">

@@ -79,7 +79,7 @@ describe("DelegationTable", () => {
 
     const link = screen.getByRole("link", { name: "Jane Dean" });
     expect(link.getAttribute("href")).toBe(
-      "/hr-admin/delegations/1"
+      "/dashboard/hr-admin/delegations/1"
     );
   });
 
@@ -87,7 +87,7 @@ describe("DelegationTable", () => {
     render(
       <DelegationTable
         delegations={[delegate]}
-        baseHref="/approvals/cover"
+        baseHref="/dashboard/cover"
       />
     );
 
@@ -95,7 +95,7 @@ describe("DelegationTable", () => {
       screen
         .getByRole("link", { name: "Jane Dean" })
         .getAttribute("href")
-    ).toBe("/approvals/cover/1");
+    ).toBe("/dashboard/cover/1");
 
     render(
       <DelegationTable delegations={[]} emptyHint="Nothing to hand over yet." />

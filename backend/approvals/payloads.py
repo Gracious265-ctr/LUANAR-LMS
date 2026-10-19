@@ -11,12 +11,13 @@ from decimal import Decimal
 
 from audit.models import AuditEntry
 from audit.services import actor_display_name
-from leave.models import GradeEntitlement, LeaveApplication, LeaveType, SupportingDocument
+from leave.models import GradeEntitlement, LeaveApplication, SupportingDocument
+from leave_config.models import LeaveType
 from leave.services import active_financial_year, financial_year_label
 
-from approvals.models import ApplicationStage, ApprovalDecision
+from .models import ApplicationStage, ApprovalDecision
 
-_VALID_STATES = ("pending", "approved", "rejected", "cancelled")
+_VALID_STATES = ("pending", "approved", "rejected", "correction_required", "cancelled")
 
 
 def _profile(user):

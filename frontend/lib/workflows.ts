@@ -1,5 +1,5 @@
 import { apiClientUrl } from "./api-client";
-import type { WorkflowMemberRef } from "./team-members";
+import type { WorkflowMember } from "./team-members";
 
 /**
  * A chain's shape, and how it is read and written.
@@ -91,17 +91,16 @@ export interface SectionMember {
 /**
  * The lifecycle a chain is in, as the backend reports it.
  *
- * A chain has no activation of its own: it is in force within its own
- * effective window and while its stored flag is set. Every chain a team owns
- * routes at once, so the state describes one chain rather than a choice
- * between several.
+ * A chain has no activation of its own: it is in force exactly when the team
+ * that routes through it is, so `is_active` is a stored flag that only becomes
+ * meaningful next to the team's status. The label exists so a screen can say
+ * "live"/"not in force" without re-deriving the rule.
  */
-export type WorkflowState = "active" | "scheduled" | "inactive" | "draft";
+export type WorkflowState = "routing" | "standby" | "draft";
 
 export const WORKFLOW_STATE_LABELS: Record<WorkflowState, string> = {
-  active: "In force",
-  scheduled: "Scheduled",
-  inactive: "Not in force",
+  routing: "In force",
+  standby: "Owned, not routing",
   draft: "Not yet owned by a team",
 };
 
@@ -128,9 +127,9 @@ export interface WorkflowSectionInput {
  * A chain, as configured.
  *
  * `team` is the team that *owns* it — the team it was built for, which is the
- * team that may edit it. A team may own several chains and all of them route
- * at once, each carrying the employees who are members of it, so a chain has
- * no "routing" flag of its own.
+ * team that may edit it. `is_routing` says whether that team currently routes
+ * through it, which is a separate question: a team may own several chains and
+ * route exactly one.
  */
 export interface Workflow {
   id: number;
@@ -142,10 +141,11 @@ export interface Workflow {
   effective_to: string | null;
   is_active: boolean;
   state: WorkflowState | string;
+  is_routing: boolean;
   section_count: number;
   sections: WorkflowSection[];
   /** The normal members of this chain (team members, not step approvers). */
-  members: WorkflowMemberRef[];
+  members: WorkflowMember[];
 }
 
 export interface WorkflowInput {

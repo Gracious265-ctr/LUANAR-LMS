@@ -30,7 +30,7 @@ class TrackedApprover:
 class TrackedStage:
     """One stage of the workflow snapshot the application was submitted with.
 
-    ``state`` is one of ``approved | awaiting | rejected |
+    ``state`` is one of ``approved | awaiting | rejected | returned |
     skipped | upcoming``. ``approver`` is ``None`` until the stage has been
     resolved to an approver. ``skip_reason`` carries why a skipped stage was
     passed over (Unit 30); it is ``None`` for every other state.
@@ -62,10 +62,10 @@ class TrackedEvent:
 
 @dataclass(frozen=True)
 class TrackedOutcome:
-    """A rejection outcome attached to a terminal state.
+    """A rejection or correction outcome attached to a terminal state.
 
-    ``reason`` holds the mandatory rejection comment text; the serializer maps
-    it to ``reason``.
+    ``reason`` holds the mandatory reason/comment text; the serializer maps it
+    to ``reason`` for rejections and ``comment`` for corrections.
     """
 
     stage_order: int
@@ -89,9 +89,10 @@ class ResubmissionInfo:
 class WorkflowTracking:
     """The full workflow state for one application.
 
-    ``status`` is one of ``pending | approved | rejected | cancelled``.
-    ``stages`` are ascending by ``order``; ``events`` are newest first.
-    ``rejection`` is non-null only while the application is rejected.
+    ``status`` is one of ``pending | approved | rejected |
+    correction_required | cancelled``. ``stages`` are ascending by ``order``;
+    ``events`` are newest first. ``rejection``/``correction`` are non-null only
+    in their respective statuses and both reset to ``None`` once resubmitted.
     """
 
     status: str
@@ -100,6 +101,7 @@ class WorkflowTracking:
     stages: tuple[TrackedStage, ...] = field(default_factory=tuple)
     events: tuple[TrackedEvent, ...] = field(default_factory=tuple)
     rejection: TrackedOutcome | None = None
+    correction: TrackedOutcome | None = None
     resubmission: ResubmissionInfo = field(
         default_factory=lambda: ResubmissionInfo(
             count=0, last_resubmitted_at=None, can_resubmit=False

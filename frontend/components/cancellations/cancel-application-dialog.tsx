@@ -10,7 +10,7 @@ import type {
   CancellationEligibility,
   SubmitCancellationResult,
 } from "@/lib/cancellations/types";
-import { formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/tracking/format";
 import type { ApplicationSummary } from "@/lib/tracking/types";
 import { cn } from "@/lib/utils";
 import { Alert } from "@/components/ui/alert";

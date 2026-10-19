@@ -1,139 +1,198 @@
-"""Launcher aggregator — role gating and badge assembly.
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
+from django.test import TestCase
 
-The launcher owns no access rules; it asks each module (``can_access_*``) and
-reports the badge that module computes. These tests pin the *resulting* app set
-per role — employee, approver, HR, superuser — and that a module's badge flows
-through untouched (including the ``None`` case, which the frontend renders as no
-badge rather than a "0").
-"""
+from workflows.testing import ensure_roles, team_for
 
-from unittest import mock
-
-from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APIClient, APITestCase
-
-from leave.tests.stubs import make_user
-from organisation.services import create_team_role_assignment
-from users.models import User
-from workflows.testing import (
-    create_user_with_role,
-    ensure_roles,
-    make_employee,
-    make_team,
+from .services import (
+    can_access_documents,
+    can_access_leave_config,
+    can_access_org,
+    get_launcher_apps,
 )
 
-from .services import get_launcher_apps
-
-LAUNCHER_URL = reverse("launcher-apps")
+User = get_user_model()
 
 
-def _keys(apps):
-    return {app["key"] for app in apps}
+def make_user(role: str, email: str) -> User:
+    return User.objects.create_user(
+        username=email,
+        email=email,
+        password="hunter2-hunter2",
+        first_name="Launcher",
+        last_name="Test",
+        role=role,
+    )
 
 
-class LauncherEndpointTests(APITestCase):
-    def _apps_for(self, user):
-        self.client.force_authenticate(user=user)
-        response = self.client.get(LAUNCHER_URL)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        return response.data["apps"]
+class LeaveConfigLauncherTests(TestCase):
+    """Spec 4.6: the card only appears for the accounts that can use it.
 
-    def test_requires_authentication(self):
-        response = APIClient().get(LAUNCHER_URL)
-        self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+    The launcher is the first surface of the module, so it is where "is this
+    HR-only?" is decided in public. A card that links to a page which then
+    bounces the visitor back to the dashboard is worse than no card.
+    """
 
-    def test_employee_sees_only_self_service_apps(self):
-        employee = make_user("emp@launcher", role=User.Role.EMPLOYEE)
+    @staticmethod
+    def keys(user) -> list[str]:
+        return [app["key"] for app in get_launcher_apps(user)]
 
-        self.assertEqual(_keys(self._apps_for(employee)), {"leave", "documents"})
+    def test_employee_never_sees_the_card(self):
+        employee = make_user(User.Role.EMPLOYEE, "employee@example.com")
+        self.assertNotIn("leave-config", self.keys(employee))
 
-    def test_approver_sees_the_approvals_desk(self):
-        approver = make_user("ap@launcher", role="hod")
+    def test_approver_never_sees_the_card(self):
+        approver = make_user(User.Role.APPROVER, "approver@example.com")
+        self.assertNotIn("leave-config", self.keys(approver))
 
-        self.assertEqual(
-            _keys(self._apps_for(approver)), {"leave", "approvals", "documents"}
+    def test_hr_sees_the_card(self):
+        hr = make_user(User.Role.HR, "hr@example.com")
+        self.assertIn("leave-config", self.keys(hr))
+
+    def test_superuser_sees_the_card(self):
+        admin = User.objects.create_superuser(
+            username="admin@example.com",
+            email="admin@example.com",
+            password="hunter2-hunter2",
         )
+        self.assertIn("leave-config", self.keys(admin))
 
-    def test_a_designated_team_manager_reaches_their_team(self):
-        """The team a manager may configure lives inside Organisation.
-
-        A designated manager is an ordinary employee account, so without the
-        launcher offering the module there is no way for them to reach the roster
-        and approval chains only they may write. They are not HR, so the
-        administration app stays out of it. The approvals desk is theirs because
-        a manager holds a real approver role on the team, not because they are a
-        manager.
-        """
-        manager = make_employee("manager@launcher", team=None)
-        team = make_team("Managed team", ["hod"])
-        create_team_role_assignment(
-            team=team,
-            role=ensure_roles("dvc")["dvc"],
-            user=manager,
-            actor=make_user("hr@launcher", role=User.Role.HR),
-            is_team_manager=True,
+    def test_the_card_carries_no_badge(self):
+        # Configurability is a yes/no fact, not a quantity; a "0" badge would
+        # read as "you have nothing to do", which is the opposite of what a
+        # registry page full of leave types means.
+        hr = make_user(User.Role.HR, "hr-badge@example.com")
+        card = next(
+            app for app in get_launcher_apps(hr) if app["key"] == "leave-config"
         )
+        self.assertIsNone(card["badge"])
 
-        self.assertEqual(
-            _keys(self._apps_for(manager)),
-            {"leave", "approvals", "documents", "organisation"},
+    def test_the_gate_matches_the_service_the_pages_use(self):
+        hr = make_user(User.Role.HR, "hr-gate@example.com")
+        employee = make_user(User.Role.EMPLOYEE, "employee-gate@example.com")
+        from leave_config.services import can_access_leave_config as service_gate
+
+        self.assertTrue(can_access_leave_config(hr))
+        self.assertTrue(service_gate(hr))
+        self.assertFalse(can_access_leave_config(employee))
+        self.assertFalse(service_gate(employee))
+        self.assertFalse(can_access_leave_config(AnonymousUser()))
+        self.assertFalse(can_access_leave_config(None))
+
+
+class OrgLauncherTests(TestCase):
+    """The Workflows card is offered to HR, staff, and designated team managers.
+
+    A team manager is an ordinary ``employee`` account whose only claim to the
+    module is a team they manage, so the card is the one place the launcher has
+    to look past ``User.role``. A card that appeared for them but bounced on the
+    next page — or, worse, that never appeared at all — would leave the only
+    person who can configure a team unable to reach it.
+    """
+
+    @staticmethod
+    def keys(user) -> list[str]:
+        return [app["key"] for app in get_launcher_apps(user)]
+
+    def make_team_manager(self, email: str, *, role_code="supervisor", active=True):
+        team = team_for(f"Team {email}")
+        role = ensure_roles(role_code)[role_code]
+        if not active:
+            role.is_active = False
+            role.save(update_fields=["is_active"])
+        from teams.models import TeamRoleAssignment
+
+        user = make_user(User.Role.EMPLOYEE, email)
+        TeamRoleAssignment.objects.create(
+            team=team, role=role, user=user, is_team_manager=True
         )
+        return user, team
 
-    def test_hr_sees_administration_and_oversight(self):
-        hr = make_user("hr@launcher", role=User.Role.HR)
+    def test_hr_sees_the_card(self):
+        hr = make_user(User.Role.HR, "hr-org@example.com")
+        self.assertIn("org", self.keys(hr))
 
-        self.assertEqual(
-            _keys(self._apps_for(hr)),
-            {"leave", "approvals", "organisation", "documents", "hr-admin"},
+    def test_superuser_sees_the_card(self):
+        admin = User.objects.create_superuser(
+            username="admin-org@example.com",
+            email="admin-org@example.com",
+            password="hunter2-hunter2",
         )
+        self.assertIn("org", self.keys(admin))
 
-    def test_superuser_sees_administration_but_not_the_approvals_desk(self):
-        # Superuser is system access, not a place in an approval chain: without
-        # an approver role holding they have nothing to decide.
-        root = create_user_with_role(
-            "root@launcher",
-            role=User.Role.EMPLOYEE,
-            is_superuser=True,
-            is_staff=True,
+    def test_team_manager_sees_the_card(self):
+        manager, _ = self.make_team_manager("manager-org@example.com")
+        self.assertIn("org", self.keys(manager))
+
+    def test_ordinary_employee_never_sees_the_card(self):
+        employee = make_user(User.Role.EMPLOYEE, "plain-org@example.com")
+        self.assertNotIn("org", self.keys(employee))
+
+    def test_retiring_the_role_closes_the_door(self):
+        # A manager's authority is the *active* role they hold; deactivating it
+        # must take the card with it, or the launcher would promise a module the
+        # per-page guard then refuses.
+        manager, _ = self.make_team_manager(
+            "retired-org@example.com", active=False
         )
+        self.assertNotIn("org", self.keys(manager))
 
-        self.assertEqual(
-            _keys(self._apps_for(root)),
-            {"leave", "documents", "organisation", "hr-admin"},
+    def test_the_gate_matches_the_page_guard(self):
+        manager, _ = self.make_team_manager("guard-org@example.com")
+        employee = make_user(User.Role.EMPLOYEE, "guard-plain@example.com")
+        from organisation.services import managed_team_ids_for
+
+        self.assertTrue(can_access_org(manager))
+        self.assertEqual(len(managed_team_ids_for(manager)), 1)
+        self.assertFalse(can_access_org(employee))
+        self.assertEqual(managed_team_ids_for(employee), [])
+        self.assertFalse(can_access_org(AnonymousUser()))
+        self.assertFalse(can_access_org(None))
+
+
+class DocumentsLauncherTests(TestCase):
+    """Documents is every account's filing cabinet, so the card is everyone's.
+
+    Scoping happens per row at the list endpoints, not on the launcher, so the
+    only question here is whether a signed-in account may open the module at
+    all — and whether a signed-out one may not.
+    """
+
+    @staticmethod
+    def keys(user) -> list[str]:
+        return [app["key"] for app in get_launcher_apps(user)]
+
+    def test_every_role_sees_the_card(self):
+        for role, email in [
+            (User.Role.EMPLOYEE, "employee-docs@example.com"),
+            (User.Role.APPROVER, "approver-docs@example.com"),
+            (User.Role.HR, "hr-docs@example.com"),
+        ]:
+            with self.subTest(role=role):
+                self.assertIn("documents", self.keys(make_user(role, email)))
+
+    def test_a_superuser_sees_the_card(self):
+        admin = User.objects.create_superuser(
+            username="admin-docs@example.com",
+            email="admin-docs@example.com",
+            password="hunter2-hunter2",
         )
+        self.assertIn("documents", self.keys(admin))
 
+    def test_a_team_manager_sees_the_card(self):
+        team = team_for("Documents Team")
+        role = ensure_roles("supervisor")["supervisor"]
+        from teams.models import TeamRoleAssignment
 
-class LauncherBadgeTests(APITestCase):
-    def test_approvals_badge_reports_the_pending_count(self):
-        approver = make_user("ap@launcher", role="hod")
-        self.client.force_authenticate(user=approver)
-
-        with mock.patch(
-            "launcher.services.pending_stage_count_for", return_value=3
-        ):
-            response = self.client.get(LAUNCHER_URL)
-
-        apps = {app["key"]: app for app in response.data["apps"]}
-        self.assertEqual(
-            apps["approvals"]["badge"],
-            {"count": 3, "label": "pending", "tone": "amber"},
+        manager = make_user(User.Role.EMPLOYEE, "manager-docs@example.com")
+        TeamRoleAssignment.objects.create(
+            team=team, role=role, user=manager, is_team_manager=True
         )
+        self.assertIn("documents", self.keys(manager))
 
-    def test_approvals_badge_is_none_when_nothing_is_pending(self):
-        approver = make_user("ap@launcher", role="hod")
-        self.client.force_authenticate(user=approver)
+    def test_the_gate_is_signed_in_or_not(self):
+        employee = make_user(User.Role.EMPLOYEE, "gate-docs@example.com")
+        self.assertTrue(can_access_documents(employee))
+        self.assertFalse(can_access_documents(AnonymousUser()))
+        self.assertFalse(can_access_documents(None))
 
-        with mock.patch(
-            "launcher.services.pending_stage_count_for", return_value=0
-        ):
-            response = self.client.get(LAUNCHER_URL)
-
-        apps = {app["key"]: app for app in response.data["apps"]}
-        # No badge means the frontend renders nothing, never a "0".
-        self.assertIsNone(apps["approvals"]["badge"])
-
-
-class LauncherServiceTests(APITestCase):
-    def test_get_launcher_apps_gates_anonymous(self):
-        self.assertEqual(get_launcher_apps(None), [])

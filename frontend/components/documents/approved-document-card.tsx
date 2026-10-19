@@ -10,7 +10,7 @@ import {
   type ApprovedLeaveDocument,
 } from "@/lib/documents/approved";
 import { formatSize } from "@/lib/approvals/format";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/tracking/format";
 
 // The approved document is rendered in the django-q worker after the approval
 // commits, so it can be ready a moment later. While the row reports ``pending``

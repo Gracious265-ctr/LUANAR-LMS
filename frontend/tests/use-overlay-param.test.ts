@@ -6,7 +6,7 @@ import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
   routerMock: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/hr-admin/calendar" },
+  pathnameRef: { current: "/dashboard/hr-admin/calendar" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -33,7 +33,7 @@ function setHistoryLength(length: number) {
 describe("useOverlayParam", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    pathnameRef.current = "/hr-admin/calendar";
+    pathnameRef.current = "/dashboard/hr-admin/calendar";
     searchParamsRef.current = new URLSearchParams();
     // A lone entry: the direct-visit case, with nowhere to step back to.
     setHistoryLength(1);
@@ -81,7 +81,7 @@ describe("useOverlayParam", () => {
     act(() => result.current.openCreate());
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/hr-admin/calendar?year=2026&holiday=new"
+      "/dashboard/hr-admin/calendar?year=2026&holiday=new"
     );
   });
 
@@ -91,7 +91,7 @@ describe("useOverlayParam", () => {
     act(() => result.current.openEdit(9));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/hr-admin/calendar?leaveType=9"
+      "/dashboard/hr-admin/calendar?leaveType=9"
     );
   });
 
@@ -124,7 +124,7 @@ describe("useOverlayParam", () => {
 
     expect(routerMock.back).not.toHaveBeenCalled();
     expect(routerMock.replace).toHaveBeenCalledWith(
-      "/hr-admin/calendar"
+      "/dashboard/hr-admin/calendar"
     );
   });
 
@@ -135,7 +135,7 @@ describe("useOverlayParam", () => {
     act(() => result.current.close());
 
     expect(routerMock.replace).toHaveBeenCalledWith(
-      "/hr-admin/calendar?year=2026"
+      "/dashboard/hr-admin/calendar?year=2026"
     );
   });
 
@@ -144,7 +144,7 @@ describe("useOverlayParam", () => {
     const { result } = renderHook(() => useOverlayParam("holiday"));
 
     expect(result.current.hrefWithoutParam).toBe(
-      "/hr-admin/calendar?year=2026"
+      "/dashboard/hr-admin/calendar?year=2026"
     );
   });
 
@@ -153,7 +153,7 @@ describe("useOverlayParam", () => {
     const { result } = renderHook(() => useOverlayParam("holiday"));
 
     expect(result.current.hrefWithoutParam).toBe(
-      "/hr-admin/calendar"
+      "/dashboard/hr-admin/calendar"
     );
   });
 });

@@ -5,7 +5,7 @@ import { ChevronDown, FileText, FileX, ExternalLink } from "lucide-react";
 
 import { listDocuments, type SupportingDocument } from "@/lib/leave-api";
 import { formatSize } from "@/lib/approvals/format";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/tracking/format";
 import type { TrackingDocument } from "@/lib/tracking/types";
 import { STATUS_TEXT } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";

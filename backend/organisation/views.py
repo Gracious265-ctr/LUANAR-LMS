@@ -1,22 +1,26 @@
 """Organisation HTTP API: approver roles, role holdings, and campuses."""
 
-from rest_framework import mixins, permissions, status, viewsets
+from rest_framework import mixins, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
-from users.permissions import IsHRRole
+from rest_framework import viewsets
 
 from audit.validation import positive_int
+from organisation.permissions import IsHROnly
 
-from .models import (
+from organisation.models import (
     ApproverRole,
     Campus,
     CampusRoleAssignment,
     RoleAssignment,
+)
+from teams.models import (
+    Team,
     TeamRoleAssignment,
 )
-from .permissions import IsHROnly, IsHROrTeamManager
-from .serializers import (
+
+
+from organisation.serializers import (
     ApproverRoleSerializer,
     ApproverRoleWriteSerializer,
     CampusRoleAssignmentSerializer,
@@ -24,7 +28,7 @@ from .serializers import (
     RoleAssignmentSerializer,
     TeamRoleAssignmentSerializer,
 )
-from .services import (
+from organisation.services import (
     CampusActionError,
     RoleActionError,
     clear_team_manager,
@@ -43,24 +47,16 @@ class ApproverRoleViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """HR-and-team-manager CRUD for approver roles (no hard delete).
+    """HR-only CRUD for approver roles (no hard delete).
 
-    A team manager may read, create, and edit roles so they can build the
-    workflow stages their team needs, but retirement is HR's: ``DELETE`` maps to
-    :func:`deactivate_approver_role`, which refuses while the role is still
-    referenced by an active workflow, a team, or a holder. The client sees a 204
-    for a retired role and a 409 for one still in use.
+    ``DELETE`` maps to :func:`deactivate_approver_role`, which refuses while the
+    role is still referenced by an active workflow, a team, or a holder. That is
+    why this viewset — unlike the other configuration endpoints — allows DELETE:
+    the client sees a 204 for a retired role and a 409 for one still in use.
     """
 
-    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
+    permission_classes = [permissions.IsAuthenticated, IsHROnly]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-
-    def get_permissions(self):
-        # Retiring a role is institution-wide surgery, so it stays HR-only even
-        # on a viewset a manager may otherwise use.
-        if self.action == "destroy":
-            return [permissions.IsAuthenticated(), IsHROnly()]
-        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action in ("create", "partial_update"):
@@ -129,28 +125,17 @@ class RoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Institution-wide role holdings.
+    """Institution-wide role holdings (HR only).
 
     Institution-wide roles need no per-application row: the provider checks
     holders of an active institution-wide role whenever a stage's role has no
     team member. Registrars are the canonical case — a single institution-wide
     registrar handles every leave application.
-
-    A team manager may **read** the holdings: their team's chain builder has to
-    show an institution-wide step's holder so the role can be filled in. Only HR
-    may change a holding.
     """
 
     serializer_class = RoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
+    permission_classes = [permissions.IsAuthenticated, IsHROnly]
     http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def get_permissions(self):
-        # Reading tells a manager which roles their chain may use; appointing a
-        # holder is HR's call, so the writes stay HR-only.
-        if self.action in ("create", "destroy"):
-            return [permissions.IsAuthenticated(), IsHROnly()]
-        return super().get_permissions()
 
     def get_queryset(self):
         queryset = RoleAssignment.objects.select_related("user", "role")
@@ -194,26 +179,17 @@ class TeamRoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Team-wide role holdings.
+    """Team-wide role holdings (HR only).
 
     One holder per role per team, and writing a second one replaces the first:
     the screen is a pick-a-role, pick-a-person form, and asking HR to delete
     before they can change their mind is a step that only exists to satisfy the
     database. The service audits both the appointment and the replacement.
-
-    A team manager may **read** the holdings — their team's chain builder scopes
-    which roles it offers from which teams hold one, and shows the holder on a
-    team-wide step. Only HR may change a holding.
     """
 
     serializer_class = TeamRoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
+    permission_classes = [permissions.IsAuthenticated, IsHROnly]
     http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def get_permissions(self):
-        if self.action in ("create", "destroy"):
-            return [permissions.IsAuthenticated(), IsHROnly()]
-        return super().get_permissions()
 
     def get_queryset(self):
         queryset = TeamRoleAssignment.objects.select_related(
@@ -257,7 +233,11 @@ class TeamRoleAssignmentViewSet(
 
     @action(detail=True, methods=["post"], url_path="set-manager")
     def set_manager(self, request, *args, **kwargs):
-        """Designate this team-wide holding as its team's manager (HR only)."""
+        """Designate a team-wide holding as its team's manager.
+
+        Clears the flag from any other holder on the team, so a team always has
+        at most one manager.
+        """
         try:
             assignment = set_team_manager(
                 assignment=self.get_object(), actor=request.user
@@ -270,7 +250,7 @@ class TeamRoleAssignmentViewSet(
 
     @action(detail=True, methods=["post"], url_path="clear-manager")
     def clear_manager(self, request, *args, **kwargs):
-        """Remove the manager designation from this holding (HR only)."""
+        """Remove the manager designation from a team-wide holding."""
         try:
             assignment = clear_team_manager(
                 assignment=self.get_object(), actor=request.user
@@ -288,22 +268,16 @@ class CampusRoleAssignmentViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Campus-wide role holdings.
+    """Campus-wide role holdings (HR only).
 
     Scoped to a campus, so the same holding resolves for every team *at* that
     campus and for no team anywhere else. Same one-holder, replace-on-save
-    contract as the team-wide holding. A manager may read the holdings and only
-    HR may change one.
+    contract as the team-wide holding.
     """
 
     serializer_class = CampusRoleAssignmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
+    permission_classes = [permissions.IsAuthenticated, IsHROnly]
     http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def get_permissions(self):
-        if self.action in ("create", "destroy"):
-            return [permissions.IsAuthenticated(), IsHROnly()]
-        return super().get_permissions()
 
     def get_queryset(self):
         queryset = CampusRoleAssignment.objects.select_related(
@@ -361,7 +335,7 @@ class CampusViewSet(
     """
 
     serializer_class = CampusSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
+    permission_classes = [permissions.IsAuthenticated, IsHROnly]
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):

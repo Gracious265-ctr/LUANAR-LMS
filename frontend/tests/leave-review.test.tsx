@@ -5,7 +5,7 @@ import { LeaveReviewPanel } from "@/components/leave/LeaveReviewPanel";
 import { LeaveReviewSummary } from "@/components/leave/leave-review-summary";
 import { getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
-import { SubmitError, submitApplication, resubmitApplication } from "@/lib/leave-validation";
+import { SubmitError, submitApplication } from "@/lib/leave-validation";
 import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import type { LeaveApplication } from "@/lib/leave-api";
 import type { ValidationResult } from "@/lib/leave-validation";
@@ -18,7 +18,7 @@ vi.mock("@/lib/leave-api", () => ({ getLeaveApplication: vi.fn() }));
 vi.mock("@/lib/services/leaveTypes", () => ({ getLeaveTypes: vi.fn() }));
 vi.mock("@/lib/leave-validation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/leave-validation")>();
-  return { ...actual, submitApplication: vi.fn(), resubmitApplication: vi.fn() };
+  return { ...actual, submitApplication: vi.fn() };
 });
 vi.mock("@/lib/hooks/useLeaveValidation", () => ({
   useLeaveValidation: vi.fn(),
@@ -192,35 +192,8 @@ describe("LeaveReviewPanel", () => {
     );
   });
 
-  it("resubmits a rejected application instead of submitting it", async () => {
-    renderReview(makeResult(), makeApplication({ status: "rejected" }));
-    vi.mocked(resubmitApplication).mockResolvedValue({
-      id: "app-1",
-      reference_number: "LV-2026-27-000001",
-      status: "submitted",
-      submitted_at: "2026-10-20T10:00:00Z",
-      working_days: 5,
-      calendar_days: 5,
-      leave_type: { id: 1 },
-      start_date: "2026-09-28",
-      end_date: "2026-10-02",
-    });
-
-    const button = await screen.findByRole("button", {
-      name: "Resubmit application",
-    });
-    fireEvent.click(button);
-
-    await waitFor(() =>
-      expect(resubmitApplication).toHaveBeenCalledWith("app-1")
-    );
-    expect(submitApplication).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(onSubmittedMock).toHaveBeenCalledWith("app-1")
-    );
-  });
-
-  it("reports completion when the server reports ALREADY_SUBMITTED", async () => {    renderReview(makeResult());
+  it("reports completion when the server reports ALREADY_SUBMITTED", async () => {
+    renderReview(makeResult());
     vi.mocked(submitApplication).mockRejectedValue(
       new SubmitError("Already submitted", 409, {
         code: "ALREADY_SUBMITTED",

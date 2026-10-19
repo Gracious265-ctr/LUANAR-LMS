@@ -10,7 +10,7 @@ import {
   fetchCancellationDetail,
 } from "@/lib/cancellations/service";
 import type { CancellationDetail } from "@/lib/cancellations/types";
-import { formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/tracking/format";
 import { STATUS_STYLES, STATUS_TEXT } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";

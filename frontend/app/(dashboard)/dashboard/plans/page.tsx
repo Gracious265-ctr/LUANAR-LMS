@@ -1,32 +1,36 @@
-import { PlansWorkspace } from "@/components/plans/plans-workspace";
-import { getCurrentUser } from "@/lib/auth";
-import { loadPlanCapabilities } from "@/lib/plans/capabilities";
-import { FadeIn } from "@/components/motion/FadeIn";
+"use client";
 
-const HR_ROLE = "hr";
+import { useRouter } from "next/navigation";
+import { CalendarPlus } from "lucide-react";
 
-/**
- * The plans workspace.
- *
- * Both answers come from the server, in parallel: "To decide" needs the caller
- * to be in the plans approver audience, and "All plans" is HR-only. The
- * approver answer is a data question — an approver position is held as a team
- * membership — while HR is the system role, so the two are read from their
- * own sources rather than one being inferred from the other. Both reads are
- * memoised per request, so the dashboard layout's own reads are shared.
- */
-export default async function PlansPage() {
-  const [user, capabilities] = await Promise.all([
-    getCurrentUser(),
-    loadPlanCapabilities(),
-  ]);
+import { MyPlans } from "@/components/plans/MyPlans";
+import { Button } from "@/components/ui/button";
+
+/** My Plans — the Leave Plans module's landing page (spec 3.4). */
+export default function PlansPage() {
+  const router = useRouter();
 
   return (
-    <FadeIn>
-      <PlansWorkspace
-        isHR={user?.role === HR_ROLE}
-        isApprover={capabilities?.is_approver ?? false}
-      />
-    </FadeIn>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+            Leave Plans
+          </h1>
+          <p className="text-text-muted">
+            Plan your leave ahead of time — nothing here is submitted until you apply.
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          onClick={() => router.push("/dashboard/plans/new")}
+        >
+          <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+          Create a Plan
+        </Button>
+      </div>
+
+      <MyPlans />
+    </div>
   );
 }

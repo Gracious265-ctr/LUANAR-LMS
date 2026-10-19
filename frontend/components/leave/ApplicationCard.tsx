@@ -53,6 +53,7 @@ const CARD_STATUS_META: Record<
   submitted: STATUS_META.pending,
   approved: STATUS_META.approved,
   rejected: STATUS_META.rejected,
+  correction_required: STATUS_META.correction_required,
   cancelled: STATUS_META.cancelled,
 };
 
@@ -189,14 +190,14 @@ export function ApplicationCard({
           ) : (
             <>
               <Link
-                href={`/leave/${application.id}/edit`}
+                href={`/dashboard/leave/${application.id}/edit`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-button-secondary hover:bg-button-secondary-hover text-text-primary border border-border-default transition-colors"
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Edit
               </Link>
               <Link
-                href={`/leave/${application.id}/review`}
+                href={`/dashboard/leave/${application.id}/review`}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   canReview
                     ? "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
@@ -253,7 +254,7 @@ export function ApplicationCard({
       ) : (
         <div className="flex items-center gap-2">
           <Link
-            href={`/leave/applications/${application.id}`}
+            href={`/applications/${application.id}`}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover transition-colors"
           >
             <Eye className="h-3.5 w-3.5" />

@@ -1,9 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Plus, Search, SearchX } from "lucide-react";
+import { Plus, SearchX } from "lucide-react";
 
 import type { Employee } from "@/lib/employees";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
@@ -13,7 +14,6 @@ import { EmployeeTable } from "@/components/hr/employee-table";
 import { Alert } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 /** Query key for the employee overlay. Distinct from the `?search` list filter. */
 export const EMPLOYEE_PARAM = "employee";
@@ -26,6 +26,8 @@ export interface EmployeesSectionProps {
   gradeOptions: string[];
   /** The page's active `?search`, so the message can name it and offer to clear it. */
   search: string;
+  /** The search form, passed in as a slot because the page owns the GET URLs. */
+  filter?: ReactNode;
   error?: string;
 }
 
@@ -46,6 +48,7 @@ export function EmployeesSection({
   totalCount,
   gradeOptions,
   search,
+  filter,
   error,
 }: EmployeesSectionProps) {
   const router = useRouter();
@@ -77,27 +80,7 @@ export function EmployeesSection({
         </Button>
       </div>
 
-      {/* The search form is rendered here, not passed in as a JSX slot: markup
-          authored in the page's server component and rendered inside this
-          client component crosses the RSC boundary, where React re-creates the
-          elements without the dev runtime's "written as static siblings" flag
-          and treats them as a list, warning that each child needs a key. A
-          native GET form needs only the current `search`, so this side can own
-          the markup while the page still owns the `?search` URL. */}
-      <form method="get" className="mb-4 flex max-w-md items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <Input
-            name="search"
-            defaultValue={search}
-            placeholder="Search name, email, team..."
-            className="pl-9 pr-3"
-          />
-        </div>
-        <Button type="submit" variant="secondary">
-          Search
-        </Button>
-      </form>
+      {filter}
 
       {createdHidden && (
         <Alert tone="info" className="mb-4 flex-col items-start">
@@ -110,7 +93,7 @@ export function EmployeesSection({
           {search && (
             <button
               type="button"
-              onClick={() => router.push("/hr-admin/employees")}
+              onClick={() => router.push("/dashboard/hr-admin/employees")}
               className="mt-2 rounded-md px-2 py-1.5 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
             >
               Clear search
@@ -136,7 +119,7 @@ export function EmployeesSection({
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => router.push("/hr-admin/employees")}
+                    onClick={() => router.push("/dashboard/hr-admin/employees")}
                   >
                     Clear filters
                   </Button>

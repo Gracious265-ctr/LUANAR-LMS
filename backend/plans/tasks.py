@@ -1,28 +1,91 @@
-"""Periodic plan housekeeping (Unit 25, D10/D11).
+"""The daily Leave Plan job (refinement unit 04).
 
-Two idempotent jobs are safe to run daily and safe to run in parallel:
+One task, three passes, all idempotent so a double run (worker restart, manual
+re-trigger) sends nothing twice:
 
-* :func:`lapse_overdue_blocks` — unconfirmed reserved blocks lapse at their
-  start date and the reserved capacity is released (always safe to re-run).
-* :func:`send_plan_block_confirmation_reminders` — employees whose blocks just
-  entered their confirmation window get one reminder email each (outbox rows
-  make the job idempotent).
+1. **Remind** — an ``upcoming`` plan whose type names a ``notice_days``
+   window that has just opened is emailed and moved to ``notified``. The
+   window is ``LeaveType.notice_days`` read straight from ``leave_config`` —
+   the single number Unit 14's submission validation enforces too.
+2. **Follow up** — a ``notified`` plan still unconverted
+   :data:`FOLLOW_UP_AFTER_DAYS` days later gets one follow-up, then never again.
+3. **Mark missed** — an open plan whose window has passed unmoved becomes
+   ``missed`` so the employee's "still open" list stays honest.
 
-Operators can schedule this as a django-q2 cron task:
-
-    schedule("plans.tasks.run_plan_housekeeping", schedule_type=cron,
-             cron="0 6 * * *")
-
-or invoke it via ``manage.py run_plan_housekeeping``.
+The task never touches the approval workflow: converting or applying is always
+the employee's own later action.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 
-def run_plan_housekeeping(*args, **kwargs):
-    from notifications.plans import send_plan_block_confirmation_reminders
-    from plans.services import lapse_overdue_blocks
+from django.utils import timezone
 
-    lapsed = lapse_overdue_blocks()
-    reminders = send_plan_block_confirmation_reminders()
-    return {"lapsed": lapsed, "reminders": reminders}
+from notifications.plans import PLAN_FOLLOW_UP, PLAN_REMINDER, queue_plan_email
+
+from .models import LeavePlan, LeavePlanStatus
+from .services import mark_missed_plans
+
+#: Days after the reminder before a still-open plan is chased once.
+FOLLOW_UP_AFTER_DAYS = 5
+
+
+def _send_reminders(today) -> int:
+    """Email every plan whose notice window just opened; return the count."""
+    sent = 0
+    plans = LeavePlan.objects.filter(
+        status=LeavePlanStatus.UPCOMING,
+        planned_start_date__gte=today,
+        leave_type__notice_days__isnull=False,
+    ).select_related("employee", "leave_type")
+    for plan in plans:
+        notice = plan.leave_type.notice_days or 0
+        if today < plan.planned_start_date - timedelta(days=notice):
+            continue
+        _, created = queue_plan_email(plan, PLAN_REMINDER)
+        plan.status = LeavePlanStatus.NOTIFIED
+        if plan.notified_at is None:
+            plan.notified_at = timezone.now()
+        plan.save(update_fields=["status", "notified_at", "updated_at"])
+        if created:
+            sent += 1
+    return sent
+
+
+def _send_follow_ups(today) -> int:
+    """Chase notified plans left unconverted; return the count sent."""
+    sent = 0
+    plans = LeavePlan.objects.filter(
+        status=LeavePlanStatus.NOTIFIED,
+        planned_start_date__gte=today,
+        follow_up_sent_at__isnull=True,
+    ).select_related("employee", "leave_type")
+    for plan in plans:
+        if plan.notified_at is None:
+            continue
+        due_on = timezone.localtime(plan.notified_at).date() + timedelta(
+            days=FOLLOW_UP_AFTER_DAYS
+        )
+        if today < due_on:
+            continue
+        _, created = queue_plan_email(plan, PLAN_FOLLOW_UP)
+        plan.follow_up_sent_at = timezone.now()
+        plan.save(update_fields=["follow_up_sent_at", "updated_at"])
+        if created:
+            sent += 1
+    return sent
+
+
+def check_and_notify_plans():
+    """Daily entry point. Returns a small dict of what each pass did."""
+    today = timezone.localdate()
+    reminders = _send_reminders(today)
+    follow_ups = _send_follow_ups(today)
+    missed = mark_missed_plans(as_of=today)
+    return {
+        "date": today.isoformat(),
+        "reminders": reminders,
+        "follow_ups": follow_ups,
+        "missed": missed,
+    }

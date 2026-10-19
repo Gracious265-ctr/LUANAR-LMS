@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/tracking/format";
 import { formatDayCount } from "./labels";
 
 /** Africa/Blantyre date helpers (shared with Unit 15 tracking). */

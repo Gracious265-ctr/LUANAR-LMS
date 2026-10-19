@@ -14,7 +14,10 @@ import {
   removeTeamRoleAssignment,
   setTeamManager,
 } from "@/lib/approver-roles-client";
+import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 
 /** The three places a role may be held, narrowest first. */
 export type WideScope = "institution" | "team" | "campus";
@@ -315,9 +318,9 @@ export function WideHoldingPanel({
                 {" · "}
                 {holding.user_name}
                 {holding.is_team_manager && (
-                  <span className="ml-2 rounded-full bg-brand-secondary-subtle px-2 py-0.5 text-xs font-medium text-brand-secondary">
+                  <Badge size="sm" tone="info" className="ml-2">
                     Manager
-                  </span>
+                  </Badge>
                 )}
               </span>
               <div className="flex items-center gap-2">
@@ -333,14 +336,16 @@ export function WideHoldingPanel({
                       : "Make manager"}
                   </button>
                 )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleRemove(holding)}
-                  className="rounded-md border border-border-default px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Remove
-                </button>
+                <ConfirmButton
+                size="sm"
+                disabled={busy}
+                loading={busy}
+                onConfirm={() => handleRemove(holding)}
+                prompt={`Remove ${holding.user_name} as ${holding.role_label}?`}
+                aria-label={`Remove ${holding.user_name} from ${holding.role_label}`}
+              >
+                Remove
+              </ConfirmButton>
               </div>
             </li>
           ))}
@@ -451,13 +456,13 @@ export function WideHoldingPanel({
                       </option>
                     ))}
                   </select>
-                  <button
+                  <Button
                     type="submit"
                     disabled={busy}
-                    className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    loading={busy}
                   >
-                    {busy ? "Saving..." : "Save holder"}
-                  </button>
+                    Save holder
+                  </Button>
                 </div>
               </>
             )}

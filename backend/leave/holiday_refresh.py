@@ -20,7 +20,7 @@ from .models import LeaveApplication, PublicHoliday
 #: Mirrors ``LeaveApplicationViewSet.EDITABLE_STATUSES``.
 LIVE_PREVIEW_STATUSES = (
     LeaveApplication.Status.DRAFT,
-    LeaveApplication.Status.REJECTED,
+    LeaveApplication.Status.CORRECTION_REQUIRED,
 )
 
 

@@ -22,7 +22,7 @@ from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
     TODAY,
     StubProviderMixin,
-    ensure_annual_leave_rule,
+    ensure_annual_leave_type,
     make_user,
 )
 from leave.validation.types import ValidationContext
@@ -95,7 +95,7 @@ class CancellationBase(StubProviderMixin, APITestCase):
         )
         # Directly-built applications have no snapshot, so restoration has to
         # resolve through the current leave rule.
-        ensure_annual_leave_rule()
+        ensure_annual_leave_type()
         self.stub.register_employee(self.employee)
         for role, user in (
             ("supervisor", self.supervisor),
@@ -191,6 +191,7 @@ class EligibilityServiceTests(CancellationBase):
         for status_ in (
             LeaveApplication.Status.DRAFT,
             LeaveApplication.Status.REJECTED,
+            LeaveApplication.Status.CORRECTION_REQUIRED,
             LeaveApplication.Status.CANCELLED,
         ):
             app = self.make_approved()

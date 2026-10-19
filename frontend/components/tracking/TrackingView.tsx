@@ -79,7 +79,7 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
         <NotFoundState
           title="This application is still a draft"
           message="Applications are tracked only after they have been submitted."
-          actionHref={`/leave/${encodeURIComponent(applicationId)}/edit`}
+          actionHref={`/dashboard/leave/${encodeURIComponent(applicationId)}/edit`}
           actionLabel="Open draft"
         />
       );
@@ -90,7 +90,8 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   }
 
   const data = result.data;
-  const showAttention = Boolean(data.rejection);
+  const showAttention =
+    Boolean(data.rejection) || Boolean(data.correction);
   const chainSteps = chainFromTracking(data);
 
   // Only mount the cancellation surface when the tracking payload carries the
@@ -185,7 +186,7 @@ function NotFoundState({
       </p>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/leave"
+          href="/dashboard/leave/drafts"
           className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border-default bg-surface-card px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-ring"
         >
           My applications

@@ -10,10 +10,11 @@ The provider answers two questions the cancellation service needs:
 The ledger-backed implementation ships here and is swapped for the real
 HR-track provider at Unit 20 (reconciliation note in ``docs/``). The day count
 is derived from the approved application's snapshot, falling back to the
-HR-configured leave rule when a snapshot is absent. Nothing here reads a
+HR-configured leave type when a snapshot is absent. Nothing here reads a
 hard-coded fixture registry: whether a leave type deducts annual leave is
-business data HR owns, so an application with neither a snapshot nor a rule
-resolves to "does not deduct" rather than to a placeholder answer.
+business data HR owns, so an application with neither a snapshot nor a
+configured type resolves to "does not deduct" rather than to a placeholder
+answer.
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ def _deducts_annual_balance(application) -> bool:
     The submission snapshot owns the answer, because it is the configuration
     the application was actually approved under. Only when no snapshot exists —
     a row created directly, outside the normal submission path — does the
-    current HR-configured leave rule answer. With neither, the safe answer is
+    live ``leave_config`` flag answer. With neither, the safe answer is
     "does not deduct": a cancellation must never invent a restoration the
     configuration never granted.
     """
@@ -77,30 +78,21 @@ def _deducts_annual_balance(application) -> bool:
 
     leave_type_id = application.leave_type_id
     if leave_type_id:
-        rule = _consumes_rule(leave_type_id)
-        if rule is not None:
-            return rule
+        consumes = _consumes_flag(leave_type_id)
+        if consumes is not None:
+            return consumes
 
     return False
 
 
-def _consumes_rule(leave_type_id: int) -> bool | None:
-    """The current DB leave-rule flag for a leave type, or None when unset."""
-    try:
-        from leave.models import LeaveRule, LeaveType
+def _consumes_flag(leave_type_id: int) -> bool | None:
+    """The type's live ``consumes_annual_entitlement``, or None if it is gone."""
+    from leave_config.services import consumes_annual_entitlement
 
-        row = (
-            LeaveRule.objects.filter(
-                leave_type__in=LeaveType.objects.filter(id=leave_type_id)
-            )
-            .order_by("-effective_from")
-            .first()
-        )
-    except Exception:  # pragma: no cover - race with migration state
+    try:
+        return consumes_annual_entitlement(leave_type_id)
+    except Exception:  # pragma: no cover - unknown type or a migration race
         return None
-    if row is None:
-        return None
-    return bool(row.consumes_annual_entitlement)
 
 
 class LedgerBalanceProvider:

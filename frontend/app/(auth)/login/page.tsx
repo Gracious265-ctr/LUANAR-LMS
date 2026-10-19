@@ -14,7 +14,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/";
   // Set by the account page after a successful change, which signs the caller
   // out here. Without it this screen looks like an unexplained logout; the
   // point of a password change is that somebody watching for the consequences
@@ -46,7 +45,7 @@ function LoginForm() {
         return;
       }
 
-      router.push(redirect);
+      router.push("/");
       router.refresh();
     } catch {
       setError("An error occurred. Please try again.");
@@ -62,7 +61,10 @@ function LoginForm() {
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
-      <Card className="border-0 shadow-card backdrop-blur-sm backdrop-saturate-150 w-full max-w-sm">
+      <Card className="border-0 mini-h-screen shadow-card backdrop-blur-sm backdrop-saturate-150 w-full max-w-sm">
+        <div className="relative z-10 flex justify-center mb-6s">
+
+        </div>
         <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
           LUANAR Leave Management
         </h1>

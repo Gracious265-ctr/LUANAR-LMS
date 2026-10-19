@@ -1,69 +1,21 @@
-"""Organisation-owned approver, role, team, and campus service layer.
+"""Organisation-owned approver, role, team-membership, and campus service layer.
 
-This module owns everything that answers "who/what is this unit, who is its
-approver, and what is its structure" for the organisation feature module:
-approver-role administration, role assignments across the institution, team and
-campus administration, and the approver-resolution helpers shared with the
-workflow builder.
-
-.. note::
-
-    ``is_approver_user``, ``approver_role_codes_for``,
-    ``approver_role_labels_for``, ``role_usage_map``, ``_role_usage``,
-    ``ensure_role_not_in_use``, and ``deactivate_approver_role`` resolve
-    approver status across both organisation holdings and workflow section
-    membership. They live here because consumers such as ``users`` reach
-    approver resolution through ``organisation`` (see
-    ``context/architecture.md``); the workflow-side rows are read through a
-    narrow, explicit import of the workflow models.
+Holds everything answering "who/what is this unit, who approves, and what is its
+structure": approver-role administration, role assignments, team membership,
+and campus administration, plus the approver-resolution helpers shared with the
+workflow builder and the launcher.
 """
 
-from datetime import date
-
-from django.core.exceptions import ValidationError
+from dataclasses import dataclass
 from django.db import transaction
-from django.db.models import Count, F, Q
-from django.db.models.deletion import ProtectedError
-from django.utils import timezone
+from django.db.models import Count
 from django.utils.text import slugify
-
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from users.models import EmployeeProfile, User
-
-from workflows.models import Section, SectionMember, Workflow, WorkflowMember
-
-from .models import (
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    RoleAssignment,
-    Team,
-    TeamRoleAssignment,
-)
-
-def can_access_org(user) -> bool:
-    """Whether ``user`` may open the Organisation module.
-
-    HR and staff administer the whole tree. A designated team manager is also
-    let in, and for one reason: their team lives inside this module. A manager is
-    an ordinary account — not HR, not staff — so without this the launcher
-    offered them no way to reach the roster and approval chains they are the only
-    people who may configure. Granting the module rather than a separate "team"
-    app keeps one place to go and one set of pages to protect.
-    """
-    if not getattr(user, "is_authenticated", False):
-        return False
-    role = getattr(user, "role", None)
-    if role in ("hr", "superuser"):
-        return True
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
-    return bool(managed_team_ids_for(user))
-
-
-def _org_badge(user) -> dict | None:
-    return None
+from organisation.models import (ApproverRole, Campus, CampusRoleAssignment, RoleAssignment,)
+from teams.models import (Team, TeamRoleAssignment,)
+from workflows.models import Section, SectionMember
 
 
 def _resolve_stage_role(value) -> ApproverRole | None:
@@ -131,6 +83,62 @@ def is_approver_user(user) -> bool:
     return RoleAssignment.objects.filter(
         user_id=user_id, role__is_active=True
     ).exists()
+
+
+def is_hr_actor(actor) -> bool:
+    """Whether ``actor`` is HR or a superuser — the unrestricted team role."""
+    return bool(
+        actor
+        and getattr(actor, "is_authenticated", False)
+        and (
+            getattr(actor, "role", None) == User.Role.HR
+            or getattr(actor, "is_superuser", False)
+        )
+    )
+
+
+def is_team_manager(user, team: Team | None) -> bool:
+    """Whether ``user`` is the designated manager of ``team``.
+
+    A team's manager is the one team-wide holder flagged
+    :attr:`~workflows.models.TeamRoleAssignment.is_team_manager`. Only that
+    person — not every wide holder — is authorised to manage the team's members
+    and workflows, so management is scoped to a single designated approver.
+    """
+    if team is None or not getattr(user, "is_authenticated", False):
+        return False
+    return TeamRoleAssignment.objects.filter(
+        team=team, user=user, is_team_manager=True, role__is_active=True
+    ).exists()
+
+
+def managed_team_ids_for(user) -> list[int]:
+    """The ids of the teams ``user`` is the designated manager of.
+
+    The queryset sibling of :func:`is_team_manager`, for the callers that ask
+    the question about the *user* rather than about one team: the launcher's
+    access gate ("may this account open the module?") and the sidebar's "My
+    Team" entry ("show the way in?"). Both need the whole set at once, and both
+    must agree with the per-team guard, so the definition lives here alone.
+    Sorted so the answer is stable between reads.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return []
+    return list(
+        TeamRoleAssignment.objects.filter(
+            user=user, is_team_manager=True, role__is_active=True
+        )
+        .order_by("team_id")
+        .values_list("team_id", flat=True)
+        .distinct()
+    )
+
+
+def _require_hr_actor(actor, error_cls: type[Exception]) -> None:
+    """Refuse ``actor`` unless they are HR: the identity/lifecycle guard."""
+    if is_hr_actor(actor):
+        return
+    raise error_cls("detail", "Only HR may perform this action.")
 
 
 def approver_role_codes_for(user) -> list[str]:
@@ -616,10 +624,7 @@ def create_team_role_assignment(
     new person inherits it — the designation belongs to the role holding, not
     to the person who used to hold it.
     """
-    if not is_hr_actor(actor):
-        raise RoleActionError(
-            "detail", "Only HR may assign a team-wide approver role."
-        )
+    _require_hr_actor(actor, RoleActionError)
     with transaction.atomic():
         _ensure_wide_role(role, user, "team")
         profile = user.employee_profile
@@ -701,8 +706,7 @@ def set_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssign
     Clears the flag from any other holder on the same team, so a team always
     has at most one manager. A no-op when this holding is already the manager.
     """
-    if not is_hr_actor(actor):
-        raise RoleActionError("detail", "Only HR may designate a team manager.")
+    _require_hr_actor(actor, RoleActionError)
     with transaction.atomic():
         locked = TeamRoleAssignment.objects.select_for_update().get(pk=assignment.pk)
         if locked.is_team_manager:
@@ -736,8 +740,7 @@ def clear_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssi
 
     A no-op when the holding was not the manager.
     """
-    if not is_hr_actor(actor):
-        raise RoleActionError("detail", "Only HR may change a team manager.")
+    _require_hr_actor(actor, RoleActionError)
     with transaction.atomic():
         locked = TeamRoleAssignment.objects.select_for_update().get(pk=assignment.pk)
         if not locked.is_team_manager:
@@ -1084,103 +1087,6 @@ def wide_approver_ids_for_team(team: Team | None) -> set[int]:
     return ids
 
 
-def is_team_manager(user, team: Team | None) -> bool:
-    """Whether ``user`` is the designated manager of ``team``.
-
-    A team's manager is the one team-wide holder flagged
-    :attr:`~organisation.models.TeamRoleAssignment.is_team_manager`. Only that
-    person — not every wide holder — is authorised to manage the team's members
-    and workflows, so management is scoped to a single designated approver.
-    """
-    if team is None or not getattr(user, "is_authenticated", False):
-        return False
-    return TeamRoleAssignment.objects.filter(
-        team=team, user=user, is_team_manager=True, role__is_active=True
-    ).exists()
-
-
-def managed_team_ids_for(user) -> set[int]:
-    """The ids of the teams ``user`` is the designated manager of.
-
-    A person holds at most one wide role anywhere in the school (see
-    :func:`_ensure_single_wide_holding`), so this is a set of one at most — but
-    it is returned as a set so callers can intersect with a queryset without
-    special-casing the single-team reality.
-    """
-    if not getattr(user, "is_authenticated", False):
-        return set()
-    return set(
-        TeamRoleAssignment.objects.filter(
-            user=user, is_team_manager=True, role__is_active=True
-        ).values_list("team_id", flat=True)
-    )
-
-
-def managed_teams_for(user):
-    """The queryset of teams ``user`` is the designated manager of."""
-    if not getattr(user, "is_authenticated", False):
-        return Team.objects.none()
-    return Team.objects.filter(
-        role_assignments__user=user,
-        role_assignments__is_team_manager=True,
-        role_assignments__role__is_active=True,
-    )
-
-
-def team_manager_profile(team: Team | None) -> EmployeeProfile | None:
-    """The employee record of ``team``'s designated manager, if there is one.
-
-    Who may join a team's roster is measured against the *manager's* own
-    category, so callers can ask which category governs a team without first
-    finding the manager and then loading their profile separately. Returns
-    ``None`` for a team with no active designated manager — the
-    not-yet-handed-over team — so the caller can fall back to the team's own
-    category.
-    """
-    if team is None:
-        return None
-    assignment = (
-        TeamRoleAssignment.objects.filter(
-            team=team,
-            is_team_manager=True,
-            role__is_active=True,
-            user__is_active=True,
-        )
-        .select_related("user")
-        .first()
-    )
-    if assignment is None:
-        return None
-    return _employee_profile_for(assignment.user)
-
-
-def is_hr_actor(actor) -> bool:
-    """Whether ``actor`` is HR or a superuser — the unrestricted team role."""
-    return bool(
-        actor
-        and getattr(actor, "is_authenticated", False)
-        and (
-            getattr(actor, "role", None) == User.Role.HR
-            or getattr(actor, "is_superuser", False)
-        )
-    )
-
-
-def require_can_manage_team(actor, team) -> None:
-    """Refuse an actor who is neither HR nor ``team``'s designated manager.
-
-    Defence-in-depth behind the API's queryset scoping: a caller reaching a
-    service directly — a management command, an admin action, a future endpoint
-    — is held to the same rule the endpoints enforce, so the delegation cannot
-    be widened by a path that forgot to check it.
-    """
-    if is_hr_actor(actor) or is_team_manager(actor, team):
-        return
-    raise WorkflowMemberError(
-        "detail", "You do not have permission to manage this team."
-    )
-
-
 def _employee_profile_for(user: User):
     profile = getattr(user, "employee_profile", None)
     if profile is None:
@@ -1195,16 +1101,13 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     approver eligibility: the employee's :attr:`EmployeeProfile.team` is the
     single record of which team's approval chain their leave routes through.
 
-    Membership is scoped two ways. The category of the team's **manager**
-    decides who may belong: an academic manager's team takes academic
-    employees, an administration manager's team takes administration employees,
-    and a mismatch is refused rather than allowed to sit on the roster until
-    routing surprises someone. The manager's own category is what counts, and a
-    team's category is the fallback only while it has no designated manager yet
-    (see :func:`team_manager_profile`). And a **wide approver** —
-    institution-wide, team-wide on this team, or campus-wide at
-    this team's campus — is not a normal member: they staff steps from
-    the Approvers tab and are kept out of the roster, so being an approver never
+    Membership is scoped two ways. The team's **category** decides who may
+    belong: an academic team takes academic employees, an administration team
+    takes administration employees, and a mismatch is refused rather than
+    allowed to sit on the roster until routing surprises someone. And a **wide
+    approver** — institution-wide, team-wide on this team, or campus-wide at
+    this team's campus — is not a normal member: they staff steps from the
+    Approvers tab and are kept out of the roster, so being an approver never
     also quietly routes someone's leave as a member.
 
     Somebody already on a different team is refused rather than moved. Moving
@@ -1212,7 +1115,6 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     approvers are no longer members, and it would re-route their leave without
     HR choosing to — a deliberate edit, not a side effect of filling a roster.
     """
-    require_can_manage_team(actor, team)
     if not user.is_active:
         raise WorkflowMemberError(
             "user",
@@ -1226,18 +1128,14 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             f"{_member_display_name(user)} has no employee record, so there is "
             "nothing to place on a team. Complete their employee record first.",
         )
-    # Who may join is measured against the manager's own category, not the
-    # team record's: the manager is the person the roster is built around. A
-    # team not yet handed over has no manager, so its own category stands in.
-    manager_profile = team_manager_profile(team)
-    governing = manager_profile if manager_profile is not None else team
-    required_category = governing.category
-    if profile.category != required_category:
+    if profile.category != team.category:
         raise WorkflowMemberError(
             "user",
             f'{_member_display_name(user)} is an '
-            f'{profile.get_category_display()} employee, but "{team.name}" takes '
-            f'only {governing.get_category_display()} employees.',
+            f'{profile.get_category_display()} employee, but "{team.name}" is an '
+            f'{team.get_category_display()} team. An '
+            f'{team.get_category_display()} team takes only '
+            f'{team.get_category_display()} employees.',
         )
     if user.pk in wide_approver_ids_for_team(team):
         raise WorkflowMemberError(
@@ -1279,3 +1177,5 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             reason=f"Added to the {team.name} team as a normal member.",
         )
     return locked_profile
+
+

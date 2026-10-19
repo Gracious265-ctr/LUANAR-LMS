@@ -25,7 +25,7 @@ const alertVariants = cva(
         pending: STATUS_STYLES.pending,
         approved: STATUS_STYLES.approved,
         rejected: STATUS_STYLES.rejected,
-        notice: STATUS_STYLES.notice,
+        correction: STATUS_STYLES.correction_required,
       },
     },
     defaultVariants: {

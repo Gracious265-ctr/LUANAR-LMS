@@ -115,6 +115,7 @@
     "decided_at": "2026-10-16T11:40:55Z",
     "reason": "Peak teaching period; please resubmit for the following term."
   },
+  "correction": null,
   "resubmission": {
     "count": 0,
     "last_resubmitted_at": null,

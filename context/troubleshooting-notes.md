@@ -29,87 +29,16 @@ instead of the App Launcher.
 - Added `app/api/apps/launcher/route.ts` (via `apiFetch`) and changed
   `lib/launcher.ts` to a browser `fetch("/api/apps/launcher/")`.
 
-**Interim (RESOLVED 2026-10-15):** `lib/apps-registry.ts` now points at the
-module roots — `/leave`, `/approvals`, `/organisation`, `/documents`,
-`/hr-admin` — since the page moves completed (Phase 2d). Legacy `/dashboard/*`
-paths still work via `next.config.ts` redirects.
+**Interim:** `lib/apps-registry.ts` routes still point at the pre-restructure
+`/dashboard/*` pages because the module pages (`/leave`, `/approvals`, `/org`,
+`/documents`, `/hr-admin`) have not been moved yet — those folders currently
+contain only `layout.tsx`, so their routes would 404. Swap each `route` back to
+its module root once that module's pages land. `documents` has no standalone
+page at all yet, so it points at `/dashboard`.
 
-**Double shell (RESOLVED 2026-10-15):** `(dashboard)/layout.tsx` is now only the
-auth guard; `DashboardShell` moved to `dashboard/layout.tsx`, scoped to the
-legacy tree, so module pages render only their own `ModuleShell`.
-
-## Launcher grid empty for every role (2026-10-15)
-
-**Symptom:** the App Launcher always showed "No apps available for your role"
-even for HR/superusers.
-
-**Cause:** frontend/backend path mismatch. `lib/launcher.ts` and
-`app/api/apps/launcher/route.ts` request `apps/launcher/`
-(`/api/v1/apps/launcher/`), and `launcher/services.py`'s own docstring names
-`/api/v1/apps/launcher/`, but `launcher/urls.py` registered `launcher/`
-(`/api/v1/launcher/`). The proxy's request 404'd, the grid swallowed the error
-and rendered the empty state.
-
-**Fix:** registered the endpoint at `path("apps/launcher/", ...)` in
-`launcher/urls.py`, matching the proxy and the spec. Added `launcher/tests.py`
-(per-role app sets + badge flow-through) and frontend
-`tests/launcher-proxy.test.ts` / `tests/app-launcher-grid.test.tsx`.
-
-## "Each child in a list should have a unique key prop" on HR admin lists (2026-10-15)
-
-**Symptom:** `/hr-admin/employees` (and the same pattern on
-`/hr-admin/calendar`) logged `Each child in a list should have a unique "key"
-prop. Check the top-level render call using <EmployeesSection>` pointing at the
-search `<form>`.
-
-**Cause:** the server page authored a search/filter `<form>` (two or more
-sibling children) and passed it to a client section component through a JSX
-slot prop (`filter`). Markup authored in a server component and rendered inside
-a client component crosses the RSC boundary, where React re-creates the elements
-without the dev runtime's "written as static siblings" flag and treats the
-form's children as an array — the per-child `key`s do not survive. This is the
-exact case `TeamsSection`/`DelegationsSection` already avoid by taking plain
-data (`filters`/`tabs`) instead of markup.
-
-**Fix:** the client sections now render their own controls from plain data, the
-approach already documented in `TeamsSection.tsx`:
-- `EmployeesSection` renders the `?search` GET form itself (props unchanged).
-- `HolidaysSection` renders the `?year` GET form itself from a new
-  `availableYears: string[]` prop; the calendar page passes it and drops its
-  `filter` slot. Updated `tests/hr-admin-form-overlays.test.tsx` to assert the
-  section renders the year filter rather than a passed-in slot.
-Pages still own the URLs; only the markup moved to the client side.
-
-## "Only plain objects can be passed to Client Components" on module pages (2026-10-15)
-
-**Symptom:** navigating to a restructured module (e.g. `/hr-admin`) logged
-`Only plain objects can be passed to Client Components from Server Components.
-{... icon: {$$typeof: ..., render: ...}}` and the page failed to render.
-
-**Cause:** the five module layouts (`leave`, `approvals`, `organisation`,
-`documents`, `hr-admin`) were server components passing `navItems` — whose
-`icon` entries are lucide component references — to `ModuleShell`, a client
-component. Component references are not serializable across the RSC boundary.
-
-**Fix:** added `"use client";` to each module layout, keeping the icons in
-client scope. The legacy `/dashboard` tree is unaffected: its shell
-(`dashboard-shell.tsx`) is already a client component and defines its icons
-internally, and `dashboard/layout.tsx` passes only plain data (`user`,
-capability booleans/counts). Guard: `tests/module-layouts-client.test.ts`
-walks `app/**/layout.tsx`, finds every layout that passes icons to
-`ModuleShell`, and asserts it is a client component.
-
-## Missing `/leave` index 404 (2026-10-15)
-
-**Symptom:** the launcher "Leave" card and the leave sidebar's "My Leave" link
-led to a 404.
-
-**Cause:** the restructure pointed the apps registry and leave nav at `/leave`,
-but no `app/(dashboard)/leave/page.tsx` existed (the applicant landing is
-`/leave/drafts`; the pre-restructure registry used `/dashboard`).
-
-**Fix:** added `leave/page.tsx` redirecting to `/leave/drafts`, mirroring
-`organisation/page.tsx` → `/organisation/teams`.
+**Out of scope / still open:** module routes under `(dashboard)` are wrapped by
+both `DashboardShell` (from `(dashboard)/layout.tsx`) and their own `ModuleShell`
+— a double shell that should be resolved when the page moves are completed.
 
 ## 2026-10-14: Airbnb DESIGN.md applied app-wide (theme tokens)
 - Generated DESIGN.md (767 lines) from Airbnb reference (`npx @designmdcc/cli "https://www.airbnb.com/" --force --quiet > DESIGN.md`); source of truth for colours, radius, elevation, motion, typography.

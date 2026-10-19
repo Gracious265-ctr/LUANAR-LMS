@@ -1,6 +1,6 @@
 """Backend tests for Unit 19 supporting-document lifecycle.
 
-Covers the editable-status matrix, draft (hard delete) vs rejected
+Covers the editable-status matrix, draft (hard delete) vs correction
 (retire-only) semantics, atomic replacement, file validation on every write
 path, serializer field changes, tracking-payload documents, audit entries, and
 owner-scoping.
@@ -9,7 +9,6 @@ owner-scoping.
 from datetime import date
 from unittest import mock
 
-import httpx
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -20,7 +19,6 @@ from audit.models import AuditEntry
 from leave.documents.services import EDITABLE_STATUSES
 from leave.models import LeaveApplication, SupportingDocument
 from leave.serializers import LeaveApplicationSerializer, SupportingDocumentSerializer
-from leave.services.storage import StorageUnavailableError, upload_document
 from leave.validation.validators.documents import count_supporting_documents
 
 from .stubs import make_user
@@ -90,7 +88,7 @@ class DocumentFixtureTests(TestCase):
 
 
 class EditableStatusMatrixTests(DocumentFixtureTests):
-    """Upload/remove/replace work in draft + rejected; all else is 409."""
+    """Upload/remove/replace work in draft + correction; all else is 409."""
 
     def test_upload_and_remove_in_draft(self):
         application = self.app()
@@ -105,8 +103,8 @@ class EditableStatusMatrixTests(DocumentFixtureTests):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(SupportingDocument.objects.count(), 0)
 
-    def test_upload_in_rejected(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+    def test_upload_in_correction_required(self):
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         with upload_patch():
             response = self.client.post(
                 self.list_url(application), {"file": pdf()}, format="multipart"
@@ -114,8 +112,8 @@ class EditableStatusMatrixTests(DocumentFixtureTests):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(SupportingDocument.objects.get().status, "active")
 
-    def test_remove_retires_in_rejected(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+    def test_remove_retires_in_correction_required(self):
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         with mock.patch("leave.documents.services.delete_document") as storage_delete:
             response = self.client.delete(self.doc_url(application, document))
@@ -129,7 +127,7 @@ class EditableStatusMatrixTests(DocumentFixtureTests):
         self.assertIsNotNone(document.retired_at)
 
     def test_upload_returns_409_for_every_non_editable_status(self):
-        for status_name in ("submitted", "approved", "cancelled"):
+        for status_name in ("submitted", "approved", "rejected", "cancelled"):
             application = self.app(status_=status_name)
             response = self.client.post(
                 self.list_url(application), {"file": pdf()}, format="multipart"
@@ -140,7 +138,7 @@ class EditableStatusMatrixTests(DocumentFixtureTests):
             self.assertEqual(response.data["code"], "application_not_editable")
 
     def test_remove_returns_409_for_every_non_editable_status(self):
-        for status_name in ("submitted", "approved", "cancelled"):
+        for status_name in ("submitted", "approved", "rejected", "cancelled"):
             application = self.app(status_=status_name)
             document = self.doc(application)
             response = self.client.delete(self.doc_url(application, document))
@@ -208,9 +206,9 @@ class DraftSemanticsTests(DocumentFixtureTests):
         self.assertEqual(document.status, "active")
 
 
-class RejectedSemanticsTests(DocumentFixtureTests):
+class CorrectionSemanticsTests(DocumentFixtureTests):
     def test_replace_uploads_new_row_and_retires_old(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application, name="old.pdf")
         with upload_patch() as upload:
             response = self.client.post(
@@ -235,7 +233,7 @@ class RejectedSemanticsTests(DocumentFixtureTests):
         self.assertEqual(response.data["document"]["file_name"], "new.pdf")
 
     def test_replace_keeps_storage_objects_for_both_rows(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application, name="old.pdf")
         with mock.patch(
             "leave.documents.services.delete_document"
@@ -248,7 +246,7 @@ class RejectedSemanticsTests(DocumentFixtureTests):
         storage_delete.assert_not_called()
 
     def test_retired_document_has_no_mutation_path(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         document.retire(self.user, reason=SupportingDocument.RetireReason.REMOVED)
 
@@ -264,7 +262,7 @@ class RejectedSemanticsTests(DocumentFixtureTests):
             self.assertEqual(response.data["code"], "document_not_active")
 
     def test_include_retired_lists_retired_rows_only_to_owner(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         active = self.doc(application, name="active.pdf")
         retired = self.doc(application, name="old.pdf")
         retired.retire(self.user, reason=SupportingDocument.RetireReason.REPLACED)
@@ -292,7 +290,7 @@ class FileValidationTests(DocumentFixtureTests):
         self.assertEqual(response.data["detail"], "No file provided.")
 
     def test_file_required_on_replace(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         response = self.client.post(self.replace_url(application, document), {}, format="multipart")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -308,7 +306,7 @@ class FileValidationTests(DocumentFixtureTests):
         self.assertIn("Files may not exceed", response.data["detail"])
 
     def test_size_limit_enforced_on_replace(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         with mock.patch("leave.documents.services.MAX_DOCUMENT_SIZE", 100):
             response = self.client.post(
@@ -319,7 +317,7 @@ class FileValidationTests(DocumentFixtureTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_content_type_enforced_on_upload_and_replace(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application, name="old.pdf")
 
         bad = pdf(name="payload.exe", content_type="application/x-msdownload")
@@ -380,7 +378,7 @@ class FileValidationTests(DocumentFixtureTests):
 
 class SerializerContractTests(DocumentFixtureTests):
     def test_leave_application_documents_excludes_retired(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         active = self.doc(application, name="active.pdf")
         retired = self.doc(application, name="old.pdf")
         retired.retire(self.user, reason=SupportingDocument.RetireReason.REPLACED)
@@ -398,54 +396,6 @@ class SerializerContractTests(DocumentFixtureTests):
         self.assertIn("retire_reason", data)
         self.assertIn("retired_by", data)
         self.assertIn("replaced_by", data)
-
-
-class NestedDocumentSerializerTests(DocumentFixtureTests):
-    """Nested documents never pay a storage round-trip to list an application."""
-
-    def test_serializer_leaves_file_url_empty(self):
-        application = self.app()
-        self.doc(application, name="a.pdf")
-
-        data = LeaveApplicationSerializer(application).data
-
-        self.assertEqual(data["documents"][0]["file_url"], "")
-
-    def test_list_endpoint_never_signs(self):
-        application = self.app()
-        self.doc(application, name="a.pdf")
-
-        with mock.patch(
-            "leave.serializers.safe_signed_document_url",
-            side_effect=AssertionError("the list must not sign"),
-        ):
-            response = self.client.get("/api/v1/leave-applications/")
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["results"][0]["documents"][0]["file_url"], "")
-
-    def test_detail_endpoint_never_signs(self):
-        application = self.app()
-        self.doc(application, name="a.pdf")
-
-        with mock.patch(
-            "leave.serializers.safe_signed_document_url",
-            side_effect=AssertionError("the detail must not sign"),
-        ):
-            response = self.client.get(f"/api/v1/leave-applications/{application.id}/")
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["documents"][0]["file_url"], "")
-
-    def test_nested_documents_still_exclude_retired(self):
-        application = self.app()
-        active = self.doc(application, name="active.pdf")
-        retired = self.doc(application, name="old.pdf")
-        retired.retire(self.user, reason=SupportingDocument.RetireReason.REPLACED)
-
-        data = LeaveApplicationSerializer(application).data
-
-        self.assertEqual([d["id"] for d in data["documents"]], [str(active.id)])
 
 
 class AuditTests(DocumentFixtureTests):
@@ -471,8 +421,8 @@ class AuditTests(DocumentFixtureTests):
         self.assertEqual(entry.action, "document_removed")
         self.assertEqual(entry.target_type, "application")
 
-    def test_rejected_removal_records_document_retired(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+    def test_correction_removal_records_document_retired(self):
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         self.client.delete(self.doc_url(application, document))
         entry = AuditEntry.objects.get(target_id=str(application.id))
@@ -480,7 +430,7 @@ class AuditTests(DocumentFixtureTests):
         self.assertEqual(entry.detail["retire_reason"], "removed")
 
     def test_replace_records_document_replaced(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application, name="old.pdf")
         with upload_patch():
             response = self.client.post(
@@ -533,7 +483,7 @@ class AuthorizationTests(DocumentFixtureTests):
 
 class RequiredDocumentRuleTests(DocumentFixtureTests):
     def test_validator_counts_active_rows_only(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
+        application = self.app(status_=LeaveApplication.Status.CORRECTION_REQUIRED)
         document = self.doc(application)
         document.retire(self.user, reason=SupportingDocument.RetireReason.REMOVED)
         self.assertEqual(count_supporting_documents(application), 0)
@@ -549,7 +499,7 @@ class ActiveDocumentQueryHelperTests(TestCase):
     def test_active_count_helper_ignores_retired_rows(self):
         user = make_user()
         application = LeaveApplication.objects.create(
-            employee=user, leave_type_id=1, status=LeaveApplication.Status.REJECTED
+            employee=user, leave_type_id=1, status=LeaveApplication.Status.CORRECTION_REQUIRED
         )
         SupportingDocument.objects.create(
             application=application,
@@ -619,115 +569,3 @@ class SupabaseClientConfigTests(TestCase):
             with self.assertRaises(ValueError) as ctx:
                 get_supabase_client()
         self.assertIn("not configured", str(ctx.exception))
-
-
-class StorageOutageApiTests(DocumentFixtureTests):
-    """A dead storage backend surfaces as 503, not an unhandled 500."""
-
-    def test_upload_reports_storage_unavailable(self):
-        application = self.app()
-        with mock.patch(
-            "leave.documents.services.upload_document",
-            side_effect=StorageUnavailableError("down"),
-        ):
-            response = self.client.post(
-                self.list_url(application), {"file": pdf()}, format="multipart"
-            )
-        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
-        self.assertEqual(response.data["code"], "storage_unavailable")
-
-    def test_replace_reports_storage_unavailable(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
-        document = self.doc(application)
-        with mock.patch(
-            "leave.documents.services.upload_document",
-            side_effect=StorageUnavailableError("down"),
-        ):
-            response = self.client.post(
-                self.replace_url(application, document),
-                {"file": pdf()},
-                format="multipart",
-            )
-        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
-        self.assertEqual(response.data["code"], "storage_unavailable")
-
-
-class StorageAdapterErrorTests(TestCase):
-    """The storage adapter wraps backend failures in one typed error."""
-
-    def test_unconfigured_storage_is_wrapped(self):
-        with mock.patch(
-            "leave.services.storage.get_supabase_client",
-            side_effect=ValueError("Supabase credentials are not configured."),
-        ):
-            with self.assertRaises(StorageUnavailableError):
-                upload_document(pdf(), "app-1")
-
-    def test_a_network_failure_is_wrapped(self):
-        class Boom:
-            @property
-            def storage(self):
-                raise httpx.ConnectError("temporary failure in name resolution")
-
-        with mock.patch(
-            "leave.services.storage.get_supabase_client", return_value=Boom()
-        ):
-            with self.assertRaises(StorageUnavailableError):
-                upload_document(pdf(), "app-1")
-
-
-class SupportingDocumentFeedTests(DocumentFixtureTests):
-    """The documents-module supporting list is owner-scoped."""
-
-    FEED = "/api/v1/leave-documents/"
-
-    def test_requires_authentication(self):
-        self.assertEqual(
-            APIClient().get(self.FEED).status_code, status.HTTP_401_UNAUTHORIZED
-        )
-
-    def test_lists_the_callers_documents_with_the_application_reference(self):
-        application = self.app(reference_number="LV-2026-007000")
-        document = self.doc(application)
-        response = self.client.get(self.FEED)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["count"], 1)
-        row = response.data["results"][0]
-        self.assertEqual(row["id"], str(document.id))
-        self.assertEqual(row["application"]["id"], str(application.id))
-        self.assertEqual(row["application"]["reference_number"], "LV-2026-007000")
-        self.assertEqual(row["file_url"], "")
-
-    def test_the_feed_does_not_mint_a_signed_url_per_row(self):
-        self.doc(self.app())
-        with mock.patch(
-            "leave.serializers.safe_signed_document_url",
-            side_effect=AssertionError("the feed must not sign per row"),
-        ):
-            response = self.client.get(self.FEED)
-        self.assertEqual(response.data["count"], 1)
-
-    def test_a_document_on_another_employees_application_is_absent(self):
-        other = make_user("feed.stranger@test.luanar")
-        other_application = LeaveApplication.objects.create(
-            employee=other,
-            leave_type_id=1,
-            start_date=date(2026, 12, 1),
-            end_date=date(2026, 12, 2),
-            working_days=1,
-            status=LeaveApplication.Status.DRAFT,
-        )
-        self.doc(other_application)
-        response = self.client.get(self.FEED)
-        self.assertEqual(response.data["count"], 0)
-
-    def test_retired_documents_are_hidden_by_default_and_opt_in(self):
-        application = self.app(status_=LeaveApplication.Status.REJECTED)
-        document = self.doc(application)
-        document.retire(self.user, reason=SupportingDocument.RetireReason.REMOVED)
-
-        default = self.client.get(self.FEED)
-        self.assertEqual(default.data["count"], 0)
-
-        with_retired = self.client.get(f"{self.FEED}?include_retired=true")
-        self.assertEqual(with_retired.data["count"], 1)

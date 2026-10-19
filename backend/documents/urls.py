@@ -1,10 +1,11 @@
 from django.urls import path
 
 from .views import (
+    ApprovedDocumentListView,
     ApprovedLeaveDocumentView,
     HRAApprovedLeaveDocumentView,
     LeaveDocumentTemplateView,
-    MyApprovedLeaveDocumentsView,
+    SupportingDocumentListView,
 )
 
 app_name = "documents"
@@ -16,9 +17,14 @@ urlpatterns = [
         name="leave-document-template",
     ),
     path(
-        "approved-leave-documents/",
-        MyApprovedLeaveDocumentsView.as_view(),
-        name="approved-leave-document-list",
+        "documents/supporting/",
+        SupportingDocumentListView.as_view(),
+        name="documents-supporting",
+    ),
+    path(
+        "documents/approved/",
+        ApprovedDocumentListView.as_view(),
+        name="documents-approved",
     ),
     path(
         "approved-leave-documents/by-application/<uuid:application_id>/",

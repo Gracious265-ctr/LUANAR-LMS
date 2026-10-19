@@ -28,7 +28,7 @@ function periodLabel(delegation: Delegation): string {
 
 export function DelegationTable({
   delegations,
-  baseHref = "/hr-admin/delegations",
+  baseHref = "/dashboard/hr-admin/delegations",
   emptyHint = "Create a delegation request when an approver will be unavailable so HR can route their approvals to a delegate.",
 }: {
   delegations: Delegation[];

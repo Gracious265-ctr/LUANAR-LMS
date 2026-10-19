@@ -138,6 +138,7 @@ describe("ApproverRoleTable", () => {
     render(<ApproverRoleTable roles={[makeRole()]} assignments={{}} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Retire" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() => expect(deactivateApproverRole).toHaveBeenCalledWith(1));
     expect(refresh).toHaveBeenCalled();
@@ -150,6 +151,7 @@ describe("ApproverRoleTable", () => {
     render(<ApproverRoleTable roles={[makeRole()]} assignments={{}} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Retire" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     expect(
       await screen.findByText(
@@ -210,7 +212,7 @@ describe("ApproverRoleTable", () => {
 
     expect(screen.getByRole("link", { name: "Edit" })).toHaveAttribute(
       "href",
-      "/organisation/roles/2/edit"
+      "/dashboard/hr-admin/roles/2/edit"
     );
   });
 
@@ -231,7 +233,6 @@ describe("ApproverRoleTable", () => {
       user: 3,
       user_name: "Sam Supervisor",
       role_label: "Supervisor",
-      is_team_manager: false,
       created_at: "2026-01-01T00:00:00Z",
     };
     vi.mocked(removeTeamRoleAssignment).mockResolvedValue(undefined);
@@ -253,6 +254,7 @@ describe("ApproverRoleTable", () => {
         name: "Remove Sam Supervisor from the ICT Team team",
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() => expect(removeTeamRoleAssignment).toHaveBeenCalledWith(8));
     expect(refresh).toHaveBeenCalled();
@@ -286,6 +288,7 @@ describe("ApproverRoleTable", () => {
         name: "Remove Cas Campus from the Bunda Campus campus",
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() =>
       expect(removeCampusRoleAssignment).toHaveBeenCalledWith(2)
@@ -315,6 +318,7 @@ describe("ApproverRoleTable", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Remove Jane Dean from this role" })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() => expect(removeRoleAssignment).toHaveBeenCalledWith(7));
     expect(refresh).toHaveBeenCalled();

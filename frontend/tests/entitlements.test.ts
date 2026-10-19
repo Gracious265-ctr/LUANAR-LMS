@@ -5,7 +5,7 @@ import {
   expandGradeRange,
   gradeOptionsFromEntitlements,
 } from "@/lib/entitlements";
-import { isAnnualLeaveType } from "@/lib/leave-rules";
+import { isAnnualLeaveType } from "@/lib/leave-config";
 import { currentDateIso } from "@/lib/utils";
 
 describe("isAnnualLeaveType", () => {

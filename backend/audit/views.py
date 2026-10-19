@@ -2,7 +2,8 @@ from django.db.models import Q
 from django.http import Http404
 from rest_framework import mixins, permissions, viewsets
 
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
 from users.permissions import IsHRRole
 
 from .models import AuditEntry

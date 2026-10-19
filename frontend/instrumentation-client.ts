@@ -61,7 +61,3 @@ if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
     }) as Performance["measure"];
   }
 }
-
-// Mark the file as a module so it can be dynamically imported by tests (and so
-// its top-level `window` side effect is not treated as global-script pollution).
-export {};

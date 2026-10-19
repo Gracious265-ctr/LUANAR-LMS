@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/tracking/format";
 
 describe("formatDateTime", () => {
   it("converts a UTC instant to Africa/Blantyre (UTC+2)", () => {

@@ -1,0 +1,159 @@
+{
+  "grades": [
+    {"id": "A", "name": "Grade A"},
+    {"id": "B", "name": "Grade B"},
+    {"id": "D", "name": "Grade D"},
+    {"id": "E", "name": "Grade E"},
+    {"id": "G", "name": "Grade G"},
+    {"id": "H", "name": "Grade H"}
+  ],
+  "employees": [
+    {
+      "id": "EMP-001",
+      "name": "Placeholder Administrator",
+      "email": "admin@test.luanar",
+      "grade_id": "G",
+      "branch": "administrative",
+      "gender": "male",
+      "home_unit_id": "UNIT-DEPT-PHYS"
+    },
+    {
+      "id": "EMP-002",
+      "name": "Placeholder Supervisor",
+      "email": "supervisor@test.luanar",
+      "grade_id": "E",
+      "branch": "academic",
+      "gender": "male",
+      "home_unit_id": "UNIT-DEPT-MATH"
+    },
+    {
+      "id": "EMP-003",
+      "name": "Placeholder Registrar",
+      "email": "registrar@test.luanar",
+      "grade_id": "H",
+      "branch": "administrative",
+      "gender": "female",
+      "home_unit_id": "UNIT-DEPT-REG"
+    },
+    {
+      "id": "EMP-004",
+      "name": "Placeholder Employee One",
+      "email": "employee1@test.luanar",
+      "grade_id": "B",
+      "branch": "administrative",
+      "gender": "female",
+      "home_unit_id": "UNIT-DEPT-REG"
+    },
+    {
+      "id": "EMP-005",
+      "name": "Placeholder Employee Two",
+      "email": "employee2@test.luanar",
+      "grade_id": "B",
+      "branch": "administrative",
+      "gender": "male",
+      "home_unit_id": "UNIT-DEPT-FIN"
+    },
+    {
+      "id": "EMP-006",
+      "name": "Placeholder Employee Three",
+      "email": "employee3@test.luanar",
+      "grade_id": "B",
+      "branch": "academic",
+      "gender": "female",
+      "home_unit_id": "UNIT-DEPT-MATH"
+    },
+    {
+      "id": "EMP-007",
+      "name": "Placeholder Employee Four",
+      "email": "employee4@test.luanar",
+      "grade_id": "A",
+      "branch": "academic",
+      "gender": "male",
+      "home_unit_id": "UNIT-DEPT-PHYS"
+    },
+    {
+      "id": "EMP-008",
+      "name": "Placeholder Employee Five",
+      "email": "employee5@test.luanar",
+      "grade_id": "D",
+      "branch": "administrative",
+      "gender": "female",
+      "home_unit_id": "UNIT-DEPT-FIN"
+    }
+  ],
+  "org_units": [
+    {
+      "id": "UNIT-INST",
+      "unit_type": "institution",
+      "name": "Placeholder University",
+      "parent_id": null,
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-CAMP-N",
+      "unit_type": "campus",
+      "name": "Placeholder North Campus",
+      "parent_id": "UNIT-INST",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-CAMP-S",
+      "unit_type": "campus",
+      "name": "Placeholder South Campus",
+      "parent_id": "UNIT-INST",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-FAC-SCI",
+      "unit_type": "faculty",
+      "name": "Placeholder Faculty of Sciences",
+      "parent_id": "UNIT-CAMP-N",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-DEPT-MATH",
+      "unit_type": "department_academic",
+      "name": "Placeholder Department of Mathematics",
+      "parent_id": "UNIT-FAC-SCI",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-DEPT-PHYS",
+      "unit_type": "department_academic",
+      "name": "Placeholder Department of Physics",
+      "parent_id": "UNIT-FAC-SCI",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-DEPT-REG",
+      "unit_type": "department_admin",
+      "name": "Placeholder Registry Department",
+      "parent_id": "UNIT-CAMP-N",
+      "has_teams": true
+    },
+    {
+      "id": "UNIT-DEPT-FIN",
+      "unit_type": "department_admin",
+      "name": "Placeholder Finance Department",
+      "parent_id": "UNIT-CAMP-N",
+      "has_teams": false
+    },
+    {
+      "id": "UNIT-TEAM-REC",
+      "unit_type": "team",
+      "name": "Placeholder Records Team",
+      "parent_id": "UNIT-DEPT-REG",
+      "has_teams": false
+    }
+  ],
+  "role_holders": [
+    {"org_unit_id": "UNIT-INST", "role": "institutional_registrar", "employee_id": "EMP-003"},
+    {"org_unit_id": "UNIT-CAMP-N", "role": "campus_registrar", "employee_id": "EMP-003"},
+    {"org_unit_id": "UNIT-FAC-SCI", "role": "dean", "employee_id": "EMP-002"},
+    {"org_unit_id": "UNIT-DEPT-MATH", "role": "hod", "employee_id": "EMP-002"},
+    {"org_unit_id": "UNIT-DEPT-PHYS", "role": "hod", "employee_id": "EMP-001"},
+    {"org_unit_id": "UNIT-DEPT-REG", "role": "manager", "employee_id": "EMP-003"},
+    {"org_unit_id": "UNIT-DEPT-FIN", "role": "manager", "employee_id": null},
+    {"org_unit_id": "UNIT-TEAM-REC", "role": "supervisor", "employee_id": "EMP-004"}
+  ]
+}

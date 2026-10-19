@@ -16,19 +16,20 @@ from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    LeaveRule,
-    LeaveType,
     PublicHoliday,
     SupportingDocument,
 )
+from leave_config.models import LeaveType
 from users.models import User
 
-from workflows.models import Workflow
-from approvals.models import Delegation
-from approvals.models import Reassignment
-from workflows.testing import ensure_roles, make_approver, make_employee, team_for
-from organisation.models import Team
-from organisation.services import create_team_role_assignment
+from workflows.models import (
+    Workflow,
+)
+from approvals.models import (
+    Delegation,
+    Reassignment,
+)
+from workflows.testing import ensure_roles, make_approver, team_for
 
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
@@ -499,23 +500,6 @@ class AuditWiringTests(StubProviderMixin, TestCase):
             target_type=target_type, target_id=str(target_id)
         ).first()
 
-    def _designate_manager(self, team_id, username: str):
-        """Name ``team_id``'s manager and return them, authenticated as HR.
-
-        Building a chain is the manager's job after the team exists, so the
-        audit tests that need a chain have HR hand one over first.
-        """
-        team = Team.objects.get(pk=team_id)
-        manager = make_employee(username, team=None, category=team.category)
-        create_team_role_assignment(
-            team=team,
-            role=ensure_roles("dvc")["dvc"],
-            user=manager,
-            actor=self.hr_user,
-            is_team_manager=True,
-        )
-        return manager
-
     def test_employee_create_and_update_are_audited(self):
         response = self.client.post(
             "/api/v1/employees/",
@@ -529,7 +513,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
                 # decided by comparing team references, so a free-text team name
                 # could not be compared to anything.
                 "team": self.team.id,
-                "category": "administration",
+                "category": "academic",
                 "grade": "C",
                 "appointment_date": "2023-05-01",
             },
@@ -581,15 +565,19 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(updated.detail["after"]["days"], 22)
 
     def test_leave_type_create_and_update_are_audited(self):
+        # Refinement unit 06 moved the leave-type registry (and its audit
+        # trail) to the Leave Configuration app.
         response = self.client.post(
-            "/api/v1/leave-types/", {"name": "Compassionate leave"}, format="json"
+            "/api/v1/leave-config/types/",
+            {"name": "Compassionate leave"},
+            format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         entry_id = response.data["id"]
         self.assertEqual(self._entry_for("leavetype", entry_id).action, "created")
 
         response = self.client.patch(
-            f"/api/v1/leave-types/{entry_id}/",
+            f"/api/v1/leave-config/types/{entry_id}/",
             {"name": "Compassionate leave (revised)"},
             format="json",
         )
@@ -597,34 +585,6 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         updated = self._entry_for("leavetype", entry_id)
         self.assertEqual(updated.action, "updated")
         self.assertEqual(updated.detail["before"]["name"], "Compassionate leave")
-
-    def test_leave_rule_create_and_update_are_audited(self):
-        leave_type = LeaveType.objects.create(name="Annual leave", code="annual")
-        response = self.client.post(
-            "/api/v1/leave-rules/",
-            {
-                "leave_type": leave_type.pk,
-                "max_duration_days": 30,
-                "eligibility": "All staff",
-                "min_notice_days": 1,
-                "requires_supporting_document": False,
-                "consumes_annual_entitlement": True,
-                "effective_from": (self.today - timedelta(days=10)).isoformat(),
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        rule_id = response.data["id"]
-        self.assertEqual(self._entry_for("leaverule", rule_id).action, "created")
-
-        response = self.client.patch(
-            f"/api/v1/leave-rules/{rule_id}/", {"max_duration_days": 32}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        updated = self._entry_for("leaverule", rule_id)
-        self.assertEqual(updated.action, "updated")
-        self.assertEqual(updated.detail["before"]["max_duration_days"], 30)
-        self.assertEqual(updated.detail["after"]["max_duration_days"], 32)
 
     def test_financial_year_create_and_update_are_audited(self):
         response = self.client.post(
@@ -670,86 +630,75 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(updated.detail["before"]["name"], "Independence Day")
 
     def test_a_team_and_its_chain_are_audited_on_creation(self):
-        """A chain is created for a team and recorded as belonging to it.
+        """A chain is created with a team, so both are recorded together.
 
-        The entry names the team the chain was built for, so reading it back
-        years later one can tell a step came into being as part of a team
-        rather than as a change to something that already existed.
+        The two entries are what let somebody read back, years later, that a
+        step came into being as part of a team rather than as a change to
+        something that already existed.
         """
         response = self.client.post(
             "/api/v1/teams/",
-            {"name": "Registry"},
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        team_id = response.data["id"]
-
-        manager = self._designate_manager(team_id, "registry-manager@audit.test")
-        self.client.force_authenticate(user=manager)
-        response = self.client.post(
-            "/api/v1/workflows/",
             {
-                "team": team_id,
-                "name": "Registry approval",
-                "sections": [
-                    {"name": "Supervisor", "approver_role": "supervisor"},
-                    {"name": "HOD", "approver_role": "hod"},
-                ],
+                "name": "Registry team",
+                "new_workflow": {
+                    "name": "Registry approval",
+                    "sections": [
+                        {"name": "Supervisor", "approver_role": "supervisor"},
+                        {"name": "HOD", "approver_role": "hod"},
+                    ],
+                },
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        workflow_id = response.data["id"]
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        workflow_id = response.data["workflow"]
         created = self._entry_for("workflow", workflow_id)
         self.assertEqual(created.action, "created")
         self.assertEqual(
-            [s["approver_role"] for s in created.detail["after"]["sections"]],
+            [
+                s["approver_role"]
+                for s in created.detail["after"]["workflow"]["sections"]
+            ],
             ["supervisor", "hod"],
         )
-        self.assertEqual(created.reason, "Created for the Registry team.")
+        self.assertEqual(
+            created.detail["after"]["created_with_team"], "Registry team"
+        )
 
-    def test_a_chains_steps_are_audited_when_the_manager_edits_them(self):
-        """Steps change through the manager's chain edit, and that is recorded.
+    def test_a_chains_steps_are_audited_when_the_team_is_saved(self):
+        """Steps change as a consequence of saving a team, and that is recorded.
 
-        The "before" and "after" of the steps are the record of what the
-        manager's chain edit changed, and the entry names the team so the
-        change can be attributed.
+        A chain has no edit of its own, so the "before" and "after" of its steps
+        are the record of what the team's form changed — which is why the entry
+        names the team.
         """
         response = self.client.post(
             "/api/v1/teams/",
-            {"name": "Registry"},
-            format="json",
-        )
-        team_id = response.data["id"]
-
-        manager = self._designate_manager(team_id, "registry-manager@audit.test")
-        self.client.force_authenticate(user=manager)
-        response = self.client.post(
-            "/api/v1/workflows/",
             {
-                "team": team_id,
-                "name": "Registry approval",
-                "sections": [
-                    {"name": "Supervisor", "approver_role": "supervisor"},
-                    {"name": "HOD", "approver_role": "hod"},
-                ],
+                "name": "Registry team",
+                "new_workflow": {
+                    "name": "Registry approval",
+                    "sections": [
+                        {"name": "Supervisor", "approver_role": "supervisor"},
+                        {"name": "HOD", "approver_role": "hod"},
+                    ],
+                },
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        workflow_id = response.data["id"]
-
-        response = self.client.patch(
-            f"/api/v1/workflows/{workflow_id}/",
+        workflow_id = response.data["workflow"]
+        self.client.patch(
+            f"/api/v1/teams/{response.data['id']}/",
             {
-                "sections": [
-                    {"name": "Registrar", "approver_role": "registrar"},
-                    {"name": "DVC", "approver_role": "dvc"},
-                ]
+                "new_workflow": {
+                    "sections": [
+                        {"name": "Registrar", "approver_role": "registrar"},
+                        {"name": "DVC", "approver_role": "dvc"},
+                    ]
+                }
             },
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         updated = self._entry_for("workflow", workflow_id)
         self.assertEqual(updated.action, "updated")
         self.assertEqual(
@@ -760,7 +709,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
             [s["approver_role"] for s in updated.detail["after"]["sections"]],
             ["registrar", "dvc"],
         )
-        self.assertEqual(updated.detail["team"], "Registry")
+        self.assertEqual(updated.detail["team"], "Registry team")
 
     def _create_delegation(self, approver, delegate=None, ends_on=None):
         payload = {

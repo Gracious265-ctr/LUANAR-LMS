@@ -19,7 +19,7 @@ const band: Entitlement = {
 /** The entitlement endpoint call, skipping the leave-type list read on mount. */
 function entitlementCall() {
   return (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
-    ([url]) => !String(url).includes("leave-types")
+    ([url]) => !String(url).includes("leave-config")
   );
 }
 
@@ -28,8 +28,9 @@ function stubFetch(
   ok = true
 ) {
   global.fetch = vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).includes("leave-types")) {
-      return { ok: true, json: async () => ({ results: [] }) };
+    if (String(input).includes("leave-config")) {
+      // The registry endpoint answers with a bare array, not a page envelope.
+      return { ok: true, json: async () => [] };
     }
     return { ok, json: async () => response };
   }) as unknown as typeof fetch;

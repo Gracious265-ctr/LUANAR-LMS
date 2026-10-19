@@ -10,7 +10,7 @@ describe("TeamTable", () => {
       <TeamTable
         teams={[
           makeTeam({ id: 1, name: "Registry", status: "active", is_effective: true }),
-          makeTeam({ id: 2, name: "Bunda Faculty", status: "active" }),
+          makeTeam({ id: 2, name: "Bunda Faculty", status: "draft" }),
           makeTeam({ id: 3, name: "Old Team", status: "inactive" }),
         ]}
       />
@@ -20,7 +20,7 @@ describe("TeamTable", () => {
     expect(rows).toHaveLength(3);
     expect(within(rows[0]).getByText("Registry")).toBeInTheDocument();
     expect(within(rows[0]).getByText("Active")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Active")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Draft")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Retired")).toBeInTheDocument();
   });
 
@@ -85,7 +85,24 @@ describe("TeamTable", () => {
 
     expect(
       screen.getByRole("link", { name: "Registry" })
-    ).toHaveAttribute("href", "/organisation/teams/7");
+    ).toHaveAttribute("href", "/dashboard/teams/7");
+  });
+
+  it("offers each team's tabs as one-click links, so managing it is a single step", () => {
+    render(<TeamTable teams={[makeTeam({ id: 7, name: "Registry" })]} />);
+
+    expect(screen.getByRole("link", { name: "Steps" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=steps"
+    );
+    expect(screen.getByRole("link", { name: "Approvers" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=approvers"
+    );
+    expect(screen.getByRole("link", { name: "Members" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=members"
+    );
   });
 
   it("invites a first team instead of rendering an empty table", () => {

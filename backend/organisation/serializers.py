@@ -1,16 +1,21 @@
-"""Organisation-owned serializers for approver roles, holdings, and campuses."""
+"""Organisation-owned serializers for approver roles, holdings, and campuses.
+
+Covers approver-role administration, role assignments (institution-, team-, and
+campus-scoped), and campus administration.
+"""
 
 from django.utils.text import slugify
 from rest_framework import serializers
 
 from users.models import User
 
+from teams.models import TeamRoleAssignment
+from workflows.models import Workflow
 from .models import (
     ApproverRole,
     Campus,
     CampusRoleAssignment,
     RoleAssignment,
-    TeamRoleAssignment,
 )
 from .services import (
     create_approver_role,
@@ -23,6 +28,7 @@ from .services import (
     update_approver_role,
     update_campus,
 )
+
 
 class ApproverRoleSerializer(serializers.ModelSerializer):
     """One HR-managed approver role.
@@ -150,23 +156,6 @@ class ApproverRoleWriteSerializer(serializers.Serializer):
         if not attrs.get("label", "").strip():
             raise serializers.ValidationError({"label": ["Enter a role name."]})
         return attrs
-
-    def validate_is_institution_wide(self, value):
-        """A team manager may create and edit roles, but not make one global.
-
-        ``is_institution_wide`` promotes a role to the institution-wide scope,
-        which is HR's call rather than a team manager's. The field still exists
-        for HR; a manager simply cannot set it to ``True``.
-        """
-        if value:
-            actor = self.context.get("actor")
-            if actor is None or (
-                actor.role != User.Role.HR and not getattr(actor, "is_superuser", False)
-            ):
-                raise serializers.ValidationError(
-                    "Only HR may make a role institution-wide."
-                )
-        return value
 
     def create(self, validated_data: dict) -> ApproverRole:
         return create_approver_role(
@@ -322,8 +311,10 @@ class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
     """One team-wide holding: this role, on this team, held by this person.
 
     ``is_team_manager`` designates the holder as the team's single designated
-    manager. The service enforces the one-manager-per-team rule by clearing the
-    flag from any other holder on the team, so writing it here is safe.
+    manager, the flag the team's members and chains are run under. It is read
+    here and written through the ``set-manager``/``clear-manager`` actions, which
+    clear it from any other holder on the team first — so the one-manager-per-team
+    rule is the service's, and this shape only reports it.
     """
 
     class Meta:
@@ -338,7 +329,7 @@ class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
             "is_team_manager",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "is_team_manager", "created_at"]
         validators: list = []
 
     def create(self, validated_data: dict) -> TeamRoleAssignment:
@@ -347,7 +338,6 @@ class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
             role=validated_data["role"],
             user=validated_data["user"],
             actor=self.context["actor"],
-            is_team_manager=validated_data.get("is_team_manager", False),
         )
 
 
@@ -375,3 +365,5 @@ class CampusRoleAssignmentSerializer(WideRoleAssignmentSerializer):
             user=validated_data["user"],
             actor=self.context["actor"],
         )
+
+

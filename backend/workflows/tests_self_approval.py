@@ -49,21 +49,9 @@ from leave.tests.stubs import (
 from users.models import EmployeeProfile
 
 from .testing import team_for
-from approvals.models import (
-    ApplicationStage,
-    ApprovalDecision,
-)
-from approvals.models import Delegation
-
-from approvals.models import Reassignment
+from approvals.models import ApplicationStage, ApprovalDecision, Delegation, Reassignment
 from .policies import get_decision_authority, is_self_application
-from approvals.services import (
-    ApprovalNotAllowedError,
-    ReassignmentError,
-    SelfApprovalBlockedError,
-    decide,
-    reassign_application,
-)
+from approvals.services import ApprovalNotAllowedError, ReassignmentError, SelfApprovalBlockedError, decide, reassign_application
 
 User = get_user_model()
 

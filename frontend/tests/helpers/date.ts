@@ -9,9 +9,9 @@ import { format, parse, parseISO, startOfMonth } from "date-fns";
  * no `change` event to fire and no value to read back. Open the trigger, page
  * the calendar to the wanted month, then activate the day button.
  *
- * This is all `fireEvent` rather than `userEvent`: a plan period can sit a year
- * away from today, and simulating a full pointer sequence for each of a dozen
- * paging clicks pushed whole test files past their per-test timeout.
+ * This is all `fireEvent` rather than `userEvent`: a chosen period can sit a
+ * year away from today, and simulating a full pointer sequence for each of a
+ * dozen paging clicks pushed whole test files past their per-test timeout.
  */
 
 /** The most months the helper will page through before giving up. */

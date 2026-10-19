@@ -11,34 +11,22 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from leave_config.models import LeaveType
+from leave_config.services import day_unit_for
 from users.models import EmployeeProfile
 
-from ..models import LeaveType
 from ..services import (
     financial_year_for_date,
     financial_year_label,
     public_holidays_between,
-    resolve_leave_rule,
     resolved_annual_entitlement,
 )
 from .base import (
-    DurationUnit,
     EligibilityRule,
     EmployeeInfo,
     FinancialYear,
     LeaveTypeRules,
 )
-
-ANNUAL_CODE = "annual"
-
-
-def _unit_for_code(code: str) -> DurationUnit:
-    """LeaveRule stores day counts without units (Unit 20 decision D4).
-
-    Annual leave is measured in working days; every other type in calendar
-    days. Documented in ``docs/leave-rules-provider-contract.md``.
-    """
-    return "working_days" if code == ANNUAL_CODE else "calendar_days"
 
 
 def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
@@ -70,41 +58,6 @@ def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
     return Decimal(restored) - Decimal(deducted)
 
 
-def _plan_reservation_net(employee_id: int, financial_year_label: str) -> Decimal:
-    """Reserved capacity minus released capacity from the plan ledger.
-
-    An approved leave day plan reserves its annual-deducting blocks' working
-    days up front, so those days are already spoken for when somebody applies
-    for the same leave later. Explicit releases (the employee declining, HR
-    releasing, or the block auto-lapsing at its start date) return them.
-    ``confirm`` rows never touch capacity because the ``reserve`` row already
-    held the days.
-
-    Imported lazily: the plans app depends on this provider for validation, so a
-    module-level import would be circular.
-    """
-    from django.db.models import Q, Sum
-
-    from plans.models import PlanBalanceTransaction
-
-    delta = PlanBalanceTransaction.objects.filter(
-        employee_id=employee_id,
-        financial_year=financial_year_label,
-    ).aggregate(
-        reserved=Sum(
-            "days",
-            filter=Q(type=PlanBalanceTransaction.Type.RESERVE),
-        ),
-        released=Sum(
-            "days",
-            filter=Q(type=PlanBalanceTransaction.Type.RELEASE),
-        ),
-    )
-    reserved = delta["reserved"] or Decimal(0)
-    released = delta["released"] or Decimal(0)
-    return Decimal(reserved) - Decimal(released)
-
-
 class DatabaseRulesProvider:
     """Read-only provider backed by the HR-track tables (Units 2-5)."""
 
@@ -128,19 +81,22 @@ class DatabaseRulesProvider:
         )
 
     def get_leave_type_rules(self, leave_type_id: int, as_of: date):
+        """The type's live policy.
+
+        The type *is* the rule since refinement unit 06 retired effective-dated
+        ``LeaveRule`` rows, so ``as_of`` no longer narrows the answer: it stays
+        in the protocol signature because the fixture provider and the snapshot
+        shape both carry it. A missing type still returns ``None``.
+        """
         try:
             leave_type = LeaveType.objects.get(pk=leave_type_id)
         except LeaveType.DoesNotExist:
             return None
 
-        rule = resolve_leave_rule(leave_type, as_of)
-        if rule is None:
-            return None
-
-        unit = _unit_for_code(leave_type.code)
+        unit = day_unit_for(leave_type)
         eligibility = tuple(
             EligibilityRule(type=item["type"], params=dict(item.get("params") or {}))
-            for item in (rule.eligibility_rules or [])
+            for item in (leave_type.eligibility_rules or [])
             if isinstance(item, dict) and item.get("type")
         )
 
@@ -148,15 +104,15 @@ class DatabaseRulesProvider:
             id=leave_type.id,
             code=leave_type.code,
             name=leave_type.name,
-            is_active=True,
-            deducts_annual_balance=rule.consumes_annual_entitlement,
-            max_duration=rule.max_duration_days,
+            is_active=leave_type.is_active,
+            deducts_annual_balance=leave_type.consumes_annual_entitlement,
+            max_duration=leave_type.max_duration_days,
             max_duration_unit=unit,
-            min_notice=rule.min_notice_days,
+            min_notice=leave_type.notice_days or 0,
             min_notice_unit=unit,
-            requires_document=rule.requires_supporting_document,
+            requires_document=leave_type.requires_supporting_document,
             eligibility=eligibility,
-            effective_from=rule.effective_from,
+            effective_from=leave_type.created_at.date(),
         )
 
     def get_financial_year_for(self, d: date):
@@ -180,9 +136,5 @@ class DatabaseRulesProvider:
 
         entitlement = resolved_annual_entitlement(profile.grade)
         days = entitlement.days if entitlement is not None else 0
-        net = (
-            Decimal(days)
-            + _ledger_net(employee_id, financial_year_label)
-            - _plan_reservation_net(employee_id, financial_year_label)
-        )
+        net = Decimal(days) + _ledger_net(employee_id, financial_year_label)
         return max(net, Decimal(0))

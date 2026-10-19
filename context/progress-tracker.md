@@ -4,27 +4,87 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- **Multi-workflow teams — COMPLETE (2026-10-18).** A team may now own and run
-  several approval chains at once, so routing stopped being a property of the
-  team. `Team.workflow` is removed entirely (migration
-  `organisation/0007_remove_team_workflow`; the `route` action, `is_routing`,
-  the   `WorkflowRoutingActions` component and its `/api/hr/teams/[id]/route`
-  proxy are gone, all chains route simultaneously), `Team.Status.DRAFT` is gone
-  (teams are always ACTIVE on creation, HR `activate` removed, `deactivate`
-  retained, and legacy `draft` rows converted by
-  `organisation/0008_convert_team_draft_to_active`; the frontend
-  `teamStatusLabel`/`teamStatusBadgeClass` normalise any non-retired status to
-  Active), workflow names are required, and `Workflow.effective_to` defaults
-  to the active academic year's end (`workflows/0034_workflow_effective_to_and_more`).
-  Routing resolves per applicant from their `WorkflowMember` membership
-  (`workflows/providers.py::_member_workflow`): a normal member sits in exactly
-  one chain per team (enforced by `workflow_member_team_user_unique`), while a
-  wide approver may sit in several. Team members are not auto-enrolled — HR
-  adds them. Frontend types/pages/table updated; `WorkflowState` is
-  `active | scheduled | inactive | draft` (`is_routing` dropped). Verified:
-  backend full suite 1574+ tests OK (all modules re-run green, incl. the 30-test
-  `workflows.tests_migrations`), `makemigrations --check` clean; frontend
-  typecheck/lint clean and 985 tests OK.
+- **Teams module split + Team-Manager redesign + Phase-2 extras — DONE (2026-10-18)**
+  — the monolithic `backend/workflows` is split into four apps (`organisation`,
+  `teams`, `approvals`, slim `workflows`) using `SeparateDatabaseAndState`
+  migrations so the shared `workflows_*` tables are relabelled, never rewritten;
+  the `workflows.models` re-export shim keeps historical imports working while
+  the service/view/serializer code move is deferred. On top of the split, the
+  **team-manager redesign** lands (teams active on creation, chain name required,
+  `Workflow.effective_to` scoped to the academic year, designated team manager)
+  and the two **Phase-2 extras** (batch approve endpoint; the over-subscription
+  guard `leave/conflicts.py` → `409 team_conflict`). The frontend teams module
+  moves to its own `/dashboard/teams` route with the launcher "Organization" tile
+  renamed to **Teams**. See "Completed (Teams Split + Team-Manager + Phase-2
+  Extras) (2026-10-18)" at the end of this file.
+
+- **Unit — External Organization Data Provider — DONE (2026-10-18)** — refinement
+  unit `context/refinement/05-org-data-provider.md`. Introduces the
+  organisation data-provider seam: `directory` app (provider ABC + dataclasses,
+  settings-driven factory, fixture provider + placeholder seed data,
+  `sync_org_structure` command), `ORG_DATA_BACKEND` setting, `GradeLeaveEntitlement`
+  mapping + `get_entitlement`, and the dashboard's typed rings switched to it.
+  Developer decisions at planning: (1) a minimal `OrgUnit` is created in a new
+  `org` app (the org-tree blueprint it assumed does not exist yet); (2)
+  employee identity reconciles **by email** (fixture employees carry the seeded
+  demo users' addresses; no `external_employee_id` schema change); (3) the
+  dashboard patch is a **hard switch of typed rings only** — annual ring stays
+  ledger/band-based; (4) `GradeLeaveEntitlement` lives in `leave` (the
+  `leave_config` app the spec named does not exist; `LeaveType`/`FinancialYear`
+  live in `leave`). See "Completed (Unit — External Organization Data Provider)
+  (2026-10-18)" at the end of this file.
+
+- **Unit 4 — Leave Plans App — DONE (2026-10-17)** — refinement
+  unit `context/refinement/04-leave-plans-app.md`. A self-service Leave Plan
+  (employee personal scheduling reminder; never submitted, never approved) that
+  converts on demand — "Apply Now" or a scheduled reminder email — into a
+  pre-filled draft through the existing Leave app. Developer decisions at
+  planning: (1) the committed **Leave Day Plans feature is replaced entirely**
+  (backend `plans` app, frontend `/dashboard/plans`, `components/plans`,
+  `lib/plans`, `/api/plans/*` proxies) since it occupies the same namespace and
+  routes; (2) Team Plans calendar scoping is **assignment-driven** (there is no
+  `OrgUnit`/`home_unit`): regular employee → own team; team-wide
+  `TeamRoleAssignment` holder → those teams; campus-wide
+  `CampusRoleAssignment` holder → that campus; institution-wide
+  `RoleAssignment` holder → everyone, defaulting to the narrowest scope.
+  Recorded adaptations: backend API stays on the `/api/v1/` convention with
+  browser proxies at `/api/plans/`; module nav follows the Leave module pattern
+  (`lib/nav/plans-nav.ts` + a `ModuleNavLinks` branch in `dashboard-shell.tsx`);
+  Apply Now redirects to the real edit surface
+  `/dashboard/leave/drafts?edit={id}`; `LeaveType.plannable`/
+  `plan_notice_days` also exposed on the LeaveType serializer so HR can
+  configure them; no new audit actions (employee self-service writes are not
+  audited, matching draft handling). See "Completed (Unit 4 — Leave Plans App)
+  (2026-10-17)" at the end of this file.
+
+- **Unit 3 — Leave App Dashboard — DONE (2026-10-17)** — refinement unit
+  `context/refinement/03-leave-app-dashboard.md`. Builds the Leave module's
+  landing dashboard (balance rings, needs-attention, drafts, recent
+  applications) with the 3-click rule. Adaptations agreed at planning: page
+  lives at `app/(dashboard)/dashboard/leave/page.tsx` (launcher registry
+  repointed to `/dashboard/leave`); one backend read endpoint
+  `/api/v1/leave/dashboard/`; annual ring reuses the existing provider and
+  per-type rings come from effective typed `GradeEntitlement` rows; client
+  fetch hook (skeleton + Retry). No changes to Units 13/14/17/18 endpoints.
+  **Follow-up (same day):** a top stat-card row (Pending Applications,
+  Upcoming Leave) added to the same endpoint (`pending_count`, `upcoming_leave`)
+  — not a second endpoint — plus a module-scoped Leave sidebar (3 items +
+  "← All Apps"). See "Completed (Unit 3 — Leave App Dashboard) (2026-10-17)"
+  at the end of this file.
+
+- **Unit 06 — Leave Configuration App — COMPLETED (2026-10-18)** — refinement
+  unit `context/refinement/06-leave-configuration-app.md`. Implements a dedicated
+  HR-only `leave_config` app to own `LeaveType` centrally (branch scope,
+  grade/gender eligibility, rules, planning flags, institutional-registrar
+  escalation, deactivation). No entitlement field (grade-based entitlement
+  remains elsewhere); single `notice_days` shared by submission/Plans; read-only
+  active types list for authenticated users, writes HR/superuser only. Cross-module
+  services (`is_eligible`, `validate_notice`, flag helpers) centralize rules.
+  Retires the HR leave-types CRUD and the Leave Rules surface (`leave.LeaveType`/
+  `LeaveRule` models, `/api/v1/leave-rules/`, `/dashboard/hr-admin/leave-types`,
+  `/dashboard/hr-admin/leave-rules`); the Leave app keeps only the employee
+  `employee/leave-types/` projection. See "Completed (Unit 06 — Leave
+  Configuration App) (2026-10-18)" at the end of this file.
 
 - **HR leave-system simplification — IN PROGRESS (started 2026-10-11)** — the
   approved 7-phase plan to reduce the steps HR takes across the whole leave
@@ -45,19 +105,11 @@ Update this file after every meaningful implementation change.
     persist across years), deactivates the previous active year, and is a no-op
     if the active year starts after today. `leave/tests/test_setup.py` (16 tests);
     `leave workflows audit` = 1133 tests OK; `makemigrations --check` clean.
-  - **P2 backend bulk approvals — DONE (2026-10-15).** The earlier "DONE"
-    claim was inaccurate: no bulk code existed in git history when restructure
-    Phase 0 audited it, so it was reimplemented rather than assumed.
-    `workflows/approval_views.py` now has `BulkApprovalDecisionAPIView` +
-    `BulkApprovalInputSerializer`/`BulkDecisionItemSerializer`
-    (`BULK_APPROVAL_LIMIT = 25`), routed at `approvals/bulk-decision/`
-    (registered before the `<str:pk>` routes). Approve-only, cap 25, empty/
-    duplicate/>25 all 400; each item runs the locked `decide` in its own
-    transaction → partial success, reporting `{results:[{id,status,reason?}],
-    approved, failed, limit}`. `list_item` now surfaces `stage_version` (the
-    pending stage's `decision_version`) and the pending list `select_related`s
-    `current_stage`. `workflows.tests_approvals.BulkApprovalAPITests` (9);
-    `workflows.tests_approvals` = 91 OK.
+  - **P2 backend bulk approvals — DONE.** `workflows/approval_views.py`
+    `BulkApprovalDecisionAPIView` (+ serializers, `_bulk_error`), route
+    `approvals/bulk-decision/` (approve-only, cap 25, dedupe, own transaction +
+    audit per item → partial success); `BulkApprovalAPITests` (7);
+    `workflows.tests_approvals` = 69 OK.
   - **P3 frontend setup hub — DONE.** `lib/setup.ts` (pure types/constants),
     `lib/setup-server.ts`, `lib/setup-client.ts`, proxy routes
     `app/api/hr/setup/{apply-defaults,rollover}`, `SetupHub.tsx`, restructured
@@ -79,17 +131,17 @@ Update this file after every meaningful implementation change.
     `tests/employee-form.test.tsx` updated (21 OK with the overlay suite);
     full frontend suite 951 OK (one load-only timing flake in the untouched
     entitlement form, passes isolated).
-  - **P6 ops inline + bulk approve — DONE (2026-10-15).** `lib/approvals/types.ts`
-    gains `stage_version` on the list item + the `BulkApproval*` types;
-    `lib/approvals/service.ts` gains `approveApprovals`; proxy
-    `app/api/approvals/bulk-decision/route.ts`; and `approvals-list.tsx` wires
-    the pending tab's selection (row checkboxes on desktop + mobile,
-    "Select all on this page", "N of 25 selected", cap disables further picks,
-    "Approve selected") to the `BulkApproveDialog` (typed `APPROVE`
-    confirmation). Successful items toast a count; failures render an `Alert`
-    listing each reference and its reason. `tests/approvals-list.test.tsx` = 12
-    OK; full frontend suite 960 OK / 111 files; `build`/`lint`/`typecheck:test`
-    clean.
+  - **P6 ops inline + bulk approve — DONE.** Backend: `list_item` now carries
+    `stage_version` (the current stage's `decision_version`), and the pending
+    list `select_related` includes `current_stage`; a test asserts it. Frontend:
+    `lib/approvals/types.ts`/`service.ts` gain the bulk types +
+    `approveApprovals`, proxy `app/api/approvals/bulk-decision/`,
+    `BulkApproveDialog` (typed `APPROVE` confirmation, per-item results shown as
+    a partial-success toast), and selection (checkbox column, mobile row
+    checkbox, "Select all on this page", `N of 25 selected`, cap disables
+    further picks) on the pending tab of `approvals-list.tsx`. Tests:
+    `tests/approvals-list.test.tsx` 10 OK; backend `workflows.tests_approvals`
+    70 OK; full frontend suite 955 OK.
   - **P7 nav/IA + polish + docs — DONE.** HR rail split into everyday
     destinations (Setup, Employees, Teams, Approvers, Campuses) plus a folded
     **Advanced** group (Roles, Leave Types, Entitlements, Leave Rules, Calendar,
@@ -102,33 +154,6 @@ Update this file after every meaningful implementation change.
   - **All 7 phases DONE.** Remaining: final full-suite verification.
 
 - **Unit 5 — System Restructure into Feature Modules + App Launcher — IMPLEMENTED (2026-10-13)** — refinement unit `context/refinement/05-system-restructure-app-launcher.md`. Reorganized backend into `leave` (unchanged), new `approvals` (stages/decisions), new `org` (org/teams/roles/assignments), `documents` (unchanged), with shared infra `users/notifications/audit`. Created `launcher` app with `/api/v1/apps/launcher/` aggregator returning role-filtered apps with badge counts. Frontend: app registry (`lib/apps-registry.ts`, `lib/launcher.ts`), launcher UI (`components/launcher/*`), and module-scoped shells (`ModuleShell`) with per-module layouts and "← All Apps" navigation. (Launcher landing location corrected on 2026-10-14 — see troubleshooting note: the page lives at `/(launcher)/page.tsx` on `/` with its own minimal shell, not `/(dashboard)/page.tsx`.) TypeScript and ESLint pass. Migrations created for new apps; import paths updated across codebase. (Full backend test suite migration state requires clean DB in this environment, but core restructuring per spec is complete.)
-
-- **System Restructure — Phase 0 (stabilize) — DONE (2026-10-15)** — pre-work
-  for the independent-app refactor (`context/refinement/05-...`). Fixed the
-  regressions left by the broken merge and made the two suites trustworthy as a
-  baseline:
-  - **Migration reversibility.** Reverted `workflows/0026` and
-    `users/0010` to plain, fully-reversible ops (dev DB is disposable); the
-    30-test `workflows.tests_migrations` suite passes.
-  - **Launcher owns `/`.** Deleted the route-colliding `app/page.tsx`;
-    `/` is now the `(launcher)` route with no build warnings.
-  - **Bulk approvals implemented.** The audit found the P2/P6 "DONE" claims
-    false (no bulk code in git history) and the two frontend artifacts dead
-    orphans; rather than delete-and-forget, the feature was built end-to-end
-    (see P2/P6). Frontend suite **960 OK / 111 files**.
-  - **Service stubs fixed.** `approvals/services.py`, `org/services.py`,
-    `launcher/services.py` now import real primitives (`is_approver_user`,
-    `role == "hr"`); launcher smoke test: employee → `leave,documents`,
-    HR/superuser → all apps.
-  - **Multi-step leave form implemented** (refinement 04 §3.4-§3.6) — see the
-    Unit 5 item-4 note below; `Stepper` gained opt-in step-click props, and
-    `LeaveTypeSelect` became parent-owned. 8 previously-failing
-    `tests/leave-application-form-steps.test.tsx` now pass.
-  - **Test infra.** `vitest.config.ts` sets `testTimeout`/`hookTimeout` = 15s;
-    the 3 timeout flakes (`entitlement-form`, `hr-admin-form-overlays`,
-    `plan-form`) pass under load. `npm run build`, `npm run lint`,
-    `typecheck:test` all clean. Backend baseline `test workflows audit` =
-    **645 OK**, `makemigrations --check` clean.
 
 - **System Admin Dashboard (Django Admin Extension) — COMPLETED (2026-10-11)**
   — refinement unit
@@ -250,10 +275,8 @@ Update this file after every meaningful implementation change.
     `BalanceCard`; tests added. Item 4 **done** — `LeaveApplicationForm` now a
     4-step flow (horizontal `Stepper size="sm"` with clickable settled steps,
     per-step validation gating, documents step `skipped` when not required);
-    `Stepper` gained opt-in `onStepClick`/`isStepClickable`/`stepAriaLabel`
-    props and `LeaveTypeSelect` became parent-owned (optional `types`/`loading`/
-    `error`; the form owns the list so the skipped-steps logic can read
-    `requiresDocuments`). Item 5 **done** — autosave failures raise a
+    `Stepper` gained an opt-in `onStepClick`, `LeaveTypeSelect` an
+    `onSelectedType` callback. Item 5 **done** — autosave failures raise a
     `pushToast` (success stays silent; 800ms debounce unchanged). Item 6
     **done** — `GET /api/v1/leave/me/form-defaults/` (`LeaveFormDefaultsView`)
     returns the last-used leave type, the next working day (weekends + public
@@ -5359,652 +5382,681 @@ view access + test-email POST semantics, and the full action lifecycle
 refused, audit rows written, actions hidden from HR). Backend full suite
 **1458 OK**; `manage.py check`, `makemigrations --check` clean.
 
-## Completed — Broken-Merge Recovery, `workflows` → `org`/`approvals` Split, and Leave Feature Gaps (2026-10-14)
+## Completed (Unit 3 — Leave App Dashboard) (2026-10-17)
 
-Recovery of merge commit `726ee04`, which had merged `feature/plans-teams` into
-`development` with unresolved conflict markers committed (carried on by the
-"commit remaining WIP" commit `9891935`). Resolution adopted `feature/plans-teams`
-as canonical for every conflict and finished the incomplete refactor it began.
+**Goal.** The Leave module's landing page — the screen an employee reaches from
+the App Launcher's "Leave Applications" card: their own balances, anything
+needing attention, drafts, recent applications, and a one-click path to start
+something new. Strictly scoped to *the employee's own leave* — no approver
+queues, org structure, or HR-admin content.
 
-**The split.** Approval-chain models moved out of `workflows` into two new apps:
-`org` (`Team`, `Workflow`, `Section`, `ApproverRole`, `Campus`, `SectionMember`,
-and the role-assignment tables) and `approvals` (`ApplicationStage`,
-`ApprovalDecision`, and related). `workflows` now holds only `Reassignment` and
-`WorkflowMember`. String FKs were repointed and every production and test module
-swept for stale imports.
+**Backend (one new read endpoint, no new models).**
+- `leave/services/dashboard.py` — `get_dashboard_data(user)`: applications
+  scoped to `employee=user`; `needs_attention` (`rejected` /
+  `correction_required`, newest `updated_at`, cap 5), `drafts` (`draft`,
+  cap 5), `recent` (all statuses except `draft`, newest `created_at`, cap 5).
+  `last_comment_excerpt` is the latest non-empty `workflows.ApprovalDecision`
+  comment for the application, trimmed to 60 chars with an ellipsis. Status
+  `submitted` serializes as `pending` to match the tracking vocabulary.
+- **Balances** reuse the existing provider: the annual ring is
+  `total = resolved annual entitlement`, `used = total − available` from
+  `leave_providers.get_provider().get_available_balance`. Per-type rings come
+  from effective typed `GradeEntitlement` rows; each `used` is the sum of that
+  employee's approved `calculated_days` of that type in the active financial
+  year. The annual type is excluded from the per-type list (it is the annual
+  ring) and the list is capped at 4 (`MAX_BALANCE_RINGS`). No balance math is
+  reimplemented.
+- `leave/views/dashboard.py` — `LeaveDashboardView(APIView)`,
+  `IsAuthenticated`, GET → `get_dashboard_data(request.user)`.
+- `leave/urls.py` — `path("leave/dashboard/", ..., name="leave-dashboard")`.
 
-**Non-destructive table move.** Production data lives in the old `workflows_*`
-tables, so the split must not create, drop, or rename tables. Each moved model
-keeps `Meta.db_table = "workflows_<model>"`, the same `db_table` is written into
-the migration `CreateModel` options, and the five affected migrations are wrapped
-in `SeparateDatabaseAndState(state_operations=[...], database_operations=[])`.
-The result: model state follows the new app labels while the database is left
-untouched, so `makemigrations --check` reports "No changes detected" and an
-existing database is never altered. Field-level compatibility was verified
-(the only diffs against history are FK app labels and dropped `help_text`).
+**Frontend (client fetch, per the spec).**
+- `app/api/leave/dashboard/route.ts` proxy → backend `leave/dashboard/`.
+- `lib/leave-dashboard.ts` (types + `getLeaveDashboard`),
+  `lib/hooks/useLeaveDashboard.ts` (loading / error / refetch).
+- `components/ui/BalanceRing.tsx` — plain SVG conic ring (no chart lib),
+  zero-total safe, remaining-days centre.
+- `components/leave/ApplicationStatusBadge.tsx`, `NeedsAttentionSection.tsx`,
+  `BalanceSection.tsx`, `DraftsSection.tsx`, `RecentApplicationsSection.tsx`.
+- `app/(dashboard)/dashboard/leave/page.tsx` — header + "+ New Application",
+  layout-matching skeleton, `ErrorState` with Retry, empty-aware sections.
+- `lib/apps-registry.ts` — launcher leave route repointed `/dashboard` →
+  `/dashboard/leave`.
 
-**Leave feature gaps completed.** `ApprovalConflictError` in `workflows.services`
-now refuses any `approve` that would leave the applicant's team over-subscribed,
-using the same numbers as the calendar (`leave.conflicts.find_team_conflict`) and
-mapped to `409 {reason: "team_conflict"}` by `ApprovalDecisionAPIView`.
-`workflows.policies.user_can_view_team_calendar` scopes the team calendar to HR,
-superusers, team members, section approvers/members, workflow members, and
-team/campus/institution-wide role holders, returning 404 otherwise.
-`GET /api/v1/leave/me/form-defaults/` returns the last live leave type (falling
-back to the canonical annual type), the next working day (skipping weekends and
-public holidays), and the resolved annual entitlement per annual-consuming type.
-`/api/v1/setup/{status,templates,apply-defaults,rollover}/` and
-`/api/v1/calendar/team/` are wired in `leave/urls.py`.
+**Adaptations to the real codebase** (the spec's aspirational paths):
+- Routes are `/dashboard/leave/...`; new/edit is an overlay
+  (`?compose=1` / `?edit=<id>`), so needs-attention and draft cards route to
+  `/dashboard/leave/drafts?edit=<id>`, "New Application"/empty-state action to
+  `?compose=1`, recent rows to `/applications/<id>` (tracking — first step of
+  the 3-click cancel flow, which already lives on tracking), "View all" to
+  `/dashboard/leave/drafts`.
+- `LeaveApplication.leave_type_id` is a soft int (no FK), so names are looked
+  up by id rather than `application.leave_type.name`.
+- `>4` leave types: the spec's "View all" has no in-scope destination, so the
+  list is simply capped at 4.
 
-**Tests.** Backend full suite **1494 OK** (was 1484 with 19 failures + 6 errors
-before this pass; `system_admin` 35/35, leave 476/476, workflows+approvals
-419/419). `manage.py check` and `makemigrations --check` clean. Frontend
-`instrumentation-client.ts` gained `export {}`, fixing
-`TS2306: File is not a module` in `typecheck:test`; its 3 Vitest tests pass.
+**Tests.** Backend `leave/tests/test_dashboard.py` (23 tests: auth 401, scoping
+to `employee=user`, section ordering/caps, pending mapping, leave-type
+name/null, excerpt latest/truncated/null, annual ring total/used, per-type
+sums, no annual duplication, empty balances without a grade, cap 4). Frontend
+`tests/leave-dashboard.test.tsx` (9) + `tests/balance-ring.test.tsx` (3).
+Verification: backend full suite **1446 OK**, `makemigrations --check` clean;
+frontend **107 files / 924 tests OK**, `tsc --noEmit` and `eslint .` clean.
 
-## Completed — Phase 2c Domain-Logic Split: `approvals` + `organisation` (2026-10-15)
+**Follow-up — landing stat cards + module-scoped sidebar (2026-10-17).**
+Two more pieces on the same unit, no new endpoint and no route moves.
+- **Stat cards.** `GET /api/v1/leave/dashboard/` now also returns
+  `pending_count` (applications in `SUBMITTED_STATUSES`) and `upcoming_leave`
+  (the earliest `APPROVED` application with `start_date >= today`, else `null`;
+  today counts so the next leave is never hidden). The dashboard renders a
+  2-up `DashboardStatCards` row as the first block after the header — Pending
+  → `/dashboard/leave/drafts?status=submitted`, Upcoming →
+  `/applications/<id>` — and the loading skeleton mirrors that row. The card
+  is a shared `components/ui/stat-card.tsx` (extracted from the home dashboard,
+  which now imports it too). No new colors/shadows/radius: the icon chip reuses
+  `STATUS_STYLES.pending`/brand tokens, `shadow-xs`, `rounded-lg`; the "Awaiting
+  My Approval" card stays home-dashboard-only; every card is one click from its
+  target. "Needs Your Attention" **already existed** (`needs_attention` in the
+  same service + `NeedsAttentionSection.tsx`) and was left as-is.
+- **`?status=` filter.** `ApplicationsList` reads `?status=` and passes it to
+  the existing `useLeaveApplications(status?)`/server filter, so the pending
+  card lands on a real filtered "My Applications" list with no new UI.
+- **Module-scoped sidebar.** New `lib/nav/leave-nav.ts`; the shared
+  `dashboard-shell.tsx`'s `NavLinks` swaps to `LeaveNavLinks` when
+  `isLeaveModule(pathname)` (includes the tracking route `/applications/…`),
+  showing Dashboard / My Applications / New Application plus a "← All Apps"
+  link. `Option` gained an optional `match` predicate and `aria-current="page"`
+  (gated so other modules' markup is unchanged).
+- **Tests.** Backend `leave/tests/test_dashboard.py` gains `DashboardStatCardTests`
+  (pending counts submitted only + scoped to the employee; upcoming null / none /
+  earliest-approved-future / starts-today / leave-type name) → `leave` app
+  **469 OK**, `makemigrations --check` clean. Frontend gains
+  `tests/dashboard-shell.test.tsx` Leave-module cases, `leave-dashboard.test.tsx`
+  stat-card cases (both cards, pending route, upcoming route, null/em-dash
+  non-clickable) and an `applications-list.test.tsx` `?status=submitted`
+  passthrough case → **107 files / 935 tests**, `tsc --noEmit` and `eslint .`
+  clean. (Three full-suite load-timing flakes in untouched files —
+  `entitlement-form`, `submission-confirmation`, a plans test — pass in
+  isolation; unrelated to this unit.)
 
-Moved the approval-execution and organisation-administration code out of the
-`workflows` monolith into their feature apps (§3.1). Every HTTP URL path, route
-`reverse()` name, payload, and status code is unchanged; this is a pure
-code-ownership move on top of the Phase 2b model moves.
+## Completed (Unit 4 — Leave Plans App) (2026-10-17)
 
-**`approvals`** now owns: the delegation / reassignment / execution / decision
-services (`approvals/services.py`), the approval + delegation + reassignment
-serializers, the approval endpoints (former `workflows/approval_views.py`) and
-the `DelegationViewSet` / `ReassignmentViewSet` (`approvals/views.py`), the
-former `approval_payloads.py` (`approvals/payloads.py`), the delegation /
-reassignment admins, and `approvals/urls.py` (registered in `config/urls.py`
-before `workflows.urls`). `workflows/approval_views.py` /
-`workflows/approval_payloads.py` were removed.
+**Goal.** A personal Leave Plan an employee keeps for themselves: a leave type +
+dates saved ahead of time, never submitted and never approved. The plan is a
+reminder, not a request. When the date nears a scheduled email nudges the owner
+to act, and one click ("Apply Now") turns the plan into a **pre-filled draft** in
+the existing Leave app. A scoped Team Plans calendar shows planned (dashed)
+leave across a viewer's unit without exposing anyone's private plans to the
+wrong eyes.
 
-**`organisation`** now owns: the approver-role, role-assignment,
-team-role-assignment, campus-role-assignment and campus services and their
-serializers, the matching viewsets (`ApproverRole`, `RoleAssignment`,
-`TeamRoleAssignment`, `CampusRoleAssignment`, `Campus`), the matching admins,
-and `organisation/urls.py` (registered in `config/urls.py`).
+**Replacement decision.** The repo already shipped a *different* committed
+"Leave Day Plans" feature (backend `plans` app with blocks + approval, frontend
+`/dashboard/plans`). Because it occupied the same app label, routes and API
+namespaces, the approved decision was to **replace it entirely** rather than
+coexist: the old backend app, its notifications, its frontend pages/components/
+lib/proxies, and the `plan_*` audit vocabulary were removed and the new spec
+rebuilt in place under the same names.
 
-**Boundary decisions (documented in `architecture.md` §3.1).** `TeamViewSet`
-stays in `workflows/views.py` because `POST/PATCH /teams/` create/rewrite the
-team's chain and share the URL with the team-admin actions; the pure team code
-lives in `organisation` and is imported by `workflows` (`workflows →
-organisation`). One read-only model exception: `organisation/services.py` reads
-`workflows.models` (`Section`/`SectionMember`/`Workflow`) for approver-role usage
-checks — a model reference only, never a service/view import.
+**Backend.**
+- **New `plans` app.** `LeavePlan` (`employee` FK, `leave_type` FK,
+  `financial_year` FK nullable, `planned_start_date`/`planned_end_date`, `notes`,
+  `status` ∈ `upcoming|notified|missed|converted|cancelled`, `notified_at`,
+  `follow_up_sent_at`, `converted_application` FK to the produced application),
+  with the check constraint `leaveplan_end_date_gte_start_date`, indexes for the
+  owner+date lookups, and an `is_actionable` helper. Migration `0001_initial`
+  depends on `leave.0018` + AUTH_USER.
+- **Services** (`plans/services.py`): `create_plan`/`update_plan` (reject types
+  that are not `plannable`), `find_plan_overlap` (a non-blocking
+  `overlap_warning`), `convert_plan_to_draft` (idempotent; hands the plan to
+  `leave.services.drafts.create_draft_application`), `cancel_plan` (idempotent),
+  `mark_missed_plans`, and the assignment-driven scope resolver — a `PlanScope`
+  dataclass, `resolve_scopes`, `default_scope`, `find_scope` (unknown/ unowned
+  token → `None`, never a wider view), `plans_for_scope`.
+- **Conversion target.** `leave/services/drafts.py::create_draft_application`
+  creates a `draft` `LeaveApplication` pre-filled from the plan; the preview
+  field is `calculated_days`; `LeaveApplication.source_plan` records provenance
+  (`leave/migrations/0019_leaveapplication_source_plan_and_more`).
+- **API** (`/api/v1/plans/…`): `GET`/`POST` list+create (owner-only, paginated),
+  `GET`/`DELETE` `{id}/` (owner-only), `POST {id}/apply/` → `{application_id}`
+  (400 when the plan is no longer open), `GET scope-options/`, `GET team/?scope=&month=YYYY-MM`
+  (defaults to current month; unknown scope → 404). Literal paths are declared
+  before the router include so `plans/team/` and `plans/scope-options/` are not
+  swallowed as plan ids.
+- **Scheduled task** (`plans/tasks.py::check_and_notify_plans`, registered by
+  `plans/migrations/0002_schedule_plan_check.py` as a `Schedule.DAILY` row,
+  depends on `plans.0001` + `django_q.__latest__`): one idempotent daily pass
+  that emails a reminder and moves `upcoming`→`notified`, sends one follow-up
+  (`FOLLOW_UP_AFTER_DAYS=5`) to a still-unconverted `notified` plan, and marks
+  past-window open plans `missed`. Never touches the approval workflow.
+- **Leave type config.** `LeaveType.plannable` (bool, default True) and
+  `plan_notice_days` (nullable int) added to `leave.models` and exposed on both
+  `LeaveTypeSerializer` (HR read/write, audited) and `EmployeeLeaveTypeSerializer`
+  (employee read). `leave/migrations/0018_...`.
+- **Notifications.** `notifications/plans.py` rewritten with the `PLAN_REMINDER`
+  and `PLAN_FOLLOW_UP` composers; the `NotificationOutbox.plan` FK repointed to
+  `plans.LeavePlan`, the old `plan_block` FK and its constraints removed,
+  `one_outbox_row_per_plan_kind` on `["plan", "kind"]`
+  (`notifications/migrations/0004`/`0005`).
+- **Audit.** The old `plan_*` actions and `TargetType.PLAN` were removed
+  (`audit/migrations/0020_alter_auditentry_action_…`); the new employee
+  self-service writes are intentionally not audited, matching draft handling.
+- **Launcher.** `can_access_plans` (every authenticated user) and
+  `_plans_badge` (count of the caller's `notified` plans, shape
+  `{"count", "label": "ready to apply"}` — the badge the launcher card renders).
 
-**Verified.** `manage.py check` clean; `makemigrations --check` → "No changes
-detected"; `workflows.tests_routing` 15 OK, `tests_approvals` 91 OK,
-`tests_self_approval` 34 OK, `tests_roles`+`tests_teams`+
-`tests_team_configuration`+`tests_workflow_members` 308 OK, `workflows.tests`
-142 OK, `leave`+`notifications`+`plans`+`users`+`audit` 787 OK. Still pending
-for the final sweep: the full `workflows` suite including `tests_migrations`,
-and the frontend `npm test` / lint / build.
+**Frontend.**
+- **Routes** under `app/(dashboard)/dashboard/plans/`: `page.tsx` (My Plans —
+  live vs history sections, empty/error states), `new/page.tsx` (Create a Plan;
+  reads `?leaveType=` inside a `Suspense` to pre-select for a missed plan),
+  `team/page.tsx` (Team Plans), `[id]/page.tsx` (the emailed deep link — a
+  server component that loads the plan via `apiClient` and redirects to
+  `/dashboard/plans` on a miss) + `[id]/loading.tsx`.
+- **Components** (`components/plans/`): `PlanCard` (Apply Now / cancel-with-
+  confirm / reopen-draft / re-plan-missed), `MyPlans`, `CreatePlanForm`
+  (plannable types only, reminder-window hint, overlap warning is a warning not a
+  blocker), `ScopeSelector` (renders only when the scope list widens),
+  `TeamPlansCalendar` (dashed month grid, per-day plan bars colour-coded by type,
+  prev/next, day popover), `PlanDetailOverlay` (read-only day list),
+  `PlanDetail` (the deep-link body with Apply Now / open-draft / re-plan).
+- **Lib/hooks.** `lib/plans/{types,labels,service}.ts` +
+  `lib/plans/__fixtures__`; `lib/hooks/usePlans.ts`, `useTeamPlans.ts`;
+  `lib/services/leaveTypes.ts` gained `plannable`/`planNoticeDays` +
+  `getPlannableLeaveTypes()`. `lib/plans/labels.ts` maps each status to a label,
+  badge tone and icon (notified → "Ready to apply", `pending` tone);
+  `isActionable` covers `upcoming` **and** `notified` (Apply Now is available
+  from creation, per spec 2.3).
+- **Proxies** (`app/api/plans/`): `_lib/proxy.ts` (delegates to the shared
+  `apiFetch`), `route.ts`, `[id]/route.ts`, `[id]/apply/route.ts`,
+  `team/route.ts`, `scope-options/route.ts`.
+- **Nav/registry.** `lib/nav/plans-nav.ts` (`PLANS_NAV_ITEMS`, `isPlansModule`);
+  `dashboard-shell.tsx` generalized the Leave-only `LeaveNavLinks` into one
+  `ModuleNavLinks` and added the Plans branch (My Plans / Create a Plan / Team
+  Plans + "← All Apps"); dashboard rail link "Leave Plans" → `/dashboard/plans`;
+  `lib/apps-registry.ts` gained the `plans` launcher entry (CalendarClock,
+  `/dashboard/plans`).
+- **HR config.** `components/hr/leave-type-form.tsx` gained the "Plannable"
+  checkbox and the "Plan reminder notice (days)" number field, submitted with
+  the rest of the type.
 
-## In progress — Phase 2d Frontend Feature-Module Reorg (2026-10-15)
+**Adaptations to the real codebase** (vs the spec's aspirational paths):
+- Backend stays on the `/api/v1/` convention; the browser calls the app's own
+  `/api/plans/…` proxies, so no bearer token is handled in the browser.
+- Module nav is done through `lib/nav/plans-nav.ts` + a branch in the shared
+  `dashboard-shell.tsx` (the codebase's pattern), not a per-module `layout.tsx`.
+- "Apply Now" routes to the real edit surface
+  `/dashboard/leave/drafts?edit={id}`.
+- Scoping is assignment-driven (no `OrgUnit`): `scope-options` returns the
+  heterogeneous tokens `team:<id>`, `campus:<id>`, `institution`; the default is
+  the caller's narrowest scope. There is no "Manager" role to special-case, so
+  visibility is derived purely from role assignments.
+- The Team Plans calendar is strictly informational — a plan is personal, so a
+  viewer can never act on someone else's plan from it.
+- Create form requires a deliberate leave-type choice (no silent auto-select),
+  so a wrong-type plan is never one absent-minded Save away.
 
-Pages move from the flat `/dashboard/**` tree onto one module root per module.
-Old paths keep working via `next.config.ts` redirects. The legacy `/dashboard/**`
-tree keeps `DashboardShell`; each module root renders a module-scoped
-`ModuleShell` (its own nav + an "← All Apps" link back to `/`).
+**Tests.** Backend `plans/tests.py` (29: create/overlap/plannable-only, update,
+convert idempotent + non-open 400, cancel, missed sweep, scoping resolution,
+endpoint auth/ownership/404, monthly calendar, the daily task's three passes,
+and the launcher badge). Frontend: `plans-labels`, `plans-service`,
+`plans-proxy`, `plans-workspace-overlay`, `plan-form`, `plan-detail`,
+`team-plans-calendar`, plus new `leave-type-form` planning-field cases and a
+fixed `hr-admin-form-overlays` payload expectation (now includes
+`plannable`/`plan_notice_days`).
 
-- **Shell split.** `(dashboard)/layout.tsx` is now only the auth guard; the
-  original `DashboardShell` moved to a new `dashboard/layout.tsx` scoped to the
-  legacy tree, so module pages no longer render two sidebars.
-- **leave — DONE.** Pages moved to `/leave` (`drafts`, `new`, `[id]/edit`,
-  `[id]/review`, `[id]/submitted`, `applications/[id]`); `apps-registry` leave
-  route now `/leave`; ~50 link/redirect/test refs updated. `npm test` 960 OK,
-  lint/typecheck/build clean.
-- **approvals — DONE.** `/dashboard/approvals` → `/approvals`,
-  `/dashboard/cover` → `/approvals/cover` (incl. `[id]`); approver-only
-  redirects now go to `/`. Focused approvals suites 80 OK, lint/typecheck/build
-  clean.
-- **organisation — DONE.** `teams`, `campuses`, `roles`, `approvers` moved from
-  `/dashboard/hr-admin/*` to `/organisation/*`; new `/organisation` index
-  redirects to `/organisation/teams`; module nav wired to all four sections;
-  registry route `/organisation`. Unauthorized-role guards now go to `/`.
-- **hr-admin — DONE.** All remaining `/dashboard/hr-admin/**` (employees,
-  leave-rules, leave-types, entitlements, calendar, leave-document-template,
-  delegations, reassignments, plans, audit) moved to `/hr-admin/**`; registry
-  route `/hr-admin`. Legacy redirect added after the organisation-specific ones.
-- **documents — DONE.** Added a minimal `/documents` landing page (documents
-  are attached to leave/approval records; no standalone library or list
-  endpoint exists yet) and pointed the registry route at `/documents`.
-- **Legacy tree** (`/dashboard`, `/dashboard/account`, `/dashboard/admin`,
-  `/dashboard/plans`) is intentionally retained with `DashboardShell`; every
-  old module path redirects to its module root. Full frontend suite green
-  (960/960) and `npm run build` clean after all five modules.
-- **Post-login landing — DONE.** `app/(auth)/login/page.tsx` now defaults the
-  post-login redirect to the launcher `/` (was `/dashboard`); explicit
-  `?redirect=` still wins. New `tests/login-page.test.tsx` (2) locks it in.
-- **Backend verification — DONE.** Full `uv run manage.py test workflows`
-  (incl. `tests_migrations`) = **620 tests OK**, exit 0 (~26 min).
-- **Launcher endpoint defect — FIXED (2026-10-15).** The proxy (`apps/launcher/`)
-  never matched the backend (`launcher/`), so the launcher grid was empty for
-  every role. Registered `path("apps/launcher/", ...)`; added backend
-  `launcher/tests.py` (8: per-role app sets + badge flow-through) and frontend
-  `tests/launcher-proxy.test.ts` + `tests/app-launcher-grid.test.tsx` (grid
-  renders cards, badge count, drops unknown keys, empty/failure states).
-- **HR admin list key warning — FIXED (2026-10-15).**
-  `hr-admin/employees` passed its search `<form>` (2+ siblings) to the client
-  `EmployeesSection` via a JSX `filter` slot; across the RSC boundary React
-  treated the form's children as an unkeyed list ("Each child in a list should
-  have a unique key prop"). Same latent bug on `hr-admin/calendar` →
-  `HolidaysSection`. Fix follows the pattern already documented in
-  `TeamsSection`: the client sections render their own controls from plain data
-  (`EmployeesSection` owns the `?search` form; `HolidaysSection` takes
-  `availableYears` and owns the `?year` form). Pages still own the URLs.
-  Updated `tests/hr-admin-form-overlays.test.tsx`; full suite 971 pass,
-  lint/typecheck/build clean.
-- **Module layouts RSC boundary error — FIXED (2026-10-15).**
-  The five module layouts (`leave`, `approvals`, `organisation`, `documents`,
-  `hr-admin`) were server components passing `navItems` (with lucide `icon`
-  component references) to `ModuleShell`, a client component. React Server
-  Components cannot serialize component objects across that boundary →
-  "Only plain objects can be passed to Client Components from Server Components".
-  Fix: added `"use client";` to each module layout so the icons stay in client
-  scope. Verified end-to-end by logging in through the frontend and fetching
-  `/hr-admin` (200, no error) plus every other module root.
-- **Missing `/leave` index — FIXED (2026-10-15).**
-  The restructure pointed the launcher registry and the leave sidebar at
-  `/leave`, but no `app/(dashboard)/leave/page.tsx` existed (the canonical
-  landing is `/leave/drafts`). Added `leave/page.tsx` redirecting to
-  `/leave/drafts`, mirroring the `organisation/page.tsx` → `/organisation/teams`
-  pattern. Verified `/leave` now returns 307 → `/leave/drafts` (200).
-- **Launcher card hydration error — FIXED (2026-10-15).**
-  `components/launcher/app-card.tsx` wrapped its `<div>` children in a `<p>`
-  (invalid nesting → React hydration error); the outer element is now a `<div>`.
-  `tests/app-launcher-grid.test.tsx` gained a guard that fails if React logs an
-  invalid-nesting message (verified it catches the regression).
-- **`components/ui/` purity — FIXED.** `components/ui/Stepper.tsx` imported
-  `formatDateTime` from `@/lib/tracking/format` (a feature module). Moved the
-  generic `formatDate`/`formatDateTime` to `lib/format.ts`, repointed all 17
-  importers, and deleted `lib/tracking/format.ts`. `components/ui/` now imports
-  only generic primitives.
-- **Legacy shim — KEPT (decision).** `/dashboard` (+ account, admin/users,
-  plans) and the 11 legacy→module redirects stay as-is; non-module pages have no
-  module root of their own and old bookmarks keep working.
-- **Remaining:** manual click-through (human step) for the §5 checklist; nothing
-  else outstanding in Phase 2d.
+**Verification.** Backend full suite **1428 tests OK**; `plans` app **29 OK**;
+`makemigrations --check` clean. Frontend **108 files / 903 tests OK**;
+`npx tsc --noEmit` clean; `npx eslint` clean; `next build` succeeds with the four
+`/dashboard/plans…` routes and the `/api/plans/…` handlers. (`npm run
+typecheck:test` still reports a **pre-existing, unrelated** TS2306 in
+`tests/instrumentation-client.test.ts` — that file is a side-effect script with
+no exports; untouched by this unit.)
 
-## Completed — Separation of Duties: HR and the Team Manager (2026-10-17)
+**Dev note.** This unit **requires a dev DB reset**: the app replacement collides
+with the already-applied old `plans` migrations. The test suite builds a fresh
+DB from migrations, which is why the full suite (and the acyclic
+`plans`/`leave`/`notifications`/`audit` migration DAG) is the source of truth.
 
-The API now enforces a strict handover. HR creates a team and names its manager,
-and keeps the team's identity, wide-role holdings, and which chain routes; the
-manager alone runs their own team's roster, chains, and step approvers. The
-frontend now offers each role only the actions the server will accept.
+**Follow-up — post-reset console errors fixed (2026-10-17).** After the required
+dev DB reset, two problems surfaced while exercising the Team Plans page.
+- **Team calendar fired a scoped request with no scope.** `useTeamPlans` fetched
+  `/api/plans/team/` on mount, before (and without) a resolved scope, so the
+  bootstrap superuser — who belongs to no team and holds no assignment — always
+  got a 404 the backend answers by design. The hook now waits for
+  `scope-options` and requests nothing when the list is empty, and exposes
+  `scopesLoaded` so the page can tell "still loading" from "no team". The
+  calendar renders a friendly "No team to show yet" empty state instead of an
+  error. `isLoading` is flipped on by scope/month changes (not the effect body),
+  matching `usePlans` and keeping `react-hooks/set-state-in-effect` quiet.
+  Tests: new `tests/use-team-plans.test.tsx` (default scope, no scope, not-yet-
+  loaded, scope failure) + two `team-plans-calendar` cases.
+- **`/api/v1/auth/refresh/` returned 500 for a deleted user.** With
+  `CHECK_REVOKE_TOKEN` on, SimpleJWT's `TokenRefreshSerializer` looks the user up
+  itself and raised `User.DoesNotExist` (a 500) for a refresh token naming a user
+  that no longer exists — routine after a reset, when a browser still holds a
+  pre-reset session. `RefreshView` now answers it as the access path does: a 401
+  ("User not found"). Test added in `users/tests_password_change.py`. The
+  launcher's earlier 500s were the pre-migration schema mismatch (code expected
+  `plans_leaveplan`, the DB still had the old `plans_leavedayplan`) and cleared
+  once the DB was migrated. Verification: backend **1429 OK**; frontend **109
+  files / 909 tests**; `tsc --noEmit`, `eslint`, and `next build` clean.
 
-### Backend enforcement
-- New `workflows/permissions.py::IsTeamManagerOnly`: `has_permission` is active
-  AND (superuser → allow) AND (HR → refuse) AND (has at least one managed team);
-  `has_object_permission` resolves the team from the object via
-  `.workflow` / `.team` / `.section`. HR → 403, a non-manager or a member with no
-  managed team → 403, and a manager of *another* team passes the coarse check
-  then 404s through the scoped queryset.
-- `workflows/views.py` `get_permissions` maps the write actions to manager-only
-  (WorkflowViewSet create/update/partial_update/members/remove_member;
-  TeamViewSet members/member_candidates/workflow_members_pool + remove_member;
-  SectionMemberViewSet create/destroy); reads stay `IsHROrTeamManager`.
-- `workflows/services.py` gains `_require_team_manager`, used by
-  `create_workflow` — its view has no object, so object-level checks never fire
-  and a service guard is the only thing that can refuse HR. The other member
-  services deliberately keep `_require_can_manage_team` so the HR-admin
-  employee/team move flows (`users/serializers.py`) that call them with an HR
-  actor still work: the permission layer is the enforcement boundary.
-- **DRF gotcha:** `self.action` is the viewset *method name*, not the
-  `url_path`, so the `get_permissions` mappings match `"members"`,
-  `"member_candidates"`, `"workflow_members_pool"`.
+## Completed — Dev leave-flow seed (`seed_demo_data`) (2026-10-17)
 
-### Backend tests
-- New `workflows/tests_separation_of_duties.py`,
-  `workflows/tests_team_management.py`, `workflows/tests_workflow_members.py`
-  (35 + 61 OK) pin HR refusal and manager success end-to-end.
-- Rewired the existing suites to act through a designated team manager
-  (`dvc` role, `create_team_role_assignment(..., is_team_manager=True)`, a fresh
-  manager per team to satisfy the one-wide-role-anywhere invariant) and to name
-  the new manager-owned tests accordingly: `tests_teams.py` (103 OK),
-  `tests_team_configuration.py` (95 OK), and the legacy
-  `workflows/tests.py` (142 OK; `test_hr_can_create_a_workflow_for_a_team` →
-  `test_manager_can_create_a_workflow_for_a_team`, likewise for editing steps).
-- Full backend green: `workflows` 655 OK; `audit tests organisation` 73 OK;
-  `users approvals leave` 632 OK; `notifications documents plans system_admin
-  launcher config` 210 OK.
+**Goal.** Make the leave approval flow exercisable by hand against the dev
+database: a team with five employees and a Supervisor → HOD → Registrar chain,
+plus approver accounts, with the existing superuser holding **HOD**.
 
-### Frontend
-- New pure `lib/team-access.ts`: `visibleTeamTabs(isHr)` (HR → `overview` +
-  `approvers`; manager → `overview` + `steps` + `members`), `canConfigureChains`
-  (manager), `canRouteTeam` (HR).
-- Page gating mirrors the API: the team detail tabs are filtered and its "New
-  workflow" link is manager-only (the manager-only member-candidate feed is not
-  fetched for HR); the workflows list hides "New workflow"/"Edit steps" from HR;
-  the workflow detail hides "Edit steps" from HR; the new/edit workflow pages
-  guard to managers and send HR back to the team's chain list / the workflow.
-- `tests/team-access.test.ts` (6) and `tests/team-page-access.test.tsx` (4)
-  pin the split. Full frontend suite 990 OK; tsc/eslint/`build` clean.
-- Updated the stale `tests/module-layouts-client.test.ts` canary (≥5 → ≥4):
-  the organisation module no longer passes icon components to `ModuleShell` —
-  its `layout-client.tsx` maps icon *names* in the browser — so only four
-  module layouts carry the RSC serialization hazard the guard watches.
+**Delivered.** `backend/users/management/commands/seed_demo_data.py` — an
+idempotent, transactional dev seeder that builds the graph through the same
+services HR's screens call (`workflows.services.create_team` → `activate_team`,
+`create_role_assignment`, `assign_workflow_member`), so it cannot build a
+configuration the product would refuse. It creates:
 
-### Follow-up — chainless team creation, manager-owned chains and routing
-- HR no longer configures approval steps at all. `create_team` writes a team
-  **without** a chain (a draft), optionally designating the manager in the same
-  pass; `TeamSerializer` refuses `new_workflow`/`workflow` from HR with a 400
-  keyed on that field, and `workflow` is read-only. The manager builds and edits
-  chains through `POST /api/v1/workflows/` and `PATCH /api/v1/workflows/{id}/`
-  (`WorkflowWriteSerializer`, `create_workflow`/`update_workflow`), and chooses
-  which of the team's chains is in force through `POST /api/v1/teams/{id}/route/`
-  (`route_team`; audit `TEAM` UPDATED, reason `Routed through "<name>".`). Routing
-  a team at a chain it does not own, or as HR, is refused.
-- Bug fix in `workflows/views.py`: `WorkflowViewSet.create/update` now also catch
-  `TeamActionError`, so a chain write that fails a membership / one-stage-per-
-  workflow rule surfaces as a 400 keyed on the field instead of an uncaught 500.
-- Tests rewritten to the new contract: `workflows/tests.py`
-  `WorkflowSerializerAtomicityTests` now drives `WorkflowWriteSerializer`;
-  `audit/tests.py` creates the team as HR, designates a manager, and builds the
-  chain as the manager; `tests/test_end_to_end.py` `hr_creates_team` now does the
-  same handover. Added `TeamRoutingAPITests` (manager assignment on create,
-  manager reassignment, manager route + audit, HR route→403, cross-team route→400).
-  New helper `designate_manager` in the end-to-end spine uses a team-scoped
-  `team_manager` role, since every shipped role in that journey is institution-wide
-  and an institution-wide role cannot be a team's manager.
-- Frontend cleanup: deleted the unused `components/hr-admin/team-form.tsx` and the
-  dead `TeamWorkflowInput`/`TeamSectionInput` types plus `TeamInput.new_workflow?`
-  in `lib/teams.ts`; `canRouteTeam` is manager-only (the earlier "(HR)" note was
-  inverted). Backend `workflows audit tests` 728 OK;
-  `tests_teams` 108 OK and `tests_team_configuration` 95 OK; frontend team/
-  workflow tests green, `tsc`/`eslint` clean.
+- the `supervisor` (team-scoped), `hod` (team-scoped) and `registrar`
+  (institution-wide) `ApproverRole` rows, mirroring `workflows.testing.ROLE_SPECS`;
+- a **"Registry Services"** administration team (no campus) owning one workflow
+  whose three ordered sections are `Supervisor Review` → `HOD Review` →
+  `Registrar Review`; the registrar step is left unstaffed and auto-staffed from
+  the institution-wide holding;
+- accounts with password `testpass123`: `supervisor@test.luanar`,
+  `registrar@test.luanar`, and five employees `employee1..5@test.luanar` (each on
+  the team and in the workflow member pool);
+- baseline leave configuration: an active current-year `FinancialYear`, the
+  plannable **Annual Leave** type (`plan_notice_days=7`), a `LeaveRule` and a
+  grade A–Z `GradeEntitlement` — so an employee can plan and apply, not just be
+  routed.
 
-### Follow-up — a team manager can actually reach and run their team
-- **Bug fixed:** a designated manager was an ordinary employee account, so
-  `organisation.services.can_access_org` (HR/staff only) left the Organisation
-  app out of the launcher entirely — the manager had no way to reach the roster
-  and chains only they may write. It now also admits anyone who manages at least
-  one team (`managed_team_ids_for`). The launcher module still holds no access
-  rules of its own; each module answers `can_access_*`.
-- **Auto-activation:** `create_team` now puts a team **active** when it is
-  handed to a manager in the same request (audit `TEAM` ACTIVATED), instead of
-  always landing a draft. A team with no manager stays a `DRAFT`, because nobody
-  may configure it yet; `activate_team` still refuses a chainless draft, so the
-  HR-only validation path is unchanged. The manager then builds and *routes* the
-  chain, which is the manager's activation — `route` was already manager-only.
-- Not a hazard: an unstaffed step does not silently strand applications —
-  `DatabaseWorkflowProvider` refuses the submission naming the step, so routing a
-  half-built chain surfaces as a loud, fixable error. The team detail "steps" tab
-  copy was corrected to say so (it claimed an unstaffed step "blocks
-  activation", which is no longer the gate).
-- Tests: `launcher.tests.LauncherEndpointTests.test_a_designated_team_manager_reaches_their_team`
-  pins the app set (an ordinary employee is still `{"leave", "documents"}`;
-  a manager gains `organisation`, and `approvals` because a manager holds a real
-  approver role). `TeamRoutingAPITests` gains the active-on-create and
-  still-a-draft-without-a-manager pair. Backend
-  `workflows organisation launcher users tests audit` 900 OK; frontend `tsc` /
-  `eslint` clean and team/workflow suites green.
+**HOD is configuration, not `User.role`.** The pre-existing superuser
+(`admin@test.luanar`) keeps `role=employee`; HOD is conferred by the `Section`
+appointment (verified: `is_approver_user` true, `approver_role_codes_for` →
+`['hod']`), which also gives the account a Team Plans scope
+(`resolve_scopes` → `team:<id>` "Registry Services").
 
-### Follow-up — a team member must share the *manager's* category
-- The roster's eligibility rule is now measured against the **team manager's**
-  own `EmployeeProfile.category`, not the `Team.category` field. Two call sites
-  agreed on the rule: `organisation.services.add_team_member` (the write) and
-  `TeamViewSet.member_candidates` (the picker), both now going through the new
-  `organisation.services.team_manager_profile(team)`. A team not yet handed to
-  a manager has no manager, so its own category stands in — reachable only in
-  the service, since the `members`/`member-candidates` endpoints refuse HR.
-- In practice the two categories already coincide: `create_team_role_assignment`
-  refuses a holder whose category differs from the team's, and the manager is
-  designated through that path. This makes the stated rule the one actually
-  coded rather than an implicit consequence.
-- Refusal message now names the governing category ("…takes only
-  Administration employees") instead of restating the team's category twice.
-- Frontend: `TeamMembersPanel` scope copy updated to "share your category as
-  this team's manager". `tests/team-members-panel.test.tsx` assertion updated.
-- Tests: 5 added to `workflows.tests_team_management.TeamManagementDelegationTests`
-  (same-category added, other category refused naming the manager's category,
-  picker offers only the manager's category, managerless fallback in the
-  service); one wording assertion in `tests_workflow_members` updated.
-  Verified: 904-test run had exactly one failure (that wording assertion),
-  since fixed — `workflows.tests_workflow_members users` 217 OK, and the three
-  modules that call `add_team_member` (`tests_separation_of_duties`,
-  `tests_team_management`, `tests_workflow_members`) plus `tests_teams`,
-  `tests_team_configuration` and `organisation` 305 OK.
+**Verification.** `manage.py check` clean; team `ACTIVE` and
+`validate_team(...).ready` true; all three sections resolve to one approver;
+five employees on the team; `check_schema_drift` → "No schema drift detected".
+Fresh-run and re-run (idempotent) both green. `manage.py test workflows plans
+users` → **773 tests OK**. Documented in `README.md` ("Demo data (development
+only)") and the `DEVELOPER-GUIDE.md` commands table.
 
-### Bug — the roster picker was empty for every team manager
-- **Symptom.** A manager opened their team's Members tab and the picker read
-  "No employees to add to this team", with nobody offered. The backend was not
-  the cause: `member-candidates` returned 8 candidates for the administration
-  manager and 9 for the academic one against the real dev database.
-- **Cause.** `teams/[id]/page.tsx` is a **Server Component**, and it filled the
-  picker by calling `listTeamMemberCandidates` from `lib/team-members-client`,
-  which is a *browser* helper: a bare relative `fetch("/api/hr/teams/<id>/member-candidates")`.
-  From a Server Component that request carries no `Authorization` header — the
-  `/api/hr/...` proxy answers 401 — and the call site's `.catch(() => [])`
-  turned the failure into a silent empty list. Every other read on that page
-  goes through `apiClientUrl`, which reads the token off the request cookies
-  explicitly, which is why the team itself rendered while its candidates did not.
-- **Fix.** Moved `listTeamMemberCandidates` into `lib/teams.ts` beside
-  `getTeam`/`listTeamWorkflows`, reading `/api/v1/teams/<id>/member-candidates/`
-  through `apiClientUrl`; removed it (and its now-unused type import) from
-  `lib/team-members-client.ts`, which keeps only the browser *writes*. The
-  page's fallback now `console.error`s instead of swallowing the reason, so the
-  next failure of this kind is visible rather than silent.
-- **Verified on the running app**, not just in tests: requesting
-  `/organisation/teams/2?tab=members` as that manager now renders all 8
-  candidates. Frontend: `tsc`/`eslint` clean, 68 team/roster/workflow tests pass,
-  including two new ones in `tests/team-page-access.test.tsx` — the panel mock
-  now records the `candidates` length, so "the read reaches the picker" is
-  asserted, and HR is asserted not to read candidates at all.
+## Completed (Unit — External Organization Data Provider) (2026-10-18)
 
-### Polish — module pages looked unstyled next to the dashboard
-- **Symptom.** After the app-launcher restructure, the module roots (`/leave`,
-  `/approvals`, `/organisation`, `/documents`, `/hr-admin`) rendered a different,
-  much cruder shell: a plain rail with no brand-tinted active link, no header,
-  and a `<main>` with **no padding**, so tables sat flush against the viewport
-  edge. It read as "not looking good" beside `/dashboard`.
-- **Cause.** The restructure introduced a second shell, `ModuleShell`
-  (`components/module-shell.tsx`), that was a stub — `bg-card`/`hover:bg-accent`
-  links and an unpadded `<main>` — rather than a port of `DashboardShell`'s
-  language.
-- **Fix.** Rewrote `ModuleShell` to mirror `DashboardShell`: the same 256px
-  `sticky top-0 h-screen` rail (`border-border-default bg-surface-card p-2`),
-  the brand-tinted active link (`border-l-2 border-brand-primary
-  bg-brand-primary-subtle text-brand-primary shadow-sm`, exact-path match with
-  `aria-current="page"`), an "All Apps" link back to the launcher, a header
-  (`z-header`, module name, theme toggle) and a padded, scrolling
-  `<main className="flex-1 overflow-auto p-4 sm:p-6">`. Below the 960px `md`
-  breakpoint the rail collapses into the same Radix dialog drawer the dashboard
-  uses (menu trigger in the header, drawer closes on route change), so no
-  destination is unreachable. Standardised the module name to "Organisation"
-  (was "Organization") in `layout-client.tsx` and `lib/apps-registry.ts`.
-  Also removed two invalid utility classes from the login card
-  (`mini-h-screen`, `mb-6s`) and an empty spacer `<div>`.
-- **Tests.** New `tests/module-shell.test.tsx` (4 cases: nav + header render,
-  active link marking, launcher link, mobile drawer wiring). Verified: `tsc`
-  clean, `eslint` clean (only the pre-existing `STATUS_STYLES` warning), full
-  Vitest **989 passed / 118 files**.
+**Goal.** One seam between the system and the university's organisation data —
+employees, grades, org units, role holders — swappable behind a single setting
+(`ORG_DATA_BACKEND`), with a placeholder fixture directory so the sync, the
+grade→entitlement mapping and the Leave dashboard work end to end before any
+real directory exists.
 
-### Feature — workflow steps: no step name, scoped wide-approver visibility + auto-fill
-- **Ask.** (1) Remove the free-text step-name field from workflow steps. (2)
-  When a wide approver role is chosen, fill in the approver name automatically.
-  (3) Scope which roles each team may choose: an institution-wide role only for
-  Administration-team workflows, a team-wide role only for the team that holds
-  it, and a campus-wide role only for academic teams at its campus.
-- **Step name.** Dropped the "Step name" input and the `name` field on the
-  draft step. `Section.name` stays on the model and the backend already falls
-  back to the role's label (`normalize_section_sequence`), so a saved step is
-  never nameless — no backend change. The step is identified by its role.
-- **Wide visibility.** `components/hr/workflow-form.tsx` now reads all three
-  wider scopes (`listRoleAssignments`, `listTeamRoleAssignments`,
-  `listCampusRoleAssignments`; the latter two are new client readers in
-  `lib/approver-roles-client.ts`, backed by the existing `/api/hr` proxies).
-  `offeredRoles` is the roles a team may use: a plain role (held wide nowhere)
-  serves every team; an institution-wide role only an administration team; a
-  team-wide role only the team that holds it; a campus-wide role only academic
-  teams at its campus. A role claimed wide elsewhere is not offered — it is that
-  team's or campus's to use.
-- **Wide auto-fill.** The step's approver field is locked to the wide holder's
-  name (scope-specific note). Only the institution-wide holder is *written* to
-  the payload, matching the existing backend rule. Team-wide and campus-wide
-  steps are shown staffed but sent `approver: null`: those resolve without an
-  appointment, so writing a name is exactly what `ensure_team_eligibility`
-  refuses. A selected role that is no longer offered stays visible for an
-  existing chain so editing never hides the role it uses.
-- **Tests.** Updated `tests/workflow-form-members.test.tsx` (mock the two new
-  readers): institution fill unchanged, the academic-team institution role is
-  now asserted *not offered* rather than unstaffed, and new cases for a
-  team-wide holder (locked, payload unstaffed), a campus-wide holder, and a role
-  another team holds wide (not offered). Verified: `tsc` clean, `eslint` clean,
-  12 workflow-form cases + 83 related approver/team cases pass.
-- **Bug — only institution-wide filled, team/campus did not.** The two new
-  client readers GET `/api/hr/team-role-assignments/` and
-  `/api/hr/campus-role-assignments/`, but those proxy routes exported **POST
-  only** (no `GET`), so every read 405'd and the effect's `.catch` turned it into
-  an empty list — team- and campus-wide holders silently never arrived.
-  `role-assignments` already had `GET`, which is why institution-wide worked.
-  Added the missing `GET` handlers (forwarding `team`/`campus`/`page` like the
-  existing readers).
-- **Root cause of "only institution-wide works" — manager 403, not just 405.**
-  The chain builder is a *manager's* screen: the new/edit workflow pages redirect
-  anyone whose `manages_teams` is not true, so HR never reaches the form and the
-  acting user is always a team manager. `managed_team_ids_for` only returns teams
-  where the user holds a `TeamRoleAssignment(..., is_team_manager=True)`, so HR
-  (no such row) is redirected away. But all three wide-holding viewsets
-  (`RoleAssignmentViewSet`, `TeamRoleAssignmentViewSet`,
-  `CampusRoleAssignmentViewSet`) were gated by `IsHRRole`, so a manager's `GET`
-  on *all three* — institution-wide included — answered **403**. Confirmed by
-  curl: HR → 200 on all three; the ICT and Food Science managers → 403 on all
-  three (both through `/api/hr/*` and direct). So none of the wide lists loaded
-  for the manager; the earlier "institution-wide filled" was the section's own
-  `approver` being shown after the backend had auto-appointed the institution
-  holder on a previous save, not the form reading the holding.
-- **Fix.** The three wide viewsets now allow `IsHROrTeamManager` for reads and
-  keep writes HR-only: class permission is `IsHROrTeamManager`, and
-  `get_permissions` returns `[IsAuthenticated, IsHROnly]` for `create`/`destroy`,
-  mirroring `ApproverRoleViewSet`. Reading is all a manager needs to scope the
-  offered roles and fill a holder; appointing one is still HR's call.
-- **Tests.** New `WideHolderReadPermissionTests` in `tests_workflow_members.py`:
-  a manager may list every wide holding (200) and may not `POST` one (403).
-  Verified: `workflows.tests_workflow_members` + `organisation` **63 passed**.
-  curl: manager GET of all three proxies → 200; manager POST team → 403.
+**Delivered.**
+- **New `directory` app (the provider boundary).**
+  - `provider.py`: frozen dataclasses `EmployeeRecord`, `GradeRecord`,
+    `OrgUnitRecord`, `RoleHolder` + ABC `OrganizationDataProvider` with
+    `get_employee`, `get_employees(branch, home_unit_id)`, `get_grade`,
+    `get_grades`, `get_org_units`, `get_role_holders`.
+  - `factory.py::get_organization_provider()`: `"fixture"` → fixture provider;
+    `"api"` and unknown values raise `ImproperlyConfigured` loudly (never a
+    silent fixture fallback — the spec's §4.4 test 5). No `ApiOrganizationDataProvider`
+    class exists (no dead code).
+  - `fixtures/provider.py` + `fixtures/seed_data.json`: placeholder institution
+    tree (1 institution, 2 campuses, 1 faculty, 2 academic + 2 admin departments
+    — one with a team, one without, plus a team unit), 6 grades, 8 employees
+    whose emails match the seeded demo users, role holders for all six roles
+    with **one intentionally vacant** (`UNIT-DEPT-FIN` manager).
+  - `services.py`: email-based identity reconciliation —
+    `find_provider_employee_for_user` / `get_local_user_for_external_employee`.
+  - `management/commands/sync_org_structure.py`: factory → sync → summary.
+- **New `org` app (the spec's `backend/org/services.py` home).** Minimal
+  `OrgUnit` (`external_id` unique, `unit_type` choices, `name`, `parent` self-FK,
+  `has_teams`, `designated_approver` FK) — the minimum of the unbuilt org-tree
+  blueprint the sync needed; `services.py::sync_org_structure_from_provider`
+  (atomic, two-pass so provider list order doesn't matter, `update_or_create`
+  on `external_id` = idempotent, role holders resolve by email, vacant or
+  unresolvable → `designated_approver=None`, returns `{created, updated,
+  role_linked, vacant}`); admin; migration `0001_initial`.
+- **Setting.** `ORG_DATA_BACKEND = env(...)` defaulting to `"fixture"` in
+  `config/settings/base.py` beside the other provider settings; both apps in
+  `INSTALLED_APPS`.
+- **`leave` additions.** `GradeLeaveEntitlement` (`grade_id` external id +
+  `leave_type` FK + `financial_year` FK + `days`, unique triple, days ≥ 1)
+  with migration `0020_gradeleaveentitlement` and a plain ModelAdmin;
+  `services/__init__.py::get_entitlement(user, leave_type, financial_year)` —
+  provider record by email → external grade → mapping row; every unresolved
+  step is `None`, never 0/exception.
+- **Dashboard patch (typed rings only).** `leave/services/dashboard.py`:
+  `_typed_entitlements` (band lookup) removed; per-type rings now iterate
+  active leave types and call `get_entitlement`, **omitting** the ring on
+  `None` (no false zero). The annual ring, its ledger-backed `used`, and the
+  `no profile grade → []` guard are unchanged.
 
-### Docs — merge guide for the team-manager apps (2026-10-19)
+**Adaptations to the real codebase** (vs the spec's aspirational paths):
+- `OrgUnit`/`org` app did not exist (org-tree blueprint unbuilt) — created
+  minimally exactly where the spec places the sync (`backend/org/services.py`).
+- Identity linkage: reconciled **by email** (agreed at planning) — no
+  `User.external_employee_id` migration; fixture employees carry the seeded
+  users' addresses so the whole chain resolves in dev today. The one place to
+  change when a real directory ships is `directory/services.py`.
+- `GradeLeaveEntitlement` lives in `leave`, not the spec's `leave_config`
+  (that app does not exist yet; `LeaveType`/`FinancialYear` live in `leave`).
+- The spec's "submission-blocking behaviour fires against synced data"
+  checklist item is half-deferred: vacancy → `designated_approver=None` on
+  synced data is tested; the org-tree blueprint's submission block does not
+  exist yet to exercise.
+- Annual ring intentionally not switched (spec checklist only covers per-type
+  rings; the annual ring is ledger-backed and authoritative).
 
-Added `context/merge-team-manager-guide.md`: a branch-agnostic guide for another
-developer pulling the **documents**, **organisation**, **teams/workflows**, and
-**approvals** apps from `origin/feature/team-manager` into their own branch so
-the whole system works together. Covers how to identify the receiving base (no
-`organisation`/`approvals`; the old `org` app; already-split), the migration-leaf
-requirements (`leave 0021`, `users 0012`, `notifications 0009`, `plans 0005`,
-plus the four apps), an inventory of the backend apps and frontend footprint,
-why the four apps can't be cherry-picked apart (cyclic imports and migrations,
-the non-destructive `workflows_*` table move), the merge procedure, a conflict
-playbook (including the committed-conflict-marker trap from the `726ee04`
-recovery), post-merge backend/frontend checklists, migration-graph
-reconciliation, verification, rollback, and a per-app file ownership appendix.
+**Tests** (70 across the unit's surface): `directory/tests/` — fixture
+contract/cross-reference consistency for every method (27), factory default +
+`api`/unknown raising (4), email reconciliation (9); `org/tests/test_sync.py`
+(8: first-run create, second-run update-not-duplicate, provider restores
+hand-edits, parents/flags, role-holder resolution, vacancy clears, unresolvable
+→ vacant, summary shape); `leave/tests/test_entitlements.py` (6: configured
+days, unconfigured type/grade/year → None, no provider record → None, blanks);
+`leave/tests/test_dashboard.py` reworked (owner/other are fixture emails, sick
+ring from `GradeLeaveEntitlement`, cap test reseeded, plus new: unconfigured
+type omitted, no-provider-record user gets annual only).
 
-### Fix — regenerate stuck approved documents (2026-10-19)
+**Verification.** `manage.py check` clean; `makemigrations --check` clean;
+backend full suite **1470 tests OK**; targeted new/affected suites **70 OK**.
+Live dev DB: `migrate` applied (`leave.0020`, `org.0001`), `sync_org_structure`
+ran — first run `9 created, 0 updated, 7 role-linked, 1 vacant`, second run
+`0 created, 9 updated, 7 role-linked, 1 vacant` (idempotent). Docs updated:
+`DEVELOPER-GUIDE.md` (two app rows + four "I want to change" rows),
+`context/architecture.md` (backend tree).
 
-An approved application showed "The document could not be generated. Please
-contact HR." on both the employee and HR screens. The approval itself was
-committed and the PDF rendered fine (`render_approved_document_pdf` returned a
-valid 2561-byte `%PDF-`), but the storage upload failed: the `SUPABASE_URL` host
-in `backend/.env` (`ndfzfgiycvkgdwzaoeia.supabase.co`) is now **NXDOMAIN**
-(public DNS `Status: 3`, i.e. the Supabase project is deleted/paused), so
-`upload_bytes` raised `ConnectError: [Errno -3] Temporary failure in name
-resolution` and the row was marked `failed`. This is a configuration problem,
-not a code defect — but a failed row had no recovery path short of a new
-approval.
+---
 
-Added `backend/documents/management/commands/regenerate_approved_documents.py`:
-re-runs `render_approved_document` **inline** for stuck rows (no queue worker
-required), defaulting to `failed` rows with `--include-pending`, `--document`,
-`--application`, and `--dry-run` options. A `ready` row is skipped, so it is
-safe to run repeatedly. Covered by `RegenerateApprovedDocumentsCommandTests`
-(six tests: failure→ready, ready skipped, dry-run no-op, single-target,
-repeat-failure kept, invalid-id `CommandError`); `documents` suite green
-(62→68 tests). To recover once a live Supabase project is configured, run:
+## Completed (Unit 06 — Leave Configuration App) (2026-10-18)
 
-    uv run manage.py regenerate_approved_documents
+**Goal.** One HR-only app that owns the leave-type registry: name/colour/
+description, the three eligibility dimensions, the rules (supporting document,
+maximum duration, notice period), plannability, institutional-registrar
+escalation and the deactivate/reactivate lifecycle — so `leave`, `plans` and the
+`approvals` chain resolver all read a leave-type rule from one place instead of
+each holding its own copy.
 
-A related symptom, "Failed to upload document" on the supporting-document
-screen, had the same cause and a worse presentation: `upload_document` raised a
-raw `httpx.ConnectError`, which was **unhandled** in the upload/replace path, so
-Django returned an HTML 500 under `DEBUG=True` and the client's `documentError`
-fell back to the literal "Failed to upload document". The storage adapter now
-raises a typed `StorageUnavailableError` (`leave/services/storage.py`, wrapping
-`ValueError`/`StorageApiError`/`HTTPStatusError`/`httpx.HTTPError`/`OSError` for
-`upload_document`, `upload_bytes`, and `delete_document`), and the document
-endpoints return **503** `{"code": "storage_unavailable", "detail": …}` so the UI
-shows the real reason. Covered by `StorageOutageApiTests` (upload + replace →
-503) and `StorageAdapterErrorTests` (unconfigured + network → typed error);
-`leave` + `documents` suites green (548 tests).
+**Ownership decisions.** `leave_config` is the true owner of `LeaveType`, the
+same way `org` owns `OrgUnit`. The move from `leave` was **state-only**: two
+migrations, no DDL, no data copy, and `db_table="leave_leavetype"` plus the
+integer primary key were deliberately kept, because renaming them would have
+rewritten every referencing table's constraints.
 
-### Feature — the Documents module library (2026-10-19)
+**Backend.**
+- **New `leave_config` app.** `LeaveType` (`name`/`code` unique, `color` from a
+  restricted status-safe palette, `description`, `branch_scope` ∈
+  `academic|administrative|both`, `eligible_grades` JSON list of provider grade
+  ids, `eligible_gender` ∈ `any|male|female`, `requires_supporting_document`,
+  `max_duration_days` nullable, `notice_days` nullable, `eligibility` +
+  `eligibility_rules` for the Unit 14 validation engine, `plannable`,
+  `consumes_annual_entitlement`, `requires_institutional_registrar_approval`,
+  `is_active`, timestamps) with `eligible_grade_ids` normalisation (upper-cased,
+  blanks dropped). **No entitlement field** (§1.3) — days-per-year stays in
+  `leave.GradeLeaveEntitlement`.
+  - `leave_config/0001_initial` takes over the pre-existing `leave_leavetype`
+    table (state-only), dropping `leave`'s copy of the model state-only.
+  - `leave_config/0002_fold_leave_rules_into_types` writes the rule columns,
+    folds the effective-dated `leave.LeaveRule` rows onto their type and drops
+    the old `plan_notice_days` column. Fold precedence: the rule in force today
+    (greatest `effective_from` ≤ migration date; a type with only pending rules
+    keeps the earliest, so it still has a policy); `notice_days` is *derived*,
+    not moved — plan window only → that value, rule minimum only → that value,
+    both → the larger (neither validation nor the reminder may silently loosen),
+    neither → `NULL`.
+  - `leave.LeaveRule` itself was retired by `leave/0021`; `LeaveTypeRules.effective_from`
+    (the API validator's rule set) was kept, so `VALIDATOR_VERSION` stays `"1"`.
+- **`leave_config/services.py` — the single source every module reads.**
+  `can_access_leave_config` (`superuser or staff or role == HR`),
+  `is_eligible(leave_type, employee)` (all three dimensions independently
+  unrestricted-or-matching; a restricted dimension that cannot be resolved
+  fails **closed**), `check_notice`/`validate_notice` (returns a `NoticeCheck`
+  with `unit_label`, `day_unit_for`, holiday-aware `_earliest_start`; `NULL`
+  notice = no minimum), `get_notice_days`/`get_max_duration_days`/
+  `get_requires_supporting_document`/`is_plannable`/`consumes_annual_entitlement`,
+  `deactivate_leave_type`/`reactivate_leave_type` (audited; the annual type
+  raises `AnnualLeaveLifecycleError` rather than being retired — reactivating it
+  is allowed, because that is a repair), and the reserved
+  annual-leave identity: `find_annual_leave_type`, `is_annual_leave_type`,
+  `is_annual_leave_identity`, `get_or_create_annual_leave_type`,
+  `ensure_annual_leave_policy`, `provision_annual_leave`.
+- **API** (`/api/v1/leave-config/…`): list/create + retrieve/update with
+  `pagination_class = None` (the list answers with a **bare array**),
+  `http_method_names` excluding `DELETE` (405 — retire, never delete),
+  `is_active` read-only, and the audited `POST {id}/deactivate/` and
+  `POST {id}/reactivate/` (the former answers 400 for the annual type). `GET
+  grades/` serves the grade multi-select from the `directory` provider
+  (`GradeRecord.id`/`name`).
+  - Carried-over product rule (spec 31), narrowed the same day: annual leave is
+    **created** by an entitlement, never typed by hand, so
+    `LeaveTypeSerializer._guard_annual_leave` still refuses any created row whose
+    identity *would* be the annual type, and still refuses to rename the
+    provisioned row or move its short code (entitlements and the balance ledger
+    resolve through name/code). Its **rules** became HR-editable here — see the
+    follow-up below. `LeaveTypeAdminForm` and the admin's readonly fields mirror
+    all of it, so the Django admin cannot bypass the guards either.
+- **Retired surfaces.** `leave.LeaveType`/`leave.LeaveRule` models, the
+  `/api/v1/leave-rules/` CRUD and the `leave/types/` + `leave/rules/` HR
+  endpoints are gone; the Leave app keeps only the employee-facing
+  `employee/leave-types/` projection (`EmployeeLeaveTypeSerializer`). Repoints
+  landed across `leave` (validation/dashboard/drafts), `plans`, `documents`,
+  `audit`, `workflows` and `notifications`.
+- **Launcher.** `launcher/services.py` gained `can_access_leave_config`
+  (delegating to `leave_config.services.can_access_leave_config`, so the backend
+  gate has exactly one implementation) and `get_launcher_apps` appends
+  `{"key": "leave-config", "badge": None}`.
 
-The `/documents` page was a placeholder ("There is no separate document
-library yet"). It is now a real, owner-scoped library of the caller's own
-supporting and approved leave documents, backed by two new list endpoints
-(the frontend deliberately does not aggregate per-application calls):
+**Frontend.**
+- **Routes** `app/(dashboard)/leave-config/`: `layout.tsx`
+  (`metadata.title = "Leave Configuration"`), `page.tsx` (the list, reads
+  `?include_inactive=true`, calls `requireLeaveConfigAccess()` before anything
+  else), `new/page.tsx`, `[id]/page.tsx` (edit; `getLeaveType(id).catch(() =>
+  notFound())`), plus a `loading.tsx` for each of the three.
+- **Components** `components/leave-config/`: `LeaveTypeTable` (the §3.2 columns;
+  inactive rows stay in the same list, muted with `opacity-60` +
+  `data-inactive="true"`), `ShowInactiveToggle`, `DeactivateDialog` (the
+  confirm step of the 3-click flow, and Reactivate on a retired type),
+  `LeaveTypeForm` (sections Basics/Eligibility/Rules/Planning/Approval; the
+  registrar checkbox appears only when `branch_scope !== "academic"`; the annual
+  type gets the same form with its name/code read-only, an info banner pointing
+  at Entitlements, and no Deactivate/Reactivate control).
+- **Lib/proxies.** `lib/leave-config.ts` (types + vocabulary + field-error
+  mapping), `lib/leave-config-client.ts` (browser writes), `lib/leave-config-server.ts`
+  (`requireLeaveConfigAccess`, server-only), `lib/nav/leave-config-nav.ts`
+  (`LEAVE_CONFIG_NAV_ITEMS` = "Leave Types" → `/leave-config`, "Create Leave
+  Type" → `/leave-config/new`, plus the standard "← All Apps"), and the proxy
+  routes `app/api/leave-config/{types,types/[id],types/[id]/deactivate,
+  types/[id]/reactivate,grades}`.
+- **Shell.** `dashboard-shell.tsx` renders the shell `<h1>` ("Leave
+  Management"), so module pages use `<h2>` and card/section headings `<h3>`;
+  the rail gained the "Leave Configuration" module branch through the shared
+  `ModuleNavLinks`. `lib/apps-registry.ts` records the launcher entry.
+- **Access gate.** `canAccessLeaveConfig(user)` = `is_superuser === true ||
+  user.role === "hr"` — the same rule the backend enforces. `User.Role` only has
+  `employee|approver|hr` and `UserSerializer` does not serialise `is_staff`, so
+  "staff but not HR" is reachable in Django admin but not through the UI; the
+  two gates therefore agree on everything the frontend can observe.
 
-- **Backend.** `leave-documents/` (`SupportingDocumentFeedView`, a
-  `ListAPIView` scoped to `application__employee=request.user`, newest first,
-  `ACTIVE` only unless `?include_retired=true`) with
-  `SupportingDocumentFeedSerializer` (subclasses `SupportingDocumentSerializer`
-  and adds a compact `application` ref). `approved-leave-documents/`
-  (`MyApprovedLeaveDocumentsView`, same owner scope, `-created_at`) with
-  `ApprovedLeaveDocumentFeedSerializer`, which reuses the existing row payload
-  — now extracted to `approved_document_payload(document)` in
-  `documents/services.py` (the view's `_approved_document_payload` delegates to
-  it, so the signed-URL / degradation logic lives in one place and its logger is
-  `documents.services`).
-- **Frontend.** Proxy routes `app/api/leave-documents/route.ts` and
-  `app/api/approved-leave-documents/route.ts`; a typed client
-  (`lib/documents/library.ts`); and `components/documents/documents-library.tsx`,
-  which fetches both feeds in parallel — each section owns its own loading,
-  error (with retry) and empty state so one slow/failing feed never blocks the
-  other. Rows link back to `/leave/applications/{id}` and open files through the
-  signed URL the backend mints per row.
-- **Tests.** `MyApprovedDocumentsFeedTests` (owner isolation, reference number,
-  signed URL, pending row) in `documents/tests.py`;
-  `SupportingDocumentFeedTests` (owner isolation, `include_retired`, 401) in
-  `leave/tests/test_documents.py`; `tests/documents-library.test.tsx` (five
-  component tests). Verified: `manage.py test documents leave.tests.test_documents`
-  green, `vitest run tests/documents-library.test.tsx` 5 passed, `tsc`/eslint clean.
+**Testing.**
+- Backend: `leave_config/tests.py` — 42 tests
+  (`LeaveTypeCreateUpdateTest`, `LeaveTypeAccessTest`, `LeaveTypeLifecycleTest`,
+  `LeaveTypeValidationTest`, `IsEligibleTest`, `NoticeTest`); `launcher/tests.py`
+  — 6 (employee/approver denied, HR/superuser allowed, no badge, gate parity with
+  the service).
+- Frontend: 70 tests across `tests/leave-config-lib.test.ts` (24),
+  `tests/leave-config-form.test.tsx` (22), `tests/leave-config-table.test.tsx`
+  (8), `tests/leave-config-proxy.test.ts` (11) and `tests/leave-config-access.test.ts`;
+  a `describe("DashboardShell Leave Configuration module")` block added to
+  `tests/dashboard-shell.test.tsx`; the `tests/server-only-imports.test.ts`
+  canary extended to `lib/leave-config-server.ts`. The now-dead HR tests
+  (`leave-rules.test.ts`, `leave-type-form.test.tsx`, `leave-type-table.test.tsx`)
+  were deleted with their surfaces.
 
-### Fix — documents page was slow to open (2026-10-19)
+**Verification.** `manage.py test --noinput` → **1468 tests OK**; the count moves
+from the previous unit's 1470 because the retired leave-type/leave-rule suites
+went with their models and the annual guards added six tests;
+`makemigrations --check --dry-run` → "No changes detected". Frontend `npm test`
+→ **108 files, 926 tests, all pass**; `eslint` clean;
+`tsc --noEmit -p tsconfig.test.json` reports only the two pre-existing
+`instrumentation-client.ts` TS2306 errors (untouched files).
 
-The first cut of the library signed a Supabase URL **for every row** —
-`approved_document_payload` called `signed_document_url` per approved document
-and `SupportingDocumentSerializer.get_file_url` called
-`safe_signed_document_url` per supporting document. Each call is a synchronous
-storage round-trip; measured against the project's currently-unreachable
-Supabase host they cost ~1.5 s each, so a 20-row page (two feeds) could stall
-for a minute. The dead storage also masked this while developing the feature.
+**Follow-up (same day) — annual leave's rules are HR's again.** The first cut
+made the annual type read-only in every field, which (with the Leave Rules
+surface retired) left its `notice_days` and `max_duration_days` frozen at
+whatever the first entitlement happened to provision. HR needs the notice period
+in particular — it is what the Plans reminder counts down from. So the type is
+now editable for its **rules** exactly like any other type, while its
+**identity** stays pinned: creating a competing "Annual Leave" is refused,
+renaming or re-coding the provisioned row is refused (entitlements and the
+balance ledger resolve through those), the
+`consumes_annual_entitlement` marker cannot be cleared (it is what the ledger
+resolves to, and it is not a field the form offers), and deactivate/reactivate
+is gone from the form and refused with a 400 by the endpoint — reactivation is
+still allowed, since restoring a retired annual type is a repair. The Django
+admin mirrors each rule (readonly name/code, the guard in the admin form, the
+lifecycle action skipping the refusal and reporting it). Seven backend tests
+cover it — rules editable and audited, rename refused, code change refused,
+marker clearing refused, marker re-sent unchanged accepted, deactivation refused,
+reactivation allowed — the first replacing the old blanket-refusal test (36 → 42
+in `leave_config/tests.py`). The frontend form suite gained three (rules editable
+with identity read-only, the Entitlements pointer, no lifecycle control) in place
+of the old "keeps annual leave out of this form entirely".
+`context/architecture.md` §10 and `DEVELOPER-GUIDE.md` were updated to match.
 
-click and a failure is shown inline. Verified: `documents` + `leave.tests.test_documents`
-green, `vitest` documents/library + card + uploader suites pass, `tsc`/eslint clean.
+**Stale test note.** `tests/entitlement-form.test.tsx` ("sends null when the
+band is left on annual leave") is load-sensitive: it takes ~2.5 s alone against
+Vitest's 5 s per-test timeout and has been observed to time out only when the
+full suite runs under heavy parallel load. It passes in isolation and in the
+last full run (199 s); it is a pre-existing timing flake, not a Unit 06
+regression.
 
-### Fix — leave applications loaded slowly (2026-10-19)
+**Docs.** `DEVELOPER-GUIDE.md` (new `leave_config` app row + "I want to change"
+rows for the registry, the leave-types/leave-rules retirement, and the
+frontend module), `context/architecture.md` (backend tree + §10 configuration
+ownership paragraph), `context/refinement/04-leave-plans-app.md`
+(`plan_notice_days` → the single `notice_days`).
 
-The applicant surfaces — My Leave and Drafts (both `/leave/drafts`), the compose
-overlay's edit mode, and the review summary — were still signing a Supabase URL
-per supporting document. `LeaveApplicationSerializer.get_documents` nested the
-signing `SupportingDocumentSerializer`, so an application with attachments paid a
-storage round-trip per document on **every** list and detail request, and N+1'd
-because the viewset did not prefetch. The list measured 1.2–4.2 s for a user with
-a single attachment (and a transient cold attempt hit 22 s); the applicant UI
-never opens a nested file — `SupportingDocumentsUploader` and
-`leave-review-summary` render only the name/size/status — so the round-trips were
-pure overhead and a dead storage host could stall the page.
+---
 
-`LeaveApplicationSerializer` now serializes nested documents through a new
-non-signing `SupportingDocumentSummarySerializer` (`file_url=""`), and
-`LeaveApplicationViewSet.get_queryset` prefetches each application's active
-documents (`Prefetch(..., to_attr="active_documents")`, which `get_documents`
-reuses) so the list is a fixed number of queries with no network calls. The
-applicant detail stays a single request; `LeaveApplicationForm` and the review
-summary only read names/sizes, so nothing regressed. HR (`HRLeaveApplicationSerializer`)
-and tracking/approvals keep their own signing serializers. Verified:
-`manage.py test leave documents` (562) and `approvals audit` green; the leave
-applications list and detail now measure ~70 ms and return `file_url: ""`.
+## Completed (Teams Split + Team-Manager + Phase-2 Extras) (2026-10-18)
 
-Open question: the sidebar's **My Leave** (`/leave` → `/leave/drafts`) and
-**Drafts** (`/leave/drafts`) both land on the same unfiltered applications list;
-confirm whether "Drafts" should filter to `status=draft`.
+Builds on `development` (tip `5c37042`); nothing pushed.
 
-### Fix — My Leave / Drafts / New Application are independent (2026-10-19)
+### Stage 1 — Split `backend/workflows` into four apps
 
-All three leave sidebar items used to funnel to `/leave/drafts` (`/leave` and
-`/leave/new` were redirect shims). They are now distinct surfaces:
+The monolithic `backend/workflows` is split by **relabel**, not by moving tables:
+every moved model keeps its original `Meta.db_table` (`workflows_<model>`), so the
+migration is `SeparateDatabaseAndState` with empty `database_operations` and the
+real `CreateModel`/`DeleteModel`/`AlterField` in `state_operations`. No data
+migration and no DDL.
 
-- **My Leave** (`/leave`) renders `ApplicationsList excludeStatus="draft"` —
-  every application except saved drafts (see the follow-up below).
-- **Drafts** (`/leave/drafts`) renders the same component with
-  `statusFilter="draft"` and heading "Draft Applications", so it is genuinely
-  the drafts list (`getLeaveApplications("draft")` → `?status=draft`).
-- **New Application** (`/leave/new`) no longer redirects: it renders
-  `NewApplicationClient`, a dedicated route that hosts the compose overlay
-  (`open`, `mode="create"`, `syncUrl={false}`) and returns to `/leave` on close.
+* `organisation/` — `ApproverRole`, `Campus`, `RoleAssignment`, `CampusRoleAssignment`
+* `teams/` — `Team`, `TeamRoleAssignment`
+* `approvals/` — `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`,
+  `Delegation`, `Reassignment`
+* `workflows/` (slim) — `Workflow`, `Section`, `SectionMember`, `WorkflowMember`
 
-`ApplicationsList` now anchors its overlay URL state (`?compose=1`,
-`?edit=<id>`, `&stage=review`) to `usePathname()` instead of hardcoding
-`/leave/drafts`, so the same component serves both list routes without either
-landing on the other. `LeaveApplicationOverlay` gained `syncUrl` (default
-`true`; `/leave/new` passes `false`, since that route owns the whole page and
-has no list to resume from). The `[id]/edit|review|submitted` shims and the
-"back to applications" links (applicant form, submission confirmation, tracking
-header/view, the global "My Applications" nav item) now point at `/leave`
-instead of the drafts view.
+Migrations authored:
 
-Tests: `applications-list.test.tsx` (+ drafts-scoping case),
-`leave-application-overlay.test.tsx` (+ `syncUrl={false}` case), new
-`new-application-client.test.tsx`; the existing URL-sync suites still pass
-(they mock `usePathname` to `/leave/drafts`). Verified: 40 targeted `vitest`
-tests green, `tsc --noEmit` clean, `eslint` clean on the touched files.
+* `organisation/0001_initial`, `teams/0001_initial`, `approvals/0001_initial` — state-only.
+* `workflows/0031_remove_applicationstage_idx_stage_approver_status_and_more` — the
+  `DeleteModel`s for the moved models plus the cross-app `AlterField`s
+  (`Workflow.team → teams.Team`, `Section.approver_role → organisation.ApproverRole`,
+  `WorkflowMember.team → teams.Team`); state-only.
+* Cross-app FK re-points: `leave/0023` (`current_stage → approvals.ApplicationStage`),
+  `notifications/0006` (`delegation`/`reassignment → approvals.*`),
+  `users/0012` (`team → teams.Team`); all state-only.
+* Dependency graph is acyclic: `workflows/0030 → organisation/0001 → teams/0001 →
+  {approvals/0001 → leave/0023, notifications/0006, users/0012} → workflows/0031`.
 
-### Fix — saved drafts hidden from My Applications (2026-10-19)
+Code move **deferred by decision**: `services.py`, `views.py`, `serializers.py`,
+`admin.py`, `policies.py`, `providers.py`, `events.py`, `approval_views.py`,
+`approval_payloads.py` remain in `workflows/`, and a transitional re-export shim at
+the foot of `workflows/models.py` re-exports the moved classes so the ~72 historical
+`workflows.models`/`from .models import` sites keep working. (Their later move is a
+mechanical follow-up that cannot change the schema.)
 
-Follow-up to the above: "My Applications" was still listing saved drafts
-alongside submitted applications. My Applications now excludes drafts, so a
-draft only ever appears on the Drafts view.
+`workflows/tests_migrations.py::InstitutionWideFinalApprovalMigrationTests.
+test_running_twice_does_not_duplicate_the_holding` was updated to call the historical
+`flag_institution_wide_roles` with a **historical** project state
+(`self.state(("workflows", "0022_team_workflow_optional"))`) rather than the live app
+registry, which no longer has `workflows.ApproverRole`.
 
-- Backend: `LeaveApplicationViewSet.get_queryset` accepts `exclude_status`
-  (comma-separated) and drops those statuses, alongside the existing `status`
-  filter. The owner scope is unchanged, so this is still per-applicant only.
-- Proxy: `app/api/leave/leave-applications/route.ts` forwards both `status` and
-  `exclude_status`.
-- Client: `getLeaveApplications`/`useLeaveApplications` now take a
-  `LeaveApplicationFilters` object (`{ status?, excludeStatus? }`);
-  `ApplicationsList` gained an `excludeStatus` prop. `/leave` passes
-  `excludeStatus="draft"`; `/leave/drafts` still passes `statusFilter="draft"`.
+### Stage 2 — Team-manager redesign (behaviour)
 
-Verified: `leave.tests.LeaveApplicationAPITest` (12, +2: exact-status filter and
-draft exclusion) green; `applications-list.test.tsx` (+ a draft-exclusion case)
-and the other affected suites green; `tsc`/`eslint` clean. Live check with a
-probe draft: `/leave` → `?exclude_status=draft` returns only the approved rows,
-`?status=draft` returns only the draft.
+* `create_team` forces `status = ACTIVE`; `update_team` ignores `status`. `draft` is
+  retained as a **legacy-only** enum value so old rows still render and can be retired.
+* `activate_team` removed (service + `POST /teams/<id>/activate/` + frontend proxy +
+  UI button). `validate_team` is a standing readiness report, not an activation gate.
+  `POST /teams/<id>/route/` routes a team through one of its own chains.
+* `TeamRoleAssignment.is_team_manager` + `teamroleassignment_one_manager_per_team`
+  (one manager per team); `set_team_manager`/`clear_team_manager`; team-management
+  authority `_require_can_manage_team` (HR/superuser or the designated manager).
+* `create_workflow` requires a non-blank `name`; defaults `effective_from = today`,
+  `effective_to = academic_calendar_end()` (active financial year's `end_date`, `None`
+  when unconfigured). `Workflow.effective_to` + `workflow_effective_window_ordered`
+  `CheckConstraint`; `Workflow.state` returns `"inactive"` past expiry; `is_effective`.
 
-### Rejection flow replaces return-for-correction (2026-10-19)
+### Stage 3 — Phase-2 extras
 
-The `correction_required` / `return_for_correction` path is removed end to end.
-Rejection is now the only non-approval outcome: the approver must give a reason
-(the decision `comment`, mandatory on reject), the applicant may edit and
-resubmit — routed back to whoever currently holds the returning stage — or
-accept the rejection and leave it as is.
+* **Batch approve** — `POST /api/v1/approvals/bulk-decision/`
+  (`BulkApprovalDecisionAPIView`), approve-only, capped at 25, duplicate-rejecting,
+  partial success per item (reuses the locked `decide` path). The approvals list row
+  now carries `stage_version` so a batch can be built without opening each item.
+* **Over-subscription guard** — `backend/leave/conflicts.py` (`TeamConflict`,
+  `conflict_threshold`, `find_team_conflict`; cap = `max(1, ceil(0.3 × active team
+  size))`) plus `ApprovalConflictError` in `workflows/services.py`, raised inside
+  `decide` for an `approve` that would over-subscribe the applicant's team on any day
+  → `409 {"reason": "team_conflict", "conflict": {...}}`, and reported per-item by the
+  batch endpoint. `reject`/`return_for_correction` are never blocked.
 
-Backend:
-- `approvals/models.py`: dropped `ApplicationStage.Status.CORRECTION_REQUESTED`
-  and `ApprovalDecision.Action.RETURN_FOR_CORRECTION`; the comment constraint is
-  now `comment_required_for_reject` (`~Q(action='reject') | ~Q(comment="")`).
-- `approvals/services.py`: `decide()` accepts only `approve` / `reject`;
-  comment mandatory on reject; the correction branch and its audit action are
-  gone. `leave/models.py` dropped `Status.CORRECTION_REQUIRED`.
-- Editing/replacing documents is now allowed on `draft` **and** `rejected`
-  (`leave/views/__init__.py::EDITABLE_STATUSES`,
-  `leave/documents/services.py`).
-- `leave/services/resubmission.py`: rejected-only; clears the stage's
-  `assigned_approver` and the application's `current_approver`, so the
-  resubmission reopens to the current holders of the returning role.
-- `leave/tracking/*`: `correction` outcome and `correction_requested` event
-  removed; `leave/views/me.py` counts `submitted + rejected` as pending;
-  `leave/holiday_refresh.py` live-preview set is `(DRAFT, REJECTED)`.
-- Migrations `leave/0022`, `approvals/0005`, `leave/0023` (RunPython converts
-  existing correction rows to rejected; audit history is left untouched, and
-  `audit/models.py` keeps `CORRECTION_REQUESTED` as a historical value).
+### Stage 4 — Frontend
 
-Frontend:
-- Types/labels: dropped `correction_required` (status), `return_for_correction`
-  (action), `returned` (stage state) and `correction_requested` (event) from
-  `lib/approvals/*`, `lib/tracking/*`, `lib/chain-steps.ts`, `lib/leave-api.ts`.
-  The old correction colour token is renamed `notice` (a neutral warning tone
-  reused by `Alert`/`Badge`/toast).
-- Approvals: `DecisionPanel`/`DecisionDialog`/`approval-detail` offer only
-  Approve and Reject (reject reason mandatory).
-- Applicant: `LeaveApplicationForm` treats `rejected` as editable and offers
-  document Replace; `LeaveReviewPanel` resubmits a rejected application through
-  the new `POST /api/leave/leave-applications/{id}/resubmit/` proxy
-  (`resubmitApplication` + `useSubmitLeaveApplication({ resubmit })`);
-  `OutcomePanel` shows the rejection reason with **Edit & resubmit** and
-  **Accept rejection** (accept just returns to the list — nothing is closed).
+* The teams module moved from `app/(dashboard)/dashboard/hr-admin/teams` to its own
+  top-level route `app/(dashboard)/dashboard/teams`; all internal links rewritten
+  (`/dashboard/hr-admin/teams` → `/dashboard/teams`, ~20 files).
+* Launcher `lib/apps-registry.ts` `org` tile renamed **"Organization" → "Teams"**
+  (description "Manage teams and their approval chains", route `/dashboard/teams`).
+* `dashboard-shell.tsx`: **Teams** moved out of the "Human Resources" folio into the
+  top-level rail (gated by `showHR`), beside the other first-class modules.
+* Behaviour-port frontend edits restored from the earlier WIP: `team-lifecycle-actions`
+  (activation removed), `workflow-form` (required chain name), `teams-client`
+  (`activateTeam` removed, `routeTeamThrough` → `POST /teams/<id>/route/`),
+  `workflows.ts` (`effective_to`), and their tests.
+* `next typegen` re-run so the generated route types cover `/dashboard/teams`.
+* **Gap found while restoring the WIP and fixed:** the port moves
+  `routeTeamThrough` to `POST /api/hr/teams/{id}/route` (matching the backend's
+  `TeamViewSet.route` action, which the redesign brought over), but the earlier WIP
+  shipped no Next proxy for it — the call would have 404'd at runtime. Added
+  `frontend/app/api/hr/teams/[id]/route/route.ts` (the branch's `route` proxy) so the
+  `workflow-routing-actions` "Route through…" write reaches the backend.
 
-Verified: backend `manage.py test leave documents` 582 OK and the affected
-`workflows` modules green; frontend full suite 1000 tests OK, `tsc --noEmit`
-clean, `eslint` clean. (Pre-existing, unrelated: two `workflows` tests asserting
-403 vs 400 and the hanging `workflows.tests_migrations`.)
+### Verification
+
+* Backend: `uv run python manage.py test --noinput` → **Ran 1500 tests, OK**
+  (includes 10 new batch-approve tests and 7 new `leave/tests/test_team_conflicts.py`
+  tests). `manage.py check` clean; `makemigrations --check` → "No changes detected";
+  fresh (test) DB migrates from scratch.
+* Frontend: `npx vitest run` → **108 files / 925 tests passed**; `npx tsc --noEmit`
+  exit 0; `npx eslint` clean. After the `route` proxy was added (see Stage 4),
+  re-verified with `tsc --noEmit` exit 0, eslint clean on the new file, and the 5
+  teams-focused test files (46 tests) passing. (`typecheck:test` still reports the
+  **pre-existing** two `tests/instrumentation-client.test.ts` TS2306 errors —
+  unrelated to this work.)
+* The `hugeicons` dependency entries present in the earlier WIP stash were **not**
+  taken (no changed source file imports them; unrelated to this feature).
+
+### Docs
+
+`DEVELOPER-GUIDE.md` backend-app table gained `organisation`/`teams`/`approvals`
+rows and the split note on `workflows`; `context/architecture.md` §12.11/§12.12
+rewritten for teams-active-on-creation, the removed activation action, the required
+chain name, and the `effective_to` academic-year default; this tracker updated.
+
+### Not taken (deferred follow-ups)
+
+* The physical code move (`services`/`views`/`serializers`/`admin`/`policies`/
+  `providers` into `organisation`/`teams`/`approvals`) and removal of the
+  `workflows.models` shim.
+* The branch's team-calendar endpoint (`GET /api/v1/calendar/team/`), setup hub
+  (`GET /api/v1/setup/*`), and `GET /api/v1/leave/me/form-defaults/`.
+* `.gitignore` entry for the generated Vitest JSON report; `export {}` in
+  `frontend/instrumentation-client.ts` (fixes the pre-existing TS2306 pair);
+  `users.0010` `IF EXISTS` idempotency.

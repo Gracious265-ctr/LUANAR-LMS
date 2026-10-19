@@ -15,9 +15,10 @@ export interface DjangoUser {
    */
   is_superuser?: boolean;
   /**
-   * Whether this account is the designated manager of at least one team. Drives
-   * the "My Team" navigation entry for a non-HR account. Optional so older
-   * responses/tests that predate the field stay valid.
+   * The designated manager of at least one team. Read-only and server-derived,
+   * and not implied by `role`: a manager is usually an ordinary employee, so
+   * this is the only thing that tells the rail to offer them the Workflows
+   * module. Optional for the same reason as `is_superuser`.
    */
   manages_teams?: boolean;
 }

@@ -61,6 +61,9 @@ class LeaveTypeRules:
     min_notice_unit: DurationUnit
     requires_document: bool
     eligibility: tuple[EligibilityRule, ...]
+    #: The date the type row came into being. Effective dating retired with
+    #: ``LeaveRule`` (unit 06), but the field stays so a submitted
+    #: ``rules_snapshot`` keeps the shape it was filed with.
     effective_from: date
 
 
@@ -76,9 +79,12 @@ class FinancialYear:
 class RulesProvider(Protocol):
     """The interface validation and submission depend on.
 
-    ``get_leave_type_rules`` returns ``None`` for missing, inactive or not-yet-
-    effective leave types. ``get_public_holidays`` returns a mapping of date to
-    holiday name for the inclusive range, which may be empty.
+    ``get_leave_type_rules`` returns ``None`` only for a type that does not
+    exist. Deactivated types still answer, flagged ``is_active=False``, because
+    applications already filed keep their policy (§1.5); the catalog is what
+    stops offering them. Effective dating retired with ``LeaveRule``, so
+    ``as_of`` no longer narrows the answer. ``get_public_holidays`` returns a
+    mapping of date to holiday name for the inclusive range, which may be empty.
     """
 
     def get_employee_for_user(self, user) -> EmployeeInfo | None: ...

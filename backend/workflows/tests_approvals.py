@@ -1,7 +1,7 @@
 """Unit 16 — approver review and decision tests.
 
 Covers the workflow provider fixture, stage assignment, the decision service
-(approve/reject, optimistic locking, immutable decisions) and the
+(approve/reject/correction, optimistic locking, immutable decisions) and the
 approvals HTTP API (capabilities, list, detail, decision, documents).
 """
 
@@ -35,15 +35,27 @@ from .testing import (
     make_section,
     make_team,
 )
+from .models import (
+    Section,
+    SectionMember,
+    Workflow,
+)
+from organisation.models import (
+    ApproverRole,
+)
 from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from organisation.models import ApproverRole, Team
-from workflows.models import Section, SectionMember, Workflow, WorkflowMember
+from teams.models import (
+    Team,
+)
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
+)
+from .services import (
+    WorkflowAssignmentError,
 )
 from approvals.services import (
     ApprovalNotAllowedError,
@@ -51,9 +63,6 @@ from approvals.services import (
     ApprovalValidationError,
     assign_workflow,
     decide,
-)
-from .services import (
-    WorkflowAssignmentError,
 )
 from .policies import get_decision_authority
 
@@ -217,12 +226,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         profile.team = team
         profile.save(update_fields=["team"])
-        # Being on a team is not enough to route: an employee follows the chain
-        # they are a member of, so placing one on a team also enrols them in the
-        # team's workflow.
-        workflow = team.workflows.first()
-        if workflow is not None:
-            WorkflowMember.objects.get_or_create(team=team, workflow=workflow, user=user)
         return profile
 
     def test_chain_for_administration_starts_with_supervisor(self):
@@ -421,7 +424,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
-        self.assertIn("not in force", str(ctx.exception))
+        self.assertIn("inactive", str(ctx.exception))
 
     def test_retired_team_raises_config_error(self):
         """A team that has been retired stops routing, and says so.
@@ -439,13 +442,19 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         self.assertIn("inactive", str(ctx.exception))
 
     def test_draft_team_raises_config_error(self):
-        """A row still marked draft must not route anything.
+        """A team still being configured must not route anything.
 
-        Nothing writes that state any more — creating a team puts it in force —
-        but an older installation still has the rows, and a team whose chain was
-        never staffed would strand the employee at a step with nobody to act.
+        This is the case the boolean could not express: the team exists and its
+        workflow is live, but HR has not finished staffing it, so routing to it
+        would strand the employee at a step with nobody to act.
         """
-# draft status removed
+        self.admin_team.status = Team.Status.DRAFT
+        self.admin_team.save(update_fields=["status"])
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("still being set up", str(ctx.exception))
 
     def test_a_team_that_has_not_started_routing_raises_config_error(self):
         self.admin_team.effective_from = timezone.localdate() + timedelta(days=7)
@@ -641,6 +650,28 @@ class DecisionServiceTests(ApprovalBase):
                 expected_version=1,
             )
         self.assertIn("comment", ctx.exception.errors)
+
+    def test_return_for_correction_sets_correction_required(self):
+        app = self.make_submitted()
+        result = decide(
+            application_id=app.pk,
+            actor=self.supervisor,
+            action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+            comment="Please review the leave dates.",
+            expected_version=1,
+        )
+        result.refresh_from_db()
+        self.assertEqual(
+            result.status, LeaveApplication.Status.CORRECTION_REQUIRED
+        )
+        self.assertEqual(self.stage(app, 1).status, ApplicationStage.Status.CORRECTION_REQUESTED)
+        self.assertEqual(
+            AuditEntry.objects.filter(
+                action=AuditEntry.Action.CORRECTION_REQUESTED,
+                target_id=str(app.pk),
+            ).count(),
+            1,
+        )
 
     def test_double_submit_records_exactly_one_decision(self):
         app = self.make_submitted()
@@ -1196,6 +1227,19 @@ class FinalisationWiringTests(ApprovalBase):
             )
         self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
         self.assertNotIn(APPLICATION_FINALISED, [e.kind for e in events])
+
+    def test_correction_required_emits_decision_recorded_not_finalised(self):
+        app = self.make_submitted()
+        events = self.capture_events()
+        with self.captureOnCommitCallbacks(execute=True):
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+                comment="Please attach the medical note.",
+                expected_version=1,
+            )
+        self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
 
     # --- D4: the deduction ----------------------------------------------
 

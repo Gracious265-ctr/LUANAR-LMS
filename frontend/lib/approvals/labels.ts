@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  RotateCcw,
   X,
   XCircle,
   type LucideIcon,
@@ -41,6 +42,13 @@ export const STATUS_META: Record<ApprovalStatus, StatusMeta> = {
     badgeTone: "rejected",
     textClass: STATUS_TEXT.rejected,
     dotClass: STATUS_SOLID.rejected,
+  },
+  correction_required: {
+    label: "Correction Required",
+    icon: RotateCcw,
+    badgeTone: "correction",
+    textClass: STATUS_TEXT.correction_required,
+    dotClass: STATUS_SOLID.correction_required,
   },
   cancelled: {
     label: "Cancelled",
@@ -92,6 +100,14 @@ export const ACTION_META: Record<ApprovalAction, ActionMeta> = {
     buttonClass:
       "border border-status-rejected bg-status-rejected-subtle text-status-rejected hover:bg-surface-hover",
   },
+  return_for_correction: {
+    label: "Returned for Correction",
+    shortLabel: "Return for Correction",
+    icon: RotateCcw,
+    badgeTone: "correction",
+    buttonClass:
+      "border border-status-correction bg-status-correction-subtle text-status-correction hover:bg-surface-hover",
+  },
 };
 
 export function restrictionLabel(
@@ -123,6 +139,8 @@ export function restrictionTitle(kind: ApprovalAction): string {
       return "Approve application";
     case "reject":
       return "Reject application";
+    case "return_for_correction":
+      return "Return for correction";
     default:
       return "Decision";
   }
@@ -134,6 +152,8 @@ export function decisionVerb(action: ApprovalAction): string {
       return "approve";
     case "reject":
       return "reject";
+    case "return_for_correction":
+      return "return for correction";
   }
 }
 
@@ -143,6 +163,8 @@ export function approvalVerb(status: ApprovalStatus): string {
       return "approved";
     case "rejected":
       return "rejected";
+    case "correction_required":
+      return "returned for correction";
     default:
       return "updated";
   }

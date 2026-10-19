@@ -3,15 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import { Stepper, type Step } from "@/components/ui/Stepper";
 import {
-  chainFromPlanStages,
   chainFromTracking,
   chainFromWorkflow,
   stepsFromCancellation,
 } from "@/lib/chain-steps";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/tracking/format";
 import type { ApprovalStage } from "@/lib/approvals/types";
 import type { CancellationStage } from "@/lib/cancellations/types";
-import type { PlanStage } from "@/lib/plans/types";
 import type { TrackingResponse } from "@/lib/tracking/types";
 
 function makeStep(overrides: Partial<Step> = {}): Step {
@@ -366,6 +364,34 @@ describe("chain adapters", () => {
     );
   });
 
+  it("closes a correction-required tracking stage as an error with the reason", () => {
+    const data = {
+      stages: [
+        {
+          order: 1,
+          role: "registrar",
+          role_label: "Registrar",
+          state: "returned",
+          approver: {
+            name: "C D",
+            designation: "Registrar",
+            is_delegate: false,
+            on_behalf_of: null,
+          },
+          assigned_at: "2026-09-21T09:12:00Z",
+          decided_at: "2026-09-23T10:00:00Z",
+          comment: "Upload the missing file",
+          skip_reason: null,
+        },
+      ],
+    } as unknown as TrackingResponse;
+
+    const [step] = chainFromTracking(data);
+    expect(step.status).toBe("error");
+    expect(step.sublabel).toContain("Correction required");
+    expect(step.detail).toBe("Upload the missing file");
+  });
+
   it("maps Unit 16 workflow stages onto steps", () => {
     const stages: ApprovalStage[] = [
       {
@@ -396,7 +422,7 @@ describe("chain adapters", () => {
         order: 3,
         role: "registrar",
         role_label: "Registrar",
-        status: "rejected",
+        status: "correction_requested",
         decision_version: 1,
         assigned_approver: "C D",
         assigned_at: "2026-09-21T09:12:00Z",
@@ -452,55 +478,10 @@ describe("chain adapters", () => {
       "skipped",
       "error",
     ]);
-    expect(steps[2].sublabel).toBe("Rejected");
+    expect(steps[2].sublabel).toBe("Correction required");
     expect(steps[2].detail).toBe("Upload the missing file");
     expect(steps[4].sublabel).toBe("Self approval");
     expect(steps[5].sublabel).toBe("Rejected");
-  });
-
-  it("maps plan stages onto steps", () => {
-    const stages: PlanStage[] = [
-      {
-        id: "s1",
-        stage_order: 1,
-        role: "supervisor",
-        role_label: "Supervisor",
-        role_ref_id: null,
-        section_ref_id: null,
-        history_scope: null,
-        assigned_approver_id: 7,
-        approver_name: "Jane Phiri",
-        eligible_approver_ids: [],
-        eligible_approvers: [],
-        is_claimed: true,
-        status: "approved",
-        status_label: "Approved",
-        is_final: true,
-        decision_version: 1,
-      },
-      {
-        id: "s2",
-        stage_order: 2,
-        role: "hod",
-        role_label: "HOD",
-        role_ref_id: null,
-        section_ref_id: null,
-        history_scope: null,
-        assigned_approver_id: null,
-        approver_name: "",
-        eligible_approver_ids: [],
-        eligible_approvers: [],
-        is_claimed: false,
-        status: "pending",
-        status_label: "Pending",
-        is_final: false,
-        decision_version: 0,
-      },
-    ];
-
-    const steps = chainFromPlanStages(stages);
-    expect(steps.map((step) => step.status)).toEqual(["completed", "blocked"]);
-    expect(steps[1].sublabel).toBe("No approver assigned");
   });
 
   it("maps cancellation stages onto a shortened chain", () => {

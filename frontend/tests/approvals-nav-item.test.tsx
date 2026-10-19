@@ -8,7 +8,7 @@ describe("ApprovalsNavItem", () => {
     render(<ApprovalsNavItem open isApprover pendingCount={5} />);
 
     const link = screen.getByRole("link", { name: /Approvals/ });
-    expect(link).toHaveAttribute("href", "/approvals");
+    expect(link).toHaveAttribute("href", "/dashboard/approvals");
     expect(screen.getByTestId("approvals-pending-count")).toHaveTextContent("5");
   });
 

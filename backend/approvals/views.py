@@ -1,25 +1,23 @@
-"""Approver review and decision API (Unit 16, spec section 5).
-
-Read endpoints are guarded by :func:`workflows.policies.get_view_access`; the
-decision endpoint is guarded by ``get_decision_authority`` inside the locked
-decision service. Unauthorised non-approvers get a 403 from role checks below
-(or a 404 for applications they cannot see).
-"""
+"""Approvals HTTP API: approvals desk, cancellations, delegations, and reassignments."""
 
 from __future__ import annotations
 
 from uuid import UUID
-
+from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
-from rest_framework import decorators, mixins, permissions, serializers, status
-from rest_framework import serializers as drf_serializers
-from rest_framework import response, viewsets
+from rest_framework import decorators, mixins, permissions, response, serializers, status
+from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import viewsets
+from rest_framework import serializers as drf_serializers
 
-from leave.models import LeaveApplication, LeaveType, SupportingDocument
+from audit.validation import uuid_value
+from leave.models import LeaveApplication, SupportingDocument
+from leave_config.models import LeaveType
 from leave.cancellations import payloads as cancellation_payloads
 from leave.cancellations.models import (
     CancellationApprovalStage,
@@ -38,6 +36,8 @@ from leave.cancellations.services import (
     StaleStageVersionError,
     decide_cancellation,
 )
+from users.models import User
+from users.permissions import IsHRRole
 
 from approvals.models import (
     ApplicationStage,
@@ -45,21 +45,29 @@ from approvals.models import (
     Delegation,
     Reassignment,
 )
+
+from workflows.policies import get_view_access
+from workflows.permissions import IsApproverRoleOrHR
+
+from approvals.serializers import (
+    DelegationActionSerializer,
+    DelegationSerializer,
+    PendingApplicationSerializer,
+    ReassignmentSerializer,
+)
 from .payloads import (
     briefing_blocks,
     list_item,
     review_payload,
 )
-from workflows.policies import get_view_access
-from workflows.permissions import IsApproverRoleOrHR
 from organisation.services import (
     approver_role_labels_for,
     is_approver_user,
 )
 from .services import (
     ApprovalConflictError,
-    ApprovalNotFoundError,
     ApprovalNotAllowedError,
+    ApprovalNotFoundError,
     ApprovalStageChangedError,
     ApprovalValidationError,
     DelegationActionError,
@@ -71,16 +79,6 @@ from .services import (
     decide,
     reject_delegation,
 )
-from .serializers import (
-    DelegationActionSerializer,
-    DelegationSerializer,
-    PendingApplicationSerializer,
-    ReassignmentSerializer,
-)
-from users.models import EmployeeProfile, User
-from users.permissions import IsHRRole
-from audit.validation import positive_int, uuid_value
-
 
 def _may_use_approvals(user) -> bool:
     """Whether ``user`` may use the approvals API.
@@ -159,8 +157,7 @@ class ApprovalListAPIView(APIView):
         q = (request.query_params.get("q") or "").strip()
 
         qs = LeaveApplication.objects.select_related(
-            "employee__employee_profile",
-            "current_stage",
+            "employee__employee_profile"
         )
         if tab == "pending":
             qs = qs.filter(status=LeaveApplication.Status.SUBMITTED).filter(
@@ -312,8 +309,8 @@ class BulkDecisionItemSerializer(serializers.Serializer):
 class BulkApprovalInputSerializer(serializers.Serializer):
     """The batch decision body (spec 5): approve-only, capped, no dupes.
 
-    Reject needs a per-item comment, so it stays one-at-a-time and is not
-    accepted here.
+    Reject and return-for-correction need a per-item comment, so they stay
+    one-at-a-time and are not accepted here.
     """
 
     action = serializers.ChoiceField(choices=[("approve", "approve")])

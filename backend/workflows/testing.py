@@ -27,8 +27,19 @@ from django.utils import timezone
 
 from users.models import EmployeeProfile
 
-from organisation.models import ApproverRole, Campus, RoleAssignment, Team
-from workflows.models import Section, SectionMember, Workflow, WorkflowMember
+from .models import (
+    Section,
+    SectionMember,
+    Workflow,
+)
+from organisation.models import (
+    ApproverRole,
+    Campus,
+    RoleAssignment,
+)
+from teams.models import (
+    Team,
+)
 
 DEV_PASSWORD = "testpass123"
 
@@ -350,7 +361,7 @@ def make_team(
     ``status`` defaults to active because a team that cannot route is a special
     case, not the default state of a routing fixture. The model itself defaults
     to draft; tests that are about configuration rather than routing pass
-    DRAFT status is no longer used; all teams are active by default.
+    ``Team.Status.DRAFT`` explicitly.
     """
     roles = ensure_roles(*role_codes)
     workflow = workflow or make_workflow(f"{name} Workflow", role_codes)
@@ -361,7 +372,7 @@ def make_team(
         name=name,
         defaults={
             "code": code or name.lower().replace(" ", "-"),
-
+            "workflow": workflow,
             "status": status,
             # A campus and a category always agree here, the same way they do
             # on a real write: a team that sits at a campus is academic, and a
@@ -382,7 +393,7 @@ def make_team(
     wanted = set(role_codes)
     sections = [
         section
-        for section in workflow.sections.order_by("order").select_related(
+        for section in team.workflow.sections.order_by("order").select_related(
             "approver_role"
         )
         if section.approver_role.code in wanted
@@ -466,9 +477,6 @@ def build_routing(
     else:
         profile.team = team
         profile.save(update_fields=["team"])
-    # Routing follows membership, not team placement: the applicant follows the
-    # chain they are enrolled in, so a routable fixture enrols them in it.
-    WorkflowMember.objects.get_or_create(team=team, workflow=workflow, user=employee)
     return employee, team, roles
 
 

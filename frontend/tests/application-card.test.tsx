@@ -55,7 +55,7 @@ describe("ApplicationCard (draft)", () => {
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /edit/i })).toHaveAttribute(
       "href",
-      "/leave/draft-1/edit"
+      "/dashboard/leave/draft-1/edit"
     );
   });
 
@@ -125,7 +125,7 @@ describe("ApplicationCard (non-draft)", () => {
     expect(screen.getByText("Pending Approval")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
       "href",
-      "/leave/applications/app-1"
+      "/applications/app-1"
     );
   });
 
@@ -133,6 +133,7 @@ describe("ApplicationCard (non-draft)", () => {
     const cases: Array<{ status: LeaveApplication["status"]; label: string }> = [
       { status: "approved", label: "Approved" },
       { status: "rejected", label: "Rejected" },
+      { status: "correction_required", label: "Correction Required" },
       { status: "cancelled", label: "Cancelled" },
     ];
 

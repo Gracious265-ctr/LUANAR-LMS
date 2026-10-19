@@ -1,45 +1,21 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
-from .views import (
-    PlanAdminListAPIView,
-    PlanApprovalDecisionAPIView,
-    PlanApprovalDetailAPIView,
-    PlanApprovalListAPIView,
-    PlanBlockConfirmAPIView,
-    PlanBlockReleaseAPIView,
-    PlanCapabilitiesView,
-    PlanDetailAPIView,
-    PlanListCreateAPIView,
-    PlanPendingConfirmationsAPIView,
-    PlanSettingsAPIView,
-    PlanSubmitAPIView,
-)
+from .views import LeavePlanViewSet, PlanApplyView, PlanScopeOptionsView, TeamPlansView
 
-app_name = "plans"
+router = DefaultRouter()
+router.register("plans", LeavePlanViewSet, basename="plan")
 
+# The literal custom paths come *before* the router so the router's per-object
+# route (``plans/<pk>/``) cannot swallow ``plans/team/`` or
+# ``plans/scope-options/`` as a plan id.
 urlpatterns = [
-    path("plans/capabilities/", PlanCapabilitiesView.as_view()),
-    path("plans/settings/", PlanSettingsAPIView.as_view()),
-    path("plans/admin/", PlanAdminListAPIView.as_view()),
-    path("plans/approvals/", PlanApprovalListAPIView.as_view()),
     path(
-        "plans/approvals/<uuid:pk>/decision/",
-        PlanApprovalDecisionAPIView.as_view(),
+        "plans/scope-options/",
+        PlanScopeOptionsView.as_view(),
+        name="plan-scope-options",
     ),
-    path("plans/approvals/<uuid:pk>/", PlanApprovalDetailAPIView.as_view()),
-    path(
-        "plans/pending-confirmations/",
-        PlanPendingConfirmationsAPIView.as_view(),
-    ),
-    path("plans/<uuid:pk>/submit/", PlanSubmitAPIView.as_view()),
-    path(
-        "plans/<uuid:pk>/blocks/<uuid:block_id>/confirm/",
-        PlanBlockConfirmAPIView.as_view(),
-    ),
-    path(
-        "plans/<uuid:pk>/blocks/<uuid:block_id>/release/",
-        PlanBlockReleaseAPIView.as_view(),
-    ),
-    path("plans/<uuid:pk>/", PlanDetailAPIView.as_view()),
-    path("plans/", PlanListCreateAPIView.as_view()),
+    path("plans/team/", TeamPlansView.as_view(), name="plan-team-calendar"),
+    path("plans/<uuid:pk>/apply/", PlanApplyView.as_view(), name="plan-apply"),
+    path("", include(router.urls)),
 ]

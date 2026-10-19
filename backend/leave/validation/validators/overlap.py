@@ -4,7 +4,7 @@ Code: OVERLAPPING_LEAVE.
 
 An application must not overlap another application of the same employee whose
 status is in ``settings.LEAVE_BLOCKING_STATUSES`` (D3: submitted, pending,
-approved). Overlap is calendar-date based, across all
+correction_required, approved). Overlap is calendar-date based, across all
 leave types, and an application never overlaps itself. Drafts, rejected and
 cancelled applications do not block.
 """

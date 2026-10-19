@@ -73,7 +73,7 @@ class EmployeeProfile(models.Model):
     grade = models.CharField(max_length=20, blank=True)
     appointment_date = models.DateField(null=True, blank=True)
     team = models.ForeignKey(
-        "organisation.Team",
+        "teams.Team",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

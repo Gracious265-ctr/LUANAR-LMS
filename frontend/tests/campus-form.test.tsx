@@ -101,7 +101,7 @@ describe("CampusForm", () => {
     vi.mocked(createCampus).mockResolvedValue(
       makeCampus({ id: 2, name: "Bunda Campus", code: "bunda" })
     );
-    render(<CampusForm returnTo="/organisation/campuses" />);
+    render(<CampusForm returnTo="/dashboard/hr-admin/campuses" />);
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Bunda Campus" },
@@ -112,7 +112,7 @@ describe("CampusForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create campus" }));
 
     await waitFor(() =>
-      expect(push).toHaveBeenCalledWith("/organisation/campuses")
+      expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/campuses")
     );
   });
 
@@ -122,7 +122,7 @@ describe("CampusForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(createCampus).not.toHaveBeenCalled();
-    expect(push).toHaveBeenCalledWith("/organisation/campuses");
+    expect(push).toHaveBeenCalledWith("/dashboard/hr-admin/campuses");
   });
 });
 
@@ -142,7 +142,7 @@ describe("CampusQuickAdd", () => {
     expect(screen.getByText("main")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /Main Campus/ })
-    ).toHaveAttribute("href", "/organisation/campuses/1");
+    ).toHaveAttribute("href", "/dashboard/hr-admin/campuses/1");
   });
 
   it("stays closed until asked for", () => {

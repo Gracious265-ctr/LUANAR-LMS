@@ -39,6 +39,6 @@ describe("FinancialYearForm", () => {
     render(<FinancialYearForm />);
 
     const cancel = screen.getByRole("link", { name: "Cancel" });
-    expect(cancel.getAttribute("href")).toBe("/hr-admin/calendar");
+    expect(cancel.getAttribute("href")).toBe("/dashboard/hr-admin/calendar");
   });
 });

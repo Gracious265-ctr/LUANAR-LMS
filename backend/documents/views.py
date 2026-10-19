@@ -10,15 +10,17 @@ import logging
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
-from rest_framework import generics, permissions, response, status
+from rest_framework import permissions, response, status
 from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
+from .access import visible_employee_ids
 from .models import ApprovedLeaveDocument
 from .serializers import (
-    ApprovedLeaveDocumentFeedSerializer,
+    ApprovedDocumentListSerializer,
     LeaveDocumentTemplateSerializer,
+    SupportingDocumentListSerializer,
 )
 from .services import approved_document_payload, get_template
 
@@ -80,15 +82,6 @@ class LeaveDocumentTemplateView(APIView):
 _NOT_FOUND = {"error": "Approved document not found."}
 
 
-def _approved_document_payload(document) -> dict:
-    """The single-document payload (signing + availability rules).
-
-    Delegates to :func:`documents.services.approved_document_payload` so the
-    detail view and the list feed mint URLs through one implementation.
-    """
-    return approved_document_payload(document)
-
-
 def _approved_document_or_404(user, application_id, *, hr_allowed: bool):
     """The application's document when ``user`` may read it, else ``None``.
 
@@ -138,7 +131,7 @@ class ApprovedLeaveDocumentView(APIView):
         if document is None:
             return response.Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
         return response.Response(
-            _approved_document_payload(document), status=status.HTTP_200_OK
+            approved_document_payload(document), status=status.HTTP_200_OK
         )
 
 
@@ -153,29 +146,58 @@ class HRAApprovedLeaveDocumentView(ApprovedLeaveDocumentView):
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
 
 
-class MyApprovedLeaveDocumentsView(generics.ListAPIView):
-    """The caller's own approved documents, newest first (documents module).
+# ---------------------------------------------------------------------------
+# The documents hub — every document a viewer may read, across applications
+# ---------------------------------------------------------------------------
+#
+# The per-application endpoints above answer "what is attached to *this*
+# application". The hub asks the other question — "every document I may see" —
+# so the scope is the viewer, resolved by ``visible_employee_ids``: an employee
+# covers themselves, a team manager adds the teams they manage, and HR covers
+# the institution. Both lists return plain arrays (matching the per-application
+# document endpoints) rather than a page, and re-sign every URL per request.
 
-    Owner-scoped: only documents whose application belongs to the caller. Every
-    status is included so the feed can show a document that is still being
-    prepared (or failed) rather than hiding it. Paginated by the project-wide
-    page-number default.
 
-    No signed URL is minted per row (see the serializer): a list would otherwise
-    make one storage round-trip per document, which is what made the documents
-    page slow. The client asks for a single fresh URL when it opens a row, via
-    the per-application view above.
-    """
+class SupportingDocumentListView(APIView):
+    """Every supporting document the viewer may read, across applications."""
 
     permission_classes = [permissions.IsAuthenticated]
-    serializer_class = ApprovedLeaveDocumentFeedSerializer
 
-    def get_queryset(self):
-        return (
-            ApprovedLeaveDocument.objects.filter(
-                application__employee=self.request.user
-            )
-            .select_related("application")
-            .order_by("-created_at")
+    def get(self, request):
+        from leave.models import SupportingDocument
+
+        queryset = SupportingDocument.objects.select_related(
+            "application", "application__employee"
+        ).order_by("-uploaded_at")
+        if request.query_params.get("include_retired") != "true":
+            queryset = queryset.filter(status=SupportingDocument.Status.ACTIVE)
+
+        scope = visible_employee_ids(request.user)
+        if scope is not None:
+            queryset = queryset.filter(application__employee_id__in=scope)
+
+        return response.Response(
+            SupportingDocumentListSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ApprovedDocumentListView(APIView):
+    """Every approved document the viewer may read, across applications."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        queryset = ApprovedLeaveDocument.objects.select_related(
+            "application", "application__employee"
+        ).order_by("-created_at")
+
+        scope = visible_employee_ids(request.user)
+        if scope is not None:
+            queryset = queryset.filter(application__employee_id__in=scope)
+
+        return response.Response(
+            ApprovedDocumentListSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
         )
 

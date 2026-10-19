@@ -1,37 +1,48 @@
-import { Calendar, ShieldCheck, Building2, FileStack, Users } from "lucide-react";
+import {
+  Calendar,
+  CalendarClock,
+  ShieldCheck,
+  Building2,
+  FileStack,
+  SlidersHorizontal,
+} from "lucide-react";
 
-// Each app now points at its own module root; the legacy `/dashboard/**`
-// pages are kept working through `next.config.ts` redirects.
 export const APPS_REGISTRY = {
   leave: {
     name: "Leave Applications",
     description: "Submit and track your leave requests",
     icon: Calendar,
-    route: "/leave",
+    route: "/dashboard/leave",
+  },
+  plans: {
+    name: "Leave Plans",
+    description: "Plan your upcoming leave ahead of time",
+    icon: CalendarClock,
+    route: "/dashboard/plans",
   },
   approvals: {
     name: "Approvals",
     description: "Review and decide on leave requests assigned to you",
     icon: ShieldCheck,
-    route: "/approvals",
+    route: "/dashboard/approvals",
   },
-  organisation: {
-    name: "Organisation",
-    description: "Manage units, approvers, and teams",
+  org: {
+    name: "Teams",
+    description: "Manage teams, campuses, approver roles, and their approval chains",
     icon: Building2,
-    route: "/organisation",
+    route: "/dashboard/teams",
   },
   documents: {
     name: "Documents",
-    description: "Manage supporting documents",
+    description: "Find your supporting and approved leave documents",
     icon: FileStack,
-    route: "/documents",
+    route: "/dashboard/documents",
   },
-  "hr-admin": {
-    name: "HR Administration",
-    description: "Manage employees, grades, and leave rules",
-    icon: Users,
-    route: "/hr-admin",
+  "leave-config": {
+    name: "Leave Configuration",
+    description: "Manage leave types and their rules",
+    icon: SlidersHorizontal,
+    route: "/leave-config",
   },
 } as const;
 

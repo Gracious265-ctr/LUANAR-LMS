@@ -187,23 +187,18 @@ export async function approveApprovals(
     });
     const data = await readJson(res);
     if (!res.ok) {
-      return { ok: false, message: bulkErrorMessage(data) };
+      return {
+        ok: false,
+        message:
+          (data.error as string) ||
+          (data.detail as string) ||
+          "The batch could not be approved.",
+      };
     }
     return { ok: true, data: data as unknown as BulkApprovalResponse };
   } catch {
     return { ok: false, message: FETCH_ERROR };
   }
-}
-
-/** A readable message from a bulk error body (DRF field errors included). */
-function bulkErrorMessage(data: Record<string, unknown>): string {
-  if (typeof data.error === "string") return data.error;
-  if (typeof data.detail === "string") return data.detail;
-  for (const value of Object.values(data)) {
-    if (Array.isArray(value) && value.length) return String(value[0]);
-    if (typeof value === "string") return value;
-  }
-  return "The batch could not be approved.";
 }
 
 export async function fetchDocumentDownload(

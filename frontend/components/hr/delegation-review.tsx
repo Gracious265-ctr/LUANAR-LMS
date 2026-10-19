@@ -44,7 +44,7 @@ export function DelegationReview({
   delegation,
   employees,
   readOnly = false,
-  backHref = "/hr-admin/delegations",
+  backHref = "/dashboard/hr-admin/delegations",
   title = "Review delegation request",
 }: {
   delegation: Delegation;

@@ -5,7 +5,6 @@ import { useCallback, useRef, useState } from "react";
 import {
   type ValidationIssue,
   submitApplication,
-  resubmitApplication,
   SubmitError,
 } from "@/lib/leave-validation";
 import { pushToast } from "@/components/ui/toast";
@@ -25,10 +24,7 @@ export interface UseSubmitLeaveApplicationOptions {
 }
 
 export interface UseSubmitLeaveApplicationResult {
-  submit: (
-    applicationId: string,
-    options?: { resubmit?: boolean }
-  ) => Promise<void>;
+  submit: (applicationId: string) => Promise<void>;
   isSubmitting: boolean;
   /** Issues surfaced by a 422 response, to be rendered above the form. */
   issues: ValidationIssue[];
@@ -58,22 +54,17 @@ export function useSubmitLeaveApplication({
   const inFlightRef = useRef(false);
 
   const submit = useCallback(
-    async (applicationId: string, options?: { resubmit?: boolean }) => {
+    async (applicationId: string) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       setIsSubmitting(true);
       setFailure(null);
       setIssues([]);
-      const resubmit = options?.resubmit ?? false;
       try {
-        if (resubmit) {
-          await resubmitApplication(applicationId);
-        } else {
-          await submitApplication(applicationId);
-        }
+        await submitApplication(applicationId);
         // Fired before the caller so the confirmation is queued even if the
         // callback navigates away from the screen that triggered it.
-        pushToast(resubmit ? "Application resubmitted." : "Application submitted.");
+        pushToast("Application submitted.");
         onSubmitted();
       } catch (error) {
         if (error instanceof SubmitError) {

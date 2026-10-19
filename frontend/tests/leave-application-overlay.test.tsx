@@ -7,13 +7,11 @@ import { createLeaveApplication, getLeaveApplication } from "@/lib/leave-api";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { submitApplication } from "@/lib/leave-validation";
 import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
-import { pickDateRange } from "./helpers/date";
-import { selectOption } from "./helpers/select";
 
 const { replaceMock } = vi.hoisted(() => ({ replaceMock: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/leave/drafts",
+  usePathname: () => "/dashboard/leave/drafts",
   useRouter: () => ({
     push: vi.fn(),
     replace: replaceMock,
@@ -80,33 +78,6 @@ const VALID_RESULT = {
   warnings: [],
   skipped_checks: [],
 };
-
-/**
- * Drives the multi-step form from the first step to the review step: pick the
- * type, pick the dates, advance, add a reason, and advance past the skipped
- * documents step. The wizard's step 0 gates "Next" on a complete type + dates.
- */
-async function walkWizardToReview() {
-  const typeTrigger = await screen.findByRole("combobox");
-  await waitFor(() => expect(typeTrigger).not.toBeDisabled());
-  await selectOption(typeTrigger, "Annual Leave");
-
-  pickDateRange(
-    screen.getByRole("button", { name: "Leave dates" }),
-    "2026-10-01",
-    "2026-10-05"
-  );
-
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-
-  const reason = await screen.findByPlaceholderText(/provide a reason/i);
-  fireEvent.change(reason, { target: { value: "Family visit" } });
-
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled()
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -216,37 +187,12 @@ describe("LeaveApplicationOverlay", () => {
       <LeaveApplicationOverlay open mode="create" onOpenChange={vi.fn()} />
     );
 
-    // The first change in the wizard creates the draft; step 1's leave type is
-    // the earliest editable field.
-    const typeTrigger = await screen.findByRole("combobox");
-    await waitFor(() => expect(typeTrigger).not.toBeDisabled());
-    await selectOption(typeTrigger, "Annual Leave");
+    const reason = await screen.findByPlaceholderText(/provide a reason/i);
+    fireEvent.change(reason, { target: { value: "Family visit" } });
 
     await waitFor(() =>
-      expect(replaceMock).toHaveBeenCalledWith("/leave/drafts?edit=draft-9")
+      expect(replaceMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-9")
     );
-  });
-
-  it("leaves the URL alone when the host owns the whole route", async () => {
-    vi.mocked(createLeaveApplication).mockResolvedValue(
-      makeApplication({ id: "draft-9" }) as never
-    );
-
-    render(
-      <LeaveApplicationOverlay
-        open
-        mode="create"
-        syncUrl={false}
-        onOpenChange={vi.fn()}
-      />
-    );
-
-    const typeTrigger = await screen.findByRole("combobox");
-    await waitFor(() => expect(typeTrigger).not.toBeDisabled());
-    await selectOption(typeTrigger, "Annual Leave");
-
-    await waitFor(() => expect(createLeaveApplication).toHaveBeenCalled());
-    expect(replaceMock).not.toHaveBeenCalled();
   });
 
   it("advances to review without navigating, then submits to confirmation", async () => {
@@ -284,7 +230,8 @@ describe("LeaveApplicationOverlay", () => {
       />
     );
 
-    await walkWizardToReview();
+    const reason = await screen.findByPlaceholderText(/provide a reason/i);
+    fireEvent.change(reason, { target: { value: "Family visit" } });
 
     const review = await screen.findByRole("button", {
       name: "Review Application",
@@ -347,7 +294,8 @@ describe("LeaveApplicationOverlay", () => {
       />
     );
 
-    await walkWizardToReview();
+    const reason = await screen.findByPlaceholderText(/provide a reason/i);
+    fireEvent.change(reason, { target: { value: "Family visit" } });
 
     const review = await screen.findByRole("button", { name: "Review Application" });
     await waitFor(() => expect(review).toBeEnabled());

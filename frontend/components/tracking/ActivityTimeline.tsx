@@ -2,13 +2,14 @@ import { cn } from "@/lib/utils";
 
 import type { BadgeTone } from "@/components/ui/badge";
 import { badgeVariants } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime } from "@/lib/tracking/format";
 import { eventIcon, eventTitle } from "@/lib/tracking/labels";
 import type { TrackingResponse } from "@/lib/tracking/types";
 
 const EVENT_ACCENT_TONE: Record<string, BadgeTone> = {
   approved: "approved",
   rejected: "rejected",
+  correction_requested: "correction",
 };
 
 /**

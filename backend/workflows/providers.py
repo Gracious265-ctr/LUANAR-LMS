@@ -5,13 +5,8 @@ for a submitted leave application. It is the single point of swappability:
 :func:`get_workflow_provider` reads ``settings.WORKFLOW_PROVIDER``.
 
 The default is :class:`DatabaseWorkflowProvider`, which resolves the applicant's
-**workflow membership** to the chain they are a normal member of on their team,
-and maps its ``Section`` rows into ``StageDefinition`` objects. A team may own
-several chains and every one of them can be in force at once, so there is no
-single "the team's workflow" to read: each employee belongs to exactly one of
-their team's chains and follows that one, which is what lets two people on the
-same team sit in two different chains at the same time. Each section's approver
-is
+**team** to the one workflow that team routes through, and maps its
+``Section`` rows into ``StageDefinition`` objects. Each section's approver is
 found by :func:`resolve_section_approvers`: the section's appointed approver
 unless that person is the applicant, or — when the section has no approver —
 the narrowest wide holding that applies, being the team's holder for the role,
@@ -34,8 +29,18 @@ from django.utils.module_loading import import_string
 
 from users.models import User
 
-from organisation.models import ApproverRole, CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
-from workflows.models import SectionMember, WorkflowMember
+from .models import (
+    SectionMember,
+)
+from organisation.models import (
+    ApproverRole,
+    CampusRoleAssignment,
+    RoleAssignment,
+)
+from teams.models import (
+    Team,
+    TeamRoleAssignment,
+)
 
 
 class WorkflowConfigError(ValueError):
@@ -114,50 +119,6 @@ def _employee_team(application: Any):
     return profile.team
 
 
-def _member_workflow(team, application: Any):
-    """The chain ``application``'s employee follows on ``team``, by membership.
-
-    This is the whole point of owning several chains at once: routing is scoped
-    to the normal-member pool rather than to the team, so two people on the same
-    team can be inside two different chains simultaneously and editing one chain
-    never disturbs the other.
-
-    Each employee is a member of exactly one of the team's chains
-    (``workflow_member_team_user_unique``), so there is one answer in the normal
-    case. A wide approver is the deliberate exception and may hold a membership
-    on several of them; their own leave still has to go somewhere, so the
-    ordering settles on the one they joined first rather than leaving an
-    ambiguous choice or an unrouteable application.
-
-    Raises when the employee is on the team but in no workflow, because an
-    application with no chain behind it reaches no one: naming that here is what
-    turns a silent nothing into a message HR can act on.
-    """
-    applicant_id = getattr(application, "employee_id", None)
-    if applicant_id is None:
-        applicant_id = getattr(getattr(application, "employee", None), "pk", None)
-    memberships = list(
-        WorkflowMember.objects.filter(team=team, user_id=applicant_id)
-        .select_related("workflow")
-        .order_by("is_wide_approver", "workflow_id")
-    )
-    if not memberships:
-        if not team.workflows.exists():
-            raise WorkflowConfigError(
-                f"The {team.name} team has no approval workflow. Ask HR to create "
-                "one for it, with at least one section."
-            )
-        name = getattr(getattr(application, "employee", None), "get_full_name", None)
-        display = name() if callable(name) else None
-        who = display or "This employee"
-        raise WorkflowConfigError(
-            f"{who} is not a member of any approval workflow on the {team.name} "
-            "team. Ask HR to add them to one of the team's workflows before they "
-            "submit a leave application."
-        )
-    return memberships[0].workflow
-
-
 def _institution_wide_holder_ids(role: ApproverRole) -> list[int]:
     """Active users holding ``role`` institution-wide, lowest id first."""
     return list(
@@ -196,9 +157,10 @@ def _campus_wide_holder_ids(campus, role: ApproverRole) -> list[int]:
 def _routing_team(section) -> Team | None:
     """The team that owns the section's workflow, if any.
 
-    :attr:`Workflow.team` is the ownership link, and every section belongs to
-    a workflow, so this answers "which team's configuration staffs this step" —
-    which is what every wide holding is scoped by.
+    :attr:`Workflow.team` is the ownership link; :attr:`Team.workflow` is the
+    routing one. A section is always owned, so this answers "which team's
+    configuration staffs this step" — which is what every wide holding is
+    scoped by.
     """
     workflow = section.workflow_id
     if workflow is None:
@@ -460,9 +422,9 @@ class SnapshotStagesMixin:
 class DatabaseWorkflowProvider(SnapshotStagesMixin):
     """Workflow provider backed by the real HR team and role configuration.
 
-    The applicant's :class:`~workflows.models.WorkflowMember` row names the
-    workflow; that workflow's ordered :class:`~workflows.models.Section` rows are
-    its steps; and each section's appointed approver is resolved by
+    The applicant's :class:`~workflows.models.Team` names the workflow; the
+    workflow's ordered :class:`~workflows.models.Section` rows are its steps; and
+    each section's appointed approver is resolved by
     :func:`resolve_section_approvers`, with the applicant removed.
     """
 
@@ -473,15 +435,19 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 "This employee is not in a team. Ask HR to assign them to a team "
                 "before they submit a leave application."
             )
-        # The team's own status is the gate: an inactive one has been retired,
-        # and a team outside its effective window is not routing either. Saying
-        # so here means the applicant's failure names the team rather than
-        # surfacing as some later stage error nobody can act on.
-
+        # The team's own status is the gate. A draft team is being configured and
+        # an inactive one has been retired; neither routes, and saying so here
+        # means the applicant's failure names the team rather than surfacing as
+        # some later stage error nobody can act on.
+        if team.status == Team.Status.DRAFT:
+            raise WorkflowConfigError(
+                f"The {team.name} team is still being set up. Ask HR to finish "
+                "configuring it and activate it."
+            )
         if team.status == Team.Status.INACTIVE:
             raise WorkflowConfigError(
-                f"The {team.name} team is inactive. Ask HR to move the employee "
-                "to a team that is still in force."
+                f"The {team.name} team is inactive. Ask HR to activate it, or to "
+                "move the employee to an active team."
             )
         if not team.is_effective:
             today = timezone.localdate()
@@ -496,12 +462,16 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 f"{team.effective_to.isoformat()}. Ask HR to move the employee to "
                 "a team that is still in force."
             )
-        workflow = _member_workflow(team, application)
+        workflow = team.workflow
+        if workflow is None:
+            raise WorkflowConfigError(
+                f"The {team.name} team has no approval workflow. Ask HR to create "
+                "one for it, with at least one section."
+            )
         if not workflow.is_active:
             raise WorkflowConfigError(
-                f"Workflow '{workflow.name}' is not in force. Ask HR to put it "
-                f"back in force, or to move the employee onto another of the "
-                f"{team.name} team's workflows."
+                f"Workflow '{workflow.name}' is inactive. Ask HR to activate it, "
+                f"or to point the {team.name} team at an active workflow."
             )
         if (
             workflow.effective_from is not None
@@ -509,15 +479,8 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
         ):
             raise WorkflowConfigError(
                 f"Workflow '{workflow.name}' does not start until "
-                f"{workflow.effective_from.isoformat()}. Ask HR to bring its start "
-                "date forward, or to move the employee onto another of this "
-                "team's workflows."
-            )
-        if workflow.effective_to is not None and workflow.effective_to < timezone.localdate():
-            raise WorkflowConfigError(
-                f"Workflow '{workflow.name}' stopped routing applications on "
-                f"{workflow.effective_to.isoformat()}. Ask HR to extend its window, "
-                "or to move the employee onto another of this team's workflows."
+                f"{workflow.effective_from.isoformat()}. Ask HR to activate it "
+                "earlier, or to point the team at an active workflow."
             )
 
         sections = list(

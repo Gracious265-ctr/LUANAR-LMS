@@ -58,7 +58,7 @@ export function FinancialYearForm({
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        router.push("/hr-admin/calendar");
+        router.push("/dashboard/hr-admin/calendar");
         router.refresh();
       }
     } catch (err) {
@@ -125,7 +125,7 @@ export function FinancialYearForm({
           </Button>
         ) : (
           <Link
-            href="/hr-admin/calendar"
+            href="/dashboard/hr-admin/calendar"
             className={buttonVariants({ variant: "secondary" })}
           >
             Cancel

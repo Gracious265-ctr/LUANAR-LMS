@@ -131,6 +131,12 @@ const supervisorHolding: WideHolding = {
   role_label: "Supervisor",
 };
 
+/** The same team-wide holding, carrying the manager designation. */
+const managerHolding: WideHolding = {
+  ...supervisorHolding,
+  is_team_manager: true,
+};
+
 const teams = [
   { id: 4, name: "Registry" },
   { id: 6, name: "Finance Office" },
@@ -193,7 +199,10 @@ describe("WideHoldingPanel", () => {
       )
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Jane Dean from Registrar" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() =>
       expect(removeRoleAssignment).toHaveBeenCalledWith(77)
@@ -216,7 +225,10 @@ describe("WideHoldingPanel", () => {
       holdings: [supervisorHolding],
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Jane Dean from Supervisor" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() =>
       expect(removeTeamRoleAssignment).toHaveBeenCalledWith(78)
@@ -230,56 +242,61 @@ describe("WideHoldingPanel", () => {
       holdings: [supervisorHolding],
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Jane Dean from Supervisor" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() =>
       expect(removeCampusRoleAssignment).toHaveBeenCalledWith(78)
     );
   });
 
-  it("lets HR designate a team-wide holder as the team's manager", async () => {
-    vi.mocked(setTeamManager).mockResolvedValue({} as never);
-    renderPanel("team", { scopeId: 4, holdings: [supervisorHolding] });
+  it("designates a team-wide holding as its team's manager", async () => {
+    vi.mocked(setTeamManager).mockResolvedValue(undefined as never);
+    renderPanel("team", {
+      scopeOptions: teams,
+      holdings: [supervisorHolding],
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Make manager" }));
 
     await waitFor(() => expect(setTeamManager).toHaveBeenCalledWith(78));
-    expect(clearTeamManager).not.toHaveBeenCalled();
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("shows who the manager is, and lets HR take the designation away", async () => {
-    vi.mocked(clearTeamManager).mockResolvedValue({} as never);
-    const managerHolding: WideHolding = {
-      ...supervisorHolding,
-      is_team_manager: true,
-    };
-    renderPanel("team", { scopeId: 4, holdings: [managerHolding] });
+  it("shows the manager designation, and removes it without taking the holding away", async () => {
+    vi.mocked(clearTeamManager).mockResolvedValue(undefined as never);
+    renderPanel("team", {
+      scopeOptions: teams,
+      holdings: [managerHolding],
+    });
 
-    // The designation is visible, not just implied by the button.
     expect(screen.getByText("Manager")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Make manager" })
-    ).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Remove as manager" })
     );
 
+    // Clearing the flag leaves the holding in place: the person is still the
+    // team's supervisor, they just no longer run it.
     await waitFor(() => expect(clearTeamManager).toHaveBeenCalledWith(78));
-    expect(setTeamManager).not.toHaveBeenCalled();
+    expect(removeTeamRoleAssignment).not.toHaveBeenCalled();
   });
 
-  it("offers the manager control only on the team scope", () => {
-    renderPanel("institution", { holdings: [institutionHolding] });
-    expect(
-      screen.queryByRole("button", { name: "Make manager" })
-    ).not.toBeInTheDocument();
-
-    renderPanel("campus", { scopeOptions: campuses, holdings: [supervisorHolding] });
-    expect(
-      screen.queryByRole("button", { name: "Make manager" })
-    ).not.toBeInTheDocument();
+  it("draws no manager control outside the team scope", () => {
+    // The flag rides a team-wide holding only — a campus or institution-wide
+    // role has no team to run.
+    for (const scope of ["institution", "campus"] as const) {
+      const { unmount } = renderPanel(scope, {
+        holdings: [supervisorHolding],
+        scopeOptions: campuses,
+      });
+      expect(
+        screen.queryByRole("button", { name: "Make manager" })
+      ).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("writes an institution-wide holding from a chosen role, without asking for a scope", async () => {
@@ -500,7 +517,7 @@ describe("WideHoldingPanel", () => {
       )
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Remove" })
+      screen.getByRole("button", { name: "Remove Jane Dean from Registrar" })
     ).toBeInTheDocument();
   });
 

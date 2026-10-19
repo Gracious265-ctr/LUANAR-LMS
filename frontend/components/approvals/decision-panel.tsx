@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, RotateCcw, X } from "lucide-react";
 
 import { STATUS_META, restrictionLabel } from "@/lib/approvals/labels";
 import { formatDateTime } from "@/lib/approvals/format";
@@ -64,6 +64,17 @@ export function DecisionPanel({ data, onAction, disabled }: DecisionPanelProps) 
           <X className="h-4 w-4" aria-hidden="true" />
           Reject
         </Button>
+        <Button
+          type="button"
+          disabled={disabled}
+          onClick={() => onAction("return_for_correction")}
+          variant="secondary"
+          size="lg"
+          className="w-full border-status-correction bg-status-correction-subtle text-status-correction"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          Return for Correction
+        </Button>
       </div>
     </Panel>
   );
@@ -75,6 +86,8 @@ function decisionPastTense(action: ApprovalAction): string {
       return "approved";
     case "reject":
       return "rejected";
+    case "return_for_correction":
+      return "returned for correction";
   }
 }
 

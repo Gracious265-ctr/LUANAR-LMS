@@ -1,14 +1,17 @@
+"""Approvals execution serializers: delegations and reassignments."""
+
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
-from leave.models import LeaveApplication, LeaveType
+from leave.models import LeaveApplication
+from leave_config.models import LeaveType
 from users.models import User
 
-from approvals.models import Delegation, Reassignment
 from organisation.services import approver_role_codes_for, is_approver_user
 
+from .models import Delegation, Reassignment
 from .services import (
     ReassignmentError,
     acting_approver_identity,
@@ -22,7 +25,7 @@ def _record_delegation_created_audit(delegation: Delegation) -> None:
     """Audit a delegation request the moment it exists.
 
     The other three delegation actions are audited by
-    ``approvals.services._record_delegation_audit``; creation is a serializer
+    ``workflows.services._record_delegation_audit``; creation is a serializer
     concern, so it is recorded here in the same transaction. Without it a
     request would appear in the trail only once HR decided on it, and a request
     that was never decided would leave no trace at all.
@@ -326,3 +329,5 @@ class PendingApplicationSerializer(serializers.Serializer):
         if resolved is not None and instance.pk in resolved:
             return resolved[instance.pk]
         return acting_approver_identity(instance)
+
+

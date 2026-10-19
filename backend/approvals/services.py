@@ -1,39 +1,26 @@
-"""Approvals execution, delegation, reassignment and access helpers.
+"""Approvals execution: decisions, transitions, delegation, and reassignment.
 
-This module centralises approval-chain execution (decisions, transitions, skips),
-delegation lifecycle and reassignment, plus the access/badge helpers used by the
-launcher and approvals desk.
+Centralises approval-chain execution (decisions, stage transitions, skips), the
+delegation lifecycle, and reassignment.
 """
 
 from datetime import date
-
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
-
-from approvals.models import (
-    ApplicationStage,
-    ApplicationStageApprover,
-    ApprovalDecision,
-    Delegation,
-    Reassignment,
-)
 from workflows.policies import is_self_application
-from organisation.services import is_approver_user
-from workflows.services import (
-    WorkflowAssignmentError,
-    _active_delegation_for_id,
-    _current_stage,
-    acting_approver_ids,
-    eligible_approver_ids,
-    user_may_act,
+from workflows.providers import WorkflowConfigError
+from approvals.models import (ApplicationStage, ApplicationStageApprover, ApprovalDecision, Delegation, Reassignment,)
+from workflows.models import Workflow
+from organisation.services import (
+    is_approver_user,
 )
+from workflows.services import WorkflowAssignmentError, _active_delegation_for_id, _current_stage, acting_approver_ids, eligible_approver_ids, user_may_act
 
 
 class DelegationActionError(ValueError):
@@ -499,6 +486,7 @@ def cancel_delegation(delegation: Delegation, actor, data: dict) -> Delegation:
         notify_delegation(delegation.pk, DELEGATION_CANCELLED)
     return delegation
 
+
 class ReassignmentError(ValueError):
     """Raised when a reassignment cannot be applied.
 
@@ -819,6 +807,8 @@ def _initial_stage_status(definition, pending_order: int) -> str:
     if definition.order == pending_order:
         return ApplicationStage.Status.PENDING
     return ApplicationStage.Status.WAITING
+
+
 class ApprovalNotFoundError(Exception):
     """The application does not exist or is not viewable by the approver."""
 
@@ -928,15 +918,17 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         ApprovalEvent,
         emit_approval_event,
     )
+    from workflows.policies import get_decision_authority
+
     if action not in ApprovalDecision.Action.values:
-        raise ApprovalValidationError({"action": "Must be approve or reject."})
+        raise ApprovalValidationError({"action": "Must be approve, reject or return_for_correction."})
 
     comment = (comment or "").strip()
     if len(comment) > 1000:
         raise ApprovalValidationError({"comment": "Must be at most 1000 characters."})
-    if action == ApprovalDecision.Action.REJECT and not comment:
+    if action in (ApprovalDecision.Action.REJECT, ApprovalDecision.Action.RETURN_FOR_CORRECTION) and not comment:
         raise ApprovalValidationError(
-            {"comment": "A comment is required when rejecting."}
+            {"comment": "A comment is required when rejecting or returning for correction."}
         )
 
     from workflows.policies import get_decision_authority as _authority
@@ -1028,6 +1020,9 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
         elif action == ApprovalDecision.Action.REJECT:
             stage.status = ApplicationStage.Status.REJECTED
             app.status = LeaveApplication.Status.REJECTED
+        else:
+            stage.status = ApplicationStage.Status.CORRECTION_REQUESTED
+            app.status = LeaveApplication.Status.CORRECTION_REQUIRED
 
         # Persist the decided stage first so a single ``pending`` stage always
         # exists at any one moment (enforced by the partial unique constraint).
@@ -1121,42 +1116,19 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
 
     return app
 
+
 def _audit_action(action: str) -> str:
     mapping = {
         ApprovalDecision.Action.APPROVE: AuditEntry.Action.APPROVED,
         ApprovalDecision.Action.REJECT: AuditEntry.Action.REJECTED,
+        ApprovalDecision.Action.RETURN_FOR_CORRECTION: AuditEntry.Action.CORRECTION_REQUESTED,
     }
     return mapping[action]
 
-
-
-def can_access_approvals(user) -> bool:
-    """Whether ``user`` may use the approvals desk.
-
-    Approver status is :func:`is_approver_user`; HR is admitted explicitly so it
-    keeps the oversight access it has always had without needing a role assignment.
-    """
-    if not (
-        user
-        and getattr(user, "is_authenticated", False)
-        and getattr(user, "is_active", False)
-    ):
-        return False
-    return is_approver_user(user) or getattr(user, "role", None) == "hr"
-
-
-def pending_stage_count_for(user) -> int:
-    """How many submitted applications are currently waiting on ``user``.
-
-    The same query the approvals desk uses for its pending list, so the launcher
-    badge and the queue can never disagree.
-    """
-    from leave.models import LeaveApplication
-
-    if not can_access_approvals(user) or not is_approver_user(user):
-        return 0
-    return (
-        LeaveApplication.objects.filter(status=LeaveApplication.Status.SUBMITTED)
-        .filter(acting_approver_predicate(user))
-        .count()
-    )
+# ---------------------------------------------------------------------------
+# Approver roles, role assignments, and teams (HR-managed configuration).
+#
+# Every write here is a configuration change: it runs inside a transaction,
+# records one audit entry, and refuses any state that would leave a workflow
+# stage or a routing decision unresolvable.
+# ---------------------------------------------------------------------------

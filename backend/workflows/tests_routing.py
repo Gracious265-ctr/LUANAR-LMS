@@ -1,7 +1,7 @@
 """Unit 21 — acting-approver routing tests (D2/D3/D8).
 
 Covers the ``LeaveApplication.current_approver`` spine: approve advances it to
-the next stage's configured approver, reject leaves it in place;
+the next stage's configured approver, reject/correction leave it in place;
 delegation redirects the acting approver at query time without touching the
 spine (delegate sees and decides, original does not while active, fallback once
 ended, never cascaded); reassignment moves the spine explicitly without
@@ -31,18 +31,9 @@ from leave.tests.stubs import (
 from users.models import EmployeeProfile
 
 from .testing import team_for
-from approvals.models import ApprovalDecision, ApplicationStage
-from approvals.models import Delegation
-from approvals.models import Reassignment
+from approvals.models import ApprovalDecision, ApplicationStage, Delegation, Reassignment
 from .policies import get_decision_authority
-from approvals.services import (
-    acting_approver_id,
-    acting_approver_identity,
-    acting_approver_map,
-    active_delegation_for,
-    decide,
-    reassign_application,
-)
+from approvals.services import acting_approver_id, acting_approver_identity, acting_approver_map, active_delegation_for, decide, reassign_application
 
 User = get_user_model()
 
@@ -170,6 +161,21 @@ class SpineAdvanceTests(RoutingBase):
             app.current_stage.status, ApplicationStage.Status.PENDING
         )
         self.assertEqual(app.status, LeaveApplication.Status.REJECTED)
+
+    def test_correction_keeps_spine_at_the_deciding_stage(self):
+        app = self.make_submitted()
+        self.approve(app, self.supervisor)
+        self.approve(app, self.hod)
+        decide(
+            application_id=app.pk,
+            actor=self.registrar,
+            action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+            comment="Fix the dates",
+            expected_version=1,
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.current_stage.stage_order, 3)
+        self.assertEqual(app.current_approver_id, self.registrar.id)
 
 
 class DelegationRoutingTests(RoutingBase):

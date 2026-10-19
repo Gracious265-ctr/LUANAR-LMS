@@ -48,7 +48,7 @@ export function PublicHolidayTable({
           >
             <TableCell>
               <Link
-                href={`/hr-admin/calendar/holidays/${holiday.id}/edit`}
+                href={`/dashboard/hr-admin/calendar/holidays/${holiday.id}/edit`}
                 className="font-medium text-brand-primary hover:text-brand-primary-hover"
               >
                 {holiday.name}
@@ -62,7 +62,7 @@ export function PublicHolidayTable({
                   label={`Edit ${holiday.name}`}
                 />
               ) : (
-                <EditActionLink href={`/hr-admin/calendar/holidays/${holiday.id}/edit`} />
+                <EditActionLink href={`/dashboard/hr-admin/calendar/holidays/${holiday.id}/edit`} />
               )}
             </TableCell>
           </TableRow>

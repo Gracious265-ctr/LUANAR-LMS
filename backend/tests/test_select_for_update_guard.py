@@ -3,7 +3,7 @@
 ``select_for_update()`` raises ``TransactionManagementError`` unless the query
 runs inside an atomic block. Because Django's ``TestCase`` wraps every test in
 one, a service that forgets its own transaction still passes the whole suite
-and then 500s in production — which is exactly how ``plans.services.submit_plan``
+and then 500s in production — which is how a balance-locking service once
 shipped broken.
 
 The rule enforced here has two halves:

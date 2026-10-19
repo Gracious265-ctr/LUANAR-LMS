@@ -30,12 +30,12 @@ export function ApprovalsNavItem({
   if (!isApprover) return null;
 
   const isSelected =
-    pathname === "/approvals" ||
-    pathname.startsWith("/approvals/");
+    pathname === "/dashboard/approvals" ||
+    pathname.startsWith("/dashboard/approvals/");
 
   return (
     <Link
-      href="/approvals"
+      href="/dashboard/approvals"
       // Collapsed, the label span is not rendered, so the icon alone would
       // leave the link with no accessible name.
       aria-label="Approvals"

@@ -25,7 +25,7 @@ describe("CancellationRequestsTable", () => {
     expect(screen.getByText("Decided by me")).toBeInTheDocument();
 
     const link = container.querySelector(
-      'a[href="/approvals/app-1?cancellation=canc-1"]'
+      'a[href="/dashboard/approvals/app-1?cancellation=canc-1"]'
     );
     expect(link).not.toBeNull();
     expect(mockedFetchCancellations).toHaveBeenCalledWith("pending", 1);

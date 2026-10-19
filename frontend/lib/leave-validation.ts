@@ -122,30 +122,6 @@ export async function submitApplication(
   return body as unknown as SubmittedApplication;
 }
 
-/**
- * Returns a rejected application to the approval chain (Unit 21). The server
- * re-validates, increments the submission cycle and routes the application
- * back to whoever currently holds the returning stage.
- */
-export async function resubmitApplication(
-  id: string
-): Promise<SubmittedApplication> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/resubmit/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-  });
-  const body: Record<string, unknown> = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message =
-      typeof body.detail === "string"
-        ? body.detail
-        : "Failed to resubmit application";
-    throw new SubmitError(message, res.status, body);
-  }
-  return body as unknown as SubmittedApplication;
-}
-
 /** Structural helper reading server-authoritative fields off an application. */
 export function isSubmitted(app: LeaveApplication): boolean {
   return app.status === "submitted" && Boolean(app.reference_number);

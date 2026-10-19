@@ -21,7 +21,7 @@ const { pushMock, replaceMock, backMock, searchParamsMock } = vi.hoisted(() => (
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/leave/drafts",
+  usePathname: () => "/dashboard/leave/drafts",
   useRouter: () => ({
     push: pushMock,
     replace: replaceMock,
@@ -89,17 +89,24 @@ describe("ApplicationsList", () => {
     render(<ApplicationsList />);
 
     expect(await screen.findByText("My Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith({
-      status: undefined,
-      excludeStatus: undefined,
-    });
+    expect(getLeaveApplications).toHaveBeenCalledWith(undefined);
     expect(screen.getByText("2 applications")).toBeInTheDocument();
     expect(screen.getByText("LV-2026-27-000001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
       "href",
-      "/leave/applications/submitted-1"
+      "/applications/submitted-1"
     );
     expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
+  });
+
+  it("passes the ?status= filter through to the API", async () => {
+    setSearchParams("status=submitted");
+    vi.mocked(getLeaveApplications).mockResolvedValue({ count: 0, results: [] });
+
+    render(<ApplicationsList />);
+
+    expect(await screen.findByText("My Applications")).toBeInTheDocument();
+    expect(getLeaveApplications).toHaveBeenCalledWith("submitted");
   });
 
   it("renders the empty state when there are no applications", async () => {
@@ -109,36 +116,6 @@ describe("ApplicationsList", () => {
 
     expect(await screen.findByText("No applications yet")).toBeInTheDocument();
     expect(screen.getByText("0 applications")).toBeInTheDocument();
-  });
-
-  it("scopes the fetch and heading to the drafts view", async () => {
-    vi.mocked(getLeaveApplications).mockResolvedValue({
-      count: 1,
-      results: [makeApplication({ id: "draft-1", status: "draft" })],
-    });
-
-    render(<ApplicationsList statusFilter="draft" heading="Draft Applications" />);
-
-    expect(await screen.findByText("Draft Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith({
-      status: "draft",
-      excludeStatus: undefined,
-    });
-  });
-
-  it("hides saved drafts from My Applications via excludeStatus", async () => {
-    vi.mocked(getLeaveApplications).mockResolvedValue({
-      count: 1,
-      results: [makeApplication({ id: "submitted-1", status: "submitted" })],
-    });
-
-    render(<ApplicationsList excludeStatus="draft" />);
-
-    expect(await screen.findByText("My Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith({
-      status: undefined,
-      excludeStatus: "draft",
-    });
   });
 
   it("shows the error state and retries", async () => {
@@ -203,7 +180,7 @@ describe("ApplicationsList overlay entry points", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /new application/i }));
 
-    expect(pushMock).toHaveBeenCalledWith("/leave/drafts?compose=1");
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?compose=1");
   });
 
   it("opens an existing draft in the overlay from the card's Edit action", async () => {
@@ -212,7 +189,7 @@ describe("ApplicationsList overlay entry points", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-    expect(pushMock).toHaveBeenCalledWith("/leave/drafts?edit=draft-1");
+    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-1");
   });
 
   it("opens the review stage directly from the card's Review action", async () => {
@@ -222,7 +199,7 @@ describe("ApplicationsList overlay entry points", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     expect(pushMock).toHaveBeenCalledWith(
-      "/leave/drafts?edit=draft-1&stage=review"
+      "/dashboard/leave/drafts?edit=draft-1&stage=review"
     );
   });
 

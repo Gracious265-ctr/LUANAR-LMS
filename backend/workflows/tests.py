@@ -28,18 +28,33 @@ from .admin import (
 from .testing import (
     create_user_with_role,
     ensure_roles,
-    make_approver,
-    make_employee,
     make_section,
     make_stage,
     make_team,
     make_workflow,
 )
-from organisation.models import ApproverRole, Team
-from workflows.models import Section, Workflow
-from approvals.models import Delegation
-
-from approvals.models import Reassignment
+from .models import (
+    Section,
+    Workflow,
+)
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    Delegation,
+    Reassignment,
+)
+from teams.models import (
+    Team,
+)
+from .services import (
+    StageSequenceError,
+    missing_approver_roles,
+    normalize_section_sequence,
+)
+from organisation.services import (
+    is_approver_user,
+)
 from approvals.services import (
     DelegationActionError,
     ReassignmentError,
@@ -52,13 +67,6 @@ from approvals.services import (
     reject_delegation,
     resolve_delegate_user,
 )
-from organisation.services import create_team_role_assignment, is_approver_user
-
-from .services import (
-    StageSequenceError,
-    missing_approver_roles,
-    normalize_section_sequence,
-)
 
 SEED_PASSWORD = "testpass123"
 
@@ -68,31 +76,6 @@ VALID_SECTIONS = [
     {"order": 3, "name": "Registrar", "approver_role": "registrar"},
     {"order": 4, "name": "DVC", "approver_role": "dvc"},
 ]
-
-
-def designate_manager(team: Team, hr, *, username: str | None = None):
-    """HR names ``team``'s manager and returns them.
-
-    Building and editing a chain is the manager's job after the handover: HR
-    creates the team and designates the manager, and the manager owns the
-    chain writes from then on. Tests of the chain endpoint therefore act as the
-    designated manager rather than as HR. The ``dvc`` role is used because it
-    is team-scoped (not institution-wide) and is not staffed by the team
-    fixtures here, so designating it cannot collide with an existing approver.
-    """
-    manager = make_employee(
-        username or f"manager-{team.code}@test.luanar",
-        team=None,
-        category=team.category,
-    )
-    create_team_role_assignment(
-        team=team,
-        role=ensure_roles("dvc")["dvc"],
-        user=manager,
-        actor=hr,
-        is_team_manager=True,
-    )
-    return manager
 
 
 class SectionSequenceTests(TestCase):
@@ -273,9 +256,7 @@ class WorkflowEndpointTests(TestCase):
         through and nobody could say whose approval they are. So the endpoint
         takes a team on create, and refuses anything else.
         """
-        team = make_team("Dean office", ["dean"], campus="Main Campus")
-        manager = designate_manager(team, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
             {
@@ -291,7 +272,7 @@ class WorkflowEndpointTests(TestCase):
         self.assertIn("team", response.data)
         self.assertFalse(Workflow.objects.filter(name="Dean office approval").exists())
 
-    def test_manager_can_create_a_workflow_for_a_team(self):
+    def test_hr_can_create_a_workflow_for_a_team(self):
         """A team may own several chains, and each is configured separately.
 
         This is the replacement chain case: build the new steps alongside the
@@ -299,8 +280,7 @@ class WorkflowEndpointTests(TestCase):
         by the team it is created for, which is what makes it editable here.
         """
         team = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
-        manager = designate_manager(team, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.post(
             self.list_url,
             {
@@ -321,18 +301,17 @@ class WorkflowEndpointTests(TestCase):
             ["hod", "dean"],
         )
 
-    def test_manager_can_edit_the_steps_of_a_workflow_the_team_owns(self):
+    def test_hr_can_edit_the_steps_of_a_workflow_the_team_owns(self):
         """The team's workflow screen writes here, so a write has to work.
 
-        The rule that survives the change is ownership: the manager edits the
-        chain the named team owns, not a chain that belongs to somebody else.
+        The rule that survives the change is ownership: HR edits the chain the
+        named team owns, not a chain that belongs to somebody else.
         """
         team = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
         workflow = make_workflow(f"{team.name} workflow", ["hod", "dean"])
         workflow.team = team
         workflow.save(update_fields=["team"])
-        manager = designate_manager(team, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             f"/api/v1/workflows/{workflow.pk}/",
             {
@@ -362,8 +341,7 @@ class WorkflowEndpointTests(TestCase):
         workflow = make_workflow(f"{owner.name} workflow", ["hod", "dean"])
         workflow.team = owner
         workflow.save(update_fields=["team"])
-        manager = designate_manager(owner, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             f"/api/v1/workflows/{workflow.pk}/", {"team": other.pk}, format="json"
         )
@@ -380,9 +358,8 @@ class WorkflowEndpointTests(TestCase):
         team, and the edit form would otherwise be refused on every save.
         """
         owner = make_team("Dean office", ["hod", "dean"], campus="Main Campus")
-        workflow = owner.workflows.first()
-        manager = designate_manager(owner, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        workflow = owner.workflow
+        self.client.force_authenticate(user=self.hr_user)
         response = self.client.patch(
             f"/api/v1/workflows/{workflow.pk}/",
             {"team": owner.pk},
@@ -400,7 +377,7 @@ class WorkflowEndpointTests(TestCase):
         response = self.client.get(self.list_url, {"team": owner.pk})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = [row["id"] for row in response.data["results"]]  # type: ignore[index]
-        self.assertEqual(ids, [owner.workflows.first().id])
+        self.assertEqual(ids, [owner.workflow_id])
 
     def test_delete_not_supported(self):
         """A chain is retired with the team, and never on its own.
@@ -627,9 +604,7 @@ class WorkflowActivationEndpointTests(TestCase):
         the field is named and refused rather than silently dropped.
         """
         team = make_team("Dean office", ["dean"], campus="Main Campus")
-        manager = designate_manager(team, self.hr_user)
         future = (timezone.localdate() + timedelta(days=30)).isoformat()
-        self.client.force_authenticate(user=manager)
         response = self.client.post(
             self.list_url,
             {
@@ -652,10 +627,9 @@ class WorkflowActivationEndpointTests(TestCase):
         without the team's status changing and so without anything in the
         team's history saying why.
         """
-        team = make_team("Dean office", ["dean"], campus="Main Campus")
-        workflow = team.workflows.first()
-        manager = designate_manager(team, self.hr_user)
-        self.client.force_authenticate(user=manager)
+        workflow = Workflow.objects.create(
+            name="Live", effective_from=timezone.localdate()
+        )
         response = self.client.patch(
             f"/api/v1/workflows/{workflow.pk}/", {"is_active": False}, format="json"
         )
@@ -673,13 +647,11 @@ class WorkflowActivationEndpointTests(TestCase):
         would then have to reject.
         """
         team = make_team("Dean office", [], campus="Main Campus")
-        manager = designate_manager(team, self.hr_user)
         # Deactivated *after* the team is built: the fixture helper creates the
         # six roles and reactivates them, which would undo the very switch this
         # test is about.
         ensure_roles("dean")
         ApproverRole.objects.filter(code="dean").update(is_active=False)
-        self.client.force_authenticate(user=manager)
         response = self.client.post(
             self.list_url,
             {
@@ -702,9 +674,6 @@ class WorkflowActivationEndpointTests(TestCase):
         """
         first_team = make_team("Dean office", [], campus="Main Campus")
         second_team = make_team("Registry office", [], campus="Main Campus")
-        first_manager = designate_manager(first_team, self.hr_user)
-        second_manager = designate_manager(second_team, self.hr_user)
-        self.client.force_authenticate(user=first_manager)
         first = self.client.post(
             self.list_url,
             {
@@ -714,7 +683,6 @@ class WorkflowActivationEndpointTests(TestCase):
             },
             format="json",
         )
-        self.client.force_authenticate(user=second_manager)
         second = self.client.post(
             self.list_url,
             {
@@ -1183,7 +1151,7 @@ class DelegationConcurrencyTests(TestCase):
         # clock is the only way to age a row the constraint would otherwise
         # forbid (ends_on may never precede starts_on).
         with mock.patch(
-            "workflows.services.timezone.localdate",
+            "approvals.services.timezone.localdate",
             return_value=self.today + timedelta(days=1),
         ):
             with self.assertRaises(DelegationActionError) as ctx:
@@ -2395,10 +2363,11 @@ class ReassignmentAdminTests(TestCase):
         self.assertEqual(admin.employee_name(reassignment), employee.get_full_name())
 
 class WorkflowSerializerAtomicityTests(TestCase):
-    """A failed audit write leaves no half-written chain behind.
+    """A failed audit write leaves no half-written team or chain behind.
 
-    A chain and its steps are written in one transaction. If the audit write
-    fails, the whole thing goes: a chain whose steps exist but whose creation
+    The team, its chain, and its steps are one object as far as the database is
+    concerned, and they are written in one transaction. If the audit write
+    fails, the whole thing goes: a team whose chain exists but whose creation
     was never recorded is exactly the state nobody can explain later.
     """
 
@@ -2413,65 +2382,57 @@ class WorkflowSerializerAtomicityTests(TestCase):
         )
         request = APIRequestFactory().post("/")
         request.user = self.hr
-        self.request = request
+        self.context = {"request": request, "actor": self.hr}
         ensure_roles("supervisor", "hod")
-        # A team the manager owns. Its own step is staffed by somebody else, so
-        # the person reused to staff the chain these tests write is a team member
-        # with no chain of their own yet.
-        self.team = make_team("Atomic rollback team", ["hod"])
-        self.manager = designate_manager(self.team, self.hr)
-        self.approver = make_approver(
-            "hod",
-            username="hod-atomic@test.luanar",
-            institution_wide=False,
-            team=self.team,
-        )
-        self.chain_payload = {
-            "team": self.team.pk,
-            "name": "Atomic rollback chain",
-            "sections": [
-                {
-                    "name": "HOD",
-                    "approver_role": "hod",
-                    "approver": self.approver.pk,
-                }
-            ],
+        self.supervisor = make_active_user("supervisor", "sup-atomic@test.luanar")
+        self.payload = {
+            "name": "Atomic rollback team",
+            "new_workflow": {
+                "name": "Atomic rollback chain",
+                "sections": [
+                    {
+                        "name": "HOD",
+                        "approver_role": "hod",
+                        "members": [self.supervisor.pk],
+                    }
+                ],
+            },
         }
 
     def _serializer(self, *args, **kwargs):
-        from .serializers import WorkflowWriteSerializer
+        from .serializers import TeamSerializer
 
-        return WorkflowWriteSerializer(
-            *args, context={"request": self.request, "actor": self.manager}, **kwargs
-        )
+        return TeamSerializer(*args, context=self.context, **kwargs)
 
-    def test_create_rolls_back_the_chain_and_its_steps(self):
-        serializer = self._serializer(data=self.chain_payload)
+    def test_create_rolls_back_the_team_its_chain_and_its_steps(self):
+        serializer = self._serializer(data=self.payload)
         serializer.is_valid(raise_exception=True)
         with mock.patch(
             "workflows.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 serializer.save()
+        self.assertFalse(Team.objects.filter(name="Atomic rollback team").exists())
         self.assertFalse(Workflow.objects.filter(name="Atomic rollback chain").exists())
-        self.assertEqual(
-            Section.objects.filter(workflow__name="Atomic rollback chain").count(), 0
-        )
+        self.assertEqual(Section.objects.count(), 0)
 
-    def test_a_chain_edit_rolls_back_its_rewrite(self):
+    def test_a_team_edit_rolls_back_its_chain_rewrite(self):
         """An edit that cannot be recorded does not half-apply.
 
         A chain rewritten but not audited would be steps somebody changed and
         nobody can say when or why, which is worse than the edit being refused.
         """
-        serializer = self._serializer(data=self.chain_payload)
+        serializer = self._serializer(data=self.payload)
         serializer.is_valid(raise_exception=True)
-        workflow = serializer.save()
+        team = serializer.save()
+        workflow = team.workflow
 
         edit = self._serializer(
-            workflow,
+            team,
             data={
-                "sections": [{"name": "Only step", "approver_role": "supervisor"}]
+                "new_workflow": {
+                    "sections": [{"name": "Only step", "approver_role": "supervisor"}]
+                }
             },
             partial=True,
         )

@@ -45,8 +45,6 @@ class AuditEntry(models.Model):
         REASSIGNED = "reassigned", "Reassigned"
         STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
         SUBMITTED = "submitted", "Submitted"
-        # Retained for historical rows written before the return-for-correction
-        # flow was replaced by reject + resubmit; nothing emits it now.
         CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
         DOCUMENT_ADDED = "document_added", "Document added"
@@ -64,24 +62,12 @@ class AuditEntry(models.Model):
         CANCELLATION_APPROVED = "cancellation_approved", "Cancellation approved"
         CANCELLATION_REJECTED = "cancellation_rejected", "Cancellation rejected"
         BALANCE_RESTORED = "balance_restored", "Leave balance restored"
-        PLAN_SUBMITTED = "plan_submitted", "Plan submitted"
-        PLAN_APPROVED = "plan_approved", "Plan approved"
-        PLAN_REJECTED = "plan_rejected", "Plan rejected"
         PASSWORD_SET_REQUESTED = (
             "password_set_requested",
             "Password set link requested",
         )
         PASSWORD_SET = "password_set", "Password set"
         PASSWORD_CHANGED = "password_changed", "Password changed"
-        PLAN_CONFIRMED = "plan_confirmed", "Plan block confirmed"
-        PLAN_RELEASED = "plan_released", "Plan block released"
-        PRESET_APPLIED = "preset_applied", "Default configuration applied"
-        SYSTEM_SUPERUSER_GRANTED = "system.superuser_granted", "Superuser granted"
-        SYSTEM_SUPERUSER_REVOKED = "system.superuser_revoked", "Superuser revoked"
-        SYSTEM_STAFF_ACCESS_GRANTED = (
-            "system.staff_access_granted",
-            "Staff access granted",
-        )
 
     class TargetType(models.TextChoices):
         """The authoritative set of audit ``target_type`` codes."""
@@ -103,7 +89,6 @@ class AuditEntry(models.Model):
         DOCUMENT_TEMPLATE = "document-template", "Document template"
         CANCELLATION = "cancellation", "Cancellation request"
         BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
-        PLAN = "plan", "Leave day plan"
         USER_ACCOUNT = "useraccount", "User account"
 
     actor = models.ForeignKey(

@@ -15,7 +15,7 @@ const { routerMock, searchParamsRef, pathnameRef } = vi.hoisted(() => ({
     refresh: vi.fn(),
   },
   searchParamsRef: { current: new URLSearchParams() },
-  pathnameRef: { current: "/approvals/cover" },
+  pathnameRef: { current: "/dashboard/cover" },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -62,11 +62,11 @@ describe("CoverRequestSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
-    pathnameRef.current = "/approvals/cover";
+    pathnameRef.current = "/dashboard/cover";
     vi.mocked(createDelegation).mockResolvedValue(makeDelegation());
     // JSDOM starts with a single history entry, so the `> 1` guard in `close`
     // would otherwise fall through to `replace` in every test.
-    window.history.replaceState({}, "", "/approvals/cover");
+    window.history.replaceState({}, "", "/dashboard/cover");
   });
 
   it("shows a trigger rather than the inline form", () => {
@@ -96,18 +96,18 @@ describe("CoverRequestSection", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Request cover/ }));
 
-    expect(routerMock.push).toHaveBeenCalledWith("/approvals/cover?cover=new");
+    expect(routerMock.push).toHaveBeenCalledWith("/dashboard/cover?cover=new");
   });
 
   it("preserves the approvals tab when opening from the shared panel", () => {
-    pathnameRef.current = "/approvals";
+    pathnameRef.current = "/dashboard/approvals";
     searchParamsRef.current = new URLSearchParams("view=cover");
     render(<CoverRequestSection candidates={candidates} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Request cover/ }));
 
     expect(routerMock.push).toHaveBeenCalledWith(
-      "/approvals?view=cover&cover=new"
+      "/dashboard/approvals?view=cover&cover=new"
     );
   });
 
@@ -129,7 +129,7 @@ describe("CoverRequestSection", () => {
     expect(routerMock.refresh).toHaveBeenCalled();
     // JSDOM starts a test with a single history entry, so this exercises the
     // direct-visit fallback in `close` rather than the `router.back()` path.
-    expect(routerMock.replace).toHaveBeenCalledWith("/approvals/cover");
+    expect(routerMock.replace).toHaveBeenCalledWith("/dashboard/cover");
   });
 
   it("surfaces a rejection inside the overlay rather than behind it", async () => {
@@ -188,7 +188,7 @@ describe("CoverRequestSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
-      expect(routerMock.replace).toHaveBeenCalledWith("/approvals/cover")
+      expect(routerMock.replace).toHaveBeenCalledWith("/dashboard/cover")
     );
     expect(createDelegation).not.toHaveBeenCalled();
   });

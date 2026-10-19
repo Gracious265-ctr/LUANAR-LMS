@@ -24,6 +24,7 @@ export interface LeaveApplication {
     | "submitted"
     | "approved"
     | "rejected"
+    | "correction_required"
     | "cancelled";
   reference_number: string | null;
   created_at: string;
@@ -37,7 +38,7 @@ export interface LeaveApplication {
 
 const DOCUMENT_ERRORS: Record<string, string> = {
   application_not_editable:
-    "This application is no longer editable. Documents can only be changed on a draft or while it is rejected.",
+    "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
   document_not_active:
     "This document has already been removed or replaced.",
 };
@@ -51,23 +52,12 @@ async function documentError(res: Response, fallback: string): Promise<Error> {
   return new Error(detail);
 }
 
-export interface LeaveApplicationFilters {
-  /** Return only this exact status, e.g. `"draft"`. */
-  status?: string;
-  /** Omit these statuses, e.g. `"draft"` for the "My Applications" view. */
-  excludeStatus?: string;
-}
-
-export async function getLeaveApplications(
-  filters: LeaveApplicationFilters = {}
-): Promise<{
+export async function getLeaveApplications(status?: string): Promise<{
   count: number;
   results: LeaveApplication[];
 }> {
   const url = new URL("/api/leave/leave-applications/", window.location.origin);
-  if (filters.status) url.searchParams.set("status", filters.status);
-  if (filters.excludeStatus)
-    url.searchParams.set("exclude_status", filters.excludeStatus);
+  if (status) url.searchParams.set("status", status);
   const res = await fetch(url.toString(), {
     credentials: "include",
   });

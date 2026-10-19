@@ -15,10 +15,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from approvals.models import ApplicationStage, ApprovalDecision
 from leave.models import LeaveApplication
-from organisation.models import ApproverRole
 from users.models import EmployeeProfile, User
+
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    ApplicationStage,
+    ApprovalDecision,
+)
 
 
 @dataclass(frozen=True)
@@ -311,87 +317,3 @@ def _current_stage(application: LeaveApplication) -> ApplicationStage | None:
     if application.current_stage_id is None:
         return None
     return ApplicationStage.objects.filter(pk=application.current_stage_id).first()
-
-
-def user_can_view_team_calendar(user: User, team) -> bool:
-    """Whether ``user`` may read ``team``'s leave calendar (UI/UX Phase 2).
-
-    The calendar is scoped exactly as approval reach is: an HR officer or
-    superuser sees any team; a member sees their own team; and anyone who
-    approves for the team — the section approver, a section member, a workflow
-    member, or a team/campus/institution-wide role holder — sees it too. A
-    caller with no such footing is told the calendar does not exist (404), so
-    team existence is never probed.
-    """
-    if user is None or not getattr(user, "is_authenticated", False):
-        return False
-    if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
-        return True
-
-    profile = getattr(user, "employee_profile", None)
-    if profile is not None and profile.team_id == team.pk:
-        return True
-
-    from .models import WorkflowMember  # noqa: PLC0415
-    from organisation.models import CampusRoleAssignment, RoleAssignment, TeamRoleAssignment  # noqa: PLC0415
-    from workflows.models import Section, SectionMember  # noqa: PLC0415
-
-    workflow = getattr(team, "workflow", None)
-    if workflow is not None:
-        if Section.objects.filter(workflow=workflow, approver=user).exists():
-            return True
-        section_ids = Section.objects.filter(workflow=workflow).values_list(
-            "id", flat=True
-        )
-        if SectionMember.objects.filter(
-            section_id__in=section_ids,
-            user=user,
-            effective_to__isnull=True,
-        ).exists():
-            return True
-        if WorkflowMember.objects.filter(workflow=workflow, user=user).exists():
-            return True
-
-    if TeamRoleAssignment.objects.filter(team=team, user=user).exists():
-        return True
-    if team.campus_id is not None and CampusRoleAssignment.objects.filter(
-        campus_id=team.campus_id, user=user
-    ).exists():
-        return True
-    if RoleAssignment.objects.filter(
-        role__is_institution_wide=True, user=user
-    ).exists():
-        return True
-    return False
-
-
-def can_manage_team(user, team) -> bool:
-    """Whether ``user`` may manage ``team``'s members and workflows.
-
-    HR and superusers may manage every team. A team manager may manage only the
-    one team they hold the manager designation on (see
-    :func:`organisation.services.is_team_manager`). This is the object-level
-    companion to the coarse ``IsHROrTeamManager`` permission: it answers "…and it
-    is *your* team" for a specific team.
-    """
-    if user is None or not getattr(user, "is_authenticated", False):
-        return False
-    if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
-        return True
-    from organisation.services import is_team_manager  # noqa: PLC0415
-
-    return is_team_manager(user, team)
-
-
-def can_manage_workflow(user, workflow) -> bool:
-    """Whether ``user`` may manage ``workflow``: true for its owning team's manager."""
-    if workflow is None:
-        return False
-    return can_manage_team(user, workflow.team)
-
-
-def can_manage_section(user, section) -> bool:
-    """Whether ``user`` may manage ``section``: true for its workflow's team manager."""
-    if section is None:
-        return False
-    return can_manage_workflow(user, section.workflow)

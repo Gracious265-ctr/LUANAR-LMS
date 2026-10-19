@@ -3,7 +3,6 @@ from django.utils import timezone
 
 from organisation.models import ApproverRole
 from users.models import User
-from workflows.models import Section
 
 
 class ApplicationStage(models.Model):
@@ -17,13 +16,13 @@ class ApplicationStage(models.Model):
     keeps the same reference and the same stage/approver, so stages never leave
     the cycle they were created under. The current stage flips back to
     ``pending`` in place and ``decision_version`` increments; earlier and later
-    stages are untouched and ``LeaveApplication.submission_cycle`` increments
+    stages are untouched and ``LieaveApplication.submission_cycle`` increments
     while stage ``submission_cycle`` stays at the chain-creation cycle. Chain
     lookups use ``LeaveApplication.workflow_chain_cycle`` (the minimum stage
     cycle, i.e. usually 1), never ``submission_cycle``.
 
     ``decision_version`` starts at ``1`` and is optimistically incremented every
-    time the stage is acted upon (approve/reject/resubmission).
+    time the stage is acted upon (approve/reject/correction/resubmission).
     Decision requests carry the version they read; a mismatch aborts with a
     stale/conflict (409).
     """
@@ -33,8 +32,18 @@ class ApplicationStage(models.Model):
         PENDING = "pending", "Pending action"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUESTED = "correction_requested", "Correction requested"
         SUPERSEDED = "superseded", "Superseded by resubmission"
+        # A stage the applicant's own position made unnecessary (Unit 30). An
+        # approver applicant does not approve their own leave, and may not
+        # approve their own leave *or* sit below the step that has to decide it,
+        # so the stages at and below their own are skipped rather than routed to
+        # them. Terminal: a skipped stage is never reopened, because the reason it
+        # was skipped cannot change while the application is in flight.
         SKIPPED = "skipped", "Skipped"
+        # A pending stage closed by an employee withdrawing their application
+        # (Unit 18). The application leaves the approver queues and any decision
+        # on it returns 409.
         CANCELLED = "cancelled", "Cancelled"
 
     application = models.ForeignKey(
@@ -108,7 +117,7 @@ class ApplicationStage(models.Model):
         ),
     )
     section_ref = models.ForeignKey(
-        Section,
+        "workflows.Section",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
@@ -186,12 +195,19 @@ class ApplicationStage(models.Model):
         Reads through :class:`ApplicationStageApprover` rather than
         ``assigned_approver``, because the point of the snapshot is that
         eligibility does not change when configuration does.
+
+        A caller that prefetched ``eligible_approvers`` is served from that
+        cache, so reading a whole chain's snapshots costs one query rather than
+        one per stage.
         """
         if "eligible_approvers" in getattr(
             self, "_prefetched_objects_cache", {}
         ):
             return tuple(
-                sorted(row.user_id for row in self.eligible_approvers.all())
+                sorted(
+                    row.user_id
+                    for row in self.eligible_approvers.all()
+                )
             )
         return tuple(
             self.eligible_approvers.order_by("user_id").values_list(
@@ -202,6 +218,14 @@ class ApplicationStage(models.Model):
 
 class ApplicationStageApprover(models.Model):
     """Who was entitled to act on a stage when the chain was materialised.
+
+    A section is resolved by whoever acts first, so eligibility is a set rather
+    than a single person. It is snapshotted here, at materialisation, for two
+    reasons: the people entitled to an in-flight application must not change
+    when HR later edits a section's membership (invariant 12.5), and the
+    applicant's own membership is dropped on the way in, so self-approval is
+    prevented by what was *not* written here rather than by a check that has to
+    be remembered at every later read.
 
     Append-only. Changing who may act on a live application is an explicit
     administrative operation (reassignment), recorded in the audit log — never a
@@ -226,7 +250,9 @@ class ApplicationStageApprover(models.Model):
             )
         ]
         indexes = [
-            models.Index(fields=["user"], name="idx_stage_elig_user")
+            models.Index(
+                fields=["user"], name="idx_stage_elig_user"
+            )
         ]
 
     def __str__(self) -> str:
@@ -266,6 +292,7 @@ class ApprovalDecision(models.Model):
     class Action(models.TextChoices):
         APPROVE = "approve", "Approve"
         REJECT = "reject", "Reject"
+        RETURN_FOR_CORRECTION = "return_for_correction", "Return for correction"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",
@@ -300,7 +327,7 @@ class ApprovalDecision(models.Model):
     comment = models.TextField(
         blank=True,
         default="",
-        help_text="Mandatory for reject.",
+        help_text="Mandatory for reject and return-for-correction.",
     )
     submission_cycle = models.PositiveIntegerField(
         default=1,
@@ -318,8 +345,9 @@ class ApprovalDecision(models.Model):
         ordering = ["-decided_at"]
         constraints = [
             models.CheckConstraint(
-                condition=~models.Q(action="reject") | ~models.Q(comment=""),
-                name="comment_required_for_reject",
+                condition=~models.Q(action__in=("reject", "return_for_correction"))
+                | ~models.Q(comment=""),
+                name="comment_required_for_reject_or_return",
             )
         ]
         indexes = [
@@ -349,6 +377,15 @@ class ApprovalDecision(models.Model):
 
 
 class Delegation(models.Model):
+    """A temporary transfer of an approver's pending decisions to a delegate.
+
+    The delegation is person-based: a specific original approver ``User`` hands
+    their pending approvals to a specific delegate ``User`` while they are
+    unavailable. Applications do not exist yet, so the actual routing body is
+    Unit 21; this record plus :func:`active_delegation_for` are the boundary it
+    consumes.
+    """
+
     class Status(models.TextChoices):
         REQUESTED = "requested", "Requested"
         APPROVED = "approved", "Approved"
@@ -359,6 +396,7 @@ class Delegation(models.Model):
         User,
         on_delete=models.PROTECT,
         related_name="delegations_as_approver",
+        help_text="The approver whose pending decisions are delegated.",
     )
     delegate = models.ForeignKey(
         User,
@@ -366,27 +404,40 @@ class Delegation(models.Model):
         related_name="delegations_as_delegate",
         null=True,
         blank=True,
+        help_text="The person temporarily acting for the approver; required once approved.",
     )
     starts_on = models.DateField()
-    ends_on = models.DateField(null=True, blank=True)
-    request_reason = models.TextField(blank=True)
+    ends_on = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Blank means the delegation stays active until HR cancels it.",
+    )
+    request_reason = models.TextField(
+        blank=True,
+        help_text="The approver's reason for requesting delegation.",
+    )
     requested_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
         related_name="delegations_requested",
+        help_text="Who submitted the request (the approver or HR on their behalf).",
     )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.REQUESTED,
     )
-    decision_reason = models.TextField(blank=True)
+    decision_reason = models.TextField(
+        blank=True,
+        help_text="HR's mandatory reason when approving, rejecting, or cancelling.",
+    )
     decided_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
         related_name="delegations_decided",
         null=True,
         blank=True,
+        help_text="The HR user who decided the request.",
     )
     decided_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -401,6 +452,10 @@ class Delegation(models.Model):
                 | models.Q(ends_on__gte=models.F("starts_on")),
                 name="delegation_ends_on_gte_starts_on",
             ),
+            # The service-level ``open_request_exists`` check gives the friendly
+            # 400, but it is a bare SELECT ... EXISTS and two concurrent requests
+            # for the same approver could both pass it. This partial unique
+            # index is the database backstop that closes the race.
             models.UniqueConstraint(
                 fields=["approver"],
                 condition=models.Q(status="requested"),

@@ -242,7 +242,7 @@ describe("DelegationReview", () => {
           delegation={base}
           employees={employees}
           readOnly
-          backHref="/approvals/cover"
+          backHref="/dashboard/cover"
           title="Delegation"
         />
       );
@@ -286,13 +286,13 @@ describe("DelegationReview", () => {
           delegation={base}
           employees={employees}
           readOnly
-          backHref="/approvals/cover"
+          backHref="/dashboard/cover"
         />
       );
 
       expect(
         screen.getByRole("link", { name: /Back to delegations/ }).getAttribute("href")
-      ).toBe("/approvals/cover");
+      ).toBe("/dashboard/cover");
     });
   });
 });

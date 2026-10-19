@@ -12,22 +12,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { createLeaveApplication, type SupportingDocument } from "@/lib/leave-api";
-import { getLeaveTypes, type LeaveType } from "@/lib/services/leaveTypes";
-import { getLeaveFormDefaults } from "@/lib/services/leaveFormDefaults";
-import { formatDateRange } from "@/lib/date";
 import { useAutosaveDraft } from "@/lib/hooks/useAutosaveDraft";
 import { useLeaveValidation } from "@/lib/hooks/useLeaveValidation";
 import { LeaveTypeSelect } from "./LeaveTypeSelect";
 import { DateRangeFields } from "./DateRangeFields";
 import { WorkingDaysPreview } from "./WorkingDaysPreview";
 import { SupportingDocumentsUploader } from "./SupportingDocumentsUploader";
-import { Stepper, type Step, type StepStatus } from "@/components/ui/Stepper";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
-import { pushToast } from "@/components/ui/toast";
 
 interface LeaveApplicationFormProps {
   mode: "create" | "edit";
@@ -51,19 +46,7 @@ export interface LeaveApplicationFormHandle {
   getDraftId: () => string | null;
 }
 
-const READ_ONLY_STATUSES = ["submitted", "approved", "cancelled"];
-
-/** The wizard's four steps (spec 04 §3.4). The documents step is skipped when
- * the selected type needs no documents and none are attached. */
-const STEP_DEFS = [
-  { id: "dates", label: "Dates & leave type" },
-  { id: "reason", label: "Reason & details" },
-  { id: "documents", label: "Supporting documents" },
-  { id: "review", label: "Review & submit" },
-] as const;
-
-const DOCUMENTS_STEP_INDEX = 2;
-const REVIEW_STEP_INDEX = 3;
+const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
 
 export const LeaveApplicationForm = forwardRef<
   LeaveApplicationFormHandle,
@@ -79,7 +62,7 @@ export const LeaveApplicationForm = forwardRef<
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [documents, setDocuments] = useState<SupportingDocument[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+const [loadError, setLoadError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(
@@ -89,10 +72,6 @@ export const LeaveApplicationForm = forwardRef<
     mode === "edit" ? (applicationId ?? null) : null
   );
   const [calculatedDays, setCalculatedDays] = useState<number | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
-  const [typesLoading, setTypesLoading] = useState(true);
-  const [typesError, setTypesError] = useState<string | null>(null);
 
   const formData = useMemo(
     () => ({
@@ -119,60 +98,6 @@ export const LeaveApplicationForm = forwardRef<
     }),
     [flush, currentId]
   );
-
-  // Save failures are the one autosave event worth interrupting the user for
-  // (spec 04 §3.5); success stays silent in the status line below.
-  useEffect(() => {
-    if (saveStatus === "error") {
-      pushToast(
-        "Could not save your draft. Check your connection and try again.",
-        "error"
-      );
-    }
-  }, [saveStatus]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getLeaveTypes()
-      .then((data) => {
-        if (cancelled) return;
-        setLeaveTypes(data);
-        setTypesError(null);
-      })
-      .catch(() => {
-        if (!cancelled) setTypesError("Unable to load leave types.");
-      })
-      .finally(() => {
-        if (!cancelled) setTypesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Smart defaults (spec 04 §3.6): a brand-new application warm-starts from the
-  // employee's most-recent type and the next working day. An edit never
-  // overwrites what the draft already holds.
-  useEffect(() => {
-    if (mode !== "create" || applicationId) return;
-    let cancelled = false;
-    getLeaveFormDefaults()
-      .then((defaults) => {
-        if (cancelled) return;
-        if (defaults.last_leave_type_id !== null) {
-          setLeaveTypeId(defaults.last_leave_type_id);
-        }
-        if (defaults.default_start_date) {
-          setStartDate(defaults.default_start_date);
-        }
-      })
-      .catch(() => {
-        // Advisory only — a failure leaves the form at its blank defaults.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, applicationId]);
 
   useEffect(() => {
     if (!(mode === "edit" && applicationId)) return;
@@ -230,60 +155,6 @@ export const LeaveApplicationForm = forwardRef<
     ["documents", "—"].includes(issue.field)
   );
 
-  const selectedType = useMemo(
-    () => leaveTypes.find((t) => t.id === leaveTypeId) ?? null,
-    [leaveTypes, leaveTypeId]
-  );
-  const documentsStepVisible =
-    Boolean(selectedType?.requiresDocuments) || documents.length > 0;
-
-  const statusFor = (index: number): StepStatus => {
-    if (index === DOCUMENTS_STEP_INDEX && !documentsStepVisible) return "skipped";
-    if (index < stepIndex) return "completed";
-    if (index === stepIndex) return "current";
-    return "pending";
-  };
-
-  const canAdvance = (index: number): boolean => {
-    if (index === 0) {
-      const hasDatesError = Boolean(startError || endError || leaveTypeError);
-      return (
-        leaveTypeId !== null &&
-        Boolean(startDate) &&
-        Boolean(endDate) &&
-        !hasDatesError
-      );
-    }
-    if (index === 1) {
-      return reason.trim().length > 0 && !reasonError;
-    }
-    if (index === DOCUMENTS_STEP_INDEX) {
-      return !selectedType?.requiresDocuments || documents.length > 0;
-    }
-    return true;
-  };
-
-  const goNext = () => {
-    let next = stepIndex + 1;
-    if (next === DOCUMENTS_STEP_INDEX && !documentsStepVisible) {
-      next = REVIEW_STEP_INDEX;
-    }
-    setStepIndex(Math.min(next, REVIEW_STEP_INDEX));
-  };
-
-  const goBack = () => {
-    let prev = stepIndex - 1;
-    if (prev === DOCUMENTS_STEP_INDEX && !documentsStepVisible) {
-      prev = 1;
-    }
-    setStepIndex(Math.max(prev, 0));
-  };
-
-  const goTo = (index: number) => {
-    const state = statusFor(index);
-    if (state === "completed" || state === "current") setStepIndex(index);
-  };
-
   const ensureDraftCreated = useCallback(
     async (patch: Record<string, unknown> = {}) => {
       if (currentId) return currentId;
@@ -318,16 +189,6 @@ export const LeaveApplicationForm = forwardRef<
     [currentId, ensureDraftCreated]
   );
 
-  const handleContinue = () => {
-    if (!currentId) return;
-    if (onContinueToReview) {
-      flush();
-      onContinueToReview(currentId);
-    } else {
-      router.push(`/leave/${currentId}/review`);
-    }
-  };
-
   if (!initialLoaded) {
     return (
       <div className="space-y-4">
@@ -349,7 +210,7 @@ export const LeaveApplicationForm = forwardRef<
           read-only record. View its current details in your applications list.
         </p>
         <Link
-          href="/leave"
+          href="/dashboard/leave/drafts"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
         >
           Back to Applications
@@ -357,12 +218,6 @@ export const LeaveApplicationForm = forwardRef<
       </Card>
     );
   }
-
-  const stepperSteps: Step[] = STEP_DEFS.map((def, index) => ({
-    id: def.id,
-    label: def.label,
-    status: statusFor(index),
-  }));
 
   return (
     <div className="space-y-6">
@@ -378,195 +233,103 @@ export const LeaveApplicationForm = forwardRef<
         </Alert>
       )}
 
-      <Stepper
-        steps={stepperSteps}
-        orientation="horizontal"
-        size="sm"
-        showAvatars={false}
-        onStepClick={(step) => {
-          const index = STEP_DEFS.findIndex((def) => def.id === step.id);
-          if (index >= 0) goTo(index);
-        }}
-        isStepClickable={(step) =>
-          step.status === "completed" || step.status === "current"
-        }
-        stepAriaLabel={(step) => `Go to ${step.label}`}
-      />
-
-      {stepIndex === 0 && (
-        <Card>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">
-            Dates & leave type
-          </h3>
-          <div className="space-y-4">
-            {leaveTypeError && (
-              <FieldError message={leaveTypeError} id="leave-type-error" />
-            )}
-            <LeaveTypeSelect
-              value={leaveTypeId}
-              onChange={(v) => handleFieldChange("leave_type_id", v)}
-              types={leaveTypes}
-              loading={typesLoading}
-              error={typesError}
-            />
-            <DateRangeFields
-              startDate={startDate}
-              endDate={endDate}
-              onStartChange={(v) => handleFieldChange("start_date", v)}
-              onEndChange={(v) => handleFieldChange("end_date", v)}
-            />
-            {startError && <FieldError message={startError} id="start-date-error" />}
-            {endError && <FieldError message={endError} id="end-date-error" />}
-            <WorkingDaysPreview
-              days={
-                startDate && endDate
-                  ? (validation.result?.working_days ?? calculatedDays ?? null)
-                  : null
-              }
-              loading={Boolean(startDate && endDate) && validation.isLoading}
-            />
-          </div>
-        </Card>
-      )}
-
-      {stepIndex === 1 && (
-        <Card>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">
-            Reason & details
-          </h3>
-          <div className="space-y-4">
-            <Field label="Reason" htmlFor="reason">
-              <Textarea
-                id="reason"
-                className="resize-none"
-                value={reason}
-                onChange={(e) => handleFieldChange("reason", e.target.value)}
-                rows={4}
-                aria-describedby={reasonError ? "reason-error" : undefined}
-                placeholder="Provide a reason for your leave application..."
-              />
-              {reasonError && <FieldError message={reasonError} id="reason-error" />}
-            </Field>
-            {topIssues.length > 0 && (
-              <Alert
-                tone="rejected"
-                className="flex-col gap-0 border border-border-error p-3"
-              >
-                {topIssues.map((issue) => (
-                  <p key={issue.code} className="text-sm text-status-rejected">
-                    {issue.message}
-                  </p>
-                ))}
-              </Alert>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {stepIndex === DOCUMENTS_STEP_INDEX && (
-        <Card>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">
-            Supporting documents
-          </h3>
-          <SupportingDocumentsUploader
-            applicationId={currentId}
-            documents={documents}
-            editable={
-              mode === "create" ||
-              status === "draft" ||
-              status === "rejected"
-            }
-            canReplace={status === "rejected"}
-            onDocumentsChange={setDocuments}
-            onEnsureDraft={ensureDraftCreated}
+      <Card>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">
+          Leave Details
+        </h3>
+        <div className="space-y-4">
+          {leaveTypeError && (
+            <FieldError message={leaveTypeError} id="leave-type-error" />
+          )}
+          <LeaveTypeSelect
+            value={leaveTypeId}
+            onChange={(v) => handleFieldChange("leave_type_id", v)}
           />
-        </Card>
-      )}
+          <DateRangeFields
+            startDate={startDate}
+            endDate={endDate}
+            onStartChange={(v) => handleFieldChange("start_date", v)}
+            onEndChange={(v) => handleFieldChange("end_date", v)}
+          />
+          {startError && <FieldError message={startError} id="start-date-error" />}
+          {endError && <FieldError message={endError} id="end-date-error" />}
+          <WorkingDaysPreview
+            days={
+              startDate && endDate
+                ? (validation.result?.working_days ?? calculatedDays ?? null)
+                : null
+            }
+            loading={Boolean(startDate && endDate) && validation.isLoading}
+          />
+          <Field label="Reason" htmlFor="reason">
+            <Textarea
+              id="reason"
+              className="resize-none"
+              value={reason}
+              onChange={(e) => handleFieldChange("reason", e.target.value)}
+              rows={3}
+              aria-describedby={reasonError ? "reason-error" : undefined}
+              placeholder="Provide a reason for your leave application..."
+            />
+            {reasonError && <FieldError message={reasonError} id="reason-error" />}
+          </Field>
+          {topIssues.length > 0 && (
+            <Alert
+              tone="rejected"
+              className="flex-col gap-0 border border-border-error p-3"
+            >
+              {topIssues.map((issue) => (
+                <p key={issue.code} className="text-sm text-status-rejected">
+                  {issue.message}
+                </p>
+              ))}
+            </Alert>
+          )}
+        </div>
+      </Card>
 
-      {stepIndex === REVIEW_STEP_INDEX && (
-        <Card>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">
-            Review & submit
-          </h3>
-          <dl className="space-y-3 text-sm">
-            <ReviewRow
-              label="Leave type"
-              value={selectedType?.name ?? "—"}
-            />
-            <ReviewRow
-              label="Dates"
-              value={formatDateRange(startDate, endDate) || "—"}
-            />
-            <ReviewRow
-              label="Working days"
-              value={
-                startDate && endDate
-                  ? String(validation.result?.working_days ?? calculatedDays ?? "—")
-                  : "—"
-              }
-            />
-            <ReviewRow label="Reason" value={reason || "—"} />
-            <ReviewRow
-              label="Supporting documents"
-              value={
-                documents.length > 0
-                  ? `${documents.length} attached`
-                  : selectedType?.requiresDocuments
-                    ? "Required"
-                    : "None required"
-              }
-            />
-          </dl>
-        </Card>
+      <Card>
+        <SupportingDocumentsUploader
+          applicationId={currentId}
+          documents={documents}
+          editable={mode === "create" || status === "draft" || status === "correction_required"}
+          canReplace={status === "correction_required"}
+          onDocumentsChange={setDocuments}
+          onEnsureDraft={ensureDraftCreated}
+        />
+      </Card>
+
+      {saveStatus !== "idle" && (
+        <div className="text-sm text-text-muted">
+          {saveStatus === "saving" && "Saving..."}
+          {saveStatus === "saved" && "All changes saved"}
+          {saveStatus === "error" && (
+            <span className="text-status-rejected">Save failed</span>
+          )}
+        </div>
       )}
 
       {!hideActions && (
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            {stepIndex > 0 && (
-              <Button type="button" variant="secondary" onClick={goBack}>
-                Back
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {saveStatus !== "idle" && (
-              <span className="text-sm text-text-muted">
-                {saveStatus === "saving" && "Saving..."}
-                {saveStatus === "saved" && "All changes saved"}
-                {saveStatus === "error" && (
-                  <span className="text-status-rejected">Save failed</span>
-                )}
-              </span>
-            )}
-            {stepIndex < REVIEW_STEP_INDEX ? (
-              <Button
-                type="button"
-                onClick={goNext}
-                disabled={!canAdvance(stepIndex)}
-              >
-                Next
-              </Button>
-            ) : (
-              <Button type="button" onClick={handleContinue} disabled={!currentId}>
-                Review Application
-              </Button>
-            )}
-          </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              if (!currentId) return;
+              if (onContinueToReview) {
+                flush();
+                onContinueToReview(currentId);
+              } else {
+                router.push(`/dashboard/leave/${currentId}/review`);
+              }
+            }}
+            disabled={!currentId}
+          >
+            Review Application
+          </Button>
         </div>
       )}
     </div>
   );
 });
-
-function ReviewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-text-secondary">{label}</dt>
-      <dd className="text-right font-medium text-text-primary">{value}</dd>
-    </div>
-  );
-}
 
 function FieldError({ message, id }: { message: string; id: string }) {
   return (

@@ -132,7 +132,7 @@ export function PendingApplicationsTable({
                 </button>
               ) : (
                 <Link
-                  href={`/hr-admin/reassignments/new?application=${app.id}`}
+                  href={`/dashboard/hr-admin/reassignments/new?application=${app.id}`}
                   className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   <ArrowLeftRight className="h-3.5 w-3.5" />

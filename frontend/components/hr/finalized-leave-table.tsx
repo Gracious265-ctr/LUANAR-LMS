@@ -45,7 +45,7 @@ export function FinalizedLeaveTable({
           >
             <TableCell>
               <Link
-                href={`/hr-admin/audit/applications/${app.id}`}
+                href={`/dashboard/hr-admin/audit/applications/${app.id}`}
                 className="font-medium text-brand-primary hover:text-brand-primary-hover"
               >
                 {app.reference_number || "\u2014"}

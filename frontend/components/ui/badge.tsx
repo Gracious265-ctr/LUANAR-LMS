@@ -6,7 +6,7 @@ import { STATUS_STYLES } from "@/lib/status-styles";
 /**
  * Every status pill renders through `tone`, and the label maps in
  * lib/*\/labels.ts carry a `badgeTone` rather than a hand-written class
- * string, so a new status only needs a new entry here. The status tones
+ * string, so a new status only needs a new entry here. The five status tones
  * are `STATUS_STYLES` from `lib/status-styles.ts` — the one place status →
  * colour is defined; the two icon tiles that need the same colours on a
  * square (rather than a pill) call `badgeVariants` directly instead of
@@ -34,7 +34,7 @@ const badgeVariants = cva(
         pending: STATUS_STYLES.pending,
         approved: STATUS_STYLES.approved,
         rejected: STATUS_STYLES.rejected,
-        notice: STATUS_STYLES.notice,
+        correction: STATUS_STYLES.correction_required,
         cancelled: STATUS_STYLES.cancelled,
       },
       size: {

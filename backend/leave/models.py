@@ -4,36 +4,10 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Min
 from django.utils import timezone
-from django.utils.text import slugify
 
-
-class LeaveType(models.Model):
-    """Named leave type registry entry (annual, maternity, paternity, ...)."""
-
-    name = models.CharField(max_length=120, unique=True)
-    code = models.SlugField(max_length=50, unique=True, blank=True)
-    is_active = models.BooleanField(
-        default=True,
-        help_text=(
-            "Whether HR still offers this type. Retiring a type hides it from "
-            "employees without deleting it, so applications already filed against "
-            "it keep their type and its rules keep their history."
-        ),
-    )
-
-    class Meta:
-        ordering = ["name"]
-
-    def __str__(self) -> str:
-        return self.name
-
-    def save(self, *args, **kwargs):
-        self.name = self.name.strip()
-        if not self.code:
-            self.code = slugify(self.name)
-        else:
-            self.code = self.code.strip().lower()
-        super().save(*args, **kwargs)
+# ``LeaveType`` lives in ``leave_config`` (refinement unit 06). This app only
+# ever references it by name — every rule on it is read through
+# ``leave_config.services``, never copied onto a model here.
 
 
 class GradeEntitlement(models.Model):
@@ -55,7 +29,7 @@ class GradeEntitlement(models.Model):
     days = models.PositiveIntegerField()
     effective_from = models.DateField()
     leave_type = models.ForeignKey(
-        LeaveType,
+        "leave_config.LeaveType",
         on_delete=models.PROTECT,
         related_name="grade_entitlements",
         null=True,
@@ -103,48 +77,6 @@ class GradeEntitlement(models.Model):
         super().save(*args, **kwargs)
 
 
-class LeaveRule(models.Model):
-    """Effective-dated configuration for a leave type."""
-
-    leave_type = models.ForeignKey(
-        LeaveType, on_delete=models.CASCADE, related_name="rules"
-    )
-    max_duration_days = models.PositiveIntegerField()
-    eligibility = models.TextField(blank=True)
-    eligibility_rules = models.JSONField(
-        default=list,
-        blank=True,
-        help_text=(
-            "Machine-readable eligibility rules for the validation engine, each "
-            "``{'type': ..., 'params': {...}}``. ``eligibility`` above stays the "
-            "human-readable description."
-        ),
-    )
-    min_notice_days = models.PositiveIntegerField(default=0)
-    requires_supporting_document = models.BooleanField(default=False)
-    consumes_annual_entitlement = models.BooleanField(default=False)
-    effective_from = models.DateField()
-
-    class Meta:
-        ordering = ["-effective_from", "leave_type"]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(max_duration_days__gte=1),
-                name="leaverule_max_duration_days_gte_1",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(min_notice_days__gte=0),
-                name="leaverule_min_notice_days_gte_0",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.leave_type.name}: {self.max_duration_days} days "
-            f"(from {self.effective_from})"
-        )
-
-
 class FinancialYear(models.Model):
     """A configured financial-year period for the university."""
 
@@ -164,6 +96,53 @@ class FinancialYear(models.Model):
     def __str__(self) -> str:
         status = " (active)" if self.is_active else ""
         return f"{self.start_date} – {self.end_date}{status}"
+
+
+class GradeLeaveEntitlement(models.Model):
+    """Days of one leave type granted to one external grade in one year.
+
+    The organisation data provider is the source of an employee's grade, so
+    this table is keyed by the provider's external grade id rather than by a
+    local grade range (``GradeEntitlement``). ``get_entitlement`` answers
+    from this mapping; "no row" means not configured and is reported as
+    ``None``, never as zero.
+    """
+
+    grade_id = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="External grade identifier from the organisation provider.",
+    )
+    leave_type = models.ForeignKey(
+        "leave_config.LeaveType",
+        on_delete=models.PROTECT,
+        related_name="grade_leave_entitlements",
+    )
+    financial_year = models.ForeignKey(
+        FinancialYear,
+        on_delete=models.PROTECT,
+        related_name="grade_leave_entitlements",
+    )
+    days = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["grade_id", "leave_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["grade_id", "leave_type", "financial_year"],
+                name="gradeleaveentitlement_grade_type_year_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(days__gte=1),
+                name="gradeleaveentitlement_days_gte_1",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.grade_id}: {self.days} {self.leave_type.name} days "
+            f"({self.financial_year})"
+        )
 
 
 class PublicHoliday(models.Model):
@@ -189,6 +168,7 @@ class LeaveApplication(models.Model):
         SUBMITTED = "submitted", "Submitted"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
+        CORRECTION_REQUIRED = "correction_required", "Correction required"
         CANCELLED = "cancelled", "Cancelled"
 
     # The set of statuses where the employee can no longer submit/edit (Unit 17).
@@ -270,6 +250,20 @@ class LeaveApplication(models.Model):
     calendar_days = models.PositiveSmallIntegerField(null=True, blank=True)
     financial_year_label = models.CharField(max_length=16, null=True, blank=True)
     rules_snapshot = models.JSONField(null=True, blank=True)
+
+    # The personal Leave Plan (refinement unit 04) this application was drafted
+    # from, if any. Set only on the draft created by "Apply Now" and kept for the
+    # audit trail afterwards; never used by the approval workflow, and null for
+    # every application the employee filed directly. ``source_plan`` is nullable
+    # and SET_NULL so deleting a plan can never cascade to real leave.
+    source_plan = models.ForeignKey(
+        "plans.LeavePlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="The Leave Plan this draft was generated from, if any.",
+    )
 
     class Meta:
         ordering = ["-updated_at"]

@@ -16,6 +16,17 @@ import {
   removeRoleAssignment,
   removeTeamRoleAssignment,
 } from "@/lib/approver-roles-client";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmButton } from "@/components/ui/confirm-button";
+import { EmptyState } from "@/components/ui/states";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { EditActionLink, EditIconButton } from "./edit-action-link";
 
 /**
@@ -55,14 +66,14 @@ function RetireRoleButton({ role }: { role: ApproverRole }) {
 
   return (
     <span className="inline-flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={retire}
-        disabled={busy}
-        className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+      <ConfirmButton
+        size="sm"
+        onConfirm={retire}
+        loading={busy}
+        prompt={`Retire ${role.label}?`}
       >
-        {busy ? "Retiring..." : "Retire"}
-      </button>
+        Retire
+      </ConfirmButton>
       {error && (
         <span className="max-w-xs text-right text-xs text-status-rejected">
           {error}
@@ -103,15 +114,14 @@ function RemoveHolderButton({
   return (
     <span className="inline-flex items-center gap-2">
       {error && <span className="text-xs text-status-rejected">{error}</span>}
-      <button
-        type="button"
-        onClick={remove}
-        disabled={busy}
+      <ConfirmButton
+        size="sm"
+        onConfirm={remove}
+        loading={busy}
         aria-label={label}
-        className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {busy ? "Removing..." : "Remove"}
-      </button>
+        Remove
+      </ConfirmButton>
     </span>
   );
 }
@@ -148,194 +158,186 @@ export function ApproverRoleTable({
 }) {
   if (roles.length === 0) {
     return (
-      <div className="py-12 text-center text-text-muted">
-        <p className="text-base font-medium text-text-primary">No roles found</p>
-        <p className="mt-1 text-sm">
-          Create a role to give it to a team or to one person at institution,
-          team or campus scope.
-        </p>
-      </div>
+      <EmptyState
+        title="No roles found"
+        description="Create a role to give it to a team or to one person at institution, team or campus scope."
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border-default text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-            <th className="py-3 pr-4">Role</th>
-            <th className="py-3 pr-4">Code</th>
-            <th className="py-3 pr-4">History visible</th>
-            <th className="py-3 pr-4">Scope</th>
-            <th className="py-3 pr-4">Holders</th>
-            <th className="py-3 pr-4">State</th>
-            <th className="py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {roles.map((role) => {
-            const holders = assignments?.[role.id] ?? [];
-            // A role's scope is where it is actually held, not a label that can
-            // drift from it: an institution-wide role is held institution-wide,
-            // a role with a campus-wide holder reads campus-wide, a role with a
-            // team-wide holder reads team-wide, and only a role nobody holds
-            // wide is a plain team role.
-            const campus = campusHoldings?.[role.id] ?? [];
-            const team = teamHoldings?.[role.id] ?? [];
-            const scopeLabel = role.is_institution_wide
-              ? "Institution-wide"
-              : campus.length > 0
-                ? "Campus-wide"
-                : team.length > 0
-                  ? "Team-wide"
-                  : "Team role";
-            return (
-              <tr
-                key={role.id}
-                className="border-b border-border-default align-top transition-colors hover:bg-surface-hover"
-              >
-                <td className="py-3 pr-4">
-                  <span className="block font-medium text-text-primary">
-                    {role.label}
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Role</TableHead>
+          <TableHead>Code</TableHead>
+          <TableHead>History visible</TableHead>
+          <TableHead>Scope</TableHead>
+          <TableHead>Holders</TableHead>
+          <TableHead>State</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {roles.map((role) => {
+          const holders = assignments?.[role.id] ?? [];
+          // A role's scope is where it is actually held, not a label that can
+          // drift from it: an institution-wide role is held institution-wide,
+          // a role with a campus-wide holder reads campus-wide, a role with a
+          // team-wide holder reads team-wide, and only a role nobody holds
+          // wide is a plain team role.
+          const campus = campusHoldings?.[role.id] ?? [];
+          const team = teamHoldings?.[role.id] ?? [];
+          const scopeLabel = role.is_institution_wide
+            ? "Institution-wide"
+            : campus.length > 0
+              ? "Campus-wide"
+              : team.length > 0
+                ? "Team-wide"
+                : "Team role";
+          return (
+            <TableRow key={role.id} className="align-top">
+              <TableCell>
+                <span className="block font-medium text-text-primary">
+                  {role.label}
+                </span>
+                {role.description && (
+                  <span className="block text-xs text-text-muted">
+                    {role.description}
                   </span>
-                  {role.description && (
-                    <span className="block text-xs text-text-muted">
-                      {role.description}
-                    </span>
-                  )}
-                  {role.usage.length > 0 && (
-                    <ul className="mt-1 space-y-0.5 text-xs text-text-muted">
-                      {role.usage.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  )}
-                </td>
-                <td className="py-3 pr-4 font-mono text-xs text-text-secondary">
-                  {role.code}
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {historyScopeLabel(role.history_scope)}
-                </td>
-                <td className="py-3 pr-4 text-text-secondary">{scopeLabel}</td>
-                <td className="py-3 pr-4 text-text-secondary">
-                  {role.is_institution_wide ? (
-                    assignments === undefined ? (
-                      <span className="text-text-muted">
-                        Could not load the holders
-                      </span>
-                    ) : !role.is_active ? (
-                      <span className="text-text-muted">
-                        Retired — no longer routes applications
-                      </span>
-                    ) : holders.length === 0 ? (
-                      <span className="text-status-rejected">
-                        No holder — applications reaching this role have nobody to
-                        approve
-                      </span>
-                    ) : (
-                      <ul className="space-y-1">
-                        {holders.map((assignment) => (
-                          <li
-                            key={assignment.id}
-                            className="flex items-center gap-2"
-                          >
-                            <span>{assignment.user_name}</span>
-                            <RemoveHolderButton
-                              onRemove={() => removeRoleAssignment(assignment.id)}
-                              label={`Remove ${assignment.user_name} from this role`}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    )
-                  ) : campus.length + team.length === 0 ? (
+                )}
+                {role.usage.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-text-muted">
+                    {role.usage.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+              </TableCell>
+              <TableCell className="font-mono text-xs text-text-secondary">
+                {role.code}
+              </TableCell>
+              <TableCell className="text-text-secondary">
+                {historyScopeLabel(role.history_scope)}
+              </TableCell>
+              <TableCell className="text-text-secondary">{scopeLabel}</TableCell>
+              <TableCell className="text-text-secondary">
+                {role.is_institution_wide ? (
+                  assignments === undefined ? (
                     <span className="text-text-muted">
-                      Staffed through team membership
+                      Could not load the holders
+                    </span>
+                  ) : !role.is_active ? (
+                    <span className="text-text-muted">
+                      Retired — no longer routes applications
+                    </span>
+                  ) : holders.length === 0 ? (
+                    <span className="text-status-rejected">
+                      No holder — applications reaching this role have nobody to
+                      approve
                     </span>
                   ) : (
                     <ul className="space-y-1">
-                      {team.map((assignment) => {
-                        const teamName =
-                          teamNameById?.[assignment.team] ??
-                          `Team #${assignment.team}`;
-                        return (
-                          <li
-                            key={`team-${assignment.id}`}
-                            className="flex items-center gap-2"
-                          >
-                            <span>
-                              {assignment.user_name} — {teamName}
-                            </span>
-                            <RemoveHolderButton
-                              onRemove={() =>
-                                removeTeamRoleAssignment(assignment.id)
-                              }
-                              label={`Remove ${assignment.user_name} from the ${teamName} team`}
-                            />
-                          </li>
-                        );
-                      })}
-                      {campus.map((assignment) => {
-                        const campusName =
-                          campusNameById?.[assignment.campus] ??
-                          `Campus #${assignment.campus}`;
-                        return (
-                          <li
-                            key={`campus-${assignment.id}`}
-                            className="flex items-center gap-2"
-                          >
-                            <span>
-                              {assignment.user_name} — {campusName}
-                            </span>
-                            <RemoveHolderButton
-                              onRemove={() =>
-                                removeCampusRoleAssignment(assignment.id)
-                              }
-                              label={`Remove ${assignment.user_name} from the ${campusName} campus`}
-                            />
-                          </li>
-                        );
-                      })}
+                      {holders.map((assignment) => (
+                        <li
+                          key={assignment.id}
+                          className="flex items-center gap-2"
+                        >
+                          <span>{assignment.user_name}</span>
+                          <RemoveHolderButton
+                            onRemove={() => removeRoleAssignment(assignment.id)}
+                            label={`Remove ${assignment.user_name} from this role`}
+                          />
+                        </li>
+                      ))}
                     </ul>
-                  )}
-                </td>
-                <td className="py-3 pr-4">
-                  {role.is_active ? (
-                    <span className="inline-block rounded-full bg-brand-secondary-subtle px-2.5 py-0.5 text-xs font-medium text-brand-secondary">
-                      Active
-                    </span>
-                  ) : (
-                    <span className="inline-block rounded-sm bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-muted">
-                      Retired
-                    </span>
-                  )}
-                  {role.handles_cancellation && (
-                    <span className="mt-1 block text-xs text-text-muted">
-                      Decides cancellations
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 text-right">
-                  <span className="inline-flex items-center justify-end gap-2">
-                    {onEdit ? (
-                      <EditIconButton
-                        onClick={() => onEdit(role.id)}
-                        label={`Edit ${role.label}`}
-                      />
-                    ) : (
-                      <EditActionLink
-                        href={`/organisation/roles/${role.id}/edit`}
-                      />
-                    )}
-                    <RetireRoleButton role={role} />
+                  )
+                ) : campus.length + team.length === 0 ? (
+                  <span className="text-text-muted">
+                    Staffed through team membership
                   </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                ) : (
+                  <ul className="space-y-1">
+                    {team.map((assignment) => {
+                      const teamName =
+                        teamNameById?.[assignment.team] ??
+                        `Team #${assignment.team}`;
+                      return (
+                        <li
+                          key={`team-${assignment.id}`}
+                          className="flex items-center gap-2"
+                        >
+                          <span>
+                            {assignment.user_name} — {teamName}
+                          </span>
+                          <RemoveHolderButton
+                            onRemove={() =>
+                              removeTeamRoleAssignment(assignment.id)
+                            }
+                            label={`Remove ${assignment.user_name} from the ${teamName} team`}
+                          />
+                        </li>
+                      );
+                    })}
+                    {campus.map((assignment) => {
+                      const campusName =
+                        campusNameById?.[assignment.campus] ??
+                        `Campus #${assignment.campus}`;
+                      return (
+                        <li
+                          key={`campus-${assignment.id}`}
+                          className="flex items-center gap-2"
+                        >
+                          <span>
+                            {assignment.user_name} — {campusName}
+                          </span>
+                          <RemoveHolderButton
+                            onRemove={() =>
+                              removeCampusRoleAssignment(assignment.id)
+                            }
+                            label={`Remove ${assignment.user_name} from the ${campusName} campus`}
+                          />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </TableCell>
+              <TableCell>
+                {role.is_active ? (
+                  <Badge size="sm" tone="info">
+                    Active
+                  </Badge>
+                ) : (
+                  <Badge size="sm" tone="muted">
+                    Retired
+                  </Badge>
+                )}
+                {role.handles_cancellation && (
+                  <span className="mt-1 block text-xs text-text-muted">
+                    Decides cancellations
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                <span className="inline-flex items-center justify-end gap-2">
+                  {onEdit ? (
+                    <EditIconButton
+                      onClick={() => onEdit(role.id)}
+                      label={`Edit ${role.label}`}
+                    />
+                  ) : (
+                    <EditActionLink
+                      href={`/dashboard/hr-admin/roles/${role.id}/edit`}
+                    />
+                  )}
+                  <RetireRoleButton role={role} />
+                </span>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

@@ -19,6 +19,9 @@ or making any architectural decision:
 Update `context/progress-tracker.md` after each
 meaningful implementation change.
 
+Update `./DEVELOPER.GUIDE.md` after each unit implementation.
+
+
 If implementation changes the architecture, scope, or
 standards documented in the context files, update the
 relevant file before continuing.

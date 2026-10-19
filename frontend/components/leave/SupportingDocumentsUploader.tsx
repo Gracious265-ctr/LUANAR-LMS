@@ -30,7 +30,7 @@ interface SupportingDocumentsUploaderProps {
   applicationId: string | null;
   documents: SupportingDocument[];
   editable?: boolean;
-  /** Offer per-row Replace (true on a rejected application only). */
+  /** Offer per-row Replace (true on a ``correction_required`` application only). */
   canReplace?: boolean;
   onDocumentsChange: (docs: SupportingDocument[]) => void;
   onEnsureDraft?: () => Promise<string | null>;
@@ -226,7 +226,7 @@ export function SupportingDocumentsUploader({
 
       {canReplace && editable && documents.length > 0 && (
         <p className="mt-2 text-xs text-text-muted">
-          This application was rejected. Replace a document to
+          This application was returned for correction. Replace a document to
           submit a corrected copy — the previous version stays in your history
           for the approvers to compare.
         </p>

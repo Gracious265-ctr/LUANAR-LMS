@@ -103,10 +103,10 @@ describe("SubmissionConfirmation", () => {
 
     expect(
       screen.getByRole("link", { name: "View my applications" })
-    ).toHaveAttribute("href", "/leave");
+    ).toHaveAttribute("href", "/dashboard/leave/drafts");
     expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
       "href",
-      "/"
+      "/dashboard"
     );
   });
 });
@@ -145,7 +145,7 @@ describe("SubmittedClient", () => {
     expect(
       await screen.findByText(/This application has not been submitted/)
     ).toBeInTheDocument();
-    expect(replaceMock).toHaveBeenCalledWith("/leave/app-1/review");
+    expect(replaceMock).toHaveBeenCalledWith("/dashboard/leave/app-1/review");
   });
 });
 

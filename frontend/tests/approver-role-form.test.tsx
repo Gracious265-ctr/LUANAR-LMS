@@ -156,7 +156,7 @@ describe("ApproverRoleForm", () => {
 
     expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute(
       "href",
-      "/organisation/roles"
+      "/dashboard/hr-admin/roles"
     );
   });
 });

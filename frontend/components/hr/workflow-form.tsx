@@ -4,60 +4,25 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowLeft, ArrowUp, Lock, X } from "lucide-react";
 
-import type {
-  ApproverRole,
-  CampusRoleAssignment,
-  RoleAssignment,
-  TeamRoleAssignment,
-} from "@/lib/approver-roles";
-import {
-  listCampusRoleAssignments,
-  listRoleAssignments,
-  listTeamRoleAssignments,
-} from "@/lib/approver-roles-client";
+import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import { listRoleAssignments } from "@/lib/approver-roles-client";
 import { getWorkflowMemberPool } from "@/lib/team-members-client";
 import type { WorkflowMemberPool } from "@/lib/team-members";
 import type { EligibleApprover } from "@/lib/teams";
 import { listEligibleApprovers } from "@/lib/teams-client";
 import type { Workflow, WorkflowInput, WorkflowSectionInput } from "@/lib/workflows";
 import { createWorkflow, updateWorkflow } from "@/lib/workflows-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/states";
 
 interface DraftStep {
   /** The role this step needs, by code. Open-ended, like every role code. */
   approver_role: string;
-  /**
-   * The one person appointed to the step, by user id. Null leaves it unstaffed.
-   *
-   * A team-wide or campus-wide role never writes a name here: its holder
-   * approves without being appointed to the step, so the holding staffs it and
-   * the screen shows the holder as a read-only answer. Only an institution-wide
-   * role writes its holder here, because the save path appoints that holder and
-   * has no other way to name them.
-   */
+  /** Only set when HR has overridden the step's name from the role's label. */
+  name?: string;
+  /** The one person appointed to the step, by user id. Null leaves it unstaffed. */
   approver: number | null;
-}
-
-/**
- * One role's lone holder, by role id, from a list of holdings.
- *
- * A role with more than one holder maps to nothing: naming one of several as
- * the automatic answer is the ambiguity the backend refuses to resolve, so the
- * screen must leave it for HR too.
- */
-function loneHolderMap<T extends { role: number; user: number; user_name: string }>(
-  rows: T[]
-): Map<number, { id: number; name: string }> {
-  const lone = new Map<number, { id: number; name: string }>();
-  const seen = new Set<number>();
-  for (const row of rows) {
-    if (seen.has(row.role)) {
-      lone.delete(row.role);
-      continue;
-    }
-    seen.add(row.role);
-    lone.set(row.role, { id: row.user, name: row.user_name });
-  }
-  return lone;
 }
 
 /**
@@ -81,7 +46,7 @@ export function WorkflowForm({
   rolesError = "",
 }: {
   workflow?: Workflow;
-  team: { id: number; name: string; category?: string; campus?: number | null };
+  team: { id: number; name: string; category?: string };
   roles: ApproverRole[];
   rolesError?: string;
 }) {
@@ -91,6 +56,7 @@ export function WorkflowForm({
     workflow
       ? workflow.sections.map((section) => ({
           approver_role: section.approver_role,
+          name: section.name,
           approver: section.approver,
         }))
       : []
@@ -106,11 +72,7 @@ export function WorkflowForm({
     {}
   );
   const [candidateError, setCandidateError] = useState("");
-  const [institutionHolders, setInstitutionHolders] = useState<RoleAssignment[]>(
-    []
-  );
-  const [teamHolders, setTeamHolders] = useState<TeamRoleAssignment[]>([]);
-  const [campusHolders, setCampusHolders] = useState<CampusRoleAssignment[]>([]);
+  const [wideHolders, setWideHolders] = useState<RoleAssignment[]>([]);
 
   const roleByCode = useMemo(
     () => new Map(roles.map((role) => [role.code, role])),
@@ -120,103 +82,31 @@ export function WorkflowForm({
     () => new Map(roles.map((role) => [role.code, role.id])),
     [roles]
   );
-  const roleById = useMemo(
-    () => new Map(roles.map((role) => [role.id, role])),
-    [roles]
-  );
 
   /**
    * The single institution-wide holder of each role, name and all, by role id.
    * A role with no holder — or more than one — maps to nothing, because naming
    * one of several people as the automatic answer is exactly the ambiguity the
-   * backend leaves unstaffed rather than guess at.
+   * backend leaves unstaffed rather than guess at. The name is here because a
+   * locked approver field shows it read-only; it is not a candidate to pick
+   * from.
    */
-  const institutionHolderByRoleId = useMemo(
-    () => loneHolderMap(institutionHolders),
-    [institutionHolders]
-  );
-
-  /** The holder a role has on *this* team, when the team holds one. */
-  const teamWideHolderByRoleId = useMemo(
-    () => loneHolderMap(teamHolders.filter((holding) => holding.team === team.id)),
-    [teamHolders, team.id]
-  );
-
-  /** The holder a role has at *this* team's campus, for an academic team. */
-  const campusWideHolderByRoleId = useMemo(() => {
-    if (team.campus == null) {
-      return new Map<number, { id: number; name: string }>();
-    }
-    return loneHolderMap(
-      campusHolders.filter((holding) => holding.campus === team.campus)
-    );
-  }, [campusHolders, team.campus]);
-
-  /**
-   * Roles another team or campus holds wide.
-   *
-   * A wide role is scoped to the team or campus that holds it: its holder
-   * approves for that group's people, not for everybody's. So a role claimed
-   * elsewhere is that team's or campus's to use and is not offered here. A plain
-   * role — held wide nowhere — belongs to no scope and is offered everywhere.
-   */
-  const wideElsewhereRoleIds = useMemo(() => {
-    const ids = new Set<number>();
-    for (const holding of teamHolders) {
-      if (holding.team !== team.id) ids.add(holding.role);
-    }
-    for (const holding of campusHolders) {
-      if (team.campus == null || holding.campus !== team.campus) {
-        ids.add(holding.role);
+  const wideHolderByRoleId = useMemo(() => {
+    const lone = new Map<number, { id: number; name: string }>();
+    const seen = new Set<number>();
+    for (const assignment of wideHolders) {
+      if (seen.has(assignment.role)) {
+        lone.delete(assignment.role);
+        continue;
       }
+      seen.add(assignment.role);
+      lone.set(assignment.role, {
+        id: assignment.user,
+        name: assignment.user_name,
+      });
     }
-    return ids;
-  }, [teamHolders, campusHolders, team.id, team.campus]);
-
-  /** How a wide role resolves for this team, if it is wide for this team. */
-  function wideScopeFor(role: ApproverRole):
-    | {
-        holder: { id: number; name: string };
-        scope: "team" | "campus" | "institution";
-      }
-    | undefined {
-    const teamWide = teamWideHolderByRoleId.get(role.id);
-    if (teamWide) return { holder: teamWide, scope: "team" };
-    const campusWide = campusWideHolderByRoleId.get(role.id);
-    if (campusWide) return { holder: campusWide, scope: "campus" };
-    if (role.is_institution_wide && team.category === "administration") {
-      const institutionWide = institutionHolderByRoleId.get(role.id);
-      if (institutionWide) {
-        return { holder: institutionWide, scope: "institution" };
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * The roles this team may put on a step.
-   *
-   * A wide role is scoped to where it reaches: an institution-wide role only
-   * serves an administration team, a team-wide role only the team that holds
-   * it, and a campus-wide role only the academic teams at its campus. A plain
-   * role — held wide nowhere — belongs to no scope and serves every team.
-   */
-  const offeredRoles = useMemo(
-    () =>
-      roles.filter((role) => {
-        if (teamWideHolderByRoleId.has(role.id)) return true;
-        if (campusWideHolderByRoleId.has(role.id)) return true;
-        if (role.is_institution_wide) return team.category === "administration";
-        return !wideElsewhereRoleIds.has(role.id);
-      }),
-    [
-      roles,
-      team.category,
-      teamWideHolderByRoleId,
-      campusWideHolderByRoleId,
-      wideElsewhereRoleIds,
-    ]
-  );
+    return lone;
+  }, [wideHolders]);
 
   /**
    * The chain this form is shaping, as the eligible-approver question needs it:
@@ -272,37 +162,38 @@ export function WorkflowForm({
   }, [candidateKeys, workflowScope]);
 
   /**
-   * Read who already holds each role wide: institution-wide, on this team, and
-   * at this team's campus.
-   *
-   * The screen needs all three scopes. A wide holding is what makes a broad role
-   * usable for a given team at all, so the role list is scoped from these and
-   * the holder is shown on the step rather than asked for.
-   *
-   * The institution-wide holder is also appointed at save, so the form fills
-   * that one in itself — mirroring the backend's rule exactly: only an
-   * institution-wide role, only an administration team (an academic team may
-   * not use an institution-wide approver at all), and only when there is exactly
-   * one holder. Team-wide and campus-wide steps stay unstaffed in the payload:
-   * those resolve without an appointment, so writing a name is the one thing the
-   * save path would refuse.
-   *
+   * Read who already holds each role institution-wide. The backend appoints
+   * that holder at save, so the form needs the same answer on first draw.
    * Unreadable holdings are treated as "none": the field is then left to HR,
    * which is precisely what the save path does when it cannot appoint either.
+   *
+   * The fill when the list arrives mirrors the backend's rule exactly and is
+   * deliberately as narrow: only an institution-wide role, only an
+   * administration team (an academic team may not use an institution-wide
+   * approver at all), and only when there is exactly one holder. That answer is
+   * the one true approver of the step — the field is locked to it and another
+   * name may not be selected — so the fill also corrects a person appointed
+   * before this rule existed: the wide holder wins.
    */
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      listRoleAssignments(),
-      listTeamRoleAssignments(),
-      listCampusRoleAssignments(),
-    ])
-      .then(([institution, teams, campuses]) => {
+    listRoleAssignments()
+      .then((assignments) => {
         if (cancelled) return;
-        setInstitutionHolders(institution);
-        setTeamHolders(teams);
-        setCampusHolders(campuses);
-        const lone = loneHolderMap(institution);
+        setWideHolders(assignments);
+        const lone = new Map<number, { id: number; name: string }>();
+        const seen = new Set<number>();
+        for (const assignment of assignments) {
+          if (seen.has(assignment.role)) {
+            lone.delete(assignment.role);
+            continue;
+          }
+          seen.add(assignment.role);
+          lone.set(assignment.role, {
+            id: assignment.user,
+            name: assignment.user_name,
+          });
+        }
         setSteps((current) => {
           let changed = false;
           const next = current.map((step) => {
@@ -321,8 +212,7 @@ export function WorkflowForm({
         });
       })
       .catch(() => {
-        // No visible holdings means no auto-appointment and every role treated
-        // as plain; HR can still pick by hand.
+        // No visible holders means no auto-appointment; HR still picks by hand.
       });
     return () => {
       cancelled = true;
@@ -378,9 +268,9 @@ function toggleMember(userId: number) {
       // designation is left blank rather than read from a field it never sends.
       peopleById.set(member.user, {
         user: member.user,
-        full_name: member.full_name,
-        email: member.email,
-        designation: "",
+        full_name: member.user_name,
+        email: member.user_email,
+        designation: member.designation ?? "",
       });
     }
   }
@@ -403,10 +293,10 @@ function toggleMember(userId: number) {
     setSteps((current) => current.filter((_, position) => position !== index));
   }
 
-  function setApprover(index: number, approver: number | null) {
+  function update(index: number, patch: Partial<DraftStep>) {
     setSteps((current) =>
       current.map((step, position) =>
-        position === index ? { ...step, approver } : step
+        position === index ? { ...step, ...patch } : step
       )
     );
   }
@@ -417,12 +307,9 @@ function toggleMember(userId: number) {
    * and sending an ineligible id would earn a refusal on save. The picker
    * refetches through the role-based candidate keys above.
    *
-   * An institution-wide role also staffs its own step the moment it is chosen:
-   * it is the single holder who will be appointed at save, so the field shows
-   * that answer now rather than a step that looks undecided. A team-wide or
-   * campus-wide role is shown with its holder too, but the step stays unstaffed
-   * here — those resolve without an appointment, so a name written here is the
-   * one thing the save path would refuse.
+   * An institution-wide role also staffs its own step the moment it is
+   * chosen: it is the single holder who will be appointed at save, so the
+   * field shows that answer now rather than a step that looks undecided.
    */
   function changeRole(index: number, approverRole: string) {
     setSteps((current) =>
@@ -434,9 +321,11 @@ function toggleMember(userId: number) {
           approver: null,
         };
         const role = roleByCode.get(approverRole);
-        const wide = role ? wideScopeFor(role) : undefined;
-        if (wide?.scope === "institution") {
-          return { ...next, approver: wide.holder.id };
+        if (role?.is_institution_wide && team.category === "administration") {
+          const holder = wideHolderByRoleId.get(role.id);
+          if (holder !== undefined) {
+            return { ...next, approver: holder.id };
+          }
         }
         return next;
       })
@@ -445,10 +334,12 @@ function toggleMember(userId: number) {
 
   function addStep() {
     setSteps((current) => {
-      const approverRole = offeredRoles[0]?.code ?? "";
+      const approverRole = roles[0]?.code ?? "";
       const role = roleByCode.get(approverRole);
-      const wide = role ? wideScopeFor(role) : undefined;
-      const approver = wide?.scope === "institution" ? wide.holder.id : null;
+      const approver =
+        role?.is_institution_wide && team.category === "administration"
+          ? (wideHolderByRoleId.get(role.id)?.id ?? null)
+          : null;
       return [...current, { approver_role: approverRole, approver }];
     });
   }
@@ -469,6 +360,7 @@ function toggleMember(userId: number) {
       order: index + 1,
       approver_role: step.approver_role,
       approver: step.approver,
+      ...(step.name ? { name: step.name } : {}),
     }));
   }
 
@@ -547,13 +439,12 @@ function toggleMember(userId: number) {
         >
           Name
         </label>
-        <input
+        <Input
           id="workflow_name"
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder={`e.g. ${team.name} replacement`}
         />
         <p className="mt-1 text-xs text-text-muted">
@@ -566,14 +457,14 @@ function toggleMember(userId: number) {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-sm font-medium text-text-primary">Steps</span>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={addStep}
-            disabled={offeredRoles.length === 0}
-            className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={roles.length === 0}
           >
             Add step
-          </button>
+          </Button>
         </div>
 
         {rolesError && (
@@ -586,14 +477,6 @@ function toggleMember(userId: number) {
           <p className="mb-2 text-xs text-status-pending">
             No approver roles are available, so no step can be described. Create
             a role first.
-          </p>
-        )}
-        {roles.length > 0 && offeredRoles.length === 0 && (
-          <p className="mb-2 text-xs text-status-pending">
-            No approver role applies to this team: the roles available are held
-            team-wide, campus-wide, or institution-wide somewhere they do not
-            reach here. Give a role a holding this team can use, or create one
-            for it.
           </p>
         )}
 
@@ -627,26 +510,15 @@ function toggleMember(userId: number) {
                       },
                     ]
                   : people;
-              // A wide role is staffed by its holding rather than by a name here.
-              // An institution-wide role's holder is the one true approver, so
-              // the field is locked to that name and another may not be selected
-              // — the backend appoints the same person at save. A team-wide or
-              // campus-wide role's holder resolves the step without an
-              // appointment, so the step is shown staffed but is left unstaffed
-              // in what is sent.
-              const role =
-                roleId === undefined ? undefined : roleById.get(roleId);
-              const wide = role ? wideScopeFor(role) : undefined;
-              // The selected role stays visible even when it is no longer
-              // offered for this team — an existing chain edited after a wide
-              // holding moved still has to show the role it uses.
-              const options = offeredRoles.some(
-                (candidate) => candidate.code === step.approver_role
-              )
-                ? offeredRoles
-                : role
-                  ? [role, ...offeredRoles]
-                  : offeredRoles;
+              // An institution-wide role has one true approver — its single
+              // institution-wide holder — so the field is locked to that name
+              // and another may not be selected. The backend appoints the same
+              // person at save, so the lock is the front half of a rule the
+              // whole chain already keeps.
+              const wideHolder =
+                roleId !== undefined && team.category === "administration"
+                  ? wideHolderByRoleId.get(roleId)
+                  : undefined;
               return (
               <li
                 key={index}
@@ -670,7 +542,7 @@ function toggleMember(userId: number) {
                     }
                     className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
                   >
-                    {options.map((role) => {
+                    {roles.map((role) => {
                       const usedIndex = steps.findIndex(
                         (step) => step.approver_role === role.code
                       );
@@ -696,26 +568,42 @@ function toggleMember(userId: number) {
                 </div>
                 <div className="min-w-40 flex-1">
                   <label
+                    htmlFor={`step-name-${index}`}
+                    className="mb-1 block text-xs font-medium text-text-secondary"
+                  >
+                    Step name
+                  </label>
+                  <Input
+                    id={`step-name-${index}`}
+                    value={step.name ?? ""}
+                    onChange={(event) =>
+                      update(index, {
+                        name: event.target.value || undefined,
+                      })
+                    }
+                    placeholder={
+                      roleByCode.get(step.approver_role)?.label ?? "Role label"
+                    }
+                  />
+                </div>
+                <div className="min-w-40 flex-1">
+                  <label
                     htmlFor={`step-approver-${index}`}
                     className="mb-1 block text-xs font-medium text-text-secondary"
                   >
                     Approver
                   </label>
-                  {wide ? (
+                  {wideHolder ? (
                     <>
                       <div
                         id={`step-approver-${index}`}
                         className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
                       >
                         <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
-                        <span className="font-medium">{wide.holder.name}</span>
+                        <span className="font-medium">{wideHolder.name}</span>
                       </div>
                       <p className="mt-1 text-xs text-text-muted">
-                        {wide.scope === "institution"
-                          ? "Locked to the institution-wide holder of this role."
-                          : wide.scope === "team"
-                            ? "Locked to the team-wide holder of this role."
-                            : "Locked to the campus-wide holder of this role."}
+                        Locked to the institution-wide holder of this role.
                       </p>
                     </>
                   ) : (
@@ -723,10 +611,11 @@ function toggleMember(userId: number) {
                       id={`step-approver-${index}`}
                       value={step.approver ?? ""}
                       onChange={(event) =>
-                        setApprover(
-                          index,
-                          event.target.value ? Number(event.target.value) : null
-                        )
+                        update(index, {
+                          approver: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        })
                       }
                       disabled={roleId === undefined}
                       className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
@@ -750,32 +639,32 @@ function toggleMember(userId: number) {
                   )}
                 </div>
                 <div className="flex items-center gap-1 pb-1">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Move step ${index + 1} earlier`}
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Move step ${index + 1} later`}
                     disabled={index === steps.length - 1}
                     onClick={() => move(index, 1)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Remove step ${index + 1}`}
                     onClick={() => remove(index)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover"
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </li>
               );
@@ -838,13 +727,13 @@ function toggleMember(userId: number) {
                               .join(" · ")}
                           </p>
                         </div>
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={() => toggleMember(userId)}
-                          className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </li>
                     );
                   })}
@@ -877,13 +766,13 @@ function toggleMember(userId: number) {
                             .join(" · ")}
                         </p>
                       </div>
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => toggleMember(person.user)}
-                        className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover"
                       >
                         Add
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -924,22 +813,18 @@ function toggleMember(userId: number) {
         )}
       </div>
 
-      {error && <p className="text-sm text-status-rejected">{error}</p>}
+      {error && <Alert tone="error">{error}</Alert>}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="submit"
-          disabled={loading || offeredRoles.length === 0}
-          className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={loading || roles.length === 0}
+          loading={loading}
         >
-          {loading
-            ? "Saving..."
-            : workflow
-              ? "Save workflow"
-              : "Create workflow"}
-        </button>
-        <button
-          type="button"
+          {workflow ? "Save workflow" : "Create workflow"}
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() =>
             router.push(
               workflow
@@ -947,11 +832,10 @@ function toggleMember(userId: number) {
                 : `/organisation/teams/${team.id}/workflows`
             )
           }
-          className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-3 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
           Cancel
-        </button>
+        </Button>
       </div>
 
       <p className="text-xs text-text-muted">
