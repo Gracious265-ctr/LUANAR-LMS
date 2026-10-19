@@ -6060,3 +6060,65 @@ chain name, and the `effective_to` academic-year default; this tracker updated.
 * `.gitignore` entry for the generated Vitest JSON report; `export {}` in
   `frontend/instrumentation-client.ts` (fixes the pre-existing TS2306 pair);
   `users.0010` `IF EXISTS` idempotency.
+
+## Completed — Rejection Flow Replaces Return-for-Correction (2026-10-19)
+
+Adopted `origin/development` as the base (`efc590e`) and re-applied the two
+things that were genuinely unique to the branch, dropping the old
+return-for-correction concept everywhere. An approver now makes exactly two
+decisions: **approve** or **reject**; a rejection **requires a reason** and is
+carried as the existing approval `comment`.
+
+### Stage 1 — Backend (`c7aa607`)
+
+* `approvals`: removed `ApprovalStatus.CORRECTION_REQUESTED` and
+  `ApprovalAction.RETURN_FOR_CORRECTION`; `decide` accepts `approve`/`reject`
+  only and enforces a non-blank comment on `reject` (DB constraint
+  `comment_required_for_reject`). `services`/`payloads`/`views` follow.
+* `leave`: removed `LeaveApplication.Status.CORRECTION_REQUIRED`; the document
+  editable set is now exactly `{DRAFT, REJECTED}`; `LEAVE_BLOCKING_STATUSES`
+  drops `correction_required`; tracking contracts/serializer/tracking provide
+  no `correction` block, no `returned` stage state and no
+  `correction_requested` event. `leave/views/resubmit.py` resubmits a
+  `rejected` application (same reference, returning stage reopened in place,
+  `current_approver` = the stage's **configured** approver, never the rejecting
+  actor).
+* Migrations: `approvals/0002_*`, `approvals/0003_convert_correction_rows`
+  (existing correction rows are converted to rejected), and
+  `leave/0024_alter_leaveapplication_status`. Verified on a scratch DB:
+  `migrate` clean, `makemigrations --check` → "No changes detected".
+* `audit/models.py` keeps its historical `CORRECTION_REQUESTED` choice so old
+  audit rows still render.
+
+### Stage 2 — Frontend (`e551d9f`)
+
+* Status tokens renamed `correction` → **`notice`**
+  (`lib/status-styles.ts`, `app/globals.css`, `ui/{badge,alert,toast}`).
+* `lib/approvals/*` and `lib/tracking/*` drop the correction status, the
+  `returned` stage state, the `correction_requested` event and the
+  `TrackingResponse.correction` block; the outcome panel is rejection-only.
+* `components/approvals/*`: the decision panel offers Approve/Reject only; the
+  dialog makes the reason mandatory on reject.
+* The application form treats `rejected` as editable
+  (`READ_ONLY_STATUSES = [submitted, approved, cancelled]`); the review step's
+  submit posts to the new `/resubmit/` proxy when the application is rejected
+  (`lib/leave-validation.ts`, `lib/hooks/useSubmitLeaveApplication.ts`,
+  `LeaveReviewPanel`, `app/api/leave/leave-applications/[id]/resubmit/route.ts`).
+* Tracking fixtures `rejected_at_stage_3.json` and
+  `resubmitted_after_stage_3_rejection.json` replace the correction fixtures.
+
+### Verification
+
+* Backend: `manage.py test leave workflows.tests_approvals workflows.tests_routing
+  tests` → **557 tests pass** (printed tracebacks are intentional logged errors).
+* Frontend: `npx tsc --noEmit` clean except the pre-existing
+  `components/watermelon/macos-sidebar.tsx` missing-`@hugeicons` errors;
+  `npx vitest run` → **967 passed, 1 flaky** (`entitlement-form.test.tsx`, passes
+  in isolation, unrelated); `npx eslint` clean on all touched files.
+
+### Not taken
+
+* No Nav change was needed: development already ships module navigation in
+  `frontend/lib/nav/leave-nav.ts`. Open judgment — "My Applications" currently
+  lists all statuses including drafts; excluding drafts from that list was not
+  applied.

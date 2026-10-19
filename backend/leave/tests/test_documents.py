@@ -206,7 +206,7 @@ class DraftSemanticsTests(DocumentFixtureTests):
         self.assertEqual(document.status, "active")
 
 
-class CorrectionSemanticsTests(DocumentFixtureTests):
+class RejectedDocumentSemanticsTests(DocumentFixtureTests):
     def test_replace_uploads_new_row_and_retires_old(self):
         application = self.app(status_=LeaveApplication.Status.REJECTED)
         document = self.doc(application, name="old.pdf")
