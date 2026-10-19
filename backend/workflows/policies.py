@@ -18,7 +18,13 @@ from typing import Any
 from leave.models import LeaveApplication
 from users.models import EmployeeProfile, User
 
-from .models import ApplicationStage, ApprovalDecision, ApproverRole
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    ApplicationStage,
+    ApprovalDecision,
+)
 
 
 @dataclass(frozen=True)
@@ -108,7 +114,7 @@ def _role_for_stage(stage: ApplicationStage):
     null ``role_ref``, so the snapshotted ``role`` code is looked up instead —
     still reading the *stage*, never a live stage of a running application.
     """
-    from .models import ApproverRole
+    from organisation.models import ApproverRole
 
     if stage.role_ref_id is not None:
         return stage.role_ref
@@ -199,7 +205,7 @@ def get_view_access(user: User, application: LeaveApplication) -> ViewAccess | N
         # A cancellation stage carries only the snapshotted role code and label,
         # so the scope has to be looked up by that code. A role HR has since
         # renamed still resolves, because the code is the snapshot's own value.
-        from .models import ApproverRole
+        from organisation.models import ApproverRole
 
         role = ApproverRole.objects.filter(code=cancellation_stage.role).first()
         return ViewAccess(

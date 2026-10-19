@@ -49,7 +49,7 @@ def resubmit_application(*, user, application_id):
         build_rules_snapshot,
         record_revision,
     )
-    from workflows.models import ApplicationStage
+    from approvals.models import ApplicationStage
 
     with transaction.atomic():
         provider = get_provider()

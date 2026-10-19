@@ -5,14 +5,19 @@ import { useState } from "react";
 
 import type { ApproverRole } from "@/lib/approver-roles";
 import {
+  clearTeamManager,
   createCampusRoleAssignment,
   createRoleAssignment,
   createTeamRoleAssignment,
   removeCampusRoleAssignment,
   removeRoleAssignment,
   removeTeamRoleAssignment,
+  setTeamManager,
 } from "@/lib/approver-roles-client";
+import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 
 /** The three places a role may be held, narrowest first. */
 export type WideScope = "institution" | "team" | "campus";
@@ -38,6 +43,16 @@ export interface WideHolding {
   user: number;
   user_name: string;
   role_label: string;
+  /**
+   * The team's single designated manager, on a team-wide holding only.
+   *
+   * A manager is a team-wide approver who additionally runs the team's own
+   * members and workflow configuration, so the flag rides the holding rather
+   * than the person and is written by HR through the set-manager action. The
+   * campus and institution-wide scopes never carry it — there is nothing for
+   * them to manage.
+   */
+  is_team_manager?: boolean;
 }
 
 /**
@@ -250,6 +265,36 @@ export function WideHoldingPanel({
     }
   }
 
+  /**
+   * Designate, or undesignate, this holding as its team's manager.
+   *
+   * One manager per team: the backend clears the flag from the team's other
+   * holders when a new one is set, so this is a per-holding "make this the
+   * one" rather than a toggle that could leave the team with two. Only a
+   * team-wide holding carries the flag, so this is drawn for the team scope
+   * alone.
+   */
+  async function handleToggleManager(holding: WideHolding) {
+    setError("");
+    setBusy(true);
+    try {
+      if (holding.is_team_manager) {
+        await clearTeamManager(holding.id);
+      } else {
+        await setTeamManager(holding.id);
+      }
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred. Please try again."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-border-default bg-surface-page p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -272,15 +317,36 @@ export function WideHoldingPanel({
                 <span className="font-medium">{holding.role_label}</span>
                 {" · "}
                 {holding.user_name}
+                {holding.is_team_manager && (
+                  <Badge size="sm" tone="info" className="ml-2">
+                    Manager
+                  </Badge>
+                )}
               </span>
-              <button
-                type="button"
+              <div className="flex items-center gap-2">
+                {scope === "team" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleToggleManager(holding)}
+                    className="rounded-md border border-border-default px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {holding.is_team_manager
+                      ? "Remove as manager"
+                      : "Make manager"}
+                  </button>
+                )}
+                <ConfirmButton
+                size="sm"
                 disabled={busy}
-                onClick={() => handleRemove(holding)}
-                className="rounded-md border border-border-default px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                loading={busy}
+                onConfirm={() => handleRemove(holding)}
+                prompt={`Remove ${holding.user_name} as ${holding.role_label}?`}
+                aria-label={`Remove ${holding.user_name} from ${holding.role_label}`}
               >
                 Remove
-              </button>
+              </ConfirmButton>
+              </div>
             </li>
           ))}
         </ul>
@@ -390,13 +456,13 @@ export function WideHoldingPanel({
                       </option>
                     ))}
                   </select>
-                  <button
+                  <Button
                     type="submit"
                     disabled={busy}
-                    className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    loading={busy}
                   >
-                    {busy ? "Saving..." : "Save holder"}
-                  </button>
+                    Save holder
+                  </Button>
                 </div>
               </>
             )}

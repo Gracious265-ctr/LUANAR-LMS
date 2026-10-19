@@ -3,6 +3,8 @@ import type {
   ApprovalListResponse,
   ApprovalReview,
   ApprovalTab,
+  BulkApprovalItem,
+  BulkApprovalResponse,
   DecisionBriefing,
   DecisionPayload,
   DocumentDownload,
@@ -27,6 +29,10 @@ export type DecisionResult =
     };
 
 export type ApprovalCapabilitiesResult = ApprovalCapabilities;
+
+export type BulkApprovalResult =
+  | { ok: true; data: BulkApprovalResponse }
+  | { ok: false; message: string };
 
 const FETCH_ERROR = "Could not reach the server. Check your connection and try again.";
 
@@ -158,6 +164,40 @@ export async function postDecision(
     return { ok: true, data: data as unknown as DecisionBriefing };
   } catch {
     return { ok: false, kind: "error", message: FETCH_ERROR };
+  }
+}
+
+/**
+ * Approve a batch of applications in one request (UI/UX Phase 2, spec 3.11).
+ *
+ * The batch is approve-only and capped server-side. A batch can part-succeed:
+ * `ok` only reflects whether the request was accepted, so read `data.approved`
+ * and `data.failed` for the outcome.
+ */
+export async function approveApprovals(
+  items: BulkApprovalItem[],
+  comment = ""
+): Promise<BulkApprovalResult> {
+  try {
+    const res = await fetch("/api/approvals/bulk-decision/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "approve", comment, items }),
+      credentials: "include",
+    });
+    const data = await readJson(res);
+    if (!res.ok) {
+      return {
+        ok: false,
+        message:
+          (data.error as string) ||
+          (data.detail as string) ||
+          "The batch could not be approved.",
+      };
+    }
+    return { ok: true, data: data as unknown as BulkApprovalResponse };
+  } catch {
+    return { ok: false, message: FETCH_ERROR };
   }
 }
 

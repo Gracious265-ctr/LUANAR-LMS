@@ -133,7 +133,12 @@ def submit_application(*, user, application_id):
         )
 
         try:
-            from workflows.services import WorkflowAssignmentError, assign_workflow
+            from workflows.services import (
+                WorkflowAssignmentError,
+            )
+            from approvals.services import (
+                assign_workflow,
+            )
 
             assign_workflow(app)
         except WorkflowAssignmentError as exc:

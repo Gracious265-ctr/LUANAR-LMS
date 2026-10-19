@@ -143,7 +143,7 @@ class FinalizedApplicationListSerializer(serializers.Serializer):
     """
 
     def to_representation(self, instance) -> dict:
-        from workflows.serializers import PendingApplicationSerializer
+        from approvals.serializers import PendingApplicationSerializer
 
         return PendingApplicationSerializer(
             instance=instance, context=self.context
@@ -161,10 +161,7 @@ class HRLeaveApplicationSerializer(serializers.Serializer):
     def to_representation(self, instance) -> dict:
         # Imported lazily to avoid a serializer import cycle (audit ↔ workflow).
         from leave.serializers import SupportingDocumentSerializer
-        from workflows.serializers import (
-            PendingApplicationSerializer,
-            ReassignmentSerializer,
-        )
+        from approvals.serializers import PendingApplicationSerializer, ReassignmentSerializer
 
         data = PendingApplicationSerializer(instance=instance).data
         # Unit 23b: the audit view gates the approved-document affordance on the

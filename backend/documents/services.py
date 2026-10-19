@@ -11,7 +11,7 @@ from xml.sax.saxutils import escape
 
 from django.db import transaction
 
-from .models import LeaveDocumentTemplate
+from .models import ApprovedLeaveDocument, LeaveDocumentTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +263,53 @@ def render_approved_document_pdf(application) -> bytes:
 
     pdf.build(story)
     return buffer.getvalue()
+
+
+def approved_document_payload(document) -> dict:
+    """The document's public shape, with a signed URL only when one exists.
+
+    A ``pending`` or ``failed`` row reports its status and ``available: False``
+    so the client can say "being prepared" from the first response rather than
+    needing a second request to discover there is nothing to open.
+
+    Minting the signed URL is enrichment on top of the document row, not the row
+    itself, so a storage problem degrades the payload instead of failing the
+    request. ``available`` is an explicit promise that ``download_url`` opens
+    *now*; when a fresh URL cannot be minted the promise is withdrawn rather than
+    served from the render-time URL, which by then has expired and would hand the
+    employee a dead link. The other storage call sites fall back to that stored
+    URL because they are best-effort listings, but this payload is the one the UI
+    keys an "Open" button off, so no button is honest and a broken link is not.
+    """
+    from leave.services.storage import signed_document_url
+
+    available = document.status == ApprovedLeaveDocument.Status.READY
+    payload = {
+        "id": str(document.pk),
+        "application": str(document.application_id),
+        "status": document.status,
+        "available": available,
+        "file_name": document.file_name or "",
+        "content_type": document.content_type or "",
+        "file_size": document.file_size or 0,
+        "approved_on": document.approved_on,
+        "rendered_at": document.rendered_at,
+        "created_at": document.created_at,
+        "download_url": "",
+    }
+    if available and document.file_path:
+        # Signed URLs expire, so re-sign from the stored path rather than handing
+        # back the URL captured at render time.
+        try:
+            payload["download_url"] = signed_document_url(document.file_path)
+        except Exception:
+            logger.exception(
+                "Could not sign a download URL for approved document %s; "
+                "reporting it as unavailable rather than failing the request.",
+                document.pk,
+            )
+            payload["available"] = False
+    return payload
 
 
 def enqueue_approved_document_render(document) -> None:

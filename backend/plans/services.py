@@ -31,7 +31,14 @@ from leave_config.models import LeaveType
 from leave_config.services import is_plannable
 from leave.services import create_draft_application
 from users.models import EmployeeProfile
-from workflows.models import CampusRoleAssignment, RoleAssignment, Team, TeamRoleAssignment
+from organisation.models import (
+    CampusRoleAssignment,
+    RoleAssignment,
+)
+from teams.models import (
+    Team,
+    TeamRoleAssignment,
+)
 
 from .models import LeavePlan, LeavePlanStatus
 

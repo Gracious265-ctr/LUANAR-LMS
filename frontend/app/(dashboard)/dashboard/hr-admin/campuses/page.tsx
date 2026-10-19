@@ -6,6 +6,8 @@ import { CampusTable } from "@/components/hr/campus-table";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { buttonVariants } from "@/components/ui/button";
 
 const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const TEAMS_ERROR = "Unable to load teams, so the campuses cannot be listed.";
@@ -25,7 +27,7 @@ export default async function CampusesPage() {
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 
@@ -53,7 +55,7 @@ export default async function CampusesPage() {
         </div>
         <Link
           href="/dashboard/hr-admin/campuses/new"
-          className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
+          className={buttonVariants({ variant: "primary" })}
         >
           <Plus className="h-4 w-4" />
           New campus

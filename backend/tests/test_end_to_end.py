@@ -42,14 +42,16 @@ from workflows.events import (
     register_consumer,
 )
 from workflows.models import (
+    Workflow,
+)
+from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
     Delegation,
     Reassignment,
-    Workflow,
 )
 from workflows.providers import DatabaseWorkflowProvider
-from workflows.services import decide, reassign_application
+from approvals.services import decide, reassign_application
 
 User = get_user_model()
 

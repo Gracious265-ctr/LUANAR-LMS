@@ -16,7 +16,12 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User
-from workflows.models import CampusRoleAssignment, TeamRoleAssignment
+from organisation.models import (
+    CampusRoleAssignment,
+)
+from teams.models import (
+    TeamRoleAssignment,
+)
 from workflows.testing import (
     create_user_with_role,
     grant_approver_role,

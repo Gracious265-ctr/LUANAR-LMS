@@ -381,28 +381,3 @@ class WorkflowMember(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.get_full_name()} on {self.workflow.name}"
-
-
-# --- Compatibility re-exports -------------------------------------------------
-# The approver/team/approval models moved to their own apps (``organisation``,
-# ``teams``, ``approvals``). These re-exports keep the historical
-# ``workflows.models`` import path working while callers are migrated to the new
-# homes. They are transitional and will be removed once every import site is
-# updated.
-from approvals.models import (  # noqa: E402,F401
-    ApplicationStage,
-    ApplicationStageApprover,
-    ApprovalDecision,
-    ApprovalDecisionLockedError,
-    ApprovalDecisionManager,
-    ApprovalDecisionQuerySet,
-    Delegation,
-    Reassignment,
-)
-from organisation.models import (  # noqa: E402,F401
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    RoleAssignment,
-)
-from teams.models import TeamRoleAssignment  # noqa: E402,F401

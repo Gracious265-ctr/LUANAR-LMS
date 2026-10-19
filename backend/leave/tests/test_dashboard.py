@@ -26,7 +26,7 @@ from leave.models import (
 )
 from leave_config.models import LeaveType
 from users.models import EmployeeProfile
-from workflows.models import ApplicationStage, ApprovalDecision
+from approvals.models import ApplicationStage, ApprovalDecision
 from workflows.testing import team_for
 
 from .stubs import make_user

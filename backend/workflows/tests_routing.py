@@ -31,16 +31,9 @@ from leave.tests.stubs import (
 from users.models import EmployeeProfile
 
 from .testing import team_for
-from .models import ApprovalDecision, ApplicationStage, Delegation, Reassignment
+from approvals.models import ApprovalDecision, ApplicationStage, Delegation, Reassignment
 from .policies import get_decision_authority
-from .services import (
-    acting_approver_id,
-    acting_approver_identity,
-    acting_approver_map,
-    active_delegation_for,
-    decide,
-    reassign_application,
-)
+from approvals.services import acting_approver_id, acting_approver_identity, acting_approver_map, active_delegation_for, decide, reassign_application
 
 User = get_user_model()
 

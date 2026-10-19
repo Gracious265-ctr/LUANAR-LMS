@@ -4,8 +4,10 @@ import { ArrowLeft, Plus } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { buttonVariants } from "@/components/ui/button";
 
 const WORKFLOWS_ERROR =
   "Unable to load this team's workflows, so the list may be incomplete.";
@@ -30,7 +32,7 @@ export default async function TeamWorkflowsPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!canAccessOrganisation(user)) {
     redirect("/dashboard");
   }
 
@@ -72,7 +74,7 @@ export default async function TeamWorkflowsPage({
           </div>
           <Link
             href={`/dashboard/teams/${team.id}/workflows/new`}
-            className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
+            className={buttonVariants({ variant: "primary" })}
           >
             <Plus className="h-4 w-4" />
             New workflow

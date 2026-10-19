@@ -5,6 +5,7 @@ import { TeamForm } from "@/components/hr/team-form";
 import type { ApproverRole } from "@/lib/approver-roles";
 import type { Campus, EligibleApprover, Team, TeamSection } from "@/lib/teams";
 import { makeCampus, makeTeam } from "@/lib/teams/__fixtures__";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
 import {
   createTeam,
   listEligibleApprovers,
@@ -84,6 +85,36 @@ const bob: EligibleApprover = {
   designation: "Team Leader",
 };
 
+/**
+ * The people the create form may name as a team's manager: active employees of
+ * the team's own category who hold no wide approver role.
+ */
+const maryManager = makeEmployee({
+  user_id: 21,
+  full_name: "Mary Manager",
+  category: "administration",
+});
+const adaAcademic = makeEmployee({
+  user_id: 22,
+  full_name: "Ada Academic",
+  category: "academic",
+});
+
+/**
+ * The manager step, which every create walks through before it saves.
+ *
+ * The role is the first team-scoped role in the fixture above; the person is a
+ * category match so the picker would actually offer them.
+ */
+function chooseManager(person = maryManager) {
+  fireEvent.change(screen.getByLabelText("Manager role"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("Manager"), {
+    target: { value: String(person.user_id) },
+  });
+}
+
 /** A step as the API reports it, so tests do not restate the flattened fields. */
 function makeSection(overrides: Partial<TeamSection> = {}): TeamSection {
   return { ...makeTeam().sections[0], ...overrides };
@@ -128,20 +159,27 @@ function step(position: number) {
 }
 
 describe("TeamForm", () => {
-  it("creates a team from its details alone, and lands on its Members tab so employees are added before the workflow is configured", async () => {
+  it("creates a team from its details and a manager, and lands on its Members tab so employees are added before the workflow is configured", async () => {
     vi.mocked(createTeam).mockResolvedValue(makeTeam());
-    render(<TeamForm campuses={campuses} roles={roles} />);
+    render(
+      <TeamForm campuses={campuses} roles={roles} employees={[maryManager]} />
+    );
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
     });
-    // Creating asks only what the team is. The chain is not part of creation:
-    // the team becomes a chainless draft and is shown with its roster next, so
-    // an approver — who has to be one of the team's employees — can be named
-    // honestly, from people actually on it, once the workflow is configured.
+    // Creating asks only what the team is, then who runs it. The chain is not
+    // part of creation: the team becomes a draft and is shown with its roster
+    // next, so an approver — who has to be one of the team's employees — can be
+    // named honestly once the workflow is configured from the team's page.
     expect(
       screen.queryByRole("button", { name: "Continue to approval steps" })
     ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+
+    chooseManager();
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
     await waitFor(() =>
@@ -152,18 +190,23 @@ describe("TeamForm", () => {
     expect(vi.mocked(createTeam).mock.calls[0][0]).not.toHaveProperty(
       "new_workflow"
     );
-    // A team is scoped by itself and its campus, so that is all this sends. The
-    // key list is exact rather than a spot check, because the backend refuses a
-    // field it does not have: a stray key is a save that fails, not a wrong
-    // value on screen.
+    // A team is scoped by itself and its campus, and handed to a manager, so
+    // that is all this sends. The key list is exact rather than a spot check,
+    // because the backend refuses a field it does not have: a stray key is a
+    // save that fails, not a wrong value on screen.
     expect(Object.keys(vi.mocked(createTeam).mock.calls[0][0]).sort()).toEqual([
       "campus",
       "category",
       "description",
       "effective_from",
       "effective_to",
+      "manager",
       "name",
     ]);
+    expect(vi.mocked(createTeam).mock.calls[0][0].manager).toEqual({
+      role: 1,
+      user: 21,
+    });
     expect(push).toHaveBeenCalledWith("/dashboard/teams/4?tab=members");
     expect(refresh).toHaveBeenCalled();
   });
@@ -348,7 +391,13 @@ describe("TeamForm", () => {
 
   it("sends the chosen campus as an id, and only for an academic team", async () => {
     vi.mocked(createTeam).mockResolvedValue(makeTeam());
-    render(<TeamForm campuses={campuses} roles={roles} />);
+    render(
+      <TeamForm
+        campuses={campuses}
+        roles={roles}
+        employees={[maryManager, adaAcademic]}
+      />
+    );
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
@@ -363,6 +412,12 @@ describe("TeamForm", () => {
     fireEvent.change(screen.getByLabelText("Campus"), {
       target: { value: "1" },
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+    // An academic team's manager is an academic employee, so the picker offers
+    // only the half of the institution the write will accept.
+    chooseManager(adaAcademic);
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
     await waitFor(() =>
@@ -380,23 +435,34 @@ describe("TeamForm", () => {
       target: { value: "Registry" },
     });
     fireEvent.click(screen.getByRole("radio", { name: /academic/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+    // The campus rule is answered on the details page, so the manager step is
+    // never reached with a team the save would refuse.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
 
     expect(
       await screen.findByText(/An academic team sits at a campus/i)
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Manager role")).not.toBeInTheDocument();
     expect(createTeam).not.toHaveBeenCalled();
   });
 
   it("sends an administration team with no campus, as institution-wide", async () => {
     vi.mocked(createTeam).mockResolvedValue(makeTeam());
-    render(<TeamForm campuses={campuses} roles={roles} />);
+    render(
+      <TeamForm campuses={campuses} roles={roles} employees={[maryManager]} />
+    );
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
     });
     // The default category is administration, and the campus is cleared rather
     // than left at whatever an earlier screen might have held.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+    chooseManager();
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
     await waitFor(() =>
@@ -427,20 +493,29 @@ describe("TeamForm", () => {
     expect(screen.getByRole("button", { name: "Add step" })).toBeDisabled();
   });
 
-  it("shows why the backend refused the team and stays on the form", async () => {
+  it("shows why the backend refused the team and stays on the manager step", async () => {
     vi.mocked(createTeam).mockRejectedValue(
       new Error("A team with that name already exists.")
     );
-    render(<TeamForm campuses={campuses} roles={roles} />);
+    render(
+      <TeamForm campuses={campuses} roles={roles} employees={[maryManager]} />
+    );
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
     });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+    chooseManager();
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
     expect(
       await screen.findByText("A team with that name already exists.")
     ).toBeInTheDocument();
+    // The refusal names what was wrong with the write, and the chosen manager
+    // is still on screen so it can be corrected rather than re-entered.
+    expect(screen.getByLabelText("Manager")).toHaveValue("21");
     expect(push).not.toHaveBeenCalled();
   });
 

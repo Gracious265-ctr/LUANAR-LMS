@@ -30,8 +30,8 @@ from notifications.reassignments import (
     TO_APPROVER,
     queue_reassignment_email,
 )
-from workflows.models import Reassignment
-from workflows.services import ReassignmentError, reassign_application
+from approvals.models import Reassignment
+from approvals.services import ReassignmentError, reassign_application
 from workflows.testing import make_approver
 
 User = get_user_model()

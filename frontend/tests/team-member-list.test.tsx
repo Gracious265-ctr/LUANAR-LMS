@@ -213,6 +213,7 @@ describe("TeamMemberList", () => {
         name: "Remove Jane Dean from Direct supervisor",
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() => expect(removeSectionMember).toHaveBeenCalledWith(9));
     expect(refresh).toHaveBeenCalled();

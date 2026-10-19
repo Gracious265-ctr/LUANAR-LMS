@@ -100,6 +100,8 @@ export interface TeamRoleAssignment {
   user: number;
   user_name: string;
   role_label: string;
+  /** The team's single designated manager; the flag its members run under. */
+  is_team_manager: boolean;
   created_at: string;
 }
 

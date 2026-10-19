@@ -18,13 +18,17 @@ from users.models import EmployeeProfile, User
 
 from audit.models import AuditEntry
 from workflows.models import (
+    Section,
+    SectionMember,
+    Workflow,
+)
+from organisation.models import (
     ApproverRole,
     Campus,
     RoleAssignment,
-    Section,
-    SectionMember,
+)
+from teams.models import (
     Team,
-    Workflow,
 )
 
 from ..admin import (

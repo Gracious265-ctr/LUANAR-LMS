@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { CampusForm } from "@/components/hr/campus-form";
 import { getCampus } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 
 /**
  * Edit one campus.
@@ -26,7 +27,7 @@ export default async function EditCampusPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 

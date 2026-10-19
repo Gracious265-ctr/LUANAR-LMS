@@ -36,23 +36,31 @@ from .testing import (
     make_team,
 )
 from .models import (
-    ApplicationStage,
-    ApprovalDecision,
-    ApproverRole,
     Section,
     SectionMember,
-    Team,
     Workflow,
+)
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    ApplicationStage,
+    ApprovalDecision,
+)
+from teams.models import (
+    Team,
 )
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
 )
 from .services import (
+    WorkflowAssignmentError,
+)
+from approvals.services import (
     ApprovalNotAllowedError,
     ApprovalStageChangedError,
     ApprovalValidationError,
-    WorkflowAssignmentError,
     assign_workflow,
     decide,
 )

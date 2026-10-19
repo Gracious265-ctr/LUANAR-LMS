@@ -53,6 +53,26 @@ const mockHRUser = {
   full_name: "Test HR",
 };
 
+// A team manager is an ordinary employee whose only claim to the Workflows
+// module is a team they are flagged to manage.
+const mockTeamManagerUser = {
+  id: 4,
+  email: "manager@test.luanar",
+  role: "employee",
+  full_name: "Test Manager",
+  manages_teams: true,
+};
+
+// The bootstrap administrator: not HR by role, but admitted to every team the
+// way HR is, and offered the module's configuration destinations with it.
+const mockAdminUser = {
+  id: 5,
+  email: "admin@test.luanar",
+  role: "employee",
+  full_name: "Test Admin",
+  is_superuser: true,
+};
+
 /**
  * Renders the shell with the approver access the layout already resolved on
  * the server, so the sidebar is settled on the first paint and no read is
@@ -422,7 +442,7 @@ describe("DashboardShell Leave module", () => {
   });
 
   it("keeps the full institutional rail outside the Leave module", () => {
-    currentPath = "/dashboard/approvals";
+    currentPath = "/dashboard/account";
     renderShell(mockUser);
 
     const nav = screen.getByRole("navigation");
@@ -624,5 +644,305 @@ describe("DashboardShell Leave Configuration module", () => {
     expect(
       within(nav).getByRole("link", { name: "Create Leave Type" }),
     ).not.toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("DashboardShell Approvals module", () => {
+  it("scopes the rail to the launcher plus the queue and cover destinations", () => {
+    currentPath = "/dashboard/approvals";
+    // An HR approver is the strictest case: the module rail must hide their HR
+    // folio and personal destinations, not merely the employee-only extras.
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "Approvals" })).toHaveAttribute(
+      "href",
+      "/dashboard/approvals",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Request Cover" }),
+    ).toHaveAttribute("href", "/dashboard/cover");
+
+    // Exactly two destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+
+    for (const hidden of [
+      "Dashboard",
+      "My Applications",
+      "Leave Plans",
+      "Teams",
+      "My Account",
+      "Audit View",
+    ]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("carries the pending count on the queue item", () => {
+    currentPath = "/dashboard/approvals";
+    renderShell(mockApproverUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByTestId("module-nav-badge")).toHaveTextContent("4");
+  });
+
+  it("scopes the rail on the cover routes too", () => {
+    currentPath = "/dashboard/cover/9";
+    renderShell(mockApproverUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toBeInTheDocument();
+    expect(
+      within(nav).queryByRole("link", { name: "My Account" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks the queue active on the index and the directory while viewing one", () => {
+    currentPath = "/dashboard/approvals/42";
+    renderShell(mockApproverUser, { isApprover: true });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Approvals" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Request Cover" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+});
+
+describe("DashboardShell Workflows module", () => {
+  it("scopes HR's rail to the launcher plus exactly the four Workflows items", () => {
+    currentPath = "/dashboard/teams";
+    // The strictest visitor: an HR approver must lose their HR folio and
+    // approvals destinations, not merely the employee-only extras.
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "Teams" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams",
+    );
+    expect(within(nav).getByRole("link", { name: "Campuses" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/campuses",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Approver Roles" }),
+    ).toHaveAttribute("href", "/dashboard/hr-admin/roles");
+    expect(
+      within(nav).getByRole("link", { name: "Role Assignments" }),
+    ).toHaveAttribute("href", "/dashboard/hr-admin/approvers");
+
+    // Exactly four destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(5);
+
+    for (const hidden of [
+      "Dashboard",
+      "My Applications",
+      "Approvals",
+      "HR Administration",
+      "Audit View",
+      "My Account",
+    ]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps the module rail while moving between its Teams and HR surfaces", () => {
+    // The module is not contiguous: a role assignment page lives under
+    // `/dashboard/hr-admin`, but it is still the Workflows module, so the rail
+    // must not snap back to the HR folio on the way there.
+    currentPath = "/dashboard/hr-admin/roles";
+    renderShell(mockHRUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Teams" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Employees" })).not.toBeInTheDocument();
+  });
+
+  it("offers a team manager only the Teams item, not HR's configuration", () => {
+    currentPath = "/dashboard/teams";
+    renderShell(mockTeamManagerUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Teams" })).toBeInTheDocument();
+    // Exactly the launcher and Teams — a manager cannot administer campuses,
+    // roles, or institution-wide assignments.
+    expect(within(nav).getAllByRole("link")).toHaveLength(2);
+    for (const hidden of ["Campuses", "Approver Roles", "Role Assignments"]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("marks the Teams item active on the index and a team's own page", () => {
+    for (const path of ["/dashboard/teams", "/dashboard/teams/12"]) {
+      currentPath = path;
+      const { unmount } = renderShell(mockHRUser);
+
+      const nav = screen.getByRole("navigation");
+      expect(within(nav).getByRole("link", { name: "Teams" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(
+        within(nav).getByRole("link", { name: "Campuses" }),
+      ).not.toHaveAttribute("aria-current");
+      unmount();
+    }
+  });
+
+  it("marks each HR configuration item active on its own page", () => {
+    for (const [path, label] of [
+      ["/dashboard/hr-admin/campuses", "Campuses"],
+      ["/dashboard/hr-admin/roles", "Approver Roles"],
+      ["/dashboard/hr-admin/approvers", "Role Assignments"],
+    ]) {
+      currentPath = path;
+      const { unmount } = renderShell(mockHRUser);
+
+      const nav = screen.getByRole("navigation");
+      expect(within(nav).getByRole("link", { name: label })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(within(nav).getByRole("link", { name: "Teams" })).not.toHaveAttribute(
+        "aria-current",
+      );
+      unmount();
+    }
+  });
+
+  it("leaves the HR folio intact on its own landing page", () => {
+    // `/dashboard/hr-admin` administers everything, so it is deliberately not
+    // in the module: HR keeps their full rail until they pick a module page.
+    currentPath = "/dashboard/hr-admin";
+    renderShell(mockHRUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).queryByRole("link", { name: "All apps" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Employees" })).toBeInTheDocument();
+  });
+
+  it("gives a team manager a My Team entry in the institutional rail", () => {
+    currentPath = "/dashboard";
+    renderShell(mockTeamManagerUser);
+
+    expect(screen.getByRole("link", { name: "My Team" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams",
+    );
+    // A manager is not HR, so the folio's own "Teams" entry stays hidden.
+    expect(screen.queryByRole("link", { name: "Teams" })).not.toBeInTheDocument();
+  });
+
+  it("shows HR the Teams entry and not My Team", () => {
+    currentPath = "/dashboard";
+    renderShell(mockHRUser);
+
+    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams",
+    );
+    expect(screen.queryByRole("link", { name: "My Team" })).not.toBeInTheDocument();
+  });
+
+  it("gives a superuser the Teams entry and not My Team", () => {
+    // The backend admits a superuser to every team; the rail offers the same
+    // way in as HR, and their "administrator" reach does not read as a manager.
+    currentPath = "/dashboard";
+    renderShell(mockAdminUser);
+
+    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams",
+    );
+    expect(screen.queryByRole("link", { name: "My Team" })).not.toBeInTheDocument();
+  });
+
+  it("offers a superuser the module's HR configuration items", () => {
+    currentPath = "/dashboard/teams";
+    renderShell(mockAdminUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Teams" })).toBeInTheDocument();
+    for (const label of ["Campuses", "Approver Roles", "Role Assignments"]) {
+      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
+    }
+  });
+});
+
+describe("DashboardShell Documents module", () => {
+  it("scopes an employee's rail to the launcher plus the three Documents items", () => {
+    currentPath = "/dashboard/documents";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Supporting Documents" }),
+    ).toHaveAttribute("href", "/dashboard/documents/supporting");
+    expect(
+      within(nav).getByRole("link", { name: "Approved Documents" }),
+    ).toHaveAttribute("href", "/dashboard/documents/approved");
+
+    // Exactly three destinations and the launcher — the institutional rail does
+    // not leak in behind the module's own.
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+    expect(
+      within(nav).queryByRole("link", { name: "My Applications" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks exactly one item active on the hub and on each list", () => {
+    const cases: ReadonlyArray<readonly [string, string]> = [
+      ["/dashboard/documents", "Dashboard"],
+      ["/dashboard/documents/supporting", "Supporting Documents"],
+      ["/dashboard/documents/approved", "Approved Documents"],
+    ];
+    for (const [path, label] of cases) {
+      currentPath = path;
+      const { unmount } = renderShell(mockUser);
+
+      const nav = screen.getByRole("navigation");
+      expect(within(nav).getByRole("link", { name: label })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      const active = within(nav)
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("aria-current") === "page");
+      expect(active).toHaveLength(1);
+      unmount();
+    }
+  });
+
+  it("keeps the module rail for HR's own visit to the hub", () => {
+    // Documents is every account's, HR included: HR gets the module's short
+    // rail here rather than their folio, which would promise other pages.
+    currentPath = "/dashboard/documents";
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 3 });
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: "Supporting Documents" }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).queryByRole("link", { name: "Role Assignments" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -368,7 +368,7 @@ class ForeignKeySwapTests(MigrationTestCase):
 
     def test_an_application_stage_keeps_its_text_snapshot(self):
         """The snapshot stays text on purpose: it must outlive its role."""
-        from workflows.models import ApplicationStage  # noqa: PLC0415
+        from approvals.models import ApplicationStage  # noqa: PLC0415
 
         self.migrate(WORKFLOWS[2])
         field = ApplicationStage._meta.get_field("role")
@@ -435,11 +435,15 @@ class ModelConstraintTests(MigrationTestCase):
     def test_role_and_team_codes_are_unique(self):
         from django.db import IntegrityError, transaction  # noqa: PLC0415
 
-        from workflows.models import (  # noqa: PLC0415
+        from workflows.models import (
+            Workflow,
+        )
+        from organisation.models import (
             ApproverRole,
             Campus,
+        )
+        from teams.models import (
             Team,
-            Workflow,
         )
 
         ApproverRole.objects.create(code="dean", label="Dean")
@@ -464,12 +468,14 @@ class ModelConstraintTests(MigrationTestCase):
         from django.db import IntegrityError, transaction  # noqa: PLC0415
 
         from users.models import User  # noqa: PLC0415
-        from workflows.models import (  # noqa: PLC0415
-            ApproverRole,
+        from organisation.models import ApproverRole  # noqa: PLC0415
+        from workflows.models import (
             Section,
             SectionMember,
-            Team,
             Workflow,
+        )
+        from teams.models import (
+            Team,
         )
 
         science_workflow = Workflow.objects.create(
@@ -511,7 +517,15 @@ class ModelConstraintTests(MigrationTestCase):
     def test_a_campus_referenced_by_a_team_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
-        from workflows.models import Campus, Team, Workflow  # noqa: PLC0415
+        from workflows.models import (
+            Workflow,  # noqa: PLC0415
+        )
+        from organisation.models import (
+            Campus,
+        )
+        from teams.models import (
+            Team,
+        )
 
         campus = Campus.objects.create(name="Tehune", code="tehune")
         Team.objects.create(
@@ -526,7 +540,12 @@ class ModelConstraintTests(MigrationTestCase):
     def test_a_workflow_referenced_by_a_team_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
-        from workflows.models import Team, Workflow  # noqa: PLC0415
+        from workflows.models import (
+            Workflow,  # noqa: PLC0415
+        )
+        from teams.models import (
+            Team,
+        )
 
         workflow = Workflow.objects.create(name="Chain", is_active=True)
         Team.objects.create(name="Team", code="team", workflow=workflow)
@@ -536,7 +555,13 @@ class ModelConstraintTests(MigrationTestCase):
     def test_a_role_referenced_by_a_section_cannot_be_deleted(self):
         from django.db.models import ProtectedError  # noqa: PLC0415
 
-        from workflows.models import ApproverRole, Section, Workflow  # noqa: PLC0415
+        from workflows.models import (
+            Section,
+            Workflow,  # noqa: PLC0415
+        )
+        from organisation.models import (
+            ApproverRole,
+        )
 
         role = ApproverRole.objects.create(code="dean", label="Dean")
         workflow = Workflow.objects.create(name="Chain", is_active=True)
@@ -552,8 +577,8 @@ class ModelConstraintTests(MigrationTestCase):
 
         from django.contrib.auth import get_user_model  # noqa: PLC0415
 
+        from organisation.models import ApproverRole  # noqa: PLC0415
         from workflows.models import (  # noqa: PLC0415
-            ApproverRole,
             Section,
             SectionMember,
             Workflow,
@@ -655,7 +680,13 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
         return role.pk, user.pk
 
     def _read(self):
-        from workflows.models import ApproverRole, RoleAssignment, Section  # noqa: PLC0415
+        from workflows.models import (
+            Section  # noqa: PLC0415,
+        )
+        from organisation.models import (
+            ApproverRole,
+            RoleAssignment,
+        )
 
         role = ApproverRole.objects.get(code="dvc")
         return {
@@ -674,7 +705,7 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
     def test_the_dvc_role_is_promoted_to_institution_wide(self):
         role_pk, _ = self._legacy_state()
         self.latest()
-        from workflows.models import ApproverRole  # noqa: PLC0415
+        from organisation.models import ApproverRole  # noqa: PLC0415
 
         self.assertTrue(ApproverRole.objects.get(pk=role_pk).is_institution_wide)
 
@@ -709,7 +740,7 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
 
     def test_a_missing_role_is_skipped_rather_than_failing(self):
         """A fresh install has no DVC yet; the seed creates it already flagged."""
-        from workflows.models import ApproverRole  # noqa: PLC0415
+        from organisation.models import ApproverRole  # noqa: PLC0415
 
         self.assertFalse(ApproverRole.objects.filter(code="dvc").exists())
         self.latest()

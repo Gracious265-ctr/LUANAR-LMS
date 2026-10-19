@@ -4,13 +4,17 @@ import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
 
-import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { ApproverRoleForm } from "@/components/hr/approver-role-form";
 import { ApproverRoleTable } from "@/components/hr/approver-role-table";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 /** Query key for the approver-role overlay on the list page. */
 export const APPROVER_ROLE_PARAM = "role";
@@ -18,8 +22,11 @@ export const APPROVER_ROLE_PARAM = "role";
 /**
  * The approver-role registry as a create/edit overlay.
  *
- * Edit mode resolves the record from the rows already on screen: the table
- * carries the whole role, so there is no per-record request.
+ * Create and edit both resolve on the page rather than on a route of their own:
+ * the table already carries every role, so there is no per-record request and
+ * `?role=new` / `?role=<id>` is all the state the overlay needs. The old
+ * `new` / `[id]/edit` routes survive as shims that redirect here, so a
+ * bookmarked URL still lands on the form.
  *
  * Retired roles stay listed and stay editable — HR needs to see that a role
  * exists and why — so this list has no filter that could hide a row and no
@@ -27,18 +34,32 @@ export const APPROVER_ROLE_PARAM = "role";
  *
  * The institution-wide holder block below the table is deliberately not part of
  * this section: `RoleAssignmentForm` is a per-role widget rather than a
- * create/edit form, and it stays inline on the page.
+ * create/edit form, and it stays inline on the page. The team- and campus-wide
+ * holdings are different: they are columns on the table, so they travel through
+ * here to the table that reads them.
  */
 export function RolesSection({
   roles,
   assignments,
+  teamHoldings,
+  campusHoldings,
+  teamNameById,
+  campusNameById,
 }: {
   roles: ApproverRole[];
   /**
    * Institution-wide holdings keyed by role id. The table's holders column reads
    * this, so it has to travel with the rows rather than being dropped.
    */
-  assignments: Record<number, RoleAssignment[]>;
+  assignments?: Record<number, RoleAssignment[]>;
+  /** Team-wide holdings, keyed by role id. Absent means "none". */
+  teamHoldings?: Record<number, TeamRoleAssignment[]>;
+  /** Campus-wide holdings, keyed by role id. Absent means "none". */
+  campusHoldings?: Record<number, CampusRoleAssignment[]>;
+  /** Team names, keyed by team id, so a team-wide holder reads as a person. */
+  teamNameById?: Record<number, string>;
+  /** Campus names, keyed by campus id, so a campus-wide holder reads as a person. */
+  campusNameById?: Record<number, string>;
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(APPROVER_ROLE_PARAM);
@@ -49,17 +70,9 @@ export function RolesSection({
       : undefined;
 
   return (
-    <Card>
+    <>
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold text-text-primary">
-            Approver roles
-          </h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Roles decide which steps a workflow runs through and who may act at
-            each one.
-          </p>
-        </div>
+        <h3 className="text-lg font-semibold text-text-primary">All roles</h3>
         <Button
           variant="primary"
           onClick={overlay.openCreate}
@@ -70,9 +83,13 @@ export function RolesSection({
         </Button>
       </div>
 
-            <ApproverRoleTable
+      <ApproverRoleTable
         roles={roles}
         assignments={assignments}
+        teamHoldings={teamHoldings}
+        campusHoldings={campusHoldings}
+        teamNameById={teamNameById}
+        campusNameById={campusNameById}
         onEdit={overlay.openEdit}
       />
 
@@ -110,6 +127,6 @@ export function RolesSection({
           onCancel={overlay.close}
         />
       </AdminFormOverlay>
-    </Card>
+    </>
   );
 }

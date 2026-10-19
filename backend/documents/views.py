@@ -15,9 +15,14 @@ from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
+from .access import visible_employee_ids
 from .models import ApprovedLeaveDocument
-from .serializers import LeaveDocumentTemplateSerializer
-from .services import get_template
+from .serializers import (
+    ApprovedDocumentListSerializer,
+    LeaveDocumentTemplateSerializer,
+    SupportingDocumentListSerializer,
+)
+from .services import approved_document_payload, get_template
 
 logger = logging.getLogger(__name__)
 
@@ -77,55 +82,6 @@ class LeaveDocumentTemplateView(APIView):
 _NOT_FOUND = {"error": "Approved document not found."}
 
 
-def _approved_document_payload(document) -> dict:
-    """The document's public shape, with a signed URL only when one exists.
-
-    A ``pending`` or ``failed`` row reports its status and
-    ``available: False`` so the client can say "being prepared" from the first
-    response rather than needing a second request to discover there is
-    nothing to open.
-
-    Minting the signed URL is enrichment on top of the document row, not the
-    row itself, so a storage problem degrades the payload instead of failing
-    the request. ``available`` is an explicit promise that ``download_url``
-    opens *now*; when a fresh URL cannot be minted the promise is withdrawn
-    rather than served from the render-time URL, which by then has expired and
-    would hand the employee a dead link. The other storage call sites fall back
-    to that stored URL because they are best-effort listings, but this payload
-    is the one the UI keys an "Open" button off, so no button is honest and a
-    broken link is not.
-    """
-    from leave.services.storage import signed_document_url
-
-    available = document.status == ApprovedLeaveDocument.Status.READY
-    payload = {
-        "id": str(document.pk),
-        "application": str(document.application_id),
-        "status": document.status,
-        "available": available,
-        "file_name": document.file_name or "",
-        "content_type": document.content_type or "",
-        "file_size": document.file_size or 0,
-        "approved_on": document.approved_on,
-        "rendered_at": document.rendered_at,
-        "created_at": document.created_at,
-        "download_url": "",
-    }
-    if available and document.file_path:
-        # Signed URLs expire, so re-sign from the stored path rather than
-        # handing back the URL captured at render time.
-        try:
-            payload["download_url"] = signed_document_url(document.file_path)
-        except Exception:
-            logger.exception(
-                "Could not sign a download URL for approved document %s; "
-                "reporting it as unavailable rather than failing the request.",
-                document.pk,
-            )
-            payload["available"] = False
-    return payload
-
-
 def _approved_document_or_404(user, application_id, *, hr_allowed: bool):
     """The application's document when ``user`` may read it, else ``None``.
 
@@ -175,7 +131,7 @@ class ApprovedLeaveDocumentView(APIView):
         if document is None:
             return response.Response(_NOT_FOUND, status=status.HTTP_404_NOT_FOUND)
         return response.Response(
-            _approved_document_payload(document), status=status.HTTP_200_OK
+            approved_document_payload(document), status=status.HTTP_200_OK
         )
 
 
@@ -188,4 +144,60 @@ class HRAApprovedLeaveDocumentView(ApprovedLeaveDocumentView):
     """
 
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
+
+
+# ---------------------------------------------------------------------------
+# The documents hub — every document a viewer may read, across applications
+# ---------------------------------------------------------------------------
+#
+# The per-application endpoints above answer "what is attached to *this*
+# application". The hub asks the other question — "every document I may see" —
+# so the scope is the viewer, resolved by ``visible_employee_ids``: an employee
+# covers themselves, a team manager adds the teams they manage, and HR covers
+# the institution. Both lists return plain arrays (matching the per-application
+# document endpoints) rather than a page, and re-sign every URL per request.
+
+
+class SupportingDocumentListView(APIView):
+    """Every supporting document the viewer may read, across applications."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from leave.models import SupportingDocument
+
+        queryset = SupportingDocument.objects.select_related(
+            "application", "application__employee"
+        ).order_by("-uploaded_at")
+        if request.query_params.get("include_retired") != "true":
+            queryset = queryset.filter(status=SupportingDocument.Status.ACTIVE)
+
+        scope = visible_employee_ids(request.user)
+        if scope is not None:
+            queryset = queryset.filter(application__employee_id__in=scope)
+
+        return response.Response(
+            SupportingDocumentListSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ApprovedDocumentListView(APIView):
+    """Every approved document the viewer may read, across applications."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        queryset = ApprovedLeaveDocument.objects.select_related(
+            "application", "application__employee"
+        ).order_by("-created_at")
+
+        scope = visible_employee_ids(request.user)
+        if scope is not None:
+            queryset = queryset.filter(application__employee_id__in=scope)
+
+        return response.Response(
+            ApprovedDocumentListSerializer(queryset, many=True).data,
+            status=status.HTTP_200_OK,
+        )
 

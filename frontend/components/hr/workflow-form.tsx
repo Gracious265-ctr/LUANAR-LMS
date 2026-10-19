@@ -12,6 +12,9 @@ import type { EligibleApprover } from "@/lib/teams";
 import { listEligibleApprovers } from "@/lib/teams-client";
 import type { Workflow, WorkflowInput, WorkflowSectionInput } from "@/lib/workflows";
 import { createWorkflow, updateWorkflow } from "@/lib/workflows-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/states";
 
 interface DraftStep {
   /** The role this step needs, by code. Open-ended, like every role code. */
@@ -436,13 +439,12 @@ function toggleMember(userId: number) {
         >
           Name
         </label>
-        <input
+        <Input
           id="workflow_name"
           name="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder={`e.g. ${team.name} replacement`}
         />
         <p className="mt-1 text-xs text-text-muted">
@@ -455,14 +457,14 @@ function toggleMember(userId: number) {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-sm font-medium text-text-primary">Steps</span>
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={addStep}
             disabled={roles.length === 0}
-            className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             Add step
-          </button>
+          </Button>
         </div>
 
         {rolesError && (
@@ -571,7 +573,7 @@ function toggleMember(userId: number) {
                   >
                     Step name
                   </label>
-                  <input
+                  <Input
                     id={`step-name-${index}`}
                     value={step.name ?? ""}
                     onChange={(event) =>
@@ -579,7 +581,6 @@ function toggleMember(userId: number) {
                         name: event.target.value || undefined,
                       })
                     }
-                    className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
                     placeholder={
                       roleByCode.get(step.approver_role)?.label ?? "Role label"
                     }
@@ -638,32 +639,32 @@ function toggleMember(userId: number) {
                   )}
                 </div>
                 <div className="flex items-center gap-1 pb-1">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Move step ${index + 1} earlier`}
                     disabled={index === 0}
                     onClick={() => move(index, -1)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Move step ${index + 1} later`}
                     disabled={index === steps.length - 1}
                     onClick={() => move(index, 1)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon"
                     aria-label={`Remove step ${index + 1}`}
                     onClick={() => remove(index)}
-                    className="rounded-md border border-border-default p-1.5 text-text-secondary hover:bg-button-secondary-hover"
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </li>
               );
@@ -726,13 +727,13 @@ function toggleMember(userId: number) {
                               .join(" · ")}
                           </p>
                         </div>
-                        <button
-                          type="button"
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={() => toggleMember(userId)}
-                          className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover"
                         >
                           Remove
-                        </button>
+                        </Button>
                       </li>
                     );
                   })}
@@ -765,13 +766,13 @@ function toggleMember(userId: number) {
                             .join(" · ")}
                         </p>
                       </div>
-                      <button
-                        type="button"
+                      <Button
+                        variant="secondary"
+                        size="sm"
                         onClick={() => toggleMember(person.user)}
-                        className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover"
                       >
                         Add
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -812,22 +813,18 @@ function toggleMember(userId: number) {
         )}
       </div>
 
-      {error && <p className="text-sm text-status-rejected">{error}</p>}
+      {error && <Alert tone="error">{error}</Alert>}
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="submit"
           disabled={loading || roles.length === 0}
-          className="rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+          loading={loading}
         >
-          {loading
-            ? "Saving..."
-            : workflow
-              ? "Save workflow"
-              : "Create workflow"}
-        </button>
-        <button
-          type="button"
+          {workflow ? "Save workflow" : "Create workflow"}
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() =>
             router.push(
               workflow
@@ -835,11 +832,10 @@ function toggleMember(userId: number) {
                 : `/organisation/teams/${team.id}/workflows`
             )
           }
-          className="inline-flex items-center gap-1 rounded-md border border-border-default bg-button-secondary px-3 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
         >
           <ArrowLeft className="h-4 w-4" />
           Cancel
-        </button>
+        </Button>
       </div>
 
       <p className="text-xs text-text-muted">

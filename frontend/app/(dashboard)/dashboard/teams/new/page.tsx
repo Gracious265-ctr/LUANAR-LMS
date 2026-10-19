@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 
 /**
  * Create happens in an overlay on the list page, so this route only exists to
@@ -18,7 +19,7 @@ export default async function ShimPage() {
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 

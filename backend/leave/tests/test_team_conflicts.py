@@ -16,8 +16,8 @@ from leave.conflicts import conflict_threshold, find_team_conflict
 from leave.models import LeaveApplication
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user
 from users.models import EmployeeProfile
-from workflows.models import ApplicationStage
-from workflows.services import ApprovalConflictError, decide
+from approvals.models import ApplicationStage
+from approvals.services import ApprovalConflictError, decide
 from workflows.testing import team_for
 
 User = get_user_model()

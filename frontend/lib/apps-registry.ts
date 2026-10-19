@@ -4,7 +4,6 @@ import {
   ShieldCheck,
   Building2,
   FileStack,
-  Users,
   SlidersHorizontal,
 } from "lucide-react";
 
@@ -29,21 +28,15 @@ export const APPS_REGISTRY = {
   },
   org: {
     name: "Teams",
-    description: "Manage teams and their approval chains",
+    description: "Manage teams, campuses, approver roles, and their approval chains",
     icon: Building2,
     route: "/dashboard/teams",
   },
   documents: {
     name: "Documents",
-    description: "Manage supporting documents",
+    description: "Find your supporting and approved leave documents",
     icon: FileStack,
-    route: "/dashboard/hr-admin/leave-document-template",
-  },
-  "hr-admin": {
-    name: "HR Administration",
-    description: "Manage employees, grades, and leave rules",
-    icon: Users,
-    route: "/dashboard/hr-admin",
+    route: "/dashboard/documents",
   },
   "leave-config": {
     name: "Leave Configuration",

@@ -17,11 +17,15 @@ import {
 import type { Employee } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 import type { Campus, Team } from "@/lib/teams";
 import { getCampus, listTeams } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
-import { teamStatusBadgeClass, teamStatusLabel } from "@/lib/teams";
+import { teamStatusBadgeTone, teamStatusLabel } from "@/lib/teams";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
 
 const TEAMS_ERROR = "Unable to load the teams at this campus.";
 const HOLDERS_ERROR = "Unable to load this campus's approver holdings.";
@@ -49,7 +53,7 @@ export default async function CampusPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 
@@ -151,7 +155,7 @@ export default async function CampusPage({
           </div>
           <Link
             href={`/dashboard/hr-admin/campuses/${campus.id}/edit`}
-            className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+            className={buttonVariants({ variant: "secondary" })}
           >
             <Pencil className="h-4 w-4" />
             Edit campus
@@ -173,10 +177,10 @@ export default async function CampusPage({
             {teamsResult.error}
           </p>
         ) : teams.length === 0 ? (
-          <p className="mt-3 text-sm text-text-muted">
-            No teams sit here yet. A team is placed at a campus when it is
-            created or edited, and only an academic team may be.
-          </p>
+          <EmptyState
+            title="No teams sit here yet"
+            description="A team is placed at a campus when it is created or edited, and only an academic team may be."
+          />
         ) : (
           <ul className="mt-3 divide-y divide-border-default">
             {teams.map((team) => (
@@ -195,13 +199,9 @@ export default async function CampusPage({
                     {team.workflow_name || "No chain yet"}
                   </p>
                 </div>
-                <span
-                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
-                    team.status
-                  )}`}
-                >
+                <Badge size="sm" tone={teamStatusBadgeTone(team.status)}>
                   {teamStatusLabel(team.status)}
-                </span>
+                </Badge>
               </li>
             ))}
           </ul>

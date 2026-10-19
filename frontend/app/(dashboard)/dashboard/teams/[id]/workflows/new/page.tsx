@@ -6,6 +6,7 @@ import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
 import type { Team } from "@/lib/teams";
 import { getTeam } from "@/lib/teams";
 
@@ -31,7 +32,7 @@ export default async function NewWorkflowPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!canAccessOrganisation(user)) {
     redirect("/dashboard");
   }
 

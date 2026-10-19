@@ -4,8 +4,10 @@ import { ArrowLeft, Pencil } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { buttonVariants } from "@/components/ui/button";
 
 /**
  * One chain: its steps, in order, and how each one finds the person who acts.
@@ -26,7 +28,7 @@ export default async function WorkflowDetailPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!canAccessOrganisation(user)) {
     redirect("/dashboard");
   }
 
@@ -88,7 +90,7 @@ export default async function WorkflowDetailPage({
           </div>
           <Link
             href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-            className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+            className={buttonVariants({ variant: "secondary" })}
           >
             <Pencil className="h-4 w-4" />
             Edit steps

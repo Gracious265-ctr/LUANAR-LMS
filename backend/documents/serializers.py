@@ -1,11 +1,15 @@
 from rest_framework import serializers
 
+from leave.models import SupportingDocument
+from leave.services.storage import safe_signed_document_url
+
 from .models import LeaveDocumentTemplate
 from .services import (
     ALLOWED_FIELD_KEYS,
     FIELD_CATALOG,
     MAX_SIGNATURE_AREAS,
     MAX_TEXT_LENGTH,
+    approved_document_payload,
 )
 
 
@@ -133,3 +137,69 @@ class LeaveDocumentTemplateSerializer(serializers.ModelSerializer):
                 }
             )
         return attrs
+
+
+class SupportingDocumentListSerializer(serializers.ModelSerializer):
+    """A supporting document as the documents hub lists it.
+
+    The hub spans applications — a manager's team, or HR's whole institution — so
+    a row carries the filing it belongs to and whose it is. ``file_path`` is
+    never serialized; ``file_url`` is re-signed from it at read time, exactly like
+    every other supporting-document read.
+    """
+
+    file_url = serializers.SerializerMethodField()
+    application = serializers.SerializerMethodField()
+    employee = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupportingDocument
+        fields = [
+            "id",
+            "file_name",
+            "file_size",
+            "content_type",
+            "uploaded_at",
+            "status",
+            "retire_reason",
+            "retired_at",
+            "file_url",
+            "application",
+            "employee",
+        ]
+        read_only_fields = fields
+
+    def get_file_url(self, obj) -> str:
+        return safe_signed_document_url(obj.file_path, fallback=obj.file_url)
+
+    def get_application(self, obj) -> dict:
+        return {
+            "id": str(obj.application_id),
+            "reference_number": obj.application.reference_number or "",
+        }
+
+    def get_employee(self, obj) -> dict:
+        employee = obj.application.employee
+        return {"id": employee.id, "full_name": employee.get_full_name()}
+
+
+class ApprovedDocumentListSerializer(serializers.Serializer):
+    """An approved document as the documents hub lists it.
+
+    Builds on :func:`documents.services.approved_document_payload`, so the
+    single-document "Open"/"being prepared" contract is defined once, and adds
+    the filing and the employee it belongs to.
+    """
+
+    def to_representation(self, document) -> dict:
+        payload = approved_document_payload(document)
+        payload["application"] = {
+            "id": str(document.application_id),
+            "reference_number": document.application.reference_number or "",
+        }
+        employee = document.application.employee
+        payload["employee"] = {
+            "id": employee.id,
+            "full_name": employee.get_full_name(),
+        }
+        return payload

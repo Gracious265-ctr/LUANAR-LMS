@@ -49,6 +49,15 @@ def _approvals_badge(user) -> dict | None:
 
 
 def can_access_org(user) -> bool:
+    """Whether ``user`` may open the Workflows module (teams/roles/campuses).
+
+    HR and staff administer the whole tree. A designated team manager is also
+    let in, and for one reason: their team lives inside this module. A manager
+    is an ordinary account — not HR, not staff — so without this the launcher
+    offered them no way to reach the roster and approval chains they are the
+    only people who may configure. Granting the module rather than a separate
+    "team" app keeps one place to go and one set of pages to protect.
+    """
     if not getattr(user, "is_authenticated", False):
         return False
     role = getattr(user, "role", None)
@@ -56,7 +65,11 @@ def can_access_org(user) -> bool:
         return True
     if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
         return True
-    return False
+    # Imported lazily: ``organisation`` imports the launcher's siblings, and the
+    # rule itself lives with the team it is about rather than being copied here.
+    from organisation.services import managed_team_ids_for
+
+    return bool(managed_team_ids_for(user))
 
 
 def _org_badge(user) -> dict | None:
@@ -64,30 +77,16 @@ def _org_badge(user) -> dict | None:
 
 
 def can_access_documents(user) -> bool:
-    if not getattr(user, "is_authenticated", False):
-        return False
-    # The documents area is the HR-only leave-document template manager.
-    role = getattr(user, "role", None)
-    if role == "hr" or role == "superuser":
-        return True
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
-    return False
+    """Documents is every employee's own filing cabinet, scoped on read.
 
-
-def can_access_hr_admin(user) -> bool:
-    if not getattr(user, "is_authenticated", False):
-        return False
-    role = getattr(user, "role", None)
-    if role == "hr" or role == "superuser":
-        return True
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
-    return False
-
-
-def _hr_admin_badge(user) -> dict | None:
-    return None
+    The card and the module are for everyone: an employee sees only their own
+    documents, a team manager also sees their teams', and HR sees the
+    institution. Who may read which row is decided by
+    ``documents.access.visible_employee_ids`` at the list endpoints, not here —
+    this gate answers "may open the module at all", which is exactly
+    "is signed in".
+    """
+    return bool(getattr(user, "is_authenticated", False))
 
 
 def can_access_leave_config(user) -> bool:
@@ -115,8 +114,6 @@ def get_launcher_apps(user) -> list[dict]:
         apps.append({"key": "org", "badge": _org_badge(user)})
     if can_access_documents(user):
         apps.append({"key": "documents", "badge": None})
-    if can_access_hr_admin(user):
-        apps.append({"key": "hr-admin", "badge": _hr_admin_badge(user)})
     if can_access_leave_config(user):
         apps.append({"key": "leave-config", "badge": None})
     return apps

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 
 import type { ApproverRole } from "@/lib/approver-roles";
+import type { Employee } from "@/lib/employees";
 import type { Campus, Team } from "@/lib/teams";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
@@ -30,6 +31,18 @@ export interface TeamsSectionProps {
   roles: ApproverRole[];
   rolesError: string;
   /**
+   * Everyone the create overlay's manager picker may offer. The manager is
+   * designated when the team is created, so the people who may hold it have to
+   * be on the page before the overlay opens.
+   */
+  employees?: Employee[];
+  /**
+   * Every current wide approver, whatever their scope. A person holds only one
+   * wide approver role, so those who already hold one are not offered as a
+   * team's manager.
+   */
+  wideHolderUserIds?: number[];
+  /**
    * The retired/in-force toggle.
    *
    * Plain data rather than a JSX slot, because markup authored in the page's
@@ -41,6 +54,15 @@ export interface TeamsSectionProps {
    */
   filters?: TeamStatusFilter[];
   error?: string;
+  /**
+   * Whether the viewer may create a team.
+   *
+   * Creating a team is HR's, not a manager's: a manager inherits the teams they
+   * are flagged for and configures their chains and rosters, but does not mint
+   * new routing units. Defaults to `true` so the existing HR caller is
+   * unchanged.
+   */
+  canCreate?: boolean;
 }
 
 /**
@@ -61,8 +83,11 @@ export function TeamsSection({
   campuses,
   roles,
   rolesError,
+  employees = [],
+  wideHolderUserIds = [],
   filters = [],
   error,
+  canCreate = true,
 }: TeamsSectionProps) {
   const router = useRouter();
   const overlay = useOverlayParam(TEAM_PARAM);
@@ -77,14 +102,16 @@ export function TeamsSection({
             team&apos;s chain decides who approves their application.
           </p>
         </div>
-        <Button
-          variant="primary"
-          onClick={overlay.openCreate}
-          className="shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          New team
-        </Button>
+        {canCreate && (
+          <Button
+            variant="primary"
+            onClick={overlay.openCreate}
+            className="shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            New team
+          </Button>
+        )}
       </div>
 
       {filters.length > 0 && (
@@ -118,27 +145,31 @@ export function TeamsSection({
         <TeamTable teams={teams} />
       )}
 
-      <AdminFormOverlay
-        open={overlay.isOpen}
-        targetKey={overlay.target}
-        size="lg"
-        title="New team"
-        description="A team is in force from the moment it is created, but routes nothing until it owns an approval chain. Name each step and choose at least one person to start on it."
-        onOpenChange={(open) => {
-          if (!open) overlay.close();
-        }}
-      >
-        <TeamForm
-          campuses={campuses}
-          roles={roles}
-          rolesError={rolesError}
-          onSuccess={() => {
-            overlay.close();
-            router.refresh();
+      {canCreate && (
+        <AdminFormOverlay
+          open={overlay.isOpen}
+          targetKey={overlay.target}
+          size="lg"
+          title="New team"
+          description="A team is created as a draft that routes nothing until it owns an approval chain. First describe the team, then name the manager who will run it: they build the chain and staff each step from the team's own page."
+          onOpenChange={(open) => {
+            if (!open) overlay.close();
           }}
-          onCancel={overlay.close}
-        />
-      </AdminFormOverlay>
+        >
+          <TeamForm
+            campuses={campuses}
+            roles={roles}
+            rolesError={rolesError}
+            employees={employees}
+            wideHolderUserIds={wideHolderUserIds}
+            onSuccess={() => {
+              overlay.close();
+              router.refresh();
+            }}
+            onCancel={overlay.close}
+          />
+        </AdminFormOverlay>
+      )}
     </>
   );
 }

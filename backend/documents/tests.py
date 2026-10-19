@@ -739,7 +739,7 @@ class ApprovedDocumentAccessTests(TestCase):
                 with mock.patch(
                     "leave.services.storage.signed_document_url", side_effect=error
                 ):
-                    with self.assertLogs("documents.views", level="ERROR"):
+                    with self.assertLogs("documents.services", level="ERROR"):
                         response = client.get(self.ready_url)
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertFalse(response.data["available"])

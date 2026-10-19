@@ -7,17 +7,23 @@ import { useEffect, useState } from "react";
 import { formatDate, formatDateTime } from "@/lib/approvals/format";
 import { fetchApprovals } from "@/lib/approvals/service";
 import type {
+  ApprovalListItem,
   ApprovalListResponse,
   ApprovalTab,
+  BulkApprovalResponse,
 } from "@/lib/approvals/types";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Pagination } from "@/components/ui/pagination";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/states";
 import { Avatar } from "@/components/ui/Avatar";
+import { pushToast } from "@/components/ui/toast";
 
 import { ActionBadge, StatusBadge } from "./badges";
+import { BulkApproveDialog } from "./bulk-approve-dialog";
 import {
   Table,
   TableBody,
@@ -27,6 +33,26 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
+
+/** A batch approval is capped at 25 applications (spec 3.11). */
+const BULK_LIMIT = 25;
+
+const BULK_REASON_LABELS: Record<string, string> = {
+  stage_changed: "already decided",
+  team_conflict: "team would be over-subscribed",
+  not_found: "no longer available",
+  workflow_unavailable: "no approver available",
+  application_closed: "no longer awaiting your decision",
+  already_decided: "already decided",
+  not_current_stage: "not with you right now",
+  self_application: "you cannot decide your own application",
+  validation: "could not be approved",
+};
+
+interface BulkFailure {
+  reference: string;
+  reason: string;
+}
 
 function useDebounced(value: string, delay = 300): string {
   const [debounced, setDebounced] = useState(value);
@@ -46,6 +72,15 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+
+  const [selected, setSelected] = useState<Record<string, number>>({});
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkLabels, setBulkLabels] = useState<Record<string, string>>({});
+  const [bulkResult, setBulkResult] = useState<{
+    approved: number;
+    failed: number;
+    failures: BulkFailure[];
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,28 +105,117 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
     };
   }, [tab, q, page, reloadKey]);
 
+  const selectedCount = Object.keys(selected).length;
+  const bulkItems = Object.entries(selected).map(([id, stage_version]) => ({
+    id,
+    stage_version,
+  }));
+
+  function resetSelection() {
+    setSelected({});
+    setBulkResult(null);
+  }
+
   function switchTab(next: ApprovalTab) {
     if (next === tab) return;
     setTab(next);
     setPage(1);
+    resetSelection();
   }
 
   function retry() {
     setError("");
     setLoading(true);
     setReloadKey((value) => value + 1);
+    resetSelection();
   }
 
   function onSearchChange(value: string) {
     setQInput(value);
     setPage(1);
+    resetSelection();
   }
 
   /** The "Clear filters" action on the no-results empty state. */
   function clearSearch() {
     setQInput("");
     setPage(1);
+    resetSelection();
   }
+
+  function goToPage(next: number) {
+    setPage(next);
+    resetSelection();
+  }
+
+  function toggleRow(row: ApprovalListItem) {
+    setSelected((current) => {
+      const next = { ...current };
+      if (row.id in next) {
+        delete next[row.id];
+        return next;
+      }
+      if (row.stage_version == null) return current;
+      if (Object.keys(next).length >= BULK_LIMIT) return current;
+      next[row.id] = row.stage_version;
+      return next;
+    });
+  }
+
+  function selectAllOnPage() {
+    setSelected((current) => {
+      const next = { ...current };
+      for (const row of data?.results ?? []) {
+        if (row.stage_version == null) continue;
+        if (Object.keys(next).length >= BULK_LIMIT) break;
+        next[row.id] = row.stage_version;
+      }
+      return next;
+    });
+  }
+
+  function openBulk() {
+    const labels: Record<string, string> = {};
+    for (const row of data?.results ?? []) {
+      if (row.id in selected) labels[row.id] = row.reference;
+    }
+    setBulkLabels(labels);
+    setBulkOpen(true);
+  }
+
+  function handleBulkDone(result: BulkApprovalResponse) {
+    setBulkOpen(false);
+    const failures: BulkFailure[] = result.results
+      .filter((item) => item.status === "failed")
+      .map((item) => ({
+        reference: bulkLabels[item.id] || item.id,
+        reason: item.reason || "unknown",
+      }));
+    setSelected({});
+    setBulkResult({
+      approved: result.approved,
+      failed: result.failed,
+      failures,
+    });
+    if (result.approved > 0) {
+      pushToast(
+        `${result.approved} application${result.approved === 1 ? "" : "s"} approved`,
+        "success"
+      );
+    }
+    if (result.failed > 0) {
+      pushToast(`${result.failed} could not be approved`, "warning");
+    }
+    setLoading(true);
+    setReloadKey((value) => value + 1);
+  }
+
+  const showBulkTools =
+    tab === "pending" && Boolean(data) && (data?.results.length ?? 0) > 0;
+  const atCap = selectedCount >= BULK_LIMIT;
+  const hasSelectableRows = (data?.results ?? []).some(
+    (row) => row.stage_version != null
+  );
 
   return (
     <div className={cn("space-y-6", !headerless && "mx-auto max-w-5xl")}>
@@ -141,6 +265,63 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
         </div>
       </div>
 
+      {showBulkTools && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-default bg-surface-card px-3 py-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className="text-sm font-medium text-text-primary"
+              aria-live="polite"
+            >
+              {selectedCount} of {BULK_LIMIT} selected
+            </span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onClick={selectAllOnPage}
+              disabled={atCap || !hasSelectableRows}
+            >
+              Select all on this page
+            </Button>
+            {selectedCount > 0 && (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setSelected({})}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={openBulk}
+            disabled={selectedCount === 0}
+          >
+            Approve selected
+          </Button>
+        </div>
+      )}
+
+      {bulkResult && bulkResult.failures.length > 0 && (
+        <Alert tone="rejected">
+          <p className="font-medium">
+            {bulkResult.failed} could not be approved.
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {bulkResult.failures.map((failure, index) => (
+              <li key={`${failure.reference}-${index}`}>
+                {failure.reference} —{" "}
+                {BULK_REASON_LABELS[failure.reason] || failure.reason}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+
       {error ? (
         <Card className="text-center">
           <p className="text-sm text-status-rejected">{error}</p>
@@ -180,16 +361,29 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
         </Card>
       ) : (
         <>
-          <ApprovalTable rows={data.results} tab={tab} />
+          <ApprovalTable
+            rows={data.results}
+            tab={tab}
+            selected={selected}
+            atCap={atCap}
+            onToggle={toggleRow}
+          />
           <Pagination
             page={page}
             hasPrevious={Boolean(data.previous) || page > 1}
             hasNext={Boolean(data.next)}
-            onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-            onNext={() => setPage((current) => current + 1)}
+            onPrevious={() => goToPage(Math.max(1, page - 1))}
+            onNext={() => goToPage(page + 1)}
           />
         </>
       )}
+
+      <BulkApproveDialog
+        open={bulkOpen}
+        items={bulkItems}
+        onClose={() => setBulkOpen(false)}
+        onDone={handleBulkDone}
+      />
     </div>
   );
 }
@@ -197,16 +391,28 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
 function ApprovalTable({
   rows,
   tab,
+  selected,
+  atCap,
+  onToggle,
 }: {
   rows: ApprovalListResponse["results"];
   tab: ApprovalTab;
+  selected: Record<string, number>;
+  atCap: boolean;
+  onToggle: (row: ApprovalListItem) => void;
 }) {
+  const selectable = tab === "pending";
   return (
     <>
       <Card className="hidden overflow-hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
+              {selectable && (
+                <TableHead className="w-10 px-2">
+                  <span className="sr-only">Select</span>
+                </TableHead>
+              )}
               <TableHead>Reference</TableHead>
               <TableHead>Employee</TableHead>
               <TableHead>Leave type</TableHead>
@@ -220,7 +426,15 @@ function ApprovalTable({
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <ApprovalTableRow key={row.id} row={row} tab={tab} desktop />
+              <ApprovalTableRow
+                key={row.id}
+                row={row}
+                tab={tab}
+                selected={selected}
+                atCap={atCap}
+                onToggle={onToggle}
+                desktop
+              />
             ))}
           </TableBody>
         </Table>
@@ -228,7 +442,14 @@ function ApprovalTable({
 
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (
-          <ApprovalTableRow key={row.id} row={row} tab={tab} />
+          <ApprovalTableRow
+            key={row.id}
+            row={row}
+            tab={tab}
+            selected={selected}
+            atCap={atCap}
+            onToggle={onToggle}
+          />
         ))}
       </ul>
     </>
@@ -238,17 +459,36 @@ function ApprovalTable({
 function ApprovalTableRow({
   row,
   tab,
+  selected,
+  atCap,
+  onToggle,
   desktop,
 }: {
-  row: ApprovalListResponse["results"][number];
+  row: ApprovalListItem;
   tab: ApprovalTab;
+  selected: Record<string, number>;
+  atCap: boolean;
+  onToggle: (row: ApprovalListItem) => void;
   desktop?: boolean;
 }) {
   const decision = row.my_decision;
+  const selectable = tab === "pending" && row.stage_version != null;
+  const isSelected = row.id in selected;
+  const checkbox = selectable ? (
+    <Checkbox
+      aria-label={`Select ${row.reference}`}
+      checked={isSelected}
+      disabled={!isSelected && atCap}
+      onCheckedChange={() => onToggle(row)}
+    />
+  ) : null;
 
   if (desktop) {
     return (
       <TableRow className="relative">
+        {tab === "pending" && (
+          <TableCell className="relative z-10 w-10 px-2">{checkbox}</TableCell>
+        )}
         <TableCell className="font-medium text-text-primary">
           <Link
             href={`/dashboard/approvals/${row.id}`}
@@ -310,28 +550,31 @@ function ApprovalTableRow({
 
   return (
     <li className="rounded-xl border border-border-default bg-surface-card p-4 shadow-subtle">
-      <Link
-        href={`/dashboard/approvals/${row.id}`}
-        className="flex items-center justify-between gap-3"
-      >
-        <div className="min-w-0">
-          <p className="truncate font-medium text-text-primary">{row.reference}</p>
-          <p className="truncate text-sm text-text-secondary">{row.employee_name}</p>
-          <p className="mt-1 text-xs text-text-muted">
-            {row.leave_type.name || "—"} · {formatDate(row.start_date) || "—"} →{" "}
-            {formatDate(row.end_date) || "—"}
-          </p>
-          {tab === "decided" && decision && (
-            <p className="mt-1">
-              <ActionBadge action={decision.action} />
+      <div className="flex items-start gap-3">
+        {tab === "pending" && <div className="pt-0.5">{checkbox}</div>}
+        <Link
+          href={`/dashboard/approvals/${row.id}`}
+          className="flex min-w-0 flex-1 items-center justify-between gap-3"
+        >
+          <div className="min-w-0">
+            <p className="truncate font-medium text-text-primary">{row.reference}</p>
+            <p className="truncate text-sm text-text-secondary">{row.employee_name}</p>
+            <p className="mt-1 text-xs text-text-muted">
+              {row.leave_type.name || "—"} · {formatDate(row.start_date) || "—"} →{" "}
+              {formatDate(row.end_date) || "—"}
             </p>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <StatusBadge status={row.status} />
-          <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
-        </div>
-      </Link>
+            {tab === "decided" && decision && (
+              <p className="mt-1">
+                <ActionBadge action={decision.action} />
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <StatusBadge status={row.status} />
+            <ChevronRight className="h-4 w-4 text-text-muted" aria-hidden="true" />
+          </div>
+        </Link>
+      </div>
     </li>
   );
 }

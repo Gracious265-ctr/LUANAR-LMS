@@ -17,8 +17,8 @@ from datetime import datetime
 
 from audit.models import AuditEntry
 from leave.models import LeaveApplication
-from workflows.models import ApplicationStage, ApprovalDecision, Reassignment
-from workflows.services import acting_approver_id, responsible_approver_id
+from approvals.models import ApplicationStage, ApprovalDecision, Reassignment
+from approvals.services import acting_approver_id, responsible_approver_id
 
 from .contracts import (
     ResubmissionInfo,

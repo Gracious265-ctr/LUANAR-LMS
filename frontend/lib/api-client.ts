@@ -14,6 +14,13 @@ export interface DjangoUser {
    * that predate the field, so callers treat it as optional.
    */
   is_superuser?: boolean;
+  /**
+   * The designated manager of at least one team. Read-only and server-derived,
+   * and not implied by `role`: a manager is usually an ordinary employee, so
+   * this is the only thing that tells the rail to offer them the Workflows
+   * module. Optional for the same reason as `is_superuser`.
+   */
+  manages_teams?: boolean;
 }
 
 export interface DjangoTokens {

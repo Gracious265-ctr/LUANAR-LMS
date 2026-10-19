@@ -32,8 +32,8 @@ from notifications.delegations import (
 )
 from notifications.models import NotificationOutbox, NotificationOutboxLockedError
 from notifications.tasks import deliver_notification
-from workflows.models import Delegation
-from workflows.services import DelegationActionError
+from approvals.models import Delegation
+from approvals.services import DelegationActionError
 from workflows.testing import make_approver
 
 User = get_user_model()
@@ -231,7 +231,7 @@ class DelegationOutboxWiringTests(TestCase):
         )
 
     def test_approve_emits_to_both_sides(self):
-        from workflows.services import approve_delegation
+        from approvals.services import approve_delegation
 
         delegation = self._requested()
         with self.captureOnCommitCallbacks(execute=True):
@@ -249,7 +249,7 @@ class DelegationOutboxWiringTests(TestCase):
         )
 
     def test_reject_emits(self):
-        from workflows.services import reject_delegation
+        from approvals.services import reject_delegation
 
         delegation = self._requested()
         with self.captureOnCommitCallbacks(execute=True):
@@ -262,7 +262,7 @@ class DelegationOutboxWiringTests(TestCase):
         )
 
     def test_cancel_emits(self):
-        from workflows.services import cancel_delegation
+        from approvals.services import cancel_delegation
 
         delegation = Delegation.objects.create(
             approver=self.dean,
@@ -281,7 +281,7 @@ class DelegationOutboxWiringTests(TestCase):
         )
 
     def test_failed_decision_emits_nothing(self):
-        from workflows.services import approve_delegation
+        from approvals.services import approve_delegation
 
         delegation = self._requested()
         with self.assertRaises(DelegationActionError):

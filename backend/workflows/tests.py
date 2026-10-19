@@ -14,9 +14,11 @@ from rest_framework.test import APIClient
 from leave.models import LeaveApplication
 from users.models import User
 
-from .admin import (
+from approvals.admin import (
     DelegationAdmin,
     ReassignmentAdmin,
+)
+from .admin import (
     SectionForm,
     SectionInline,
     SectionInlineFormSet,
@@ -32,24 +34,34 @@ from .testing import (
     make_workflow,
 )
 from .models import (
-    ApproverRole,
-    Delegation,
-    Reassignment,
     Section,
-    Team,
     Workflow,
 )
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    Delegation,
+    Reassignment,
+)
+from teams.models import (
+    Team,
+)
 from .services import (
+    StageSequenceError,
+    missing_approver_roles,
+    normalize_section_sequence,
+)
+from organisation.services import (
+    is_approver_user,
+)
+from approvals.services import (
     DelegationActionError,
     ReassignmentError,
-    StageSequenceError,
     active_delegation_for,
     approve_delegation,
     cancel_delegation,
     find_conflicting_delegation,
-    is_approver_user,
-    missing_approver_roles,
-    normalize_section_sequence,
     open_request_exists,
     reassign_application,
     reject_delegation,
@@ -1139,7 +1151,7 @@ class DelegationConcurrencyTests(TestCase):
         # clock is the only way to age a row the constraint would otherwise
         # forbid (ends_on may never precede starts_on).
         with mock.patch(
-            "workflows.services.timezone.localdate",
+            "approvals.services.timezone.localdate",
             return_value=self.today + timedelta(days=1),
         ):
             with self.assertRaises(DelegationActionError) as ctx:
@@ -1169,7 +1181,7 @@ class DelegationConcurrencyTests(TestCase):
             return original(*args, **kwargs)
 
         with mock.patch(
-            "workflows.services.find_conflicting_delegation",
+            "approvals.services.find_conflicting_delegation",
             side_effect=racing_conflict,
         ):
             with self.assertRaises(DelegationActionError) as ctx:

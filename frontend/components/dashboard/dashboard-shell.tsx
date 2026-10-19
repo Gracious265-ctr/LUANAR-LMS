@@ -33,11 +33,17 @@ import {
   isLeaveModule,
   LEAVE_NAV_ITEMS,
 } from "@/lib/nav/leave-nav";
+import {
+  DOCUMENTS_NAV_ITEMS,
+  isDocumentsModule,
+} from "@/lib/nav/documents-nav";
 import { isPlansModule, PLANS_NAV_ITEMS } from "@/lib/nav/plans-nav";
 import {
   isLeaveConfigModule,
   LEAVE_CONFIG_NAV_ITEMS,
 } from "@/lib/nav/leave-config-nav";
+import { isOrganisationModule, organisationNavItems } from "@/lib/nav/organisation-nav";
+import { approvalsNavItems, isApprovalsModule } from "@/lib/nav/approvals-nav";
 import { cn } from "@/lib/utils";
 
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
@@ -61,6 +67,12 @@ interface User {
   full_name: string;
   /** The bootstrap administrator; unlocks user management. */
   is_superuser?: boolean;
+  /**
+   * The designated manager of at least one team; unlocks the "My Team" entry.
+   * A manager is an ordinary `employee`, so the system role alone cannot say to
+   * offer them the Organisation module — this can.
+   */
+  manages_teams?: boolean;
 }
 
 interface DashboardShellProps {
@@ -107,6 +119,11 @@ export function DashboardShell({
   const showHR = user.role === HR_ROLE;
   const showCover = isApprover;
   const showAdmin = user.is_superuser === true;
+  // A team manager who is neither HR nor a superuser reaches their team through
+  // an entry of its own; HR and superusers already have the "Teams" entry below,
+  // so this must not double it up.
+  const showTeamManager =
+    !showHR && !showAdmin && user.manages_teams === true;
 
   // A drawer left open across a navigation would sit on top of the page the user
   // just asked for. Radix already handles Escape and the backdrop, and it locks
@@ -135,6 +152,7 @@ export function DashboardShell({
         pendingApprovals={pendingApprovals}
         showCover={showCover}
         showHR={showHR}
+        showTeamManager={showTeamManager}
         showAdmin={showAdmin}
         open
       />
@@ -157,6 +175,7 @@ export function DashboardShell({
             pendingApprovals={pendingApprovals}
             showCover={showCover}
             showHR={showHR}
+            showTeamManager={showTeamManager}
             showAdmin={showAdmin}
           />
         </div>
@@ -239,6 +258,7 @@ const Sidebar = memo(function Sidebar({
   pendingApprovals,
   showCover,
   showHR,
+  showTeamManager,
   showAdmin,
 }: {
   open: boolean;
@@ -249,6 +269,7 @@ const Sidebar = memo(function Sidebar({
   pendingApprovals: number;
   showCover: boolean;
   showHR: boolean;
+  showTeamManager: boolean;
   showAdmin: boolean;
 }) {
   return (
@@ -267,6 +288,7 @@ const Sidebar = memo(function Sidebar({
         pendingApprovals={pendingApprovals}
         showCover={showCover}
         showHR={showHR}
+        showTeamManager={showTeamManager}
         showAdmin={showAdmin}
         open={open}
       />
@@ -288,6 +310,7 @@ const NavLinks = memo(function NavLinks({
   pendingApprovals,
   showCover,
   showHR,
+  showTeamManager,
   showAdmin,
   open,
 }: {
@@ -296,20 +319,31 @@ const NavLinks = memo(function NavLinks({
   pendingApprovals: number;
   showCover: boolean;
   showHR: boolean;
+  showTeamManager: boolean;
   showAdmin: boolean;
   open: boolean;
 }) {
-  // The Leave and Plans modules each own their own short rail: a way back to
-  // the launcher, then exactly the destinations that belong to that module.
-  // Kept out of the institutional rail so the two cannot leak into each other —
-  // a module user never sees the HR folio, and HR never sees a truncated list.
+  // The Leave, Plans, Leave-Configuration, Organisation, Documents, and
+  // Approvals modules each own their own short rail: a way back to the
+  // launcher, then exactly the destinations that belong to that module. Kept
+  // out of the institutional rail so the two cannot leak into each other — a
+  // module user never sees the HR folio, and HR never sees a truncated list.
   const moduleItems = isLeaveModule(currentPath)
     ? LEAVE_NAV_ITEMS
     : isPlansModule(currentPath)
       ? PLANS_NAV_ITEMS
       : isLeaveConfigModule(currentPath)
         ? LEAVE_CONFIG_NAV_ITEMS
-        : null;
+        : isDocumentsModule(currentPath)
+          ? DOCUMENTS_NAV_ITEMS
+          : isOrganisationModule(currentPath)
+            ? organisationNavItems({ isHr: showHR || showAdmin })
+            : isApprovalsModule(currentPath)
+              ? approvalsNavItems({
+                  pendingApprovals,
+                  canRequestCover: showCover,
+                })
+              : null;
   if (moduleItems) {
     return (
       <ModuleNavLinks currentPath={currentPath} open={open} items={moduleItems} />
@@ -353,11 +387,25 @@ const NavLinks = memo(function NavLinks({
       />
       {/* Teams is its own module now, not a page under HR Administration:
           HR reaches it from the rail beside the other top-level apps, and it
-          owns its own route at ``/dashboard/teams``. */}
-      {showHR && (
+          owns its own route at ``/dashboard/teams``. A superuser gets the same
+          entry: the backend admits them to every team, and the launcher already
+          shows them the module's card. */}
+      {(showHR || showAdmin) && (
         <Option
           Icon={Users}
           title="Teams"
+          href="/dashboard/teams"
+          currentPath={currentPath}
+          open={open}
+        />
+      )}
+      {/* A team manager is not HR, so the entry above is hidden from them; this
+          is their one way in to the team they are the only person able to
+          configure. */}
+      {showTeamManager && (
+        <Option
+          Icon={Users}
+          title="My Team"
           href="/dashboard/teams"
           currentPath={currentPath}
           open={open}
@@ -507,6 +555,7 @@ const ModuleNavLinks = memo(function ModuleNavLinks({
     href: string;
     icon: React.ComponentType<{ className?: string }>;
     match: (pathname: string) => boolean;
+    badge?: number;
   }[];
 }) {
   return (
@@ -520,6 +569,7 @@ const ModuleNavLinks = memo(function ModuleNavLinks({
           href={item.href}
           currentPath={currentPath}
           match={item.match}
+          badge={item.badge}
           open={open}
         />
       ))}
@@ -562,6 +612,7 @@ const Option = memo(function Option({
   currentPath,
   open,
   match,
+  badge,
 }: {
   Icon: React.ComponentType<{ className?: string }>;
   title: string;
@@ -570,6 +621,8 @@ const Option = memo(function Option({
   open: boolean;
   /** Overrides the default exact-path match when a section owns sub-routes. */
   match?: (pathname: string) => boolean;
+  /** A count to surface beside the item, e.g. decisions waiting on the caller. */
+  badge?: number;
 }) {
   const isSelected = match ? match(currentPath) : currentPath === href;
 
@@ -601,6 +654,15 @@ const Option = memo(function Option({
           )}
         >
           {title}
+        </span>
+      )}
+
+      {open && badge !== undefined && badge > 0 && (
+        <span
+          data-testid="module-nav-badge"
+          className="ml-auto mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-primary px-1.5 text-[11px] font-semibold leading-none text-white"
+        >
+          {badge > 99 ? "99+" : badge}
         </span>
       )}
     </Link>

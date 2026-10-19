@@ -12,6 +12,8 @@ import {
   removeSectionMember,
 } from "@/lib/section-members-client";
 import type { SectionMember } from "@/lib/workflows";
+import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm-button";
 
 /**
  * Names the one person who decides at each step of a team's chain.
@@ -209,27 +211,29 @@ export function TeamMemberList({ team }: { team: Team }) {
                   ))}
                 </select>
                 {current ? (
-                  <button
-                    type="button"
-                    onClick={() => void clear(section)}
+                  <ConfirmButton
+                    size="sm"
+                    onConfirm={() => clear(section)}
                     disabled={busy === section.id}
+                    loading={busy === section.id}
+                    prompt={`End ${current.user_name}'s term on ${section.name}?`}
                     aria-label={`Remove ${current.user_name} from ${section.name}`}
-                    className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busy === section.id ? "Saving..." : "Remove"}
-                  </button>
+                    Remove
+                  </ConfirmButton>
                 ) : null}
-                <button
-                  type="button"
+                <Button
+                  variant="link"
+                  size="sm"
                   onClick={() => void toggleHistory(section.id)}
                   aria-label={`Show past approvers of ${section.name}`}
                   aria-pressed={Boolean(showHistory[section.id])}
-                  className="ml-auto text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                  className="ml-auto"
                 >
                   {showHistory[section.id]
                     ? "Hide past approvers"
                     : "Who was here before?"}
-                </button>
+                </Button>
               </div>
 
               {options.length === 0 ? (

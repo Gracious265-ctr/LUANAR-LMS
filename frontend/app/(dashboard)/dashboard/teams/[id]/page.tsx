@@ -20,18 +20,25 @@ import {
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
+import {
+  canAccessOrganisation,
+  isOrganisationAdministrator,
+} from "@/lib/nav/organisation-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import {
   getTeam,
   listTeamWorkflows,
-  teamCategoryBadgeClass,
+  teamCategoryBadgeTone,
   teamCategoryLabel,
-  teamStatusBadgeClass,
+  teamStatusBadgeTone,
   teamStatusLabel,
 } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
 import { FadeIn } from "@/components/motion/FadeIn";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { RouteChainButton } from "@/components/hr/workflow-routing-actions";
 
 /**
  * The tabs a team is read through.
@@ -73,9 +80,13 @@ export default async function TeamPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!canAccessOrganisation(user)) {
     redirect("/dashboard");
   }
+  // Whether the viewer sees the HR-only controls on this team. A manager may
+  // read and configure their team's chains and roster, but editing the team's
+  // identity and retiring it stay HR's.
+  const isAdministrator = isOrganisationAdministrator(user);
 
   let team: Team;
   try {
@@ -157,20 +168,12 @@ export default async function TeamPage({
               <h2 className="text-2xl font-bold text-text-primary">
                 {team.name}
               </h2>
-              <span
-                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamCategoryBadgeClass(
-                  team.category
-                )}`}
-              >
+              <Badge size="sm" tone={teamCategoryBadgeTone(team.category)}>
                 {teamCategoryLabel(team.category)}
-              </span>
-              <span
-                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
-                  team.status
-                )}`}
-              >
+              </Badge>
+              <Badge size="sm" tone={teamStatusBadgeTone(team.status)}>
                 {teamStatusLabel(team.status)}
-              </span>
+              </Badge>
             </div>
             <p className="text-text-secondary">
               {[
@@ -184,17 +187,19 @@ export default async function TeamPage({
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/dashboard/teams/${team.id}/workflows`}
-              className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+              className={buttonVariants({ variant: "secondary" })}
             >
               Workflows
             </Link>
-            <Link
-              href={`/dashboard/teams/${team.id}/edit`}
-              className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit team
-            </Link>
+            {isAdministrator && (
+              <Link
+                href={`/dashboard/teams/${team.id}/edit`}
+                className={buttonVariants({ variant: "secondary" })}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit team
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -271,7 +276,7 @@ export default async function TeamPage({
             </div>
 
             <div className="mt-4 border-t border-border-default pt-4">
-              <TeamLifecycleActions team={team} />
+              <TeamLifecycleActions team={team} canRetire={isAdministrator} />
             </div>
           </div>
 
@@ -311,15 +316,15 @@ export default async function TeamPage({
                         {workflow.section_count === 1 ? "" : "s"}
                       </p>
                     </div>
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        workflow.is_routing
-                          ? "bg-brand-secondary-subtle text-brand-secondary"
-                          : "bg-surface-muted text-text-muted"
-                      }`}
-                    >
-                      {workflow.is_routing ? "Routing" : "Not routing"}
-                    </span>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <Link
+                        href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
+                        className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                      >
+                        Edit steps
+                      </Link>
+                      <RouteChainButton teamId={team.id} workflow={workflow} />
+                    </div>
                   </li>
                 ))}
               </ul>

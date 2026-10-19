@@ -9,7 +9,7 @@ import type { TeamCategory } from "./team-category";
 export {
   TEAM_CATEGORY_CODES,
   TEAM_CATEGORY_LABELS,
-  teamCategoryBadgeClass,
+  teamCategoryBadgeTone,
   teamCategoryLabel,
   type TeamCategory,
 } from "./team-category";
@@ -227,6 +227,13 @@ export interface TeamInput {
    * untouched; a team's chain can never be swapped for somebody else's.
    */
   new_workflow?: TeamWorkflowInput;
+  /**
+   * The manager designated at creation: the team-scoped role they hold, and the
+   * category-matching employee who holds it. Written on create only — a team's
+   * manager is changed from the team's Approvers tab afterwards, where the
+   * wide-holder panel offers "Make manager".
+   */
+  manager?: { role: number; user: number };
 }
 
 export interface Campus {
@@ -322,5 +329,5 @@ export async function getCampus(id: number | string): Promise<Campus> {
 export {
   TEAM_STATUS_LABELS,
   teamStatusLabel,
-  teamStatusBadgeClass,
+  teamStatusBadgeTone,
 } from "./teams-client";

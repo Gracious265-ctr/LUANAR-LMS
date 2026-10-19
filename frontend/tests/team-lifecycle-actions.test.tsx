@@ -100,6 +100,7 @@ describe("TeamLifecycleActions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Retire team" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     await waitFor(() => expect(deactivateTeam).toHaveBeenCalledWith(4));
     expect(refresh).toHaveBeenCalled();
@@ -122,5 +123,18 @@ describe("TeamLifecycleActions", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Network unreachable."
     );
+  });
+
+  it("keeps the readiness check but hides retirement from a manager", () => {
+    // Readiness is a question anyone who may see the team can ask; retiring it
+    // changes the team's lifecycle and stays HR's.
+    render(<TeamLifecycleActions team={makeTeam()} canRetire={false} />);
+
+    expect(
+      screen.getByRole("button", { name: "Check readiness" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retire team" })
+    ).not.toBeInTheDocument();
   });
 });

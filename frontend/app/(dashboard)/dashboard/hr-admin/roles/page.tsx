@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
-import { ApproverRoleTable } from "@/components/hr/approver-role-table";
+import { RolesSection } from "@/components/hr/RolesSection";
 import type {
   ApproverRole,
   CampusRoleAssignment,
@@ -15,8 +14,11 @@ import {
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { FadeIn } from "@/components/motion/FadeIn";
+import { buttonVariants } from "@/components/ui/button";
+import { Alert } from "@/components/ui/states";
 
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
 const HOLDERS_ERROR = "Unable to load who currently holds each role.";
@@ -27,7 +29,7 @@ async function RolesPage() {
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 
@@ -114,40 +116,28 @@ async function RolesPage() {
             role&apos;s scope.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard/hr-admin/approvers"
-            className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
-            Approvers
-          </Link>
-          <Link
-            href="/dashboard/hr-admin/roles/new"
-            className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
-            <Plus className="h-4 w-4" />
-            New role
-          </Link>
-        </div>
+        <Link
+          href="/dashboard/hr-admin/approvers"
+          className={buttonVariants({ variant: "secondary" })}
+        >
+          Approvers
+        </Link>
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-4 text-lg font-semibold text-text-primary">
-          All roles
-        </h3>
         {rolesError && (
           <div className="rounded-md bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
             {rolesError}
           </div>
         )}
         {holdersError && (
-          <div className="mb-4 rounded-md bg-status-rejected-subtle px-3 py-2 text-sm text-status-rejected">
+          <Alert tone="error" className="mb-4">
             {holdersError} The holders column is hidden until the data loads
             again.
-          </div>
+          </Alert>
         )}
         {!rolesError && (
-          <ApproverRoleTable
+          <RolesSection
             roles={roles}
             assignments={assignments}
             teamHoldings={teamHoldings}

@@ -88,6 +88,23 @@ describe("TeamTable", () => {
     ).toHaveAttribute("href", "/dashboard/teams/7");
   });
 
+  it("offers each team's tabs as one-click links, so managing it is a single step", () => {
+    render(<TeamTable teams={[makeTeam({ id: 7, name: "Registry" })]} />);
+
+    expect(screen.getByRole("link", { name: "Steps" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=steps"
+    );
+    expect(screen.getByRole("link", { name: "Approvers" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=approvers"
+    );
+    expect(screen.getByRole("link", { name: "Members" })).toHaveAttribute(
+      "href",
+      "/dashboard/teams/7?tab=members"
+    );
+  });
+
   it("invites a first team instead of rendering an empty table", () => {
     render(<TeamTable teams={[]} />);
 

@@ -24,25 +24,31 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 
 from .models import (
+    Section,
+    SectionMember,
+    Workflow,
+)
+from organisation.models import (
     ApproverRole,
     Campus,
     RoleAssignment,
-    Section,
-    SectionMember,
+)
+from teams.models import (
     Team,
     TeamRoleAssignment,
-    Workflow,
 )
 from .services import (
-    RoleActionError,
     TeamActionError,
     add_section_member,
+    remove_section_member,
+)
+from organisation.services import (
+    RoleActionError,
     approver_role_codes_for,
     create_role_assignment,
     ensure_role_not_in_use,
     is_approver_user,
     remove_role_assignment,
-    remove_section_member,
 )
 from .testing import (
     DEV_PASSWORD,

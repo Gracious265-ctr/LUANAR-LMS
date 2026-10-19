@@ -11,6 +11,7 @@ import {
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import {
@@ -19,6 +20,8 @@ import {
   type WideScope,
 } from "@/components/hr/wide-holding-panel";
 import { ScopeFilterSelect } from "@/components/hr/scope-filter-select";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyPanel } from "@/components/ui/states";
 
 const ROLES_ERROR = "Unable to load approver roles.";
 const HOLDERS_ERROR = "Unable to load the current holders.";
@@ -58,7 +61,7 @@ export default async function ApproversPage({
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 
@@ -257,21 +260,18 @@ export default async function ApproversPage({
       )}
 
       {activeRoles.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
-          <p className="text-base font-medium text-text-primary">
-            No active approver roles
-          </p>
-          <p className="mt-1 text-sm text-text-muted">
-            Create a role first — a holding is always a person holding a role
-            somewhere, so there is nothing to hold until the role exists.
-          </p>
-          <Link
-            href="/dashboard/hr-admin/roles/new"
-            className="mt-3 inline-block rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-          >
-            New role
-          </Link>
-        </div>
+        <EmptyPanel
+          title="No active approver roles"
+          description="Create a role first — a holding is always a person holding a role somewhere, so there is nothing to hold until the role exists."
+          action={
+            <Link
+              href="/dashboard/hr-admin/roles/new"
+              className={buttonVariants({ variant: "primary" })}
+            >
+              New role
+            </Link>
+          }
+        />
       ) : (
         <section
           className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"

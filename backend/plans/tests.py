@@ -26,10 +26,12 @@ from plans.models import LeavePlan, LeavePlanStatus
 from plans.services import resolve_scopes
 from plans.tasks import FOLLOW_UP_AFTER_DAYS, check_and_notify_plans
 from users.models import EmployeeProfile
-from workflows.models import (
+from organisation.models import (
     Campus,
     CampusRoleAssignment,
     RoleAssignment,
+)
+from teams.models import (
     Team,
     TeamRoleAssignment,
 )

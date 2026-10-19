@@ -162,6 +162,7 @@ describe("TeamMembersPanel", () => {
         name: "Remove Ruth Member from Bunda College Faculty",
       })
     );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, continue" }));
 
     expect(
       await screen.findByText(/still holds an open approver period/)

@@ -8,7 +8,6 @@ import type {
   TeamStatus,
 } from "./teams";
 import { apiErrorMessage } from "./utils";
-import { STATUS_STYLES } from "./status-styles";
 
 export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
   draft: "Draft",
@@ -20,14 +19,20 @@ export function teamStatusLabel(status: string): string {
   return TEAM_STATUS_LABELS[status as TeamStatus] ?? status;
 }
 
-export function teamStatusBadgeClass(status: string): string {
+/**
+ * The shared `Badge` `tone` for a team status, so the pill renders through the
+ * one status→colour mapping instead of restating classes.
+ */
+export function teamStatusBadgeTone(
+  status: string
+): "info" | "muted" | "pending" {
   switch (status) {
     case "active":
-      return "bg-brand-secondary-subtle text-brand-secondary";
+      return "info";
     case "inactive":
-      return "bg-surface-muted text-text-muted";
+      return "muted";
     default:
-      return STATUS_STYLES.pending;
+      return "pending";
   }
 }
 

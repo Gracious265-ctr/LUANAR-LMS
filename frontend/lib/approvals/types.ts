@@ -56,6 +56,12 @@ export interface ApprovalListItem {
   working_days: number;
   submitted_at: string;
   status: ApprovalStatus;
+  /**
+   * The pending stage's optimistic-lock version, surfaced so a batch approval
+   * can be built from the list without opening each application. Null once the
+   * application has left the chain.
+   */
+  stage_version: number | null;
   my_decision: MyDecisionRef | null;
 }
 
@@ -219,4 +225,26 @@ export interface DocumentDownload {
   size: number | null;
   download_url: string;
   document_url: string | null;
+}
+
+/** One application in a batch approval: its id and the version to guard against. */
+export interface BulkApprovalItem {
+  id: string;
+  stage_version: number;
+}
+
+export type BulkApprovalItemStatus = "approved" | "failed";
+
+export interface BulkApprovalItemResult {
+  id: string;
+  status: BulkApprovalItemStatus;
+  /** Machine reason for a failure (e.g. `stage_changed`); absent on success. */
+  reason?: string | null;
+}
+
+export interface BulkApprovalResponse {
+  results: BulkApprovalItemResult[];
+  approved: number;
+  failed: number;
+  limit: number;
 }

@@ -1,0 +1,10 @@
+import { apiFetch } from "@/app/api/_lib/api-fetch";
+
+/** Remove the manager designation from a team-wide holding. HR-only. */
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  return apiFetch("POST", `team-role-assignments/${id}/clear-manager/`);
+}

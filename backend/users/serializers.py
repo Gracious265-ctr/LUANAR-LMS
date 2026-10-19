@@ -5,8 +5,8 @@ from rest_framework import serializers
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
-from workflows.models import Team
-from workflows.services import approver_role_codes_for
+from teams.models import Team
+from organisation.services import approver_role_codes_for
 
 from .models import EmployeeProfile
 from .services import request_password_set
@@ -38,13 +38,28 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer for user profile data."""
 
     full_name = serializers.SerializerMethodField()
+    manages_teams = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "role", "full_name", "is_superuser"]
+        fields = ["id", "email", "role", "full_name", "is_superuser", "manages_teams"]
 
     def get_full_name(self, obj: User) -> str:
         return obj.get_full_name()
+
+    def get_manages_teams(self, obj: User) -> bool:
+        """Whether the account is the designated manager of at least one team.
+
+        Read-only and server-derived. It rides on the profile payload because
+        the sidebar needs it in the first paint — a manager is an ordinary
+        ``employee``, so their system role alone cannot tell the rail to offer
+        the way into the Workflows module. Imported lazily to keep ``users``
+        from importing ``organisation`` (which imports ``users.models``) at
+        module load.
+        """
+        from organisation.services import managed_team_ids_for
+
+        return bool(managed_team_ids_for(obj))
 
 
 class AdminUserSerializer(serializers.ModelSerializer):

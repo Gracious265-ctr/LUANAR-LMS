@@ -15,7 +15,7 @@ govern this module and nothing else:
 from django.db.models import Sum
 from django.utils import timezone
 
-from workflows.models import ApprovalDecision
+from approvals.models import ApprovalDecision
 
 from .. import providers as leave_providers
 from ..models import LeaveApplication

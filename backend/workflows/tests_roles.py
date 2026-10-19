@@ -19,17 +19,8 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 
-from .models import ApproverRole, RoleAssignment
-from .services import (
-    RoleActionError,
-    approver_role_codes_for,
-    approver_role_labels_for,
-    create_approver_role,
-    deactivate_approver_role,
-    ensure_role_not_in_use,
-    is_approver_user,
-    update_approver_role,
-)
+from organisation.models import ApproverRole, RoleAssignment
+from organisation.services import RoleActionError, approver_role_codes_for, approver_role_labels_for, create_approver_role, deactivate_approver_role, ensure_role_not_in_use, is_approver_user, update_approver_role
 from .testing import (
     DEV_PASSWORD,
     ensure_roles,
@@ -192,7 +183,7 @@ class RoleCreationTests(RoleAPIBase):
 
     def test_a_failing_audit_rolls_the_role_back(self):
         with mock.patch(
-            "workflows.services.record_audit", side_effect=RuntimeError("audit down")
+            "organisation.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 self.client.post(LIST_URL, self.payload(), format="json")
@@ -405,7 +396,7 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
 
     def test_a_failing_audit_rolls_the_edit_back(self):
         with mock.patch(
-            "workflows.services.record_audit", side_effect=RuntimeError("audit down")
+            "organisation.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 self.client.patch(

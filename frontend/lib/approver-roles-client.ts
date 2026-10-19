@@ -134,6 +134,31 @@ export async function removeTeamRoleAssignment(id: number | string): Promise<voi
   await send<void>(`/api/hr/team-role-assignments/${id}`, "DELETE");
 }
 
+/**
+ * Designate a team-wide holding as its team's manager.
+ *
+ * There is exactly one per team: the backend clears the flag from any other
+ * holder on the team, so this is a selection, not an addition.
+ */
+export async function setTeamManager(
+  id: number | string
+): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    `/api/hr/team-role-assignments/${id}/set-manager`,
+    "POST"
+  );
+}
+
+/** Undo a manager designation, leaving the holding in place. */
+export async function clearTeamManager(
+  id: number | string
+): Promise<TeamRoleAssignment> {
+  return send<TeamRoleAssignment>(
+    `/api/hr/team-role-assignments/${id}/clear-manager`,
+    "POST"
+  );
+}
+
 /** The same contract as the team-wide holding, scoped to a campus. */
 export async function createCampusRoleAssignment(input: {
   campus: number | string;

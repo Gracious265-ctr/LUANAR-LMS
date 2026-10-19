@@ -40,13 +40,19 @@ from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
 from users.models import EmployeeProfile
 
 from .models import (
-    ApplicationStage,
-    ApprovalDecision,
-    ApproverRole,
     Section,
     SectionMember,
-    Team,
     Workflow,
+)
+from organisation.models import (
+    ApproverRole,
+)
+from approvals.models import (
+    ApplicationStage,
+    ApprovalDecision,
+)
+from teams.models import (
+    Team,
 )
 from .providers import DatabaseWorkflowProvider, WorkflowConfigError
 from .services import (
@@ -54,10 +60,14 @@ from .services import (
     add_section_member,
     create_team,
     deactivate_team,
-    decide,
-    is_approver_user,
     remove_section_member,
     validate_team,
+)
+from organisation.services import (
+    is_approver_user,
+)
+from approvals.services import (
+    decide,
 )
 from .testing import (
     DEV_PASSWORD,

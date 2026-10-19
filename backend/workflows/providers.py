@@ -30,10 +30,14 @@ from django.utils.module_loading import import_string
 from users.models import User
 
 from .models import (
+    SectionMember,
+)
+from organisation.models import (
     ApproverRole,
     CampusRoleAssignment,
     RoleAssignment,
-    SectionMember,
+)
+from teams.models import (
     Team,
     TeamRoleAssignment,
 )
@@ -373,7 +377,7 @@ class SnapshotStagesMixin:
         not from ``assigned_approver``: a section is resolved by whoever acts
         first, and ``assigned_approver`` is null until somebody does.
         """
-        from .models import ApplicationStage
+        from approvals.models import ApplicationStage
 
         stages = (
             ApplicationStage.objects.filter(
@@ -402,7 +406,7 @@ class SnapshotStagesMixin:
         ``assigned_approver`` is null until then and would leave every approver in
         the chain out of the recipient list.
         """
-        from .models import ApplicationStage, ApplicationStageApprover
+        from approvals.models import ApplicationStage, ApplicationStageApprover
 
         return list(
             ApplicationStageApprover.objects.filter(

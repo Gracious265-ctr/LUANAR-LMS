@@ -2,7 +2,7 @@ from rest_framework import permissions
 
 from users.models import User
 
-from .services import is_approver_user
+from organisation.services import is_approver_user
 
 
 class IsApproverRoleOrHR(permissions.BasePermission):

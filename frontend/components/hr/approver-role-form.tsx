@@ -12,6 +12,9 @@ import {
   HISTORY_SCOPES,
   updateApproverRole,
 } from "@/lib/approver-roles-client";
+import { buttonVariants, Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/states";
 
 /**
  * Creating a role asks for one thing: its name.
@@ -105,14 +108,14 @@ export function ApproverRoleForm({
         >
           Name
         </label>
-        <input
+        <Input
           id="label"
           name="label"
           required
           maxLength={80}
           readOnly={role !== undefined}
           defaultValue={role?.label}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus read-only:bg-surface-muted read-only:text-text-secondary"
+          className="read-only:bg-surface-muted read-only:text-text-secondary"
           placeholder="e.g. Head of Department"
         />
         <p className="mt-1 text-xs text-text-muted">
@@ -144,12 +147,11 @@ export function ApproverRoleForm({
             >
               Description
             </label>
-            <input
+            <Input
               id="description"
               name="description"
               maxLength={255}
               defaultValue={role.description}
-              className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
               placeholder="What this approver is responsible for"
             />
           </div>
@@ -220,31 +222,23 @@ export function ApproverRoleForm({
       ) : null}
 
       {error && (
-        <div className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2">
+        <Alert tone="error" className="md:col-span-2">
           {error}
-        </div>
+        </Alert>
       )}
 
       <div className="flex items-center gap-3 md:col-span-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "Saving..." : role ? "Save changes" : "Create role"}
-        </button>
+        <Button type="submit" disabled={loading} loading={loading}>
+          {role ? "Save changes" : "Create role"}
+        </Button>
         {onCancel ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
-          >
+          <Button variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         ) : (
           <Link
             href="/dashboard/hr-admin/roles"
-            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+            className={buttonVariants({ variant: "secondary" })}
           >
             Cancel
           </Link>

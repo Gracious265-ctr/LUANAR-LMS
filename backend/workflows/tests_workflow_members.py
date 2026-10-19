@@ -29,18 +29,20 @@ from audit.models import AuditEntry
 from users.models import EmployeeProfile
 
 from .models import (
-    CampusRoleAssignment,
-    RoleAssignment,
-    Team,
-    TeamRoleAssignment,
     Workflow,
     WorkflowMember,
     Section,
 )
+from organisation.models import (
+    CampusRoleAssignment,
+    RoleAssignment,
+)
+from teams.models import (
+    Team,
+    TeamRoleAssignment,
+)
 from .services import (
     TeamActionError,
-    WorkflowMemberError,
-    add_team_member,
     assign_workflow_member,
     ensure_membership_allowed,
     remove_team_member,
@@ -48,6 +50,10 @@ from .services import (
     sync_workflow_members,
     team_member_summaries,
     workflow_member_pool,
+)
+from organisation.services import (
+    WorkflowMemberError,
+    add_team_member,
 )
 from .testing import (
     DEV_PASSWORD,

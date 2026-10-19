@@ -2,6 +2,16 @@ import Link from "next/link";
 
 import { teamCategoryLabel } from "@/lib/team-category";
 import type { Campus, Team } from "@/lib/teams";
+import { Badge } from "@/components/ui/badge";
+import { EmptyPanel } from "@/components/ui/states";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 /**
  * Campuses as a list rather than a wall of cards.
@@ -21,47 +31,34 @@ export function CampusTable({
 }) {
   if (campuses.length === 0) {
     return (
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
-        <p className="text-base font-medium text-text-primary">
-          No campuses yet
-        </p>
-        <p className="mt-1 text-sm text-text-muted">
-          A campus is where an academic team sits, and it is what makes
-          campus-wide approvers reachable for that team&apos;s stages.
-        </p>
-      </div>
+      <EmptyPanel
+        title="No campuses yet"
+        description="A campus is where an academic team sits, and it is what makes campus-wide approvers reachable for that team's stages."
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border-default bg-surface-card shadow-subtle">
-      <table className="w-full text-left text-sm">
+    <div className="rounded-xl border border-border-default bg-surface-card shadow-subtle">
+      <Table>
         <caption className="sr-only">
           Campuses, the academic teams that sit at each, and whether each campus
           is still active
         </caption>
-        <thead className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-          <tr>
-            <th scope="col" className="px-4 py-3">
-              Campus
-            </th>
-            <th scope="col" className="px-4 py-3">
-              Code
-            </th>
-            <th scope="col" className="px-4 py-3">
-              Academic teams
-            </th>
-            <th scope="col" className="px-4 py-3">
-              Status
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border-default">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Campus</TableHead>
+            <TableHead>Code</TableHead>
+            <TableHead>Academic teams</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {campuses.map((campus) => {
             const atCampus = teams.filter((team) => team.campus === campus.id);
             return (
-              <tr key={campus.id} className="hover:bg-surface-page">
-                <td className="px-4 py-3">
+              <TableRow key={campus.id}>
+                <TableCell>
                   <Link
                     href={`/dashboard/hr-admin/campuses/${campus.id}`}
                     className="font-medium text-brand-primary hover:text-brand-primary-hover"
@@ -73,11 +70,11 @@ export function CampusTable({
                       {campus.description}
                     </p>
                   )}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-text-muted">
+                </TableCell>
+                <TableCell className="font-mono text-xs text-text-muted">
                   {campus.code}
-                </td>
-                <td className="px-4 py-3">
+                </TableCell>
+                <TableCell>
                   {atCampus.length === 0 ? (
                     <span className="text-xs text-text-muted">None yet</span>
                   ) : (
@@ -97,23 +94,17 @@ export function CampusTable({
                       ))}
                     </ul>
                   )}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      campus.is_active
-                        ? "bg-brand-secondary-subtle text-brand-secondary"
-                        : "bg-surface-muted text-text-muted"
-                    }`}
-                  >
+                </TableCell>
+                <TableCell>
+                  <Badge size="sm" tone={campus.is_active ? "info" : "muted"}>
                     {campus.is_active ? "Active" : "Retired"}
-                  </span>
-                </td>
-              </tr>
+                  </Badge>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { CampusForm } from "@/components/hr/campus-form";
 import { getCurrentUser } from "@/lib/auth";
+import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
 
 /**
  * A new campus.
@@ -18,7 +19,7 @@ export default async function NewCampusPage() {
   if (!user) {
     redirect("/login");
   }
-  if (user.role !== "hr") {
+  if (!isOrganisationAdministrator(user)) {
     redirect("/dashboard");
   }
 

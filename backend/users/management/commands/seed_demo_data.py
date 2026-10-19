@@ -38,11 +38,18 @@ from django.utils import timezone
 from leave.models import FinancialYear, GradeEntitlement
 from leave_config.models import LeaveType
 from users.models import EmployeeProfile
-from workflows.models import ApproverRole, Team
+from organisation.models import (
+    ApproverRole,
+)
+from teams.models import (
+    Team,
+)
 from workflows.services import (
     assign_workflow_member,
-    create_role_assignment,
     create_team,
+)
+from organisation.services import (
+    create_role_assignment,
 )
 
 User = get_user_model()

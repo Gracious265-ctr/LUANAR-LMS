@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 import type { Campus, CampusInput } from "@/lib/teams";
 import { createCampus, updateCampus } from "@/lib/teams-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /**
  * One campus, written.
@@ -74,12 +76,11 @@ export function CampusForm({
         >
           Name
         </label>
-        <input
+        <Input
           id="campus_name"
           name="name"
           required
           defaultValue={campus?.name ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. Main Campus"
         />
       </div>
@@ -90,12 +91,11 @@ export function CampusForm({
         >
           Code
         </label>
-        <input
+        <Input
           id="campus_code"
           name="code"
           required
           defaultValue={campus?.code ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="e.g. main"
         />
         <p className="mt-1 text-xs text-text-muted">
@@ -110,25 +110,20 @@ export function CampusForm({
         >
           Description
         </label>
-        <input
+        <Input
           id="campus_description"
           name="description"
           defaultValue={campus?.description ?? ""}
-          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder="Where this campus sits"
         />
       </div>
       {error && <p className="text-sm text-status-rejected">{error}</p>}
       <div className="flex items-center gap-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "Saving..." : editing ? "Save campus" : "Create campus"}
-        </button>
-        <button
-          type="button"
+        <Button type="submit" disabled={loading} loading={loading}>
+          {editing ? "Save campus" : "Create campus"}
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => {
             if (onSaved) {
               onSaved();
@@ -136,10 +131,9 @@ export function CampusForm({
             }
             router.push(returnTo);
           }}
-          className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
         >
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -180,13 +174,13 @@ export function CampusQuickAdd({ campuses }: { campuses: Campus[] }) {
             ))}
           </ul>
         )}
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => setOpen(true)}
-          className="mt-3 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
+          className="mt-3"
         >
           Add a campus
-        </button>
+        </Button>
       </div>
     );
   }
@@ -194,13 +188,9 @@ export function CampusQuickAdd({ campuses }: { campuses: Campus[] }) {
   return (
     <div className="space-y-3">
       <CampusForm onSaved={() => setOpen(false)} returnTo="" />
-      <button
-        type="button"
-        onClick={() => setOpen(false)}
-        className="rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
-      >
+      <Button variant="secondary" onClick={() => setOpen(false)}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }

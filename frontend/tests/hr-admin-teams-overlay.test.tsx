@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApproverRole } from "@/lib/approver-roles";
+import { makeEmployee } from "@/lib/employees/__fixtures__";
 
 import { makeCampus, makeTeam } from "@/lib/teams/__fixtures__";
 import { createTeam, listEligibleApprovers } from "@/lib/teams-client";
@@ -57,6 +58,13 @@ const roles: ApproverRole[] = [
 
 const campusList = [makeCampus()];
 
+/** An active employee the create form may name as the team's manager. */
+const manager = makeEmployee({
+  user_id: 21,
+  full_name: "Mary Manager",
+  category: "administration",
+});
+
 function renderSection(
   props: Partial<Parameters<typeof TeamsSection>[0]> = {},
 ) {
@@ -66,19 +74,29 @@ function renderSection(
       campuses={campusList}
       roles={roles}
       rolesError=""
+      employees={[manager]}
       {...props}
     />,
   );
 }
 
 /**
- * A create only records what the team is: name, category and campus. The
- * approval chain is built afterwards from the team's own page, so the overlay
- * never crosses a second step.
+ * A create records what the team is and who runs it: name, category, campus,
+ * and a manager. The approval chain is built afterwards from the team's own
+ * page, so the overlay's second step names a manager rather than a chain.
  */
 function fillCreateForm() {
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "Physics" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue to the manager" }),
+  );
+  fireEvent.change(screen.getByLabelText("Manager role"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByLabelText("Manager"), {
+    target: { value: "21" },
   });
 }
 
@@ -262,5 +280,19 @@ describe("TeamsSection — wave 2", () => {
     expect(
       screen.queryByText("Unable to load approver roles. Please try again."),
     ).toBeNull();
+  });
+
+  it("hides the create trigger and its form from a manager", () => {
+    // A team manager configures the team they are flagged for; minting a new
+    // team is HR's, so the button and the overlay behind it are both absent.
+    renderSection({ canCreate: false });
+
+    expect(screen.queryByRole("button", { name: /New team/ })).toBeNull();
+
+    // Even naming the overlay param must not conjure the form: a manager could
+    // otherwise deep-link straight to a create they are not allowed to make.
+    searchParamsRef.current = new URLSearchParams("team=new");
+    renderSection({ canCreate: false, teams: [] });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { assignEmployeeTeam } from "@/lib/employees-client";
 import type { Employee } from "@/lib/employees";
 import type { Team } from "@/lib/teams";
+import { Button } from "@/components/ui/button";
 
 /**
  * The people whose leave this team routes.
@@ -72,15 +73,16 @@ export function TeamRoster({
                   {[member.designation, member.email].filter(Boolean).join(" · ")}
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => void change(member, null)}
                 disabled={busy === member.id}
+                loading={busy === member.id}
                 aria-label={`Remove ${member.full_name} from ${team.name}`}
-                className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {busy === member.id ? "Saving..." : "Remove"}
-              </button>
+                Remove
+              </Button>
             </li>
           ))}
         </ul>
@@ -109,14 +111,12 @@ export function TeamRoster({
             </option>
           ))}
         </select>
-        <button
-          type="button"
+        <Button
           onClick={() => void add()}
           disabled={selected === "" || busy !== null}
-          className="rounded-md bg-button-primary px-3 py-1.5 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Add to team
-        </button>
+        </Button>
       </div>
 
       {error ? (
