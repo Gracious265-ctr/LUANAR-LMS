@@ -1,7 +1,7 @@
 """Unit 16 — approver review and decision tests.
 
 Covers the workflow provider fixture, stage assignment, the decision service
-(approve/reject/correction, optimistic locking, immutable decisions) and the
+(approve/reject, optimistic locking, immutable decisions) and the
 approvals HTTP API (capabilities, list, detail, decision, documents).
 """
 
@@ -642,28 +642,6 @@ class DecisionServiceTests(ApprovalBase):
             )
         self.assertIn("comment", ctx.exception.errors)
 
-    def test_return_for_correction_sets_correction_required(self):
-        app = self.make_submitted()
-        result = decide(
-            application_id=app.pk,
-            actor=self.supervisor,
-            action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
-            comment="Please review the leave dates.",
-            expected_version=1,
-        )
-        result.refresh_from_db()
-        self.assertEqual(
-            result.status, LeaveApplication.Status.CORRECTION_REQUIRED
-        )
-        self.assertEqual(self.stage(app, 1).status, ApplicationStage.Status.CORRECTION_REQUESTED)
-        self.assertEqual(
-            AuditEntry.objects.filter(
-                action=AuditEntry.Action.CORRECTION_REQUESTED,
-                target_id=str(app.pk),
-            ).count(),
-            1,
-        )
-
     def test_double_submit_records_exactly_one_decision(self):
         app = self.make_submitted()
         decide(
@@ -1218,19 +1196,6 @@ class FinalisationWiringTests(ApprovalBase):
             )
         self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
         self.assertNotIn(APPLICATION_FINALISED, [e.kind for e in events])
-
-    def test_correction_required_emits_decision_recorded_not_finalised(self):
-        app = self.make_submitted()
-        events = self.capture_events()
-        with self.captureOnCommitCallbacks(execute=True):
-            decide(
-                application_id=app.pk,
-                actor=self.supervisor,
-                action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
-                comment="Please attach the medical note.",
-                expected_version=1,
-            )
-        self.assertEqual([e.kind for e in events], [DECISION_RECORDED])
 
     # --- D4: the deduction ----------------------------------------------
 

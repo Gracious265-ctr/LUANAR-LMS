@@ -1,16 +1,16 @@
 """Resubmission service (Unit 21, D9).
 
-``resubmit_application`` is the sole path that returns a rejected or
-correction-required application to its configured stage as a fresh pending
-approval. It re-validates the current content against the rules effective on
-the resubmission date (same reference number), refreshes the immutable rules
-snapshot, freezes the new cycle's revision history row, increments
-``submission_cycle``, re-opens the returning stage in place (``pending``,
-``decision_version + 1``) and moves the routing spine —
-``LeaveApplication.current_approver`` — to that stage's **configured**
-``assigned_approver`` (deliberately not the rejecting actor; delegations and
-reassignments re-apply automatically at query time). The stage chain is never
-rebuilt.
+``resubmit_application`` is the sole path that returns a rejected application to
+its configured stage as a fresh pending approval. It re-validates the current
+content against the rules effective on the resubmission date (same reference
+number), refreshes the immutable rules snapshot, freezes the new cycle's
+revision history row, increments ``submission_cycle``, re-opens the returning
+stage in place (``pending``, ``decision_version + 1``) and clears the routing
+spine — ``LeaveApplication.current_approver`` and the stage's
+``assigned_approver`` — so the stage re-opens to *whoever currently holds that
+role* (the stage's eligible approvers, with delegations and reassignments
+re-applied at query time) rather than being frozen to the rejecting actor. The
+stage chain is never rebuilt.
 """
 
 from audit.models import AuditEntry
@@ -25,7 +25,7 @@ class ResubmissionNotFoundError(Exception):
 
 
 class NotResubmittableError(Exception):
-    """The application status is not ``rejected``/``correction_required``."""
+    """The application status is not ``rejected``."""
 
 
 class WorkflowInconsistentError(Exception):
@@ -63,10 +63,7 @@ def resubmit_application(*, user, application_id):
         if app is None:
             raise ResubmissionNotFoundError()
 
-        if app.status not in (
-            LeaveApplication.Status.REJECTED,
-            LeaveApplication.Status.CORRECTION_REQUIRED,
-        ):
+        if app.status != LeaveApplication.Status.REJECTED:
             raise NotResubmittableError()
 
         _acquire_employee_lock(employee.id if employee is not None else 0)
@@ -86,10 +83,7 @@ def resubmit_application(*, user, application_id):
             .filter(pk=app.current_stage_id, application=app)
             .first()
         )
-        if stage is None or stage.status not in (
-            ApplicationStage.Status.REJECTED,
-            ApplicationStage.Status.CORRECTION_REQUESTED,
-        ):
+        if stage is None or stage.status != ApplicationStage.Status.REJECTED:
             raise WorkflowInconsistentError()
 
         snapshot = build_rules_snapshot(result.context)
@@ -97,11 +91,22 @@ def resubmit_application(*, user, application_id):
         before_status = app.status
         before_cycle = app.submission_cycle
         before_version = stage.decision_version
+        before_approver_id = stage.assigned_approver_id
 
         # Reopen the returning stage in place; the chain is kept, not rebuilt.
+        # Clearing ``assigned_approver`` re-opens the section to whoever holds
+        # the stage's role now, instead of pinning it to the rejecting actor.
         stage.status = ApplicationStage.Status.PENDING
+        stage.assigned_approver = None
         stage.decision_version = F("decision_version") + 1
-        stage.save(update_fields=["status", "decision_version", "updated_at"])
+        stage.save(
+            update_fields=[
+                "status",
+                "assigned_approver",
+                "decision_version",
+                "updated_at",
+            ]
+        )
 
         app.working_days = result.working_days
         app.calendar_days = result.calendar_days
@@ -111,7 +116,7 @@ def resubmit_application(*, user, application_id):
         app.status = LeaveApplication.Status.SUBMITTED
         app.submission_cycle = F("submission_cycle") + 1
         app.current_stage = stage
-        app.current_approver = stage.assigned_approver
+        app.current_approver = None
         app.save(
             update_fields=[
                 "working_days",
@@ -146,9 +151,7 @@ def resubmit_application(*, user, application_id):
                     "status": app.status,
                     "submission_cycle": app.submission_cycle,
                     "decision_version": stage.decision_version,
-                    "current_approver_id": (
-                        stage.assigned_approver_id if stage.assigned_approver_id else None
-                    ),
+                    "current_approver_id": None,
                     "resubmitted_at": app.submitted_at.isoformat(),
                 },
             ),

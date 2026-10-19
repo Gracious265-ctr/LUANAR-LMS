@@ -16,7 +16,7 @@ from leave.services import active_financial_year, financial_year_label
 
 from approvals.models import ApplicationStage, ApprovalDecision
 
-_VALID_STATES = ("pending", "approved", "rejected", "correction_required", "cancelled")
+_VALID_STATES = ("pending", "approved", "rejected", "cancelled")
 
 
 def _profile(user):

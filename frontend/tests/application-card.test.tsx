@@ -133,7 +133,6 @@ describe("ApplicationCard (non-draft)", () => {
     const cases: Array<{ status: LeaveApplication["status"]; label: string }> = [
       { status: "approved", label: "Approved" },
       { status: "rejected", label: "Rejected" },
-      { status: "correction_required", label: "Correction Required" },
       { status: "cancelled", label: "Cancelled" },
     ];
 

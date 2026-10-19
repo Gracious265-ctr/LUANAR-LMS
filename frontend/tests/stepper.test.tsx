@@ -366,34 +366,6 @@ describe("chain adapters", () => {
     );
   });
 
-  it("closes a correction-required tracking stage as an error with the reason", () => {
-    const data = {
-      stages: [
-        {
-          order: 1,
-          role: "registrar",
-          role_label: "Registrar",
-          state: "returned",
-          approver: {
-            name: "C D",
-            designation: "Registrar",
-            is_delegate: false,
-            on_behalf_of: null,
-          },
-          assigned_at: "2026-09-21T09:12:00Z",
-          decided_at: "2026-09-23T10:00:00Z",
-          comment: "Upload the missing file",
-          skip_reason: null,
-        },
-      ],
-    } as unknown as TrackingResponse;
-
-    const [step] = chainFromTracking(data);
-    expect(step.status).toBe("error");
-    expect(step.sublabel).toContain("Correction required");
-    expect(step.detail).toBe("Upload the missing file");
-  });
-
   it("maps Unit 16 workflow stages onto steps", () => {
     const stages: ApprovalStage[] = [
       {
@@ -424,7 +396,7 @@ describe("chain adapters", () => {
         order: 3,
         role: "registrar",
         role_label: "Registrar",
-        status: "correction_requested",
+        status: "rejected",
         decision_version: 1,
         assigned_approver: "C D",
         assigned_at: "2026-09-21T09:12:00Z",
@@ -480,7 +452,7 @@ describe("chain adapters", () => {
       "skipped",
       "error",
     ]);
-    expect(steps[2].sublabel).toBe("Correction required");
+    expect(steps[2].sublabel).toBe("Rejected");
     expect(steps[2].detail).toBe("Upload the missing file");
     expect(steps[4].sublabel).toBe("Self approval");
     expect(steps[5].sublabel).toBe("Rejected");

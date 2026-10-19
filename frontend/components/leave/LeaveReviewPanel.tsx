@@ -91,7 +91,9 @@ export function LeaveReviewPanel({
   }, [issues]);
 
   const handleSubmit = async () => {
-    await submit(applicationId);
+    await submit(applicationId, {
+      resubmit: application?.status === "rejected",
+    });
   };
 
   if (loadError) {
@@ -112,6 +114,7 @@ export function LeaveReviewPanel({
   }
 
   const result = validation.result;
+  const isRejected = application.status === "rejected";
   const shownIssues: ValidationIssue[] =
     issues.length > 0 ? issues : (result?.errors ?? []);
   const showBalance =
@@ -132,7 +135,7 @@ export function LeaveReviewPanel({
             label="Back to draft"
           />
           <h1 className="text-xl font-semibold tracking-tight text-text-primary">
-            Review your application
+            {isRejected ? "Review your resubmission" : "Review your application"}
           </h1>
         </div>
       )}
@@ -200,10 +203,10 @@ export function LeaveReviewPanel({
           {isSubmitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Submitting...
+              {isRejected ? "Resubmitting..." : "Submitting..."}
             </>
           ) : (
-            "Submit application"
+            isRejected ? "Resubmit application" : "Submit application"
           )}
         </Button>
       </div>

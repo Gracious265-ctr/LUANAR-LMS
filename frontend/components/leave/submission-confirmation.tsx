@@ -127,7 +127,7 @@ export function SubmissionConfirmation({
       ) : (
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
-            href="/leave/drafts"
+            href="/leave"
             className="px-4 py-2 rounded-md bg-brand-secondary text-brand-secondary-foreground font-medium text-sm hover:bg-brand-secondary-hover transition-colors"
           >
             View my applications

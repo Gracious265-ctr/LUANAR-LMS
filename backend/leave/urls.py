@@ -12,6 +12,7 @@ from .views import (
     SupportingDocumentViewSet,
 )
 from .views.calendar import TeamLeaveCalendarView
+from .views.documents import SupportingDocumentFeedView
 from .views.me import FormDefaultsView, LeaveSummaryView
 from .views.resubmit import LeaveApplicationResubmitView
 from .views.setup import (
@@ -108,5 +109,10 @@ urlpatterns = [
         "leave-applications/<uuid:application_pk>/documents/<uuid:pk>/replace/",
         supporting_doc_replace,
         name="supportingdocument-replace",
+    ),
+    path(
+        "leave-documents/",
+        SupportingDocumentFeedView.as_view(),
+        name="supportingdocument-feed",
     ),
 ]

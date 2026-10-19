@@ -191,7 +191,6 @@ class EligibilityServiceTests(CancellationBase):
         for status_ in (
             LeaveApplication.Status.DRAFT,
             LeaveApplication.Status.REJECTED,
-            LeaveApplication.Status.CORRECTION_REQUIRED,
             LeaveApplication.Status.CANCELLED,
         ):
             app = self.make_approved()

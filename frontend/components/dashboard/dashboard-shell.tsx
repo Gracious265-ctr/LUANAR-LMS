@@ -325,7 +325,7 @@ const NavLinks = memo(function NavLinks({
       <Option
         Icon={FileText}
         title="My Applications"
-        href="/leave/drafts"
+        href="/leave"
         currentPath={currentPath}
         open={open}
       />

@@ -312,8 +312,8 @@ class BulkDecisionItemSerializer(serializers.Serializer):
 class BulkApprovalInputSerializer(serializers.Serializer):
     """The batch decision body (spec 5): approve-only, capped, no dupes.
 
-    Reject and return-for-correction need a per-item comment, so they stay
-    one-at-a-time and are not accepted here.
+    Reject needs a per-item comment, so it stays one-at-a-time and is not
+    accepted here.
     """
 
     action = serializers.ChoiceField(choices=[("approve", "approve")])

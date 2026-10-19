@@ -227,6 +227,28 @@ describe("LeaveApplicationOverlay", () => {
     );
   });
 
+  it("leaves the URL alone when the host owns the whole route", async () => {
+    vi.mocked(createLeaveApplication).mockResolvedValue(
+      makeApplication({ id: "draft-9" }) as never
+    );
+
+    render(
+      <LeaveApplicationOverlay
+        open
+        mode="create"
+        syncUrl={false}
+        onOpenChange={vi.fn()}
+      />
+    );
+
+    const typeTrigger = await screen.findByRole("combobox");
+    await waitFor(() => expect(typeTrigger).not.toBeDisabled());
+    await selectOption(typeTrigger, "Annual Leave");
+
+    await waitFor(() => expect(createLeaveApplication).toHaveBeenCalled());
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
   it("advances to review without navigating, then submits to confirmation", async () => {
     vi.mocked(getLeaveApplication).mockResolvedValue(makeApplication());
     vi.mocked(createLeaveApplication).mockResolvedValue(

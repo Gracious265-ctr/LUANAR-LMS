@@ -1,10 +1,9 @@
-import { redirect } from "next/navigation";
+import { NewApplicationClient } from "@/components/leave/NewApplicationClient";
 
 /**
- * The apply flow is now an overlay on the applications list, so this route
- * only exists to keep the sidebar's "New Application" link and any bookmarked
- * URL working.
+ * "New Application" — the compose flow on its own route so the sidebar item
+ * opens the form directly instead of funneling to the drafts list.
  */
-export default async function NewLeavePage() {
-  redirect("/leave/drafts?compose=1");
+export default function NewApplicationPage() {
+  return <NewApplicationClient />;
 }

@@ -11,7 +11,7 @@ from xml.sax.saxutils import escape
 
 from django.db import transaction
 
-from .models import LeaveDocumentTemplate
+from .models import ApprovedLeaveDocument, LeaveDocumentTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -285,3 +285,52 @@ def enqueue_approved_document_render(document) -> None:
             )
 
     transaction.on_commit(_dispatch)
+
+
+def approved_document_payload(document, *, include_url: bool = True) -> dict:
+    """The document's public shape, with a signed URL only when one exists.
+
+    A ``pending`` or ``failed`` row reports its status and ``available: False``
+    so a client can say "being prepared" from the first response rather than
+    needing a second request to discover there is nothing to open.
+
+    Minting the signed URL is enrichment on top of the document row, not the
+    row itself, so a storage problem degrades the payload instead of failing
+    the request. ``available`` is an explicit promise that ``download_url``
+    opens *now*; when a fresh URL cannot be minted the promise is withdrawn
+    rather than served from the render-time URL, which by then has expired and
+    would hand the employee a dead link.
+
+    ``include_url=False`` skips signing entirely and returns ``download_url``
+    empty. A list feed uses it because signing is a storage round-trip per row
+    — see :class:`documents.views.MyApprovedLeaveDocumentsView` — and the client
+    mints the one URL it needs when the row is opened. ``available`` still
+    reports whether a ready document exists, so the row can offer to open it.
+    """
+    from leave.services.storage import signed_document_url
+
+    available = document.status == ApprovedLeaveDocument.Status.READY
+    payload = {
+        "id": str(document.pk),
+        "application": str(document.application_id),
+        "status": document.status,
+        "available": available,
+        "file_name": document.file_name or "",
+        "content_type": document.content_type or "",
+        "file_size": document.file_size or 0,
+        "approved_on": document.approved_on,
+        "rendered_at": document.rendered_at,
+        "created_at": document.created_at,
+        "download_url": "",
+    }
+    if include_url and available and document.file_path:
+        try:
+            payload["download_url"] = signed_document_url(document.file_path)
+        except Exception:
+            logger.exception(
+                "Could not sign a download URL for approved document %s; "
+                "reporting it as unavailable rather than failing the request.",
+                document.pk,
+            )
+            payload["available"] = False
+    return payload

@@ -286,10 +286,13 @@ class AdminTests(TestCase):
 # ---------------------------------------------------------------------------
 
 from datetime import date
+from io import StringIO
 from unittest import mock
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -738,7 +741,7 @@ class ApprovedDocumentAccessTests(TestCase):
                 with mock.patch(
                     "leave.services.storage.signed_document_url", side_effect=error
                 ):
-                    with self.assertLogs("documents.views", level="ERROR"):
+                    with self.assertLogs("documents.services", level="ERROR"):
                         response = client.get(self.ready_url)
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertFalse(response.data["available"])
@@ -790,3 +793,146 @@ class ReadyDocumentImmutabilityTests(TestCase):
         pending.refresh_from_db()
         self.assertEqual(pending.status, ApprovedLeaveDocument.Status.FAILED)
         self.assertIn("storage unavailable", pending.error_message)
+
+
+class RegenerateApprovedDocumentsCommandTests(TestCase):
+    """The retry command recovers stuck rows without a queue worker."""
+
+    def setUp(self):
+        self.employee = make_user(User.Role.EMPLOYEE, "regen_employee")
+        self.application = approved_application(self.employee)
+        self.application.approved_on = timezone.now()
+        self.application.save(update_fields=["approved_on"])
+        self.document = ApprovedLeaveDocument.objects.create(
+            application=self.application,
+            status=ApprovedLeaveDocument.Status.FAILED,
+            error_message="ConnectError: name resolution",
+        )
+        self.fake = _FakeClient()
+
+    def _run(self, **kwargs):
+        with mock.patch(
+            "leave.services.storage.get_supabase_client", return_value=self.fake
+        ):
+            return call_command("regenerate_approved_documents", **kwargs)
+
+    def _status(self):
+        return ApprovedLeaveDocument.objects.get(pk=self.document.pk).status
+
+    def test_a_failed_document_is_rendered_to_ready(self):
+        self._run()
+        self.assertEqual(self._status(), ApprovedLeaveDocument.Status.READY)
+
+    def test_a_ready_document_is_left_alone(self):
+        ApprovedLeaveDocument.objects.filter(pk=self.document.pk).update(
+            status=ApprovedLeaveDocument.Status.READY,
+            file_path=f"approved/{self.application.pk}/approved-leave.pdf",
+        )
+        with mock.patch(
+            "documents.tasks.upload_bytes", side_effect=AssertionError("re-rendered")
+        ):
+            self._run()
+        self.assertEqual(self._status(), ApprovedLeaveDocument.Status.READY)
+
+    def test_a_dry_run_reports_without_changing_anything(self):
+        out = StringIO()
+        self._run(dry_run=True, stdout=out)
+        self.assertEqual(self._status(), ApprovedLeaveDocument.Status.FAILED)
+        self.assertIn("would re-render", out.getvalue())
+
+    def test_targeting_a_document_leaves_the_others_untouched(self):
+        other = LeaveApplication.objects.create(
+            employee=self.employee,
+            leave_type_id=annual_leave_type().pk,
+            start_date=date(2026, 11, 2),
+            end_date=date(2026, 11, 3),
+            working_days=2,
+            status=LeaveApplication.Status.APPROVED,
+            reference_number="LV-2026-000998",
+        )
+        other_document = ApprovedLeaveDocument.objects.create(
+            application=other, status=ApprovedLeaveDocument.Status.FAILED
+        )
+        self._run(document=self.document.pk)
+        self.assertEqual(self._status(), ApprovedLeaveDocument.Status.READY)
+        other_document.refresh_from_db()
+        self.assertEqual(other_document.status, ApprovedLeaveDocument.Status.FAILED)
+
+    def test_a_repeated_failure_is_reported_and_kept(self):
+        with mock.patch(
+            "documents.tasks.render_approved_document_pdf",
+            side_effect=RuntimeError("still unreachable"),
+        ):
+            self._run()
+        self.assertEqual(self._status(), ApprovedLeaveDocument.Status.FAILED)
+
+    def test_an_invalid_application_id_is_a_command_error(self):
+        with self.assertRaises(CommandError) as caught:
+            self._run(application="not-a-uuid")
+        self.assertIn("not a valid id", str(caught.exception))
+
+
+class MyApprovedDocumentsFeedTests(TestCase):
+    """The documents-module list is owner-scoped and paginated."""
+
+    FEED_URL = "/api/v1/approved-leave-documents/"
+
+    def setUp(self):
+        self.employee = make_user(User.Role.EMPLOYEE, "feed_employee")
+        self.other = make_user(User.Role.EMPLOYEE, "feed_other")
+        self.application = approved_application(self.employee)
+        self.document = ApprovedLeaveDocument.objects.create(
+            application=self.application,
+            status=ApprovedLeaveDocument.Status.READY,
+            file_path=f"approved/{self.application.pk}/approved-leave.pdf",
+            file_name=APPROVED_DOCUMENT_FILENAME,
+            content_type="application/pdf",
+            file_size=2048,
+        )
+        self.other_application = approved_application(
+            self.other, reference="LV-2026-005000"
+        )
+        self.other_document = ApprovedLeaveDocument.objects.create(
+            application=self.other_application
+        )
+
+    def _get(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        with mock.patch(
+            "leave.services.storage.signed_document_url",
+            side_effect=AssertionError("the feed must not mint signed URLs"),
+        ):
+            return client.get(self.FEED_URL)
+
+    def test_requires_authentication(self):
+        self.assertEqual(
+            APIClient().get(self.FEED_URL).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_lists_only_the_callers_documents(self):
+        response = self._get(self.employee)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+
+    def test_a_ready_row_is_available_without_minting_a_url(self):
+        row = self._get(self.employee).data["results"][0]
+        self.assertEqual(row["id"], str(self.document.pk))
+        self.assertEqual(row["reference_number"], "LV-2026-004711")
+        self.assertTrue(row["available"])
+        self.assertEqual(row["download_url"], "")
+
+    def test_a_stranger_sees_only_their_own_document(self):
+        response = self._get(self.other)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(
+            response.data["results"][0]["id"], str(self.other_document.pk)
+        )
+
+    def test_a_pending_document_is_included_without_a_url(self):
+        row = self._get(self.other).data["results"][0]
+        self.assertEqual(row["status"], ApprovedLeaveDocument.Status.PENDING)
+        self.assertFalse(row["available"])
+        self.assertEqual(row["download_url"], "")

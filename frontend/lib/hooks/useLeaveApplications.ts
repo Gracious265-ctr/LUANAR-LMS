@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   type LeaveApplication,
+  type LeaveApplicationFilters,
   getLeaveApplications,
 } from "@/lib/leave-api";
 
-export function useLeaveApplications(statusFilter?: string) {
+export function useLeaveApplications(filters: LeaveApplicationFilters = {}) {
+  const { status, excludeStatus } = filters;
   const [applications, setApplications] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +23,7 @@ export function useLeaveApplications(statusFilter?: string) {
     let cancelled = false;
     async function load() {
       try {
-        const data = await getLeaveApplications(statusFilter);
+        const data = await getLeaveApplications({ status, excludeStatus });
         if (cancelled) return;
         setApplications(data.results);
         setError(null);
@@ -36,7 +38,7 @@ export function useLeaveApplications(statusFilter?: string) {
     return () => {
       cancelled = true;
     };
-  }, [statusFilter]);
+  }, [status, excludeStatus]);
 
   /**
    * Optimistically drop one application from the list without entering the
@@ -78,7 +80,7 @@ export function useLeaveApplications(statusFilter?: string) {
   const refetch = useCallback(
     (options?: { silent?: boolean }) => {
       if (!options?.silent) setLoading(true);
-      getLeaveApplications(statusFilter)
+      getLeaveApplications({ status, excludeStatus })
         .then((data) => {
           setApplications(data.results);
           setError(null);
@@ -88,7 +90,7 @@ export function useLeaveApplications(statusFilter?: string) {
         )
         .finally(() => setLoading(false));
     },
-    [statusFilter]
+    [status, excludeStatus]
   );
 
   return { applications, loading, error, refetch, removeLocal, restoreLocal };

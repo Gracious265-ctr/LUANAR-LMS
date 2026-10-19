@@ -103,7 +103,7 @@ describe("SubmissionConfirmation", () => {
 
     expect(
       screen.getByRole("link", { name: "View my applications" })
-    ).toHaveAttribute("href", "/leave/drafts");
+    ).toHaveAttribute("href", "/leave");
     expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
       "href",
       "/"

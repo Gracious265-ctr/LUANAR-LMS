@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Inbox, Plus } from "lucide-react";
@@ -25,19 +25,37 @@ interface OverlayTarget {
   stage: LeaveOverlayStage;
 }
 
+interface ApplicationsListProps {
+  /** Heading above the list; the drafts view names itself. */
+  heading?: string;
+  /** Restricts the fetch to one status, e.g. `"draft"` for the Drafts tab. */
+  statusFilter?: string;
+  /** Omits statuses from the fetch, e.g. `"draft"` for My Applications. */
+  excludeStatus?: string;
+}
+
 /**
  * "My Applications" with the apply flow as an overlay.
  *
  * The open application lives in the URL (`?compose=1`, `?edit=<id>`,
  * `&stage=review`) rather than in component state, so a refresh resumes the
  * same application, the Back button steps out of it, and the old
- * `/leave/new` and `/leave/{id}/edit` links keep working
- * through the redirect shims in those routes.
+ * `/leave/new` and `/leave/{id}/edit` links keep working through the redirect
+ * shims in those routes.
+ *
+ * The overlay's URL state is anchored to the current pathname, so the same
+ * component powers `/leave` (submitted work, drafts hidden) and
+ * `/leave/drafts` (drafts only) without either landing on the other.
  */
-export function ApplicationsList() {
+export function ApplicationsList({
+  heading = "My Applications",
+  statusFilter,
+  excludeStatus,
+}: ApplicationsListProps = {}) {
   const { applications, loading, error, refetch, removeLocal, restoreLocal } =
-    useLeaveApplications();
+    useLeaveApplications({ status: statusFilter, excludeStatus });
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
@@ -62,18 +80,18 @@ export function ApplicationsList() {
   const targetId = target?.applicationId;
 
   const openNew = useCallback(() => {
-    router.push("/leave/drafts?compose=1");
-  }, [router]);
+    router.push(`${pathname}?compose=1`);
+  }, [router, pathname]);
 
   const openExisting = useCallback(
     (applicationId: string, nextStage: LeaveOverlayStage) => {
       router.push(
         nextStage === "form"
-          ? `/leave/drafts?edit=${applicationId}`
-          : `/leave/drafts?edit=${applicationId}&stage=${nextStage}`
+          ? `${pathname}?edit=${applicationId}`
+          : `${pathname}?edit=${applicationId}&stage=${nextStage}`
       );
     },
-    [router]
+    [router, pathname]
   );
 
   /**
@@ -91,11 +109,11 @@ export function ApplicationsList() {
       if (!id) return;
       router.replace(
         nextStage === "form"
-          ? `/leave/drafts?edit=${id}`
-          : `/leave/drafts?edit=${id}&stage=${nextStage}`
+          ? `${pathname}?edit=${id}`
+          : `${pathname}?edit=${id}&stage=${nextStage}`
       );
     },
-    [router, targetId]
+    [router, pathname, targetId]
   );
 
   /**
@@ -109,8 +127,8 @@ export function ApplicationsList() {
       router.back();
       return;
     }
-    router.replace("/leave/drafts");
-  }, [router]);
+    router.replace(pathname);
+  }, [router, pathname]);
 
   useEffect(() => {
     let active = true;
@@ -167,7 +185,7 @@ export function ApplicationsList() {
       {overlay}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">My Applications</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">{heading}</h2>
           <p className="text-text-secondary text-sm">
             {applications.length} application{applications.length === 1 ? "" : "s"}
           </p>

@@ -11,5 +11,5 @@ export default async function EditLeavePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/leave/drafts?edit=${id}`);
+  redirect(`/leave?edit=${id}`);
 }

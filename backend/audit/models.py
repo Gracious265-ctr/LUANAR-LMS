@@ -45,6 +45,8 @@ class AuditEntry(models.Model):
         REASSIGNED = "reassigned", "Reassigned"
         STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
         SUBMITTED = "submitted", "Submitted"
+        # Retained for historical rows written before the return-for-correction
+        # flow was replaced by reject + resubmit; nothing emits it now.
         CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
         DOCUMENT_ADDED = "document_added", "Document added"

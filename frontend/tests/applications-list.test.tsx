@@ -89,7 +89,10 @@ describe("ApplicationsList", () => {
     render(<ApplicationsList />);
 
     expect(await screen.findByText("My Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith(undefined);
+    expect(getLeaveApplications).toHaveBeenCalledWith({
+      status: undefined,
+      excludeStatus: undefined,
+    });
     expect(screen.getByText("2 applications")).toBeInTheDocument();
     expect(screen.getByText("LV-2026-27-000001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
@@ -106,6 +109,36 @@ describe("ApplicationsList", () => {
 
     expect(await screen.findByText("No applications yet")).toBeInTheDocument();
     expect(screen.getByText("0 applications")).toBeInTheDocument();
+  });
+
+  it("scopes the fetch and heading to the drafts view", async () => {
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 1,
+      results: [makeApplication({ id: "draft-1", status: "draft" })],
+    });
+
+    render(<ApplicationsList statusFilter="draft" heading="Draft Applications" />);
+
+    expect(await screen.findByText("Draft Applications")).toBeInTheDocument();
+    expect(getLeaveApplications).toHaveBeenCalledWith({
+      status: "draft",
+      excludeStatus: undefined,
+    });
+  });
+
+  it("hides saved drafts from My Applications via excludeStatus", async () => {
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 1,
+      results: [makeApplication({ id: "submitted-1", status: "submitted" })],
+    });
+
+    render(<ApplicationsList excludeStatus="draft" />);
+
+    expect(await screen.findByText("My Applications")).toBeInTheDocument();
+    expect(getLeaveApplications).toHaveBeenCalledWith({
+      status: undefined,
+      excludeStatus: "draft",
+    });
   });
 
   it("shows the error state and retries", async () => {

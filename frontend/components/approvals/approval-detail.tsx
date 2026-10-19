@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Check, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -102,11 +102,7 @@ export function ApprovalDetail({
     decisionSnapshotRef.current = null;
     showToast(
       `Application ${approvalVerb(briefing.status)}`,
-      briefing.status === "rejected"
-        ? "error"
-        : briefing.status === "correction_required"
-          ? "warning"
-          : "success"
+      briefing.status === "rejected" ? "error" : "success"
     );
     setReloadKey((value) => value + 1);
   }
@@ -241,13 +237,6 @@ export function ApprovalDetail({
               disabled={dialogKind !== null}
               onClick={() => setDialogKind("reject")}
             />
-            <MobileDecisionButton
-              kind="return_for_correction"
-              icon={<RotateCcw className="h-4 w-4" aria-hidden="true" />}
-              label="Return"
-              disabled={dialogKind !== null}
-              onClick={() => setDialogKind("return_for_correction")}
-            />
           </div>
         </div>
       )}
@@ -281,9 +270,7 @@ function MobileDecisionButton({
   const className =
     kind === "approve"
       ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent bg-button-primary px-3 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
-      : kind === "reject"
-        ? "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm font-medium text-status-rejected"
-        : "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-correction bg-status-correction-subtle px-3 py-2 text-sm font-medium text-status-correction";
+      : "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-status-rejected bg-status-rejected-subtle px-3 py-2 text-sm font-medium text-status-rejected";
   return (
     <Button type="button" onClick={onClick} disabled={disabled} className={className}>
       {icon}
@@ -306,20 +293,12 @@ function withOptimisticDecision(
 ): ApprovalReview {
   const decidedAt = new Date().toISOString();
   const isFinal = data.workflow.current_stage?.is_final ?? false;
-  const stageStatus: StageStatus =
-    action === "approve"
-      ? "approved"
-      : action === "reject"
-        ? "rejected"
-        : "correction_requested";
-  const terminal =
-    action === "reject" || action === "return_for_correction" || isFinal;
+  const stageStatus: StageStatus = action === "approve" ? "approved" : "rejected";
+  const terminal = action === "reject" || isFinal;
   const state: ApprovalStatus = terminal
     ? action === "reject"
       ? "rejected"
-      : action === "return_for_correction"
-        ? "correction_required"
-        : "approved"
+      : "approved"
     : data.workflow.state;
 
   let stages = data.workflow.stages.map((stage) =>

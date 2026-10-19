@@ -85,15 +85,16 @@ class LeaveSummaryView(APIView):
         # Two counts for two dashboard cards. Both are scoped to this employee
         # by construction, so neither can surface anyone else's leave.
         #
-        # "Pending" is submitted plus correction-required: the two statuses in
-        # which the application is waiting on a person rather than finished.
-        # Drafts are excluded because nothing has been sent yet.
+        # "Pending" is submitted plus rejected: submitted is waiting on an
+        # approver, rejected is waiting on the employee to rework and resubmit
+        # (or accept), so neither is finished. Drafts are excluded because
+        # nothing has been sent yet.
         today = get_today()
         pending_applications = LeaveApplication.objects.filter(
             employee=user,
             status__in=[
                 LeaveApplication.Status.SUBMITTED,
-                LeaveApplication.Status.CORRECTION_REQUIRED,
+                LeaveApplication.Status.REJECTED,
             ],
         ).count()
 

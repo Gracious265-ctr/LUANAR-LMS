@@ -12,8 +12,8 @@ journey at once. It is the unit that found the four seams Unit 25 fixed:
   ``application_finalised`` (D5).
 * HR's organization-wide view filtered ``SUBMITTED`` only, hiding every
   application that had actually been finalized (D6).
-* Employee edits were rejected for ``correction_required`` although the
-  frontend already offered the edit (D7).
+* Employee edits were rejected for ``rejected`` applications even though
+  reworking a rejection and resubmitting is the point of the flow (D7).
 
 Per D10 the journey calls real services rather than the HTTP layer; the API is
 used only where the HTTP contract is itself the thing under test (HR's

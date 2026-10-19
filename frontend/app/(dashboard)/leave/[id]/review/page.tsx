@@ -13,5 +13,5 @@ export default async function ReviewLeavePage({
 }) {
   const { id } = await params;
 
-  redirect(`/leave/drafts?edit=${encodeURIComponent(id)}&stage=review`);
+  redirect(`/leave?edit=${encodeURIComponent(id)}&stage=review`);
 }

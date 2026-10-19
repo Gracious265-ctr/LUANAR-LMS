@@ -51,7 +51,7 @@ export interface LeaveApplicationFormHandle {
   getDraftId: () => string | null;
 }
 
-const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
+const READ_ONLY_STATUSES = ["submitted", "approved", "cancelled"];
 
 /** The wizard's four steps (spec 04 §3.4). The documents step is skipped when
  * the selected type needs no documents and none are attached. */
@@ -349,7 +349,7 @@ export const LeaveApplicationForm = forwardRef<
           read-only record. View its current details in your applications list.
         </p>
         <Link
-          href="/leave/drafts"
+          href="/leave"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
         >
           Back to Applications
@@ -474,9 +474,9 @@ export const LeaveApplicationForm = forwardRef<
             editable={
               mode === "create" ||
               status === "draft" ||
-              status === "correction_required"
+              status === "rejected"
             }
-            canReplace={status === "correction_required"}
+            canReplace={status === "rejected"}
             onDocumentsChange={setDocuments}
             onEnsureDraft={ensureDraftCreated}
           />

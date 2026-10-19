@@ -82,7 +82,7 @@ function DecisionDialogInner({
   const counterId = useId();
   const errorId = useId();
 
-  const requiresComment = kind === "reject" || kind === "return_for_correction";
+  const requiresComment = kind === "reject";
   const pendingStage = data.workflow.stages.find((stage) => stage.status === "pending");
   const stageVersion = pendingStage?.decision_version ?? 1;
   const app = data.application;
@@ -160,9 +160,7 @@ function DecisionDialogInner({
         : data.workflow.current_stage?.next_role_label
           ? `Next stage: ${data.workflow.current_stage.next_role_label}.`
           : "Approve this application."
-      : kind === "reject"
-        ? "The workflow will stop. The employee can edit and resubmit."
-        : "The employee will be asked to correct and resubmit this application.";
+      : "The workflow will stop. The employee can edit and resubmit.";
 
   return (
     <Dialog

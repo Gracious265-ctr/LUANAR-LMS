@@ -1,6 +1,7 @@
 import logging
 from datetime import date, datetime
 
+from django.db.models import Prefetch
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
@@ -19,6 +20,7 @@ from ..models import (
     LeaveRule,
     LeaveType,
     PublicHoliday,
+    SupportingDocument,
 )
 from ..permissions import IsOwner
 from ..serializers import (
@@ -37,7 +39,7 @@ from ..services import (
 )
 from ..services.storage import delete_document
 from ..services.working_days import calculate_working_days, holidays_in_range
-from .documents import SupportingDocumentViewSet
+from .documents import SupportingDocumentFeedView, SupportingDocumentViewSet
 
 logger = logging.getLogger(__name__)
 
@@ -203,10 +205,27 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
-        qs = LeaveApplication.objects.filter(employee=self.request.user)
+        qs = LeaveApplication.objects.filter(
+            employee=self.request.user
+        ).prefetch_related(
+            Prefetch(
+                "documents",
+                queryset=SupportingDocument.objects.filter(
+                    status=SupportingDocument.Status.ACTIVE
+                ),
+                to_attr="active_documents",
+            )
+        )
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # `My Applications` hides saved drafts so they only surface on the
+        # dedicated Drafts view; `exclude_status` accepts a comma-separated list.
+        exclude_status = self.request.query_params.get("exclude_status")
+        if exclude_status:
+            excluded = [s.strip() for s in exclude_status.split(",") if s.strip()]
+            if excluded:
+                qs = qs.exclude(status__in=excluded)
         return qs
 
     def perform_create(self, serializer):
@@ -226,15 +245,13 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
             instance.save(update_fields=["calculated_days"])
 
-    #: Statuses an employee may still edit (Unit 25 D7). ``CORRECTION_REQUIRED``
-    #: is editable because that is the whole point of returning an application
-    #: for correction; the employee edits, then calls ``resubmit`` which
-    #: re-validates, advances ``submission_cycle`` and freezes a new revision.
-    #: The frontend already assumed this (``LeaveApplicationForm.tsx`` treats
-    #: ``correction_required`` as editable and omits it from READ_ONLY_STATUSES).
+    #: Statuses an employee may still edit (Unit 25 D7). ``REJECTED`` is
+    #: editable because the applicant may choose to rework a rejected
+    #: application and resubmit it; ``resubmit`` then re-validates, advances
+    #: ``submission_cycle`` and freezes a new revision.
     EDITABLE_STATUSES = (
         LeaveApplication.Status.DRAFT,
-        LeaveApplication.Status.CORRECTION_REQUIRED,
+        LeaveApplication.Status.REJECTED,
     )
 
     def update(self, request, *args, **kwargs):

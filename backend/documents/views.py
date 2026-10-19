@@ -10,14 +10,17 @@ import logging
 
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
-from rest_framework import permissions, response, status
+from rest_framework import generics, permissions, response, status
 from rest_framework.views import APIView
 
 from users.permissions import IsHRRole
 
 from .models import ApprovedLeaveDocument
-from .serializers import LeaveDocumentTemplateSerializer
-from .services import get_template
+from .serializers import (
+    ApprovedLeaveDocumentFeedSerializer,
+    LeaveDocumentTemplateSerializer,
+)
+from .services import approved_document_payload, get_template
 
 logger = logging.getLogger(__name__)
 
@@ -78,52 +81,12 @@ _NOT_FOUND = {"error": "Approved document not found."}
 
 
 def _approved_document_payload(document) -> dict:
-    """The document's public shape, with a signed URL only when one exists.
+    """The single-document payload (signing + availability rules).
 
-    A ``pending`` or ``failed`` row reports its status and
-    ``available: False`` so the client can say "being prepared" from the first
-    response rather than needing a second request to discover there is
-    nothing to open.
-
-    Minting the signed URL is enrichment on top of the document row, not the
-    row itself, so a storage problem degrades the payload instead of failing
-    the request. ``available`` is an explicit promise that ``download_url``
-    opens *now*; when a fresh URL cannot be minted the promise is withdrawn
-    rather than served from the render-time URL, which by then has expired and
-    would hand the employee a dead link. The other storage call sites fall back
-    to that stored URL because they are best-effort listings, but this payload
-    is the one the UI keys an "Open" button off, so no button is honest and a
-    broken link is not.
+    Delegates to :func:`documents.services.approved_document_payload` so the
+    detail view and the list feed mint URLs through one implementation.
     """
-    from leave.services.storage import signed_document_url
-
-    available = document.status == ApprovedLeaveDocument.Status.READY
-    payload = {
-        "id": str(document.pk),
-        "application": str(document.application_id),
-        "status": document.status,
-        "available": available,
-        "file_name": document.file_name or "",
-        "content_type": document.content_type or "",
-        "file_size": document.file_size or 0,
-        "approved_on": document.approved_on,
-        "rendered_at": document.rendered_at,
-        "created_at": document.created_at,
-        "download_url": "",
-    }
-    if available and document.file_path:
-        # Signed URLs expire, so re-sign from the stored path rather than
-        # handing back the URL captured at render time.
-        try:
-            payload["download_url"] = signed_document_url(document.file_path)
-        except Exception:
-            logger.exception(
-                "Could not sign a download URL for approved document %s; "
-                "reporting it as unavailable rather than failing the request.",
-                document.pk,
-            )
-            payload["available"] = False
-    return payload
+    return approved_document_payload(document)
 
 
 def _approved_document_or_404(user, application_id, *, hr_allowed: bool):
@@ -188,4 +151,31 @@ class HRAApprovedLeaveDocumentView(ApprovedLeaveDocumentView):
     """
 
     permission_classes = [permissions.IsAuthenticated, IsHRRole]
+
+
+class MyApprovedLeaveDocumentsView(generics.ListAPIView):
+    """The caller's own approved documents, newest first (documents module).
+
+    Owner-scoped: only documents whose application belongs to the caller. Every
+    status is included so the feed can show a document that is still being
+    prepared (or failed) rather than hiding it. Paginated by the project-wide
+    page-number default.
+
+    No signed URL is minted per row (see the serializer): a list would otherwise
+    make one storage round-trip per document, which is what made the documents
+    page slow. The client asks for a single fresh URL when it opens a row, via
+    the per-application view above.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ApprovedLeaveDocumentFeedSerializer
+
+    def get_queryset(self):
+        return (
+            ApprovedLeaveDocument.objects.filter(
+                application__employee=self.request.user
+            )
+            .select_related("application")
+            .order_by("-created_at")
+        )
 

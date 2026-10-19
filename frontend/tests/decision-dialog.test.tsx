@@ -12,7 +12,7 @@ vi.mock("@/lib/approvals/service", () => ({
 const mockedPostDecision = vi.mocked(postDecision);
 
 function renderDialog(
-  kind: "approve" | "reject" | "return_for_correction",
+  kind: "approve" | "reject",
   overrides: {
     onSubmitted?: (briefing: ReturnType<typeof makeBriefing>) => void;
     onReloadRequest?: () => void;
@@ -69,15 +69,15 @@ describe("DecisionDialog", () => {
     });
   });
 
-  it("blocks a whitespace-only comment for return_for_correction", async () => {
-    mockedPostDecision.mockResolvedValue({ ok: true, data: makeBriefing({ status: "correction_required" }) });
-    renderDialog("return_for_correction");
+  it("blocks a whitespace-only comment for reject", async () => {
+    mockedPostDecision.mockResolvedValue({ ok: true, data: makeBriefing({ status: "rejected" }) });
+    renderDialog("reject");
 
     fireEvent.change(screen.getByLabelText("Reason (required)"), {
       target: { value: "   " },
     });
 
-    const confirm = screen.getByRole("button", { name: /^Returned for Correction$/ });
+    const confirm = screen.getByRole("button", { name: /^Rejected$/ });
     expect(confirm).toBeDisabled();
     expect(screen.getByText("3 / 1000")).toBeInTheDocument();
   });

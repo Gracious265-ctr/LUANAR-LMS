@@ -1776,6 +1776,34 @@ class LeaveApplicationAPITest(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)
 
+    def test_list_filters_to_one_status(self):
+        LeaveApplication.objects.create(employee=self.user, reason="Draft")
+        LeaveApplication.objects.create(
+            employee=self.user,
+            status=LeaveApplication.Status.SUBMITTED,
+            reference_number="LUANAR-2026-00009",
+            reason="Submitted",
+        )
+        response = self.client.get("/api/v1/leave-applications/?status=draft")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["status"], "draft")
+
+    def test_list_excludes_drafts_for_my_applications(self):
+        LeaveApplication.objects.create(employee=self.user, reason="Saved draft")
+        LeaveApplication.objects.create(
+            employee=self.user,
+            status=LeaveApplication.Status.SUBMITTED,
+            reference_number="LUANAR-2026-00003",
+            reason="Submitted",
+        )
+        response = self.client.get(
+            "/api/v1/leave-applications/?exclude_status=draft"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["status"], "submitted")
+
     def test_cannot_access_other_user_application(self):
         app = LeaveApplication.objects.create(employee=self.other_user)
         response = self.client.get(f"/api/v1/leave-applications/{app.id}/")

@@ -483,6 +483,49 @@ class SupportingDocumentSerializer(serializers.ModelSerializer):
         return {"id": str(obj.replaced_by_id), "file_name": obj.replaced_by.file_name}
 
 
+class SupportingDocumentFeedSerializer(SupportingDocumentSerializer):
+    """One row of the caller's supporting-document list (documents module).
+
+    The same file payload as the per-application serializer, plus a compact
+    ``application`` reference so the feed can name and link each document back
+    to the application it was attached to. Unlike the per-application serializer
+    it does **not** mint a signed URL: signing is a storage round-trip per
+    document, and a list must not pay it once per row. ``file_url`` is left
+    empty; the client opens a row on demand through the per-document endpoint,
+    which signs exactly one URL.
+    """
+
+    application = serializers.SerializerMethodField()
+
+    class Meta(SupportingDocumentSerializer.Meta):
+        fields = SupportingDocumentSerializer.Meta.fields + ["application"]
+
+    def get_file_url(self, obj) -> str:
+        return ""
+
+    def get_application(self, obj):
+        return {
+            "id": str(obj.application_id),
+            "reference_number": obj.application.reference_number,
+            "status": obj.application.status,
+        }
+
+
+class SupportingDocumentSummarySerializer(SupportingDocumentSerializer):
+    """Nested document row that never mints a signed URL.
+
+    The applicant surfaces (the applications list, and the compose overlay's
+    review summary) only ever show a document's name, size and status; none of
+    them opens the file. Signing is a storage round-trip per document, so
+    nesting the signing serializer would make an application with attachments
+    slow to load — catastrophically so when storage is unreachable. The
+    documents module signs a single URL on click instead.
+    """
+
+    def get_file_url(self, obj) -> str:
+        return ""
+
+
 class LeaveApplicationSerializer(serializers.ModelSerializer):
     documents = serializers.SerializerMethodField()
 
@@ -521,6 +564,10 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
 
     def get_documents(self, obj) -> list:
         """The active working set; retired rows are never nested here."""
-        return SupportingDocumentSerializer(
-            obj.documents.filter(status="active"), many=True
-        ).data
+        prefetched = getattr(obj, "active_documents", None)
+        documents = (
+            prefetched
+            if prefetched is not None
+            else obj.documents.filter(status="active")
+        )
+        return SupportingDocumentSummarySerializer(documents, many=True).data

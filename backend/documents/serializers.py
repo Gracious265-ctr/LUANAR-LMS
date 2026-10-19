@@ -6,7 +6,26 @@ from .services import (
     FIELD_CATALOG,
     MAX_SIGNATURE_AREAS,
     MAX_TEXT_LENGTH,
+    approved_document_payload,
 )
+
+
+class ApprovedLeaveDocumentFeedSerializer(serializers.Serializer):
+    """One row of the caller's approved-document list (documents module).
+
+    Reuses :func:`documents.services.approved_document_payload` for the
+    availability rules so the feed and the per-application detail view never
+    diverge, and adds the parent application's reference so the row can name and
+    link back to the application it belongs to. It asks the payload **not** to
+    mint a signed URL: that is a storage round-trip per row, and a list must not
+    pay it once per document. ``available`` still marks a ready document; the
+    client mints the one URL it needs when the row is opened.
+    """
+
+    def to_representation(self, document) -> dict:
+        payload = approved_document_payload(document, include_url=False)
+        payload["reference_number"] = document.application.reference_number
+        return payload
 
 
 class LeaveDocumentTemplateSerializer(serializers.ModelSerializer):

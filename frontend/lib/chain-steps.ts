@@ -35,7 +35,6 @@ function approverContext(approver: TrackingApprover | null): string[] {
 const TRACKING_STATUS: Record<StageState, StepStatus> = {
   approved: "completed",
   rejected: "error",
-  returned: "error",
   awaiting: "current",
   upcoming: "pending",
   skipped: "skipped",
@@ -50,8 +49,6 @@ export function chainFromTracking(data: TrackingResponse): Step[] {
 
     let sublabel: string | undefined;
     if (vacant) sublabel = "No approver assigned";
-    else if (stage.state === "returned")
-      sublabel = joinContext(["Correction required", ...context]);
     else if (stage.state === "rejected")
       sublabel = joinContext(["Rejected", ...context]);
     else if (stage.state === "skipped")
@@ -79,7 +76,6 @@ export function chainFromTracking(data: TrackingResponse): Step[] {
 const WORKFLOW_STATUS: Record<StageStatus, StepStatus> = {
   approved: "completed",
   rejected: "error",
-  correction_requested: "error",
   pending: "current",
   waiting: "pending",
   skipped: "skipped",
@@ -93,8 +89,6 @@ export function chainFromWorkflow(stages: ApprovalStage[]): Step[] {
 
     let sublabel: string | undefined;
     if (vacant) sublabel = "No approver assigned";
-    else if (stage.status === "correction_requested")
-      sublabel = "Correction required";
     else if (stage.status === "rejected") sublabel = "Rejected";
     else if (stage.status === "skipped")
       sublabel = stage.skip_reason ?? "Skipped";

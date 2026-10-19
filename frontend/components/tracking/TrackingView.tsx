@@ -90,8 +90,7 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   }
 
   const data = result.data;
-  const showAttention =
-    Boolean(data.rejection) || Boolean(data.correction);
+  const showAttention = Boolean(data.rejection);
   const chainSteps = chainFromTracking(data);
 
   // Only mount the cancellation surface when the tracking payload carries the
@@ -186,7 +185,7 @@ function NotFoundState({
       </p>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/leave/drafts"
+          href="/leave"
           className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border-default bg-surface-card px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-ring"
         >
           My applications

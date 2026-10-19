@@ -5798,3 +5798,213 @@ the non-destructive `workflows_*` table move), the merge procedure, a conflict
 playbook (including the committed-conflict-marker trap from the `726ee04`
 recovery), post-merge backend/frontend checklists, migration-graph
 reconciliation, verification, rollback, and a per-app file ownership appendix.
+
+### Fix — regenerate stuck approved documents (2026-10-19)
+
+An approved application showed "The document could not be generated. Please
+contact HR." on both the employee and HR screens. The approval itself was
+committed and the PDF rendered fine (`render_approved_document_pdf` returned a
+valid 2561-byte `%PDF-`), but the storage upload failed: the `SUPABASE_URL` host
+in `backend/.env` (`ndfzfgiycvkgdwzaoeia.supabase.co`) is now **NXDOMAIN**
+(public DNS `Status: 3`, i.e. the Supabase project is deleted/paused), so
+`upload_bytes` raised `ConnectError: [Errno -3] Temporary failure in name
+resolution` and the row was marked `failed`. This is a configuration problem,
+not a code defect — but a failed row had no recovery path short of a new
+approval.
+
+Added `backend/documents/management/commands/regenerate_approved_documents.py`:
+re-runs `render_approved_document` **inline** for stuck rows (no queue worker
+required), defaulting to `failed` rows with `--include-pending`, `--document`,
+`--application`, and `--dry-run` options. A `ready` row is skipped, so it is
+safe to run repeatedly. Covered by `RegenerateApprovedDocumentsCommandTests`
+(six tests: failure→ready, ready skipped, dry-run no-op, single-target,
+repeat-failure kept, invalid-id `CommandError`); `documents` suite green
+(62→68 tests). To recover once a live Supabase project is configured, run:
+
+    uv run manage.py regenerate_approved_documents
+
+A related symptom, "Failed to upload document" on the supporting-document
+screen, had the same cause and a worse presentation: `upload_document` raised a
+raw `httpx.ConnectError`, which was **unhandled** in the upload/replace path, so
+Django returned an HTML 500 under `DEBUG=True` and the client's `documentError`
+fell back to the literal "Failed to upload document". The storage adapter now
+raises a typed `StorageUnavailableError` (`leave/services/storage.py`, wrapping
+`ValueError`/`StorageApiError`/`HTTPStatusError`/`httpx.HTTPError`/`OSError` for
+`upload_document`, `upload_bytes`, and `delete_document`), and the document
+endpoints return **503** `{"code": "storage_unavailable", "detail": …}` so the UI
+shows the real reason. Covered by `StorageOutageApiTests` (upload + replace →
+503) and `StorageAdapterErrorTests` (unconfigured + network → typed error);
+`leave` + `documents` suites green (548 tests).
+
+### Feature — the Documents module library (2026-10-19)
+
+The `/documents` page was a placeholder ("There is no separate document
+library yet"). It is now a real, owner-scoped library of the caller's own
+supporting and approved leave documents, backed by two new list endpoints
+(the frontend deliberately does not aggregate per-application calls):
+
+- **Backend.** `leave-documents/` (`SupportingDocumentFeedView`, a
+  `ListAPIView` scoped to `application__employee=request.user`, newest first,
+  `ACTIVE` only unless `?include_retired=true`) with
+  `SupportingDocumentFeedSerializer` (subclasses `SupportingDocumentSerializer`
+  and adds a compact `application` ref). `approved-leave-documents/`
+  (`MyApprovedLeaveDocumentsView`, same owner scope, `-created_at`) with
+  `ApprovedLeaveDocumentFeedSerializer`, which reuses the existing row payload
+  — now extracted to `approved_document_payload(document)` in
+  `documents/services.py` (the view's `_approved_document_payload` delegates to
+  it, so the signed-URL / degradation logic lives in one place and its logger is
+  `documents.services`).
+- **Frontend.** Proxy routes `app/api/leave-documents/route.ts` and
+  `app/api/approved-leave-documents/route.ts`; a typed client
+  (`lib/documents/library.ts`); and `components/documents/documents-library.tsx`,
+  which fetches both feeds in parallel — each section owns its own loading,
+  error (with retry) and empty state so one slow/failing feed never blocks the
+  other. Rows link back to `/leave/applications/{id}` and open files through the
+  signed URL the backend mints per row.
+- **Tests.** `MyApprovedDocumentsFeedTests` (owner isolation, reference number,
+  signed URL, pending row) in `documents/tests.py`;
+  `SupportingDocumentFeedTests` (owner isolation, `include_retired`, 401) in
+  `leave/tests/test_documents.py`; `tests/documents-library.test.tsx` (five
+  component tests). Verified: `manage.py test documents leave.tests.test_documents`
+  green, `vitest run tests/documents-library.test.tsx` 5 passed, `tsc`/eslint clean.
+
+### Fix — documents page was slow to open (2026-10-19)
+
+The first cut of the library signed a Supabase URL **for every row** —
+`approved_document_payload` called `signed_document_url` per approved document
+and `SupportingDocumentSerializer.get_file_url` called
+`safe_signed_document_url` per supporting document. Each call is a synchronous
+storage round-trip; measured against the project's currently-unreachable
+Supabase host they cost ~1.5 s each, so a 20-row page (two feeds) could stall
+for a minute. The dead storage also masked this while developing the feature.
+
+click and a failure is shown inline. Verified: `documents` + `leave.tests.test_documents`
+green, `vitest` documents/library + card + uploader suites pass, `tsc`/eslint clean.
+
+### Fix — leave applications loaded slowly (2026-10-19)
+
+The applicant surfaces — My Leave and Drafts (both `/leave/drafts`), the compose
+overlay's edit mode, and the review summary — were still signing a Supabase URL
+per supporting document. `LeaveApplicationSerializer.get_documents` nested the
+signing `SupportingDocumentSerializer`, so an application with attachments paid a
+storage round-trip per document on **every** list and detail request, and N+1'd
+because the viewset did not prefetch. The list measured 1.2–4.2 s for a user with
+a single attachment (and a transient cold attempt hit 22 s); the applicant UI
+never opens a nested file — `SupportingDocumentsUploader` and
+`leave-review-summary` render only the name/size/status — so the round-trips were
+pure overhead and a dead storage host could stall the page.
+
+`LeaveApplicationSerializer` now serializes nested documents through a new
+non-signing `SupportingDocumentSummarySerializer` (`file_url=""`), and
+`LeaveApplicationViewSet.get_queryset` prefetches each application's active
+documents (`Prefetch(..., to_attr="active_documents")`, which `get_documents`
+reuses) so the list is a fixed number of queries with no network calls. The
+applicant detail stays a single request; `LeaveApplicationForm` and the review
+summary only read names/sizes, so nothing regressed. HR (`HRLeaveApplicationSerializer`)
+and tracking/approvals keep their own signing serializers. Verified:
+`manage.py test leave documents` (562) and `approvals audit` green; the leave
+applications list and detail now measure ~70 ms and return `file_url: ""`.
+
+Open question: the sidebar's **My Leave** (`/leave` → `/leave/drafts`) and
+**Drafts** (`/leave/drafts`) both land on the same unfiltered applications list;
+confirm whether "Drafts" should filter to `status=draft`.
+
+### Fix — My Leave / Drafts / New Application are independent (2026-10-19)
+
+All three leave sidebar items used to funnel to `/leave/drafts` (`/leave` and
+`/leave/new` were redirect shims). They are now distinct surfaces:
+
+- **My Leave** (`/leave`) renders `ApplicationsList excludeStatus="draft"` —
+  every application except saved drafts (see the follow-up below).
+- **Drafts** (`/leave/drafts`) renders the same component with
+  `statusFilter="draft"` and heading "Draft Applications", so it is genuinely
+  the drafts list (`getLeaveApplications("draft")` → `?status=draft`).
+- **New Application** (`/leave/new`) no longer redirects: it renders
+  `NewApplicationClient`, a dedicated route that hosts the compose overlay
+  (`open`, `mode="create"`, `syncUrl={false}`) and returns to `/leave` on close.
+
+`ApplicationsList` now anchors its overlay URL state (`?compose=1`,
+`?edit=<id>`, `&stage=review`) to `usePathname()` instead of hardcoding
+`/leave/drafts`, so the same component serves both list routes without either
+landing on the other. `LeaveApplicationOverlay` gained `syncUrl` (default
+`true`; `/leave/new` passes `false`, since that route owns the whole page and
+has no list to resume from). The `[id]/edit|review|submitted` shims and the
+"back to applications" links (applicant form, submission confirmation, tracking
+header/view, the global "My Applications" nav item) now point at `/leave`
+instead of the drafts view.
+
+Tests: `applications-list.test.tsx` (+ drafts-scoping case),
+`leave-application-overlay.test.tsx` (+ `syncUrl={false}` case), new
+`new-application-client.test.tsx`; the existing URL-sync suites still pass
+(they mock `usePathname` to `/leave/drafts`). Verified: 40 targeted `vitest`
+tests green, `tsc --noEmit` clean, `eslint` clean on the touched files.
+
+### Fix — saved drafts hidden from My Applications (2026-10-19)
+
+Follow-up to the above: "My Applications" was still listing saved drafts
+alongside submitted applications. My Applications now excludes drafts, so a
+draft only ever appears on the Drafts view.
+
+- Backend: `LeaveApplicationViewSet.get_queryset` accepts `exclude_status`
+  (comma-separated) and drops those statuses, alongside the existing `status`
+  filter. The owner scope is unchanged, so this is still per-applicant only.
+- Proxy: `app/api/leave/leave-applications/route.ts` forwards both `status` and
+  `exclude_status`.
+- Client: `getLeaveApplications`/`useLeaveApplications` now take a
+  `LeaveApplicationFilters` object (`{ status?, excludeStatus? }`);
+  `ApplicationsList` gained an `excludeStatus` prop. `/leave` passes
+  `excludeStatus="draft"`; `/leave/drafts` still passes `statusFilter="draft"`.
+
+Verified: `leave.tests.LeaveApplicationAPITest` (12, +2: exact-status filter and
+draft exclusion) green; `applications-list.test.tsx` (+ a draft-exclusion case)
+and the other affected suites green; `tsc`/`eslint` clean. Live check with a
+probe draft: `/leave` → `?exclude_status=draft` returns only the approved rows,
+`?status=draft` returns only the draft.
+
+### Rejection flow replaces return-for-correction (2026-10-19)
+
+The `correction_required` / `return_for_correction` path is removed end to end.
+Rejection is now the only non-approval outcome: the approver must give a reason
+(the decision `comment`, mandatory on reject), the applicant may edit and
+resubmit — routed back to whoever currently holds the returning stage — or
+accept the rejection and leave it as is.
+
+Backend:
+- `approvals/models.py`: dropped `ApplicationStage.Status.CORRECTION_REQUESTED`
+  and `ApprovalDecision.Action.RETURN_FOR_CORRECTION`; the comment constraint is
+  now `comment_required_for_reject` (`~Q(action='reject') | ~Q(comment="")`).
+- `approvals/services.py`: `decide()` accepts only `approve` / `reject`;
+  comment mandatory on reject; the correction branch and its audit action are
+  gone. `leave/models.py` dropped `Status.CORRECTION_REQUIRED`.
+- Editing/replacing documents is now allowed on `draft` **and** `rejected`
+  (`leave/views/__init__.py::EDITABLE_STATUSES`,
+  `leave/documents/services.py`).
+- `leave/services/resubmission.py`: rejected-only; clears the stage's
+  `assigned_approver` and the application's `current_approver`, so the
+  resubmission reopens to the current holders of the returning role.
+- `leave/tracking/*`: `correction` outcome and `correction_requested` event
+  removed; `leave/views/me.py` counts `submitted + rejected` as pending;
+  `leave/holiday_refresh.py` live-preview set is `(DRAFT, REJECTED)`.
+- Migrations `leave/0022`, `approvals/0005`, `leave/0023` (RunPython converts
+  existing correction rows to rejected; audit history is left untouched, and
+  `audit/models.py` keeps `CORRECTION_REQUESTED` as a historical value).
+
+Frontend:
+- Types/labels: dropped `correction_required` (status), `return_for_correction`
+  (action), `returned` (stage state) and `correction_requested` (event) from
+  `lib/approvals/*`, `lib/tracking/*`, `lib/chain-steps.ts`, `lib/leave-api.ts`.
+  The old correction colour token is renamed `notice` (a neutral warning tone
+  reused by `Alert`/`Badge`/toast).
+- Approvals: `DecisionPanel`/`DecisionDialog`/`approval-detail` offer only
+  Approve and Reject (reject reason mandatory).
+- Applicant: `LeaveApplicationForm` treats `rejected` as editable and offers
+  document Replace; `LeaveReviewPanel` resubmits a rejected application through
+  the new `POST /api/leave/leave-applications/{id}/resubmit/` proxy
+  (`resubmitApplication` + `useSubmitLeaveApplication({ resubmit })`);
+  `OutcomePanel` shows the rejection reason with **Edit & resubmit** and
+  **Accept rejection** (accept just returns to the list — nothing is closed).
+
+Verified: backend `manage.py test leave documents` 582 OK and the affected
+`workflows` modules green; frontend full suite 1000 tests OK, `tsc --noEmit`
+clean, `eslint` clean. (Pre-existing, unrelated: two `workflows` tests asserting
+403 vs 400 and the hanging `workflows.tests_migrations`.)

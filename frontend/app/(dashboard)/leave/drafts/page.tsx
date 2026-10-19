@@ -8,7 +8,7 @@ import { FadeIn } from "@/components/motion/FadeIn";
  * `useSearchParams`, which Next.js requires to sit inside a Suspense boundary
  * so the page can still be prerendered.
  */
-export default async function ApplicationsPage() {
+export default async function DraftsPage() {
   return (
     <Suspense
       fallback={
@@ -20,7 +20,7 @@ export default async function ApplicationsPage() {
       }
     >
       <FadeIn>
-        <ApplicationsList />
+        <ApplicationsList statusFilter="draft" heading="Draft Applications" />
       </FadeIn>
     </Suspense>
   );

@@ -9,7 +9,6 @@ import type { TrackingResponse } from "@/lib/tracking/types";
 const EVENT_ACCENT_TONE: Record<string, BadgeTone> = {
   approved: "approved",
   rejected: "rejected",
-  correction_requested: "correction",
 };
 
 /**

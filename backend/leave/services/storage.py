@@ -1,7 +1,9 @@
 import unicodedata
+from contextlib import contextmanager
 from pathlib import PurePosixPath
 from uuid import uuid4
 
+import httpx
 from httpx import HTTPStatusError
 from supabase import create_client
 from storage3.exceptions import StorageApiError
@@ -25,6 +27,33 @@ ALLOWED_DOCUMENT_CONTENT_TYPES = (
     "image/webp",
     "text/plain",
 )
+
+
+class StorageUnavailableError(Exception):
+    """The storage backend could not be reached, configured, or used.
+
+    Raised at the storage boundary so callers can translate "Supabase is
+    unreachable / unconfigured" into a service-unavailable response instead of
+    leaking a raw ``httpx``/``ValueError`` as an unhandled 500. The approved-
+    document task catches broad exceptions and records the message, so it also
+    benefits from the single, human-readable wording.
+    """
+
+
+_STORAGE_ERRORS = (StorageApiError, HTTPStatusError, httpx.HTTPError, OSError)
+
+
+@contextmanager
+def _storage_errors(action: str):
+    """Translate transport/config failures into :class:`StorageUnavailableError`."""
+    try:
+        yield
+    except ValueError as exc:
+        raise StorageUnavailableError(f"Storage is unavailable: {exc}") from exc
+    except _STORAGE_ERRORS as exc:
+        raise StorageUnavailableError(
+            f"Storage is unavailable; could not {action}."
+        ) from exc
 
 
 def is_allowed_document_content_type(content_type: str) -> bool:
@@ -75,16 +104,17 @@ def ping_storage() -> None:
 def upload_document(
     file, application_id: str, *, prefix: str = SUPPORTING_DOCUMENT_PREFIX
 ) -> dict:
-    client = get_supabase_client()
-    safe_name = _sanitize_document_name(file.name)
-    path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
-    client.storage.from_(settings.SUPABASE_BUCKET).upload(
-        path, file.read(), {"content-type": file.content_type}
-    )
-    result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
-        path, settings.SUPABASE_SIGNED_URL_EXPIRY
-    )
-    return {"path": path, "url": result["signedURL"]}
+    with _storage_errors("upload the document"):
+        client = get_supabase_client()
+        safe_name = _sanitize_document_name(file.name)
+        path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
+        client.storage.from_(settings.SUPABASE_BUCKET).upload(
+            path, file.read(), {"content-type": file.content_type}
+        )
+        result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+            path, settings.SUPABASE_SIGNED_URL_EXPIRY
+        )
+        return {"path": path, "url": result["signedURL"]}
 
 
 def upload_bytes(
@@ -102,16 +132,17 @@ def upload_bytes(
     (Unit 23b D6). Path construction is shared, so both writers land under the
     same ``{prefix}{application_id}/`` shape.
     """
-    client = get_supabase_client()
-    safe_name = _sanitize_document_name(file_name)
-    path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
-    client.storage.from_(settings.SUPABASE_BUCKET).upload(
-        path, data, {"content-type": content_type}
-    )
-    result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
-        path, settings.SUPABASE_SIGNED_URL_EXPIRY
-    )
-    return {"path": path, "url": result["signedURL"]}
+    with _storage_errors("upload the document"):
+        client = get_supabase_client()
+        safe_name = _sanitize_document_name(file_name)
+        path = f"{prefix}{application_id}/{uuid4().hex}-{safe_name}"
+        client.storage.from_(settings.SUPABASE_BUCKET).upload(
+            path, data, {"content-type": content_type}
+        )
+        result = client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+            path, settings.SUPABASE_SIGNED_URL_EXPIRY
+        )
+        return {"path": path, "url": result["signedURL"]}
 
 
 def signed_document_url(file_path: str) -> str:
@@ -163,5 +194,6 @@ def safe_signed_document_url(file_path: str, fallback: str = "") -> str:
 
 
 def delete_document(file_path: str) -> None:
-    client = get_supabase_client()
-    client.storage.from_(settings.SUPABASE_BUCKET).remove([file_path])
+    with _storage_errors("delete the document"):
+        client = get_supabase_client()
+        client.storage.from_(settings.SUPABASE_BUCKET).remove([file_path])

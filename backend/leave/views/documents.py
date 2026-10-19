@@ -5,9 +5,9 @@ Employee-scoped, owner-only document operations on a leave application:
 - ``GET    .../documents/`` — active rows by default; ``?include_retired=true``
   adds retired rows with their lifecycle fields for the archive view.
 - ``POST   .../documents/`` — upload on editable statuses (``draft``,
-  ``correction_required``); any other status returns 409 ``application_not_editable``.
+  ``rejected``); any other status returns 409 ``application_not_editable``.
 - ``DELETE .../documents/{pk}/`` — remove; hard in a draft, retire otherwise.
-- ``POST   .../documents/{pk}/replace/`` — replace on ``correction_required``
+- ``POST   .../documents/{pk}/replace/`` — replace on ``rejected``
   only; retires the old row and returns the new one plus ``retired_document``.
 
 Authorization mirrors the rest of the employee API: another employee's
@@ -18,6 +18,7 @@ from django.http import Http404
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -28,7 +29,8 @@ from ..documents.services import (
 )
 from ..models import LeaveApplication, SupportingDocument
 from ..permissions import IsOwner
-from ..serializers import SupportingDocumentSerializer
+from ..serializers import SupportingDocumentFeedSerializer, SupportingDocumentSerializer
+from ..services.storage import StorageUnavailableError
 
 
 class SupportingDocumentViewSet(viewsets.ViewSet):
@@ -83,10 +85,12 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             return self._conflict(
                 "application_not_editable",
                 "This application is not editable. Documents can only be "
-                "changed on a draft or while it is returned for correction.",
+                "changed on a draft or on a rejected application.",
             )
         except ValidationError as exc:
             return self._bad_request(exc.detail)
+        except StorageUnavailableError:
+            return self._service_unavailable()
         return Response(
             self._serializer(document).data, status=status.HTTP_201_CREATED
         )
@@ -100,7 +104,7 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             return self._conflict(
                 "application_not_editable",
                 "This application is not editable. Documents can only be "
-                "changed on a draft or while it is returned for correction.",
+                "changed on a draft or on a rejected application.",
             )
         except DocumentNotActiveError:
             return self._conflict(
@@ -120,8 +124,7 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
         except DocumentNotEditableError:
             return self._conflict(
                 "application_not_editable",
-                "Documents can only be replaced on an application that has "
-                "been returned for correction.",
+                "Documents can only be replaced on a rejected application.",
             )
         except DocumentNotActiveError:
             return self._conflict(
@@ -130,6 +133,8 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             )
         except ValidationError as exc:
             return self._bad_request(exc.detail)
+        except StorageUnavailableError:
+            return self._service_unavailable()
         return Response(
             {
                 "document": self._serializer(replacement).data,
@@ -144,7 +149,45 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             status=status.HTTP_409_CONFLICT,
         )
 
+    def _service_unavailable(self) -> Response:
+        return Response(
+            {
+                "code": "storage_unavailable",
+                "detail": (
+                    "Document storage is unavailable. Please try again shortly; "
+                    "if the problem persists, contact the system administrator."
+                ),
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
     def _bad_request(self, detail) -> Response:
         if isinstance(detail, list):
             detail = detail[0] if detail else "Invalid request."
         return Response({"detail": str(detail)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SupportingDocumentFeedView(ListAPIView):
+    """Every supporting document on the caller's leave applications.
+
+    The documents module's supporting-documents list. Owner-scoped through
+    ``application__employee`` so one employee never sees another's
+    attachments; active rows by default, ``?include_retired=true`` adds the
+    archive, mirroring the per-application list. Paginated by the project-wide
+    page-number default.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = SupportingDocumentFeedSerializer
+
+    def get_queryset(self):
+        queryset = (
+            SupportingDocument.objects.filter(
+                application__employee=self.request.user
+            )
+            .select_related("application", "retired_by", "replaced_by")
+            .order_by("-uploaded_at")
+        )
+        if self.request.query_params.get("include_retired") != "true":
+            queryset = queryset.filter(status=SupportingDocument.Status.ACTIVE)
+        return queryset
