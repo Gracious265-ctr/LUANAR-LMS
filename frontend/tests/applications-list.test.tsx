@@ -72,9 +72,9 @@ describe("ApplicationsList", () => {
     ]);
   });
 
-  it("fetches every application without a status filter", async () => {
+  it("excludes drafts and applies no status filter by default", async () => {
     vi.mocked(getLeaveApplications).mockResolvedValue({
-      count: 2,
+      count: 1,
       results: [
         makeApplication({
           id: "submitted-1",
@@ -82,21 +82,22 @@ describe("ApplicationsList", () => {
           reference_number: "LV-2026-27-000001",
           submitted_at: "2026-09-21T10:00:00Z",
         }),
-        makeApplication({ id: "draft-1", status: "draft" }),
       ],
     });
 
     render(<ApplicationsList />);
 
     expect(await screen.findByText("My Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith(undefined);
-    expect(screen.getByText("2 applications")).toBeInTheDocument();
+    expect(getLeaveApplications).toHaveBeenCalledWith({
+      status: undefined,
+      excludeStatus: "draft",
+    });
+    expect(screen.getByText("1 application")).toBeInTheDocument();
     expect(screen.getByText("LV-2026-27-000001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Track this application" })).toHaveAttribute(
       "href",
       "/applications/submitted-1"
     );
-    expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
   });
 
   it("passes the ?status= filter through to the API", async () => {
@@ -106,7 +107,10 @@ describe("ApplicationsList", () => {
     render(<ApplicationsList />);
 
     expect(await screen.findByText("My Applications")).toBeInTheDocument();
-    expect(getLeaveApplications).toHaveBeenCalledWith("submitted");
+    expect(getLeaveApplications).toHaveBeenCalledWith({
+      status: "submitted",
+      excludeStatus: "draft",
+    });
   });
 
   it("renders the empty state when there are no applications", async () => {

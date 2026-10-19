@@ -51,12 +51,18 @@ async function documentError(res: Response, fallback: string): Promise<Error> {
   return new Error(detail);
 }
 
-export async function getLeaveApplications(status?: string): Promise<{
+export async function getLeaveApplications(
+  {
+    status,
+    excludeStatus,
+  }: { status?: string; excludeStatus?: string } = {}
+): Promise<{
   count: number;
   results: LeaveApplication[];
 }> {
   const url = new URL("/api/leave/leave-applications/", window.location.origin);
   if (status) url.searchParams.set("status", status);
+  if (excludeStatus) url.searchParams.set("exclude_status", excludeStatus);
   const res = await fetch(url.toString(), {
     credentials: "include",
   });

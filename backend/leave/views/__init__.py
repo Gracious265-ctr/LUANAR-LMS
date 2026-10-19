@@ -158,6 +158,14 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # "My Applications" is the track list for submitted-onward rows;
+        # drafts are continued from the dashboard, so that view passes
+        # ``exclude_status=draft``. Comma-separated so more can be added.
+        exclude_status = self.request.query_params.get("exclude_status")
+        if exclude_status:
+            statuses = [s.strip() for s in exclude_status.split(",") if s.strip()]
+            if statuses:
+                qs = qs.exclude(status__in=statuses)
         return qs
 
     def perform_create(self, serializer):

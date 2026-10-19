@@ -39,10 +39,12 @@ export function ApplicationsList() {
   const searchParams = useSearchParams();
   // An optional `?status=` narrows the list (e.g. the dashboard's pending card
   // links here with `status=submitted`). It maps straight onto the server-side
-  // filter the endpoint already exposes; absent, every application is shown.
+  // filter the endpoint already exposes. Drafts are excluded: they are
+  // continued from the dashboard's "Continue a Draft" section, so this list is
+  // the track view for everything that has left the employee's hands.
   const statusFilter = searchParams.get("status") ?? undefined;
   const { applications, loading, error, refetch, removeLocal, restoreLocal } =
-    useLeaveApplications(statusFilter);
+    useLeaveApplications({ status: statusFilter, excludeStatus: "draft" });
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
   const composeParam = searchParams.get("compose");
