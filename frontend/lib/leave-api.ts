@@ -24,7 +24,6 @@ export interface LeaveApplication {
     | "submitted"
     | "approved"
     | "rejected"
-    | "correction_required"
     | "cancelled";
   reference_number: string | null;
   created_at: string;
@@ -38,7 +37,7 @@ export interface LeaveApplication {
 
 const DOCUMENT_ERRORS: Record<string, string> = {
   application_not_editable:
-    "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
+    "This application is no longer editable. Documents can only be changed on a draft or while it is rejected.",
   document_not_active:
     "This document has already been removed or replaced.",
 };

@@ -169,12 +169,12 @@ describe("LeaveDashboardPage", () => {
 
   it("routes a needs-attention card straight to the edit overlay", () => {
     mockDashboard({
-      data: data({ needs_attention: [summary({ id: "fix-1", status: "correction_required" })] }),
+      data: data({ needs_attention: [summary({ id: "fix-1", status: "rejected" })] }),
     });
 
     render(<LeaveDashboardPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Correction Required/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Rejected/ }));
     expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=fix-1");
   });
 

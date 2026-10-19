@@ -91,7 +91,7 @@ export function LeaveReviewPanel({
   }, [issues]);
 
   const handleSubmit = async () => {
-    await submit(applicationId);
+    await submit(applicationId, { resubmit: application?.status === "rejected" });
   };
 
   if (loadError) {
@@ -202,6 +202,8 @@ export function LeaveReviewPanel({
               <Loader2 className="h-4 w-4 animate-spin" />
               Submitting...
             </>
+          ) : application.status === "rejected" ? (
+            "Resubmit application"
           ) : (
             "Submit application"
           )}

@@ -46,7 +46,7 @@ export interface LeaveApplicationFormHandle {
   getDraftId: () => string | null;
 }
 
-const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
+const READ_ONLY_STATUSES = ["submitted", "approved", "cancelled"];
 
 export const LeaveApplicationForm = forwardRef<
   LeaveApplicationFormHandle,
@@ -292,8 +292,8 @@ const [loadError, setLoadError] = useState<string | null>(null);
         <SupportingDocumentsUploader
           applicationId={currentId}
           documents={documents}
-          editable={mode === "create" || status === "draft" || status === "correction_required"}
-          canReplace={status === "correction_required"}
+          editable={mode === "create" || status === "draft" || status === "rejected"}
+          canReplace={status === "rejected"}
           onDocumentsChange={setDocuments}
           onEnsureDraft={ensureDraftCreated}
         />

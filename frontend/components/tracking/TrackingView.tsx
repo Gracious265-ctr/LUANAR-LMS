@@ -90,8 +90,7 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   }
 
   const data = result.data;
-  const showAttention =
-    Boolean(data.rejection) || Boolean(data.correction);
+  const showAttention = Boolean(data.rejection);
   const chainSteps = chainFromTracking(data);
 
   // Only mount the cancellation surface when the tracking payload carries the
