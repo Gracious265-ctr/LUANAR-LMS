@@ -210,7 +210,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
           read-only record. View its current details in your applications list.
         </p>
         <Link
-          href="/dashboard/leave/drafts"
+          href="/dashboard/leave/applications"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
         >
           Back to Applications

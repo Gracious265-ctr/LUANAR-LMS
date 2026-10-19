@@ -117,8 +117,8 @@ beforeEach(() => {
 describe("ApplicationsList stage URL sync", () => {
   it("mirrors a move to review into the URL", async () => {
     setSearchParams("edit=draft-1&stage=form");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "to review" }));
 
@@ -129,8 +129,8 @@ describe("ApplicationsList stage URL sync", () => {
 
   it("mirrors a move to the confirmation stage into the URL", async () => {
     setSearchParams("edit=draft-1&stage=review");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "to done" }));
 
@@ -141,8 +141,8 @@ describe("ApplicationsList stage URL sync", () => {
 
   it("drops the stage param when stepping back to the form", async () => {
     setSearchParams("edit=draft-1&stage=review");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "to form" }));
 
@@ -153,8 +153,10 @@ describe("ApplicationsList stage URL sync", () => {
 
   it("uses the reported id for a create flow, which has no target yet", async () => {
     setSearchParams("compose=1");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    // No drafts to resume, so `compose` stays a genuine create.
+    vi.mocked(getLeaveApplications).mockResolvedValue({ count: 0, results: [] });
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "to review" }));
 
@@ -167,8 +169,8 @@ describe("ApplicationsList stage URL sync", () => {
 
   it("replaces rather than pushes, so one close still exits the overlay", async () => {
     setSearchParams("edit=draft-1&stage=form");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "to review" }));
     fireEvent.click(screen.getByRole("button", { name: "to done" }));
@@ -183,8 +185,8 @@ describe("ApplicationsList stage URL sync", () => {
   it("falls back to replace on a direct visit with nothing to go back to", async () => {
     vi.stubGlobal("history", { ...window.history, length: 1 });
     setSearchParams("edit=draft-1&stage=review");
-    render(<ApplicationsList />);
-    await screen.findByText("My Applications");
+    render(<ApplicationsList view="drafts" />);
+    await screen.findByText("Drafts");
 
     fireEvent.click(screen.getByRole("button", { name: "close" }));
 

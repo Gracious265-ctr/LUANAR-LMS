@@ -79,7 +79,6 @@ describe("LeaveDashboardPage", () => {
             last_comment_excerpt: "Not enough notice.",
           }),
         ],
-        drafts: [summary({ id: "draft-1", status: "draft", leave_type: null })],
         recent: [summary({ id: "recent-1", status: "approved" })],
       }),
     });
@@ -96,26 +95,19 @@ describe("LeaveDashboardPage", () => {
       screen.getByRole("heading", { name: "Needs Your Attention" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Continue a Draft" })
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("heading", { name: "Recent Applications" })
     ).toBeInTheDocument();
     expect(screen.getByText("9 of 21 days used")).toBeInTheDocument();
     expect(screen.getByText(/Not enough notice\./)).toBeInTheDocument();
-    expect(screen.getByText("Untitled draft")).toBeInTheDocument();
   });
 
-  it("hides the needs-attention and drafts sections when empty", () => {
+  it("hides the needs-attention section when empty", () => {
     mockDashboard({ data: data() });
 
     render(<LeaveDashboardPage />);
 
     expect(
       screen.queryByRole("heading", { name: "Needs Your Attention" })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Continue a Draft" })
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Recent Applications" })
@@ -175,18 +167,9 @@ describe("LeaveDashboardPage", () => {
     render(<LeaveDashboardPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /Rejected/ }));
-    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=fix-1");
-  });
-
-  it("routes a draft card to the edit overlay", () => {
-    mockDashboard({
-      data: data({ drafts: [summary({ id: "draft-1", status: "draft" })] }),
-    });
-
-    render(<LeaveDashboardPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?edit=draft-1");
+    expect(pushMock).toHaveBeenCalledWith(
+      "/dashboard/leave/applications?edit=fix-1"
+    );
   });
 
   it("routes a recent row to the tracking page and links View all", () => {
@@ -200,7 +183,7 @@ describe("LeaveDashboardPage", () => {
     expect(pushMock).toHaveBeenCalledWith("/applications/recent-9");
     expect(screen.getByRole("link", { name: /View all/ })).toHaveAttribute(
       "href",
-      "/dashboard/leave/drafts"
+      "/dashboard/leave/applications"
     );
   });
 
@@ -239,7 +222,7 @@ describe("LeaveDashboardPage", () => {
       screen.getByRole("button", { name: /Pending Applications/ })
     );
     expect(pushMock).toHaveBeenCalledWith(
-      "/dashboard/leave/drafts?status=submitted"
+      "/dashboard/leave/applications?status=submitted"
     );
   });
 

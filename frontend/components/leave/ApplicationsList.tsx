@@ -3,8 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Inbox, Plus } from "lucide-react";
+import { FilePen, Inbox, Plus } from "lucide-react";
 
+import { type LeaveApplication } from "@/lib/leave-api";
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,12 @@ interface OverlayTarget {
 }
 
 /**
- * "My Applications" with the apply flow as an overlay.
+ * The list of leave applications, with the apply flow as an overlay. Rendered
+ * at two routes so each has its own sidebar item:
+ *
+ * - `applications` (My Applications) is the track view for everything that has
+ *   left the employee's hands — drafts are excluded.
+ * - `drafts` lists in-progress applications.
  *
  * The open application lives in the URL (`?compose=1`, `?edit=<id>`,
  * `&stage=review`) rather than in component state, so a refresh resumes the
@@ -34,17 +40,24 @@ interface OverlayTarget {
  * `/dashboard/leave/new` and `/dashboard/leave/{id}/edit` links keep working
  * through the redirect shims in those routes.
  */
-export function ApplicationsList() {
+export function ApplicationsList({ view }: { view: "applications" | "drafts" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // An optional `?status=` narrows the list (e.g. the dashboard's pending card
-  // links here with `status=submitted`). It maps straight onto the server-side
-  // filter the endpoint already exposes. Drafts are excluded: they are
-  // continued from the dashboard's "Continue a Draft" section, so this list is
-  // the track view for everything that has left the employee's hands.
+  const isDrafts = view === "drafts";
+  const basePath = isDrafts
+    ? "/dashboard/leave/drafts"
+    : "/dashboard/leave/applications";
+
+  // An optional `?status=` narrows My Applications (e.g. the dashboard's
+  // pending card links here with `status=submitted`). It maps straight onto the
+  // server-side filter the endpoint already exposes.
   const statusFilter = searchParams.get("status") ?? undefined;
   const { applications, loading, error, refetch, removeLocal, restoreLocal } =
-    useLeaveApplications({ status: statusFilter, excludeStatus: "draft" });
+    useLeaveApplications(
+      isDrafts
+        ? { status: "draft" }
+        : { status: statusFilter, excludeStatus: "draft" }
+    );
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
 
   const composeParam = searchParams.get("compose");
@@ -52,22 +65,43 @@ export function ApplicationsList() {
   const stageParam = searchParams.get("stage");
   const stage: LeaveOverlayStage =
     stageParam === "review" || stageParam === "done" ? stageParam : "form";
+  const composeRequested = composeParam === "1";
+
+  // "New Application" continues an in-progress draft rather than starting a
+  // blank one, so a `compose` request on the drafts list resumes the most
+  // recently edited draft — the one the employee is most likely mid-way through.
+  const latestDraftId = useMemo(() => {
+    if (!isDrafts) return undefined;
+    const latest = applications.reduce<LeaveApplication | undefined>(
+      (newest, app) => (!newest || app.updated_at > newest.updated_at ? app : newest),
+      undefined
+    );
+    return latest?.id;
+  }, [isDrafts, applications]);
+
+  const resolvedEditId =
+    editParam ?? (composeRequested ? latestDraftId : undefined);
 
   // Memoised because the stage-sync callback below depends on it, and a fresh
-  // object literal each render would defeat the memo entirely.
-  const target: OverlayTarget | null = useMemo(
-    () =>
-      editParam
-        ? { mode: "edit", applicationId: editParam, stage }
-        : composeParam === "1"
-          ? { mode: "create", stage: "form" }
-          : null,
-    [editParam, composeParam, stage]
-  );
+  // object literal each render would defeat the memo entirely. The overlay is
+  // held closed until the list has loaded on the drafts view, so a `compose`
+  // request cannot flash a blank create dialog before it resolves to the draft.
+  const target: OverlayTarget | null = useMemo(() => {
+    if (resolvedEditId) {
+      return { mode: "edit", applicationId: resolvedEditId, stage };
+    }
+    if (composeRequested && !loading) {
+      return { mode: "create", stage: "form" };
+    }
+    return null;
+  }, [resolvedEditId, composeRequested, loading, stage]);
 
   const targetId = target?.applicationId;
 
   const openNew = useCallback(() => {
+    // The compose flow always lives on the drafts list, so starting one from My
+    // Applications still lands where drafts are continued — and a `compose`
+    // request there resumes the most recent draft.
     router.push("/dashboard/leave/drafts?compose=1");
   }, [router]);
 
@@ -75,11 +109,11 @@ export function ApplicationsList() {
     (applicationId: string, nextStage: LeaveOverlayStage) => {
       router.push(
         nextStage === "form"
-          ? `/dashboard/leave/drafts?edit=${applicationId}`
-          : `/dashboard/leave/drafts?edit=${applicationId}&stage=${nextStage}`
+          ? `${basePath}?edit=${applicationId}`
+          : `${basePath}?edit=${applicationId}&stage=${nextStage}`
       );
     },
-    [router]
+    [router, basePath]
   );
 
   /**
@@ -97,11 +131,11 @@ export function ApplicationsList() {
       if (!id) return;
       router.replace(
         nextStage === "form"
-          ? `/dashboard/leave/drafts?edit=${id}`
-          : `/dashboard/leave/drafts?edit=${id}&stage=${nextStage}`
+          ? `${basePath}?edit=${id}`
+          : `${basePath}?edit=${id}&stage=${nextStage}`
       );
     },
-    [router, targetId]
+    [router, basePath, targetId]
   );
 
   /**
@@ -115,8 +149,8 @@ export function ApplicationsList() {
       router.back();
       return;
     }
-    router.replace("/dashboard/leave/drafts");
-  }, [router]);
+    router.replace(basePath);
+  }, [router, basePath]);
 
   useEffect(() => {
     let active = true;
@@ -139,6 +173,7 @@ export function ApplicationsList() {
       mode={target?.mode ?? "create"}
       applicationId={target?.mode === "edit" ? target.applicationId : undefined}
       initialStage={target?.stage ?? "form"}
+      basePath={basePath}
       onOpenChange={(open) => {
         if (!open) close();
       }}
@@ -173,9 +208,12 @@ export function ApplicationsList() {
       {overlay}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">My Applications</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
+            {isDrafts ? "Drafts" : "My Applications"}
+          </h2>
           <p className="text-text-secondary text-sm">
-            {applications.length} application{applications.length === 1 ? "" : "s"}
+            {applications.length} {isDrafts ? "draft" : "application"}
+            {applications.length === 1 ? "" : "s"}
           </p>
         </div>
         <Button onClick={openNew} className="px-4 py-2">
@@ -187,9 +225,19 @@ export function ApplicationsList() {
       {applications.length === 0 ? (
         <Card>
           <EmptyState
-            icon={<Inbox className="h-10 w-10" />}
-            title="No applications yet"
-            description="Your submitted leave applications will show up here."
+            icon={
+              isDrafts ? (
+                <FilePen className="h-10 w-10" />
+              ) : (
+                <Inbox className="h-10 w-10" />
+              )
+            }
+            title={isDrafts ? "No drafts" : "No applications yet"}
+            description={
+              isDrafts
+                ? "Applications you start but haven't submitted will show up here."
+                : "Your submitted leave applications will show up here."
+            }
             action={
               <Button onClick={openNew} className="px-4 py-2">
                 <Plus className="h-4 w-4" />

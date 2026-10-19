@@ -36,7 +36,7 @@ export function NeedsAttentionSection({
             key={app.id}
             type="button"
             onClick={() =>
-              router.push(`/dashboard/leave/drafts?edit=${app.id}`)
+              router.push(`/dashboard/leave/applications?edit=${app.id}`)
             }
             className={cn(cardStyles, "hover-float focus-ring w-full p-4 text-left")}
           >

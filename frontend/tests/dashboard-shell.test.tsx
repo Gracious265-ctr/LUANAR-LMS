@@ -421,13 +421,17 @@ describe("DashboardShell Leave module", () => {
     );
     expect(
       within(nav).getByRole("link", { name: "My Applications" }),
-    ).toHaveAttribute("href", "/dashboard/leave/drafts");
+    ).toHaveAttribute("href", "/dashboard/leave/applications");
+    expect(within(nav).getByRole("link", { name: "Drafts" })).toHaveAttribute(
+      "href",
+      "/dashboard/leave/drafts",
+    );
     expect(
       within(nav).getByRole("link", { name: "New Application" }),
     ).toHaveAttribute("href", "/dashboard/leave/new");
 
-    // Exactly three destinations and the launcher — nothing leaks in.
-    expect(within(nav).getAllByRole("link")).toHaveLength(4);
+    // Exactly four destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(5);
 
     for (const hidden of [
       "Approvals",
@@ -451,8 +455,7 @@ describe("DashboardShell Leave module", () => {
   });
 
   it.each([
-    ["/dashboard/leave/drafts"],
-    ["/dashboard/leave/123/edit"],
+    ["/dashboard/leave/applications"],
     ["/applications/9"],
   ])("marks My Applications active at %s", (path) => {
     currentPath = path;
@@ -465,9 +468,29 @@ describe("DashboardShell Leave module", () => {
     expect(within(nav).getByRole("link", { name: "Dashboard" })).not.toHaveAttribute(
       "aria-current",
     );
+    expect(within(nav).getByRole("link", { name: "Drafts" })).not.toHaveAttribute(
+      "aria-current",
+    );
     expect(
       within(nav).getByRole("link", { name: "New Application" }),
     ).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks Drafts active on the drafts list", () => {
+    currentPath = "/dashboard/leave/drafts";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Drafts" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "My Applications" }),
+    ).not.toHaveAttribute("aria-current");
+    expect(within(nav).getByRole("link", { name: "Dashboard" })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 
   it("marks Dashboard active only on the Leave index", () => {
@@ -579,6 +602,7 @@ describe("DashboardShell Leave Configuration module", () => {
     for (const hidden of [
       "Dashboard",
       "My Applications",
+      "Drafts",
       "Approvals",
       "Leave Plans",
       "Request Cover",
@@ -673,6 +697,7 @@ describe("DashboardShell Approvals module", () => {
     for (const hidden of [
       "Dashboard",
       "My Applications",
+      "Drafts",
       "Leave Plans",
       "Teams",
       "My Account",
@@ -749,6 +774,7 @@ describe("DashboardShell Workflows module", () => {
     for (const hidden of [
       "Dashboard",
       "My Applications",
+      "Drafts",
       "Approvals",
       "HR Administration",
       "Audit View",
