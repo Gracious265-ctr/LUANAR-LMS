@@ -37,7 +37,7 @@ export function OrganisationLayoutClient({
   }));
 
   return (
-    <ModuleShell navItems={clientNavItems} moduleName="Organization">
+    <ModuleShell navItems={clientNavItems} moduleName="Organisation">
       {children}
     </ModuleShell>
   );

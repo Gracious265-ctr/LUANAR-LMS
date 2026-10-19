@@ -16,7 +16,7 @@ export const APPS_REGISTRY = {
     route: "/approvals",
   },
   organisation: {
-    name: "Organization",
+    name: "Organisation",
     description: "Manage units, approvers, and teams",
     icon: Building2,
     route: "/organisation",
