@@ -5783,3 +5783,18 @@ frontend now offers each role only the actions the server will accept.
   a manager may list every wide holding (200) and may not `POST` one (403).
   Verified: `workflows.tests_workflow_members` + `organisation` **63 passed**.
   curl: manager GET of all three proxies → 200; manager POST team → 403.
+
+### Docs — merge guide for the team-manager apps (2026-10-19)
+
+Added `context/merge-team-manager-guide.md`: a branch-agnostic guide for another
+developer pulling the **documents**, **organisation**, **teams/workflows**, and
+**approvals** apps from `origin/feature/team-manager` into their own branch so
+the whole system works together. Covers how to identify the receiving base (no
+`organisation`/`approvals`; the old `org` app; already-split), the migration-leaf
+requirements (`leave 0021`, `users 0012`, `notifications 0009`, `plans 0005`,
+plus the four apps), an inventory of the backend apps and frontend footprint,
+why the four apps can't be cherry-picked apart (cyclic imports and migrations,
+the non-destructive `workflows_*` table move), the merge procedure, a conflict
+playbook (including the committed-conflict-marker trap from the `726ee04`
+recovery), post-merge backend/frontend checklists, migration-graph
+reconciliation, verification, rollback, and a per-app file ownership appendix.
