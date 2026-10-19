@@ -168,7 +168,6 @@ class LeaveApplication(models.Model):
         SUBMITTED = "submitted", "Submitted"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
-        CORRECTION_REQUIRED = "correction_required", "Correction required"
         CANCELLED = "cancelled", "Cancelled"
 
     # The set of statuses where the employee can no longer submit/edit (Unit 17).

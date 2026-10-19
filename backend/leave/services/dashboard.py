@@ -193,18 +193,14 @@ def get_dashboard_data(user) -> dict:
 
     # Awaiting a decision: submitted and sitting in the approval chain. Every
     # other status is either not yet sent (draft), terminal, or needs the
-    # employee (rejected / correction_required), which the needs-attention
-    # section already covers.
+    # employee (rejected), which the needs-attention section already covers.
     pending_count = applications.filter(
         status__in=LeaveApplication.SUBMITTED_STATUSES
     ).count()
 
     needs_attention = list(
         applications.filter(
-            status__in=[
-                LeaveApplication.Status.REJECTED,
-                LeaveApplication.Status.CORRECTION_REQUIRED,
-            ]
+            status=LeaveApplication.Status.REJECTED,
         ).order_by("-updated_at")[:NEEDS_ATTENTION_LIMIT]
     )
     drafts = list(

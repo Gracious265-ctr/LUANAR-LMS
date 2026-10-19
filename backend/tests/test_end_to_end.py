@@ -243,7 +243,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
         """One decision, running the on-commit bus (events, emails) for real.
 
         ``expected_version`` defaults to the live stage version: Unit 17 reuses
-        the stage chain across resubmission cycles, so after a correction the
+        the stage chain across resubmission cycles, so after a rejection the
         first approver's stage is no longer at version 1.
         """
         app.refresh_from_db()
@@ -409,16 +409,16 @@ class RejectionJourneyTests(EndToEndBase):
         )
 
 
-class CorrectionAndResubmissionJourneyTests(EndToEndBase):
-    def test_correction_then_resubmission_freezes_a_new_cycle_and_deducts_once(self):
+class RejectionAndResubmissionJourneyTests(EndToEndBase):
+    def test_rejection_then_resubmission_freezes_a_new_cycle_and_deducts_once(self):
         app = self.submit()
         self.decide(
             app,
             self.supervisor,
-            ApprovalDecision.Action.RETURN_FOR_CORRECTION,
-            comment="Please attach the medical note.",
+            ApprovalDecision.Action.REJECT,
+            comment="Please confirm the dates.",
         )
-        self.assertEqual(app.status, LeaveApplication.Status.CORRECTION_REQUIRED)
+        self.assertEqual(app.status, LeaveApplication.Status.REJECTED)
 
         # Cycle 1's revision is frozen; the employee may now edit (D7).
         self.client.force_authenticate(user=self.employee)
@@ -458,7 +458,7 @@ class CorrectionAndResubmissionJourneyTests(EndToEndBase):
         self.assertEqual(self.deductions(app).count(), 1, "deducted once, after resubmit")
 
     def test_a_submitted_application_cannot_be_edited(self):
-        """D7 — only draft and correction_required are editable."""
+        """D7 — only draft and rejected are editable."""
         app = self.submit()
         self.client.force_authenticate(user=self.employee)
         response = self.client.patch(

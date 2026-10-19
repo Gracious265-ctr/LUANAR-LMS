@@ -1,7 +1,7 @@
 """Resubmission service (Unit 21, D9).
 
-``resubmit_application`` is the sole path that returns a rejected or
-correction-required application to its configured stage as a fresh pending
+``resubmit_application`` is the sole path that returns a rejected
+application to its configured stage as a fresh pending
 approval. It re-validates the current content against the rules effective on
 the resubmission date (same reference number), refreshes the immutable rules
 snapshot, freezes the new cycle's revision history row, increments
@@ -25,7 +25,7 @@ class ResubmissionNotFoundError(Exception):
 
 
 class NotResubmittableError(Exception):
-    """The application status is not ``rejected``/``correction_required``."""
+    """The application status is not ``rejected``."""
 
 
 class WorkflowInconsistentError(Exception):
@@ -63,10 +63,7 @@ def resubmit_application(*, user, application_id):
         if app is None:
             raise ResubmissionNotFoundError()
 
-        if app.status not in (
-            LeaveApplication.Status.REJECTED,
-            LeaveApplication.Status.CORRECTION_REQUIRED,
-        ):
+        if app.status != LeaveApplication.Status.REJECTED:
             raise NotResubmittableError()
 
         _acquire_employee_lock(employee.id if employee is not None else 0)
@@ -86,10 +83,7 @@ def resubmit_application(*, user, application_id):
             .filter(pk=app.current_stage_id, application=app)
             .first()
         )
-        if stage is None or stage.status not in (
-            ApplicationStage.Status.REJECTED,
-            ApplicationStage.Status.CORRECTION_REQUESTED,
-        ):
+        if stage is None or stage.status != ApplicationStage.Status.REJECTED:
             raise WorkflowInconsistentError()
 
         snapshot = build_rules_snapshot(result.context)

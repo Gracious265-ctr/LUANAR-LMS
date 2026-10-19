@@ -177,15 +177,15 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
             instance.save(update_fields=["calculated_days"])
 
-    #: Statuses an employee may still edit (Unit 25 D7). ``CORRECTION_REQUIRED``
-    #: is editable because that is the whole point of returning an application
-    #: for correction; the employee edits, then calls ``resubmit`` which
-    #: re-validates, advances ``submission_cycle`` and freezes a new revision.
-    #: The frontend already assumed this (``LeaveApplicationForm.tsx`` treats
-    #: ``correction_required`` as editable and omits it from READ_ONLY_STATUSES).
+    #: Statuses an employee may still edit (Unit 25 D7). ``REJECTED``
+    #: is editable so the employee may adjust the application before
+    #: resubmitting; ``resubmit`` re-validates, advances ``submission_cycle``
+    #: and freezes a new revision.
+    #: The frontend mirrors this (``LeaveApplicationForm.tsx`` treats
+    #: ``rejected`` as editable and omits it from READ_ONLY_STATUSES).
     EDITABLE_STATUSES = (
         LeaveApplication.Status.DRAFT,
-        LeaveApplication.Status.CORRECTION_REQUIRED,
+        LeaveApplication.Status.REJECTED,
     )
 
     def update(self, request, *args, **kwargs):

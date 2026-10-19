@@ -106,7 +106,7 @@ USE_TZ = True
 # Since Unit 20 it is backed by the real HR-track tables
 # (DatabaseRulesProvider); see docs/leave-rules-provider-contract.md.
 LEAVE_RULES_PROVIDER = "leave.providers.database.DatabaseRulesProvider"
-LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "correction_required", "approved"]
+LEAVE_BLOCKING_STATUSES = ["submitted", "pending", "approved"]
 
 # Leave application tracking (Unit 15). The tracking provider supplies the
 # read-only workflow payload from the real workflow tables since Unit 21

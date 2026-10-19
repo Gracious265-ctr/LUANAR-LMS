@@ -153,7 +153,6 @@ class DashboardStatCardTests(DashboardTestBase):
             LeaveApplication.Status.DRAFT,
             LeaveApplication.Status.APPROVED,
             LeaveApplication.Status.REJECTED,
-            LeaveApplication.Status.CORRECTION_REQUIRED,
             LeaveApplication.Status.CANCELLED,
         ):
             self.application(other)
@@ -222,8 +221,8 @@ class DashboardScopingTests(DashboardTestBase):
         self.assertEqual(payload["recent"], [])
 
     def test_each_employee_sees_only_their_own(self):
-        self.application(LeaveApplication.Status.CORRECTION_REQUIRED)
-        self.application(LeaveApplication.Status.CORRECTION_REQUIRED, user=self.other)
+        self.application(LeaveApplication.Status.REJECTED)
+        self.application(LeaveApplication.Status.REJECTED, user=self.other)
 
         owner_payload = self.get()
         self.client.force_authenticate(user=self.other)
@@ -238,17 +237,16 @@ class DashboardScopingTests(DashboardTestBase):
 
 
 class DashboardSectionTests(DashboardTestBase):
-    def test_needs_attention_covers_rejected_and_correction_required(self):
+    def test_needs_attention_covers_rejected(self):
         rejected = self.application(LeaveApplication.Status.REJECTED)
-        correction = self.application(LeaveApplication.Status.CORRECTION_REQUIRED)
         self.application(LeaveApplication.Status.APPROVED)  # excluded
 
         ids = {item["id"] for item in self.get()["needs_attention"]}
-        self.assertEqual(ids, {str(rejected.id), str(correction.id)})
+        self.assertEqual(ids, {str(rejected.id)})
 
     def test_needs_attention_is_most_recently_updated_first(self):
         old = self.application(LeaveApplication.Status.REJECTED)
-        new = self.application(LeaveApplication.Status.CORRECTION_REQUIRED)
+        new = self.application(LeaveApplication.Status.REJECTED)
         LeaveApplication.objects.filter(pk=old.pk).update(
             updated_at="2026-01-01T00:00:00Z"
         )
@@ -309,7 +307,7 @@ class DashboardSerializationTests(DashboardTestBase):
         self.assertIsNone(self.get()["recent"][0]["leave_type"])
 
     def test_excerpt_is_the_latest_decision_comment(self):
-        app = self.application(LeaveApplication.Status.CORRECTION_REQUIRED)
+        app = self.application(LeaveApplication.Status.REJECTED)
         self._decision(app, "The first note.", decided_at="2026-01-01T00:00:00Z")
         self._decision(
             app, "Please attach the medical certificate.", decided_at="2026-02-01T00:00:00Z"
@@ -350,7 +348,7 @@ class DashboardSerializationTests(DashboardTestBase):
             approver=self.other,
             approver_name="Other Person",
             role_label="Head of Department",
-            action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
+            action=ApprovalDecision.Action.REJECT,
             comment=comment,
             submission_cycle=cycle,
             **({"decided_at": decided_at} if decided_at else {}),
