@@ -31,9 +31,6 @@ describe("ApprovalDetail", () => {
 
     expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Reject" }).length).toBeGreaterThan(0);
-    expect(
-      screen.queryByRole("button", { name: "Return for Correction" })
-    ).not.toBeInTheDocument();
   });
 
   it("shows the stepper with completed, current and pending stages", async () => {

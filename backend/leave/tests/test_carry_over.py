@@ -5,7 +5,6 @@ Rules under test (``context/project-overview.md``):
 * only days a *rejection* left unused are carried
   (``carried = min(rejected, entitlement - consumed)``);
 * ordinary unused entitlement is **not** carried — it resets;
-* ``correction_required`` is a soft return and never carries;
 * the rollover is idempotent and the provider funds the recipient year only.
 """
 

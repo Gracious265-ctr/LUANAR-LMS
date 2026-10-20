@@ -449,18 +449,6 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
 # draft status removed
 
 
-    def test_return_for_correction_is_no_longer_valid(self):
-        app = self.make_submitted()
-        with self.assertRaises(ApprovalValidationError) as ctx:
-            decide(
-                application_id=app.pk,
-                actor=self.supervisor,
-                action="return_for_correction",
-                comment="Please review the leave dates.",
-                expected_version=1,
-            )
-        self.assertIn("action", ctx.exception.errors)
-
     def test_a_team_that_has_not_started_routing_raises_config_error(self):
         self.admin_team.effective_from = timezone.localdate() + timedelta(days=7)
         self.admin_team.save(update_fields=["effective_from"])

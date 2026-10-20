@@ -126,6 +126,24 @@ export async function removeRoleAssignment(
   await send<void>(`/api/hr/role-assignments/${id}`, "DELETE");
 }
 
+/**
+ * Hand an institution-wide holding to a new person.
+ *
+ * A role has exactly one institution-wide approver, so changing the holder is a
+ * replace rather than a remove-then-assign: the steps and chains the outgoing
+ * holder staffed move onto their successor in one write.
+ */
+export async function replaceRoleAssignment(
+  id: number | string,
+  input: { user: number | string }
+): Promise<RoleAssignment> {
+  return send<RoleAssignment>(
+    `/api/hr/role-assignments/${id}/replace`,
+    "POST",
+    input
+  );
+}
+
 async function send<T>(
   endpoint: string,
   method: "POST" | "PATCH" | "DELETE",

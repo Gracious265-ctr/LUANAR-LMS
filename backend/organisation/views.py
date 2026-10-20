@@ -4,6 +4,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from users.models import User
 from users.permissions import IsHRRole
 
 from audit.validation import positive_int
@@ -28,6 +29,7 @@ from organisation.services import (
     deactivate_approver_role,
     remove_campus_role_assignment,
     remove_role_assignment,
+    replace_role_assignment,
 )
 
 class ApproverRoleViewSet(
@@ -143,7 +145,7 @@ class RoleAssignmentViewSet(
     def get_permissions(self):
         # Reading tells a manager which roles their chain may use; appointing a
         # holder is HR's call, so the writes stay HR-only.
-        if self.action in ("create", "destroy"):
+        if self.action in ("create", "destroy", "replace"):
             return [permissions.IsAuthenticated(), IsHROnly()]
         return super().get_permissions()
 
@@ -181,6 +183,35 @@ class RoleAssignmentViewSet(
     def destroy(self, request, *args, **kwargs):
         remove_role_assignment(assignment=self.get_object(), actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="replace")
+    def replace(self, request, *args, **kwargs):
+        """Hand this institution-wide holding to another person (HR only).
+
+        The holder a role has is replaced rather than removed and re-added, so
+        the steps and wide memberships the outgoing holder staffed move onto
+        their successor in the same step.
+        """
+        user_id = positive_int(request.data.get("user"), "user")
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"user": ["No such user."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            assignment = replace_role_assignment(
+                assignment=self.get_object(), user=user, actor=request.user
+            )
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            RoleAssignmentSerializer(
+                assignment, context=self.get_serializer_context()
+            ).data
+        )
 
 
 class CampusRoleAssignmentViewSet(
