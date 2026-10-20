@@ -27,21 +27,56 @@ export type { HistoryScope } from "./approver-role-scopes";
 export async function listRoleAssignments(
   roleId?: number | string
 ): Promise<RoleAssignment[]> {
-  const rows: RoleAssignment[] = [];
+  return readAllPages<RoleAssignment>(
+    "/api/hr/role-assignments/",
+    roleId === undefined ? {} : { role: String(roleId) }
+  );
+}
+
+/**
+ * Who holds each role across a whole team, today.
+ *
+ * The team-wide twin of the institution-wide read above, and read for the same
+ * reason: the step form has to know whether a wide role belongs to the team it
+ * is shaping — and whether a wide role is claimed by some *other* team, in which
+ * case it is that team's to use and not this one's.
+ */
+export async function listTeamRoleAssignments(
+  team?: number | string
+): Promise<TeamRoleAssignment[]> {
+  return readAllPages<TeamRoleAssignment>(
+    "/api/hr/team-role-assignments/",
+    team === undefined ? {} : { team: String(team) }
+  );
+}
+
+/** The campus-wide twin, reaching every academic team at that campus. */
+export async function listCampusRoleAssignments(
+  campus?: number | string
+): Promise<CampusRoleAssignment[]> {
+  return readAllPages<CampusRoleAssignment>(
+    "/api/hr/campus-role-assignments/",
+    campus === undefined ? {} : { campus: String(campus) }
+  );
+}
+
+/** Every page of one paginated ``/api/hr`` reader, in one list. */
+async function readAllPages<T>(
+  path: string,
+  filters: Record<string, string> = {}
+): Promise<T[]> {
+  const rows: T[] = [];
   let page = 1;
   for (;;) {
-    const params = new URLSearchParams();
-    if (roleId !== undefined) {
-      params.set("role", String(roleId));
-    }
+    const params = new URLSearchParams(filters);
     params.set("page", String(page));
-    const response = await fetch(`/api/hr/role-assignments/?${params}`);
+    const response = await fetch(`${path}?${params}`);
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(apiErrorMessage(data));
     }
     const data = (await response.json()) as {
-      results?: RoleAssignment[];
+      results?: T[];
       next?: string | null;
     };
     const batch = data.results ?? [];
@@ -98,8 +133,12 @@ async function send<T>(
 ): Promise<T> {
   const response = await fetch(endpoint, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    // A body-less POST (the set-manager actions) must not claim to carry JSON:
+    // an empty body with that content type is a malformed request to a parser
+    // that is never going to be asked for the data anyway.
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (response.status === 204) {
     return undefined as T;
@@ -137,8 +176,10 @@ export async function removeTeamRoleAssignment(id: number | string): Promise<voi
 /**
  * Designate a team-wide holding as its team's manager.
  *
- * There is exactly one per team: the backend clears the flag from any other
- * holder on the team, so this is a selection, not an addition.
+ * One manager per team: the backend clears the flag from the team's other
+ * holders, so this is the "make this person the manager" action rather than a
+ * toggle that could leave two. Returns the updated holding so the caller can
+ * show the new state without a full re-read.
  */
 export async function setTeamManager(
   id: number | string
@@ -149,7 +190,7 @@ export async function setTeamManager(
   );
 }
 
-/** Undo a manager designation, leaving the holding in place. */
+/** Remove the manager designation from this holding (the team keeps none). */
 export async function clearTeamManager(
   id: number | string
 ): Promise<TeamRoleAssignment> {

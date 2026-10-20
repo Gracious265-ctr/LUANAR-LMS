@@ -1,7 +1,7 @@
 import { apiFetch } from "@/app/api/_lib/api-fetch";
 
 /** The filters the backend documents; anything else is not forwarded. */
-const FILTERS = ["section", "workflow", "user"] as const;
+const FILTERS = ["section", "workflow", "user", "history"] as const;
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;

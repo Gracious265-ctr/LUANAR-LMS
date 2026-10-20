@@ -1,24 +1,14 @@
 import Link from "next/link";
 
 import {
-  teamCategoryBadgeTone,
+  teamCategoryBadgeClass,
   teamCategoryLabel,
 } from "@/lib/team-category";
 import type { Team } from "@/lib/teams";
 import {
-  teamStatusBadgeTone,
+  teamStatusBadgeClass,
   teamStatusLabel,
 } from "@/lib/teams-client";
-import { Badge } from "@/components/ui/badge";
-import { EmptyPanel } from "@/components/ui/states";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 /**
  * Teams as a list rather than a wall of cards.
@@ -31,34 +21,45 @@ import {
 export function TeamTable({ teams }: { teams: Team[] }) {
   if (teams.length === 0) {
     return (
-      <EmptyPanel
-        title="No teams found"
-        description="Create a team to route its employees' applications through their own approvers."
-      />
+      <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center shadow-subtle">
+        <p className="text-base font-medium text-text-primary">No teams found</p>
+        <p className="mt-1 text-sm text-text-muted">
+          Create a team to route its employees&apos; applications through their
+          own approvers.
+        </p>
+      </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border-default bg-surface-card shadow-subtle">
-      <Table>
+    <div className="overflow-x-auto rounded-xl border border-border-default bg-surface-card shadow-subtle">
+      <table className="w-full text-left text-sm">
         <caption className="sr-only">
-          Teams, their approval chain, whether they are in force, and quick
-          links to manage each team
+          Teams, their approval chain, and whether they are in force
         </caption>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Team</TableHead>
-            <TableHead>Chain</TableHead>
-            <TableHead>Steps</TableHead>
-            <TableHead>In force</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Manage</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+        <thead className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
+          <tr>
+            <th scope="col" className="px-4 py-3">
+              Team
+            </th>
+            <th scope="col" className="px-4 py-3">
+              Chains
+            </th>
+            <th scope="col" className="px-4 py-3">
+              Steps
+            </th>
+            <th scope="col" className="px-4 py-3">
+              In force
+            </th>
+            <th scope="col" className="px-4 py-3">
+              Status
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border-default">
           {teams.map((team) => (
-            <TableRow key={team.id}>
-              <TableCell>
+            <tr key={team.id} className="hover:bg-surface-hover">
+              <th scope="row" className="px-4 py-3 font-normal">
                 <Link
                   href={`/dashboard/teams/${team.id}`}
                   className="font-medium text-text-primary hover:text-brand-primary"
@@ -75,56 +76,44 @@ export function TeamTable({ teams }: { teams: Team[] }) {
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
-                <Badge size="xs" tone={teamCategoryBadgeTone(team.category)}>
+                <span
+                  className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${teamCategoryBadgeClass(
+                    team.category
+                  )}`}
+                >
                   {teamCategoryLabel(team.category)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-text-secondary">
-                {team.workflow_name || (
+                </span>
+              </th>
+              <td className="px-4 py-3 text-text-secondary">
+                {team.workflows.length === 0 ? (
                   <span className="text-text-muted">No chain</span>
+                ) : (
+                  team.workflows.map((workflow) => workflow.name).join(", ")
                 )}
-              </TableCell>
-              <TableCell className="text-text-secondary">
+              </td>
+              <td className="px-4 py-3 text-text-secondary">
                 {team.sections.length === 0
                   ? "—"
                   : `${team.sections.filter((s) => s.approver !== null).length} of ${
                       team.sections.length
                     } staffed`}
-              </TableCell>
-              <TableCell className="text-text-secondary">
+              </td>
+              <td className="px-4 py-3 text-text-secondary">
                 {inForceWindow(team)}
-              </TableCell>
-              <TableCell>
-                <Badge size="sm" tone={teamStatusBadgeTone(team.status)}>
+              </td>
+              <td className="px-4 py-3">
+                <span
+                  className={`inline-block rounded-sm px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
+                    team.status
+                  )}`}
+                >
                   {teamStatusLabel(team.status)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <span className="inline-flex flex-wrap items-center justify-end gap-2 text-xs">
-                  <Link
-                    href={`/dashboard/teams/${team.id}?tab=steps`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Steps
-                  </Link>
-                  <Link
-                    href={`/dashboard/teams/${team.id}?tab=approvers`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Approvers
-                  </Link>
-                  <Link
-                    href={`/dashboard/teams/${team.id}?tab=members`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Members
-                  </Link>
                 </span>
-              </TableCell>
-            </TableRow>
+              </td>
+            </tr>
           ))}
-        </TableBody>
-      </Table>
+        </tbody>
+      </table>
     </div>
   );
 }

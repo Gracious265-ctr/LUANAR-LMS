@@ -31,6 +31,8 @@ export interface LeaveSummary {
   entitlement: LeaveSummaryEntitlement | null;
   financial_year: LeaveSummaryFinancialYear | null;
   available_balance: string | null;
+  /** Days carried into the current year by a rejected-leave rollover. */
+  carry_over_days: string | null;
   /** Applications still waiting on someone: submitted or rejected back to you. */
   pending_applications: number;
   /** Approved leave starting within the backend's upcoming window. */

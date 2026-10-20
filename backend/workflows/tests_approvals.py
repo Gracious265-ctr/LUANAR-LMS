@@ -35,27 +35,16 @@ from .testing import (
     make_section,
     make_team,
 )
-from .models import (
-    Section,
-    SectionMember,
-    Workflow,
-)
-from organisation.models import (
-    ApproverRole,
-)
 from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from teams.models import (
-    Team,
-)
+from organisation.models import ApproverRole
+from teams.models import Team
+from .models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import (
     DatabaseWorkflowProvider,
     WorkflowConfigError,
-)
-from .services import (
-    WorkflowAssignmentError,
 )
 from approvals.services import (
     ApprovalNotAllowedError,
@@ -63,6 +52,9 @@ from approvals.services import (
     ApprovalValidationError,
     assign_workflow,
     decide,
+)
+from .services import (
+    WorkflowAssignmentError,
 )
 from .policies import get_decision_authority
 
@@ -226,6 +218,12 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         profile.team = team
         profile.save(update_fields=["team"])
+        # Being on a team is not enough to route: an employee follows the chain
+        # they are a member of, so placing one on a team also enrols them in the
+        # team's workflow.
+        workflow = team.workflows.first()
+        if workflow is not None:
+            WorkflowMember.objects.get_or_create(team=team, workflow=workflow, user=user)
         return profile
 
     def test_chain_for_administration_starts_with_supervisor(self):
@@ -424,7 +422,7 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
             )
-        self.assertIn("inactive", str(ctx.exception))
+        self.assertIn("not in force", str(ctx.exception))
 
     def test_retired_team_raises_config_error(self):
         """A team that has been retired stops routing, and says so.
@@ -442,19 +440,26 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
         self.assertIn("inactive", str(ctx.exception))
 
     def test_draft_team_raises_config_error(self):
-        """A team still being configured must not route anything.
+        """A row still marked draft must not route anything.
 
-        This is the case the boolean could not express: the team exists and its
-        workflow is live, but HR has not finished staffing it, so routing to it
-        would strand the employee at a step with nobody to act.
+        Nothing writes that state any more — creating a team puts it in force —
+        but an older installation still has the rows, and a team whose chain was
+        never staffed would strand the employee at a step with nobody to act.
         """
-        self.admin_team.status = Team.Status.DRAFT
-        self.admin_team.save(update_fields=["status"])
-        with self.assertRaises(WorkflowConfigError) as ctx:
-            DatabaseWorkflowProvider().get_stage_definitions(
-                LeaveApplication(employee=self.employee)
+# draft status removed
+
+
+    def test_return_for_correction_is_no_longer_valid(self):
+        app = self.make_submitted()
+        with self.assertRaises(ApprovalValidationError) as ctx:
+            decide(
+                application_id=app.pk,
+                actor=self.supervisor,
+                action="return_for_correction",
+                comment="Please review the leave dates.",
+                expected_version=1,
             )
-        self.assertIn("still being set up", str(ctx.exception))
+        self.assertIn("action", ctx.exception.errors)
 
     def test_a_team_that_has_not_started_routing_raises_config_error(self):
         self.admin_team.effective_from = timezone.localdate() + timedelta(days=7)
@@ -650,18 +655,6 @@ class DecisionServiceTests(ApprovalBase):
                 expected_version=1,
             )
         self.assertIn("comment", ctx.exception.errors)
-
-    def test_return_for_correction_is_no_longer_valid(self):
-        app = self.make_submitted()
-        with self.assertRaises(ApprovalValidationError) as ctx:
-            decide(
-                application_id=app.pk,
-                actor=self.supervisor,
-                action="return_for_correction",
-                comment="Please review the leave dates.",
-                expected_version=1,
-            )
-        self.assertIn("action", ctx.exception.errors)
 
     def test_double_submit_records_exactly_one_decision(self):
         app = self.make_submitted()

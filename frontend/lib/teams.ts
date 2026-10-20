@@ -1,5 +1,6 @@
 import { apiClientUrl } from "./api-client";
 import type { TeamCategory } from "./team-category";
+import type { TeamMemberCandidate } from "./team-members";
 
 // The category vocabulary is client-safe and lives beside this module, not
 // inside it: this file reads Django through `api-client`, which is server-only,
@@ -9,27 +10,25 @@ import type { TeamCategory } from "./team-category";
 export {
   TEAM_CATEGORY_CODES,
   TEAM_CATEGORY_LABELS,
-  teamCategoryBadgeTone,
+  teamCategoryBadgeClass,
   teamCategoryLabel,
   type TeamCategory,
 } from "./team-category";
 
 /**
- * Where a team is in its life. Three states, not a checkbox, because the step
- * between them is a decision: only an active team inside its effective window
- * routes an application, and a draft one is deliberately inert while HR is
- * still building it.
+ * Where a team is in its life. Only an active team inside its effective window
+ * routes an application; a retired one is deliberately inert.
  *
  * Open-ended like the role codes: a status this build has not seen must survive
  * a round trip rather than crash a screen.
  */
-export type TeamStatus = "draft" | "active" | "inactive";
+export type TeamStatus = "active" | "inactive";
 
-export const TEAM_STATUS_CODES: TeamStatus[] = ["draft", "active", "inactive"];
+export const TEAM_STATUS_CODES: TeamStatus[] = ["active", "inactive"];
 
 
 /**
- * One problem standing between a team and being put into force. A code rather
+ * One problem standing between a team and being able to route. A code rather
  * than a message so a screen can decide *where* to point: an unstaffed step is
  * shown against its section, a date problem against the date field.
  */
@@ -41,7 +40,7 @@ export interface TeamReadinessIssue {
   approver_role: string | null;
 }
 
-/** The answer to "can this team route, and if not, why not?". */
+/** The answer to "can this team be activated, and if not, why not?". */
 export interface TeamReadiness {
   team: string;
   status: TeamStatus | string;
@@ -84,9 +83,12 @@ export function sectionResolutionLabel(resolution: string): string {
   return SECTION_RESOLUTION_LABELS[resolution as SectionResolution] ?? resolution;
 }
 
-/** A team row's read-only summary of one step of the workflow it routes through. */
+/** A team row's read-only summary of one step of one of the team's chains. */
 export interface TeamSection {
   id: number;
+  /** The chain this step belongs to; a team may own several. */
+  workflow: number;
+  workflow_name: string;
   name: string;
   order: number;
   is_active: boolean;
@@ -117,14 +119,13 @@ export interface TeamStageRole {
 
 /**
  * A chain the team owns, named so a screen can show every one of them without
- * reading them all. `is_routing` is the one the team is currently pointed at —
- * a team may own several and route exactly one, and switching between them is
- * a decision rather than an edit to whichever one happens to be first.
+ * reading them all. Every chain a team owns routes at once, each carrying the
+ * employees who are members of it, so there is no single "live" chain.
  */
 export interface WorkflowRef {
   id: number;
   name: string;
-  is_routing: boolean;
+  state: string;
   section_count: number;
   effective_from: string | null;
   is_active: boolean;
@@ -140,10 +141,7 @@ export interface Team {
   /** The campus this team sits in, required when the category is academic. */
   campus: number | null;
   campus_name: string;
-  /** The chain this team routes through, or null while the team is a draft. */
-  workflow: number | null;
-  workflow_name: string;
-  /** Every chain this team owns, including the one it routes through. */
+  /** Every chain this team owns; each one routes the members enrolled in it. */
   workflows: WorkflowRef[];
   status: TeamStatus | string;
   effective_from: string | null;
@@ -158,18 +156,6 @@ export interface Team {
   sections: TeamSection[];
   created_at: string;
   updated_at: string;
-}
-
-/** One step as typed on a team's chain. */
-export interface TeamSectionInput {
-  name: string;
-  approver_role: string;
-  /**
-   * The one person appointed to the step, by user id. Omitted to leave an
-   * existing step's approver alone, which is how an edit that only renames a
-   * step does not unappoint the person on it.
-   */
-  approver?: number | null;
 }
 
 /** One person the backend says may be appointed to a step of a team's chain. */
@@ -192,20 +178,6 @@ export interface EligibleApprovers {
   candidates: EligibleApprover[];
 }
 
-/**
- * A team's approval chain, written inline.
- *
- * On create the chain is built with the team. On update it replaces the steps of
- * the chain the team already has — there is nowhere else a chain is created or
- * edited, because a chain is not a thing HR manages apart from the team it
- * belongs to.
- */
-export interface TeamWorkflowInput {
-  /** Optional on update; defaults to the chain's existing name. */
-  name?: string;
-  sections: TeamSectionInput[];
-}
-
 export interface TeamInput {
   name: string;
   description?: string;
@@ -216,22 +188,8 @@ export interface TeamInput {
   effective_from?: string | null;
   effective_to?: string | null;
   /**
-   * The chain this team routes through. On create it must be omitted — a new
-   * team cannot adopt a chain that already exists, because that chain belongs
-   * to whichever team it was built for. On edit it must name one the team
-   * already owns, which is how HR points a team at its replacement chain.
-   */
-  workflow?: number | null;
-  /**
-   * The team's approval chain. Omitted to leave the existing chain's steps
-   * untouched; a team's chain can never be swapped for somebody else's.
-   */
-  new_workflow?: TeamWorkflowInput;
-  /**
-   * The manager designated at creation: the team-scoped role they hold, and the
-   * category-matching employee who holds it. Written on create only — a team's
-   * manager is changed from the team's Approvers tab afterwards, where the
-   * wide-holder panel offers "Make manager".
+   * Manager assignment for team creation. Team-scoped approver role and
+   * category-matching employee.
    */
   manager?: { role: number; user: number };
 }
@@ -312,6 +270,24 @@ export async function getTeam(id: number | string): Promise<Team> {
   return apiClientUrl<Team>(`/api/v1/teams/${id}/`);
 }
 
+/**
+ * Who may be added to this team's roster.
+ *
+ * Read here rather than through `/api/hr/...`: this is the team *page's* data,
+ * fetched in a Server Component, where a bare relative `fetch` carries no
+ * `Authorization` header and the proxy answers 401 — which used to arrive as an
+ * empty picker rather than an error. `apiClientUrl` reads the token off the
+ * request cookies explicitly, the way every other read on that page does. The
+ * roster *writes* stay on the client helpers, which run in the browser.
+ */
+export async function listTeamMemberCandidates(
+  team: number | string
+): Promise<TeamMemberCandidate[]> {
+  return apiClientUrl<TeamMemberCandidate[]>(
+    `/api/v1/teams/${team}/member-candidates/`
+  );
+}
+
 export async function listCampuses(includeInactive = false): Promise<Campus[]> {
   const query = includeInactive ? "?include_inactive=1" : "";
   return readAllPages<Campus>(`/api/v1/campuses/${query}`);
@@ -329,5 +305,5 @@ export async function getCampus(id: number | string): Promise<Campus> {
 export {
   TEAM_STATUS_LABELS,
   teamStatusLabel,
-  teamStatusBadgeTone,
+  teamStatusBadgeClass,
 } from "./teams-client";

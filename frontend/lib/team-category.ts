@@ -32,12 +32,8 @@ export function teamCategoryLabel(category: string): string {
   return TEAM_CATEGORY_LABELS[category as TeamCategory] ?? category;
 }
 
-/**
- * The `Badge` `tone` for a category, so a caller renders the shared pill
- * rather than restating the class string.
- */
-export function teamCategoryBadgeTone(
-  category: string
-): "brand" | "muted" {
-  return category === "academic" ? "brand" : "muted";
+export function teamCategoryBadgeClass(category: string): string {
+  return category === "academic"
+    ? "bg-brand-primary-subtle text-brand-primary"
+    : "bg-surface-muted text-text-muted";
 }

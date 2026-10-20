@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 export function FinancialYearTable({
   years,
   onEdit,
+  renderCarryOver,
   today = currentDateIso(),
 }: {
   years: FinancialYear[];
@@ -25,6 +26,12 @@ export function FinancialYearTable({
    * to the standalone edit page, in which case the pencil renders as a link.
    */
   onEdit?: (id: number) => void;
+  /**
+   * A per-row carry-over action, or nothing. The host decides which rows are
+   * eligible (a year must be in the past or active, and have a following year
+   * to receive the carried days); the table only places the control.
+   */
+  renderCarryOver?: (year: FinancialYear) => React.ReactNode;
   today?: string;
 }) {
   if (years.length === 0) {
@@ -89,14 +96,17 @@ export function FinancialYearTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                {onEdit ? (
-                  <EditIconButton
-                    onClick={() => onEdit(year.id)}
-                    label={`Edit ${year.start_date} financial year`}
-                  />
-                ) : (
-                  <EditActionLink href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`} />
-                )}
+                <div className="flex items-center justify-end gap-2">
+                  {renderCarryOver?.(year)}
+                  {onEdit ? (
+                    <EditIconButton
+                      onClick={() => onEdit(year.id)}
+                      label={`Edit ${year.start_date} financial year`}
+                    />
+                  ) : (
+                    <EditActionLink href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`} />
+                  )}
+                </div>
               </TableCell>
             </TableRow>
           );

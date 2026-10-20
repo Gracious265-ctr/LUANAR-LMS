@@ -58,6 +58,18 @@ def _ledger_net(employee_id: int, financial_year_label: str) -> Decimal:
     return Decimal(restored) - Decimal(deducted)
 
 
+def _carry_over_days(employee_id: int, financial_year_label: str) -> Decimal:
+    """Days carried *into* the given financial year from the previous one.
+
+    Rejected-leave carry-over only (see ``leave.services.carry_over``): rows
+    written at rollover name this year as ``to_financial_year``. Absent rows
+    contribute zero, so a year with no rollover is unchanged.
+    """
+    from ..services.carry_over import carry_over_days_for_year
+
+    return carry_over_days_for_year(employee_id, financial_year_label)
+
+
 class DatabaseRulesProvider:
     """Read-only provider backed by the HR-track tables (Units 2-5)."""
 
@@ -136,5 +148,9 @@ class DatabaseRulesProvider:
 
         entitlement = resolved_annual_entitlement(profile.grade)
         days = entitlement.days if entitlement is not None else 0
-        net = Decimal(days) + _ledger_net(employee_id, financial_year_label)
+        net = (
+            Decimal(days)
+            + _carry_over_days(employee_id, financial_year_label)
+            + _ledger_net(employee_id, financial_year_label)
+        )
         return max(net, Decimal(0))

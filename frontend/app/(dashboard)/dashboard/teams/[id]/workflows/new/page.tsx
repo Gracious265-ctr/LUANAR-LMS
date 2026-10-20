@@ -6,7 +6,6 @@ import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
 import type { Team } from "@/lib/teams";
 import { getTeam } from "@/lib/teams";
 
@@ -32,8 +31,15 @@ export default async function NewWorkflowPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
-    redirect("/dashboard");
+  // Building a chain is the team manager's job after the handover; HR creates
+  // the team and designates the manager, and the standalone chain endpoint
+  // refuses HR. A manager reaches only their own team: ``getTeam`` is scoped,
+  // so a foreign team 404s before the form is reachable. HR is sent to the
+  // team's chain list, where routing — HR's call — lives.
+  if (user.manages_teams !== true) {
+    redirect(
+      user.role === "hr" ? `/dashboard/teams/${id}/workflows` : "/"
+    );
   }
 
   let team: Team;

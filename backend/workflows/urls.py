@@ -3,7 +3,6 @@ from rest_framework.routers import SimpleRouter
 
 from .views import (
     SectionMemberViewSet,
-    TeamViewSet,
     WorkflowViewSet,
 )
 
@@ -11,7 +10,6 @@ app_name = "workflows"
 
 router = SimpleRouter()
 router.register("workflows", WorkflowViewSet, basename="workflow")
-router.register("teams", TeamViewSet, basename="team")
 router.register(
     "section-members", SectionMemberViewSet, basename="section-member"
 )

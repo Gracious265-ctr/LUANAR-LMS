@@ -172,6 +172,10 @@ class LeaveSummaryCountTests(TestCase):
             with self.subTest(key=key):
                 self.assertIn(key, payload)
 
+    def test_carry_over_days_is_present_and_zero_without_a_rollover(self):
+        self.assertIn("carry_over_days", self.get())
+        self.assertEqual(self.get()["carry_over_days"], "0")
+
     def test_counts_are_per_authenticated_user(self):
         """Two people with the same shapes read their own numbers, not each other's."""
         self.application(

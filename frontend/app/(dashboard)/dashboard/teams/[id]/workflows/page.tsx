@@ -2,24 +2,22 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 
-import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
+import { canConfigureChains } from "@/lib/team-access";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
-import { buttonVariants } from "@/components/ui/button";
 
 const WORKFLOWS_ERROR =
   "Unable to load this team's workflows, so the list may be incomplete.";
 
 /**
- * Every chain a team owns, and which one it routes through.
+ * Every chain a team owns.
  *
  * A team may own several — a replacement chain is built alongside the live one
- * — and exactly one of them is in force. This is the screen that says which,
- * and the one that builds the next: the team form creates a chain with the
- * team, and this is where a second one is created for a team that already
- * exists.
+ * — and all of them route at once, each carrying the employees who are members
+ * of it. This is the screen that lists them and builds the next: the team form
+ * creates a chain with the team, and this is where a second one is created for
+ * a team that already exists.
  */
 export default async function TeamWorkflowsPage({
   params,
@@ -32,8 +30,12 @@ export default async function TeamWorkflowsPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
-    redirect("/dashboard");
+  const isHr = user.role === "hr";
+  // HR creates teams and designates managers; the manager runs their own team's
+  // chains. A manager reaches only their own team here — ``getTeam`` is scoped
+  // to the teams they manage, so another team 404s before this renders.
+  if (!isHr && user.manages_teams !== true) {
+    redirect("/");
   }
 
   let team: Team;
@@ -50,6 +52,8 @@ export default async function TeamWorkflowsPage({
   } catch {
     error = WORKFLOWS_ERROR;
   }
+
+  const canConfigure = canConfigureChains(isHr);
 
   return (
     <div className="space-y-6">
@@ -72,13 +76,15 @@ export default async function TeamWorkflowsPage({
               decision rather than an edit to whichever happens to be open.
             </p>
           </div>
-          <Link
-            href={`/dashboard/teams/${team.id}/workflows/new`}
-            className={buttonVariants({ variant: "primary" })}
-          >
-            <Plus className="h-4 w-4" />
-            New workflow
-          </Link>
+          {canConfigure && (
+            <Link
+              href={`/dashboard/teams/${team.id}/workflows/new`}
+              className="inline-flex items-center gap-2 rounded-md bg-button-primary px-4 py-2 text-sm font-medium text-button-primary-foreground hover:bg-button-primary-hover"
+            >
+              <Plus className="h-4 w-4" />
+              New workflow
+            </Link>
+          )}
         </div>
       </div>
 
@@ -122,38 +128,26 @@ export default async function TeamWorkflowsPage({
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      workflow.is_routing
+                      workflow.is_active
                         ? "bg-brand-secondary-subtle text-brand-secondary"
                         : "bg-surface-muted text-text-muted"
                     }`}
                   >
-                    {workflow.is_routing ? "Routing" : "Standby"}
+                    {workflow.is_active ? "In force" : "Not in force"}
                   </span>
-                  <Link
-                    href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-                    className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Edit steps
-                  </Link>
+                  {canConfigure && (
+                    <Link
+                      href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
+                      className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                    >
+                      Edit steps
+                    </Link>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Which chain routes
-        </h3>
-        <p className="mb-3 text-sm text-text-secondary">
-          {team.workflow_name
-            ? `New applications currently go through "${team.workflow_name}".`
-            : "This team routes nothing yet."}{" "}
-          The applications already inside the current chain keep it, whatever
-          happens here.
-        </p>
-        <WorkflowRoutingActions team={team} workflows={workflows} />
       </div>
     </div>
   );

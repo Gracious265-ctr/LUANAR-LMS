@@ -262,6 +262,42 @@ class GetAvailableBalanceTests(ProviderSetupMixin, TestCase):
         other = User.objects.create_user(username="no-profile", password="x")
         self.assertEqual(self.provider.get_available_balance(other.id, "2026-27"), Decimal("0"))
 
+    def test_carry_over_is_added_to_the_recipient_year(self):
+        from leave.models import LeaveCarryOver
+
+        LeaveCarryOver.objects.create(
+            employee=self.user,
+            from_financial_year="2025-26",
+            to_financial_year="2026-27",
+            days=Decimal("4"),
+        )
+
+        self.assertEqual(
+            self.provider.get_available_balance(self.user.id, "2026-27"),
+            Decimal("25"),
+        )
+
+    def test_carry_over_only_funds_its_recipient_year(self):
+        from leave.models import LeaveCarryOver
+
+        LeaveCarryOver.objects.create(
+            employee=self.user,
+            from_financial_year="2025-26",
+            to_financial_year="2026-27",
+            days=Decimal("4"),
+        )
+
+        # The year that *gave* the days is unchanged; a third year sees nothing.
+        self.assertEqual(
+            self.provider.get_available_balance(self.user.id, "2025-26"),
+            Decimal("21"),
+        )
+        self.assertEqual(
+            self.provider.get_available_balance(self.user.id, "2027-28"),
+            Decimal("21"),
+        )
+
+
 
 class LeaveSummaryEndpointTests(TestCase):
     def setUp(self):

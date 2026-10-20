@@ -8,32 +8,25 @@ import type {
   TeamStatus,
 } from "./teams";
 import { apiErrorMessage } from "./utils";
+import { STATUS_STYLES } from "./status-styles";
 
 export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
-  draft: "Draft",
   active: "Active",
   inactive: "Retired",
 };
 
-export function teamStatusLabel(status: string): string {
-  return TEAM_STATUS_LABELS[status as TeamStatus] ?? status;
+export function normaliseTeamStatus(status: string): TeamStatus {
+  return status === "inactive" ? "inactive" : "active";
 }
 
-/**
- * The shared `Badge` `tone` for a team status, so the pill renders through the
- * one status→colour mapping instead of restating classes.
- */
-export function teamStatusBadgeTone(
-  status: string
-): "info" | "muted" | "pending" {
-  switch (status) {
-    case "active":
-      return "info";
-    case "inactive":
-      return "muted";
-    default:
-      return "pending";
-  }
+export function teamStatusLabel(status: string): string {
+  return TEAM_STATUS_LABELS[normaliseTeamStatus(status)];
+}
+
+export function teamStatusBadgeClass(status: string): string {
+  return normaliseTeamStatus(status) === "inactive"
+    ? "bg-surface-muted text-text-muted"
+    : "bg-brand-secondary-subtle text-brand-secondary";
 }
 
 /**
@@ -106,23 +99,6 @@ export async function validateTeam(id: number | string): Promise<TeamReadiness> 
  */
 export async function deactivateTeam(id: number | string): Promise<Team> {
   return send<Team>(`/api/hr/teams/${id}/deactivate`, "POST");
-}
-
-/**
- * Point a team at one of the chains it already owns.
- *
- * This is the routing decision, not an edit to a chain: the chain keeps its
- * steps, and what changes is which of the team's chains new applications go
- * through. The backend refuses a chain the team does not own, so this can
- * never move a team onto somebody else's steps.
- */
-export async function routeTeamThrough(
-  teamId: number | string,
-  workflowId: number | string | null
-): Promise<Team> {
-  return send<Team>(`/api/hr/teams/${teamId}/route`, "POST", {
-    workflow: workflowId,
-  });
 }
 
 export async function createCampus(input: CampusInput): Promise<Campus> {

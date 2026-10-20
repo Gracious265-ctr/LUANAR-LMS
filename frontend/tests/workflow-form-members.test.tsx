@@ -5,7 +5,11 @@ import { WorkflowForm } from "@/components/hr/workflow-form";
 import { makeTeam } from "@/lib/teams/__fixtures__";
 import type { WorkflowMemberPool } from "@/lib/team-members";
 import { getWorkflowMemberPool } from "@/lib/team-members-client";
-import { listRoleAssignments } from "@/lib/approver-roles-client";
+import {
+  listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
+} from "@/lib/approver-roles-client";
 import { listEligibleApprovers } from "@/lib/teams-client";
 import type { EligibleApprover } from "@/lib/teams";
 import type { Workflow } from "@/lib/workflows";
@@ -36,6 +40,8 @@ vi.mock("@/lib/teams-client", () => ({
 
 vi.mock("@/lib/approver-roles-client", () => ({
   listRoleAssignments: vi.fn(),
+  listTeamRoleAssignments: vi.fn(),
+  listCampusRoleAssignments: vi.fn(),
 }));
 
 const roles = [
@@ -100,10 +106,8 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
     team: 4,
     team_name: "Bunda College Faculty",
     effective_from: null,
-    effective_to: null,
     is_active: true,
-    state: "standby",
-    is_routing: false,
+    state: "active",
     section_count: 1,
     sections: [],
     members: [],
@@ -111,17 +115,12 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
   };
 }
 
-/** A chain carries its own name; the form refuses a blank one on save. */
-function fillName(value = "Academic approval") {
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-    target: { value },
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listEligibleApprovers).mockResolvedValue([]);
   vi.mocked(listRoleAssignments).mockResolvedValue([]);
+  vi.mocked(listTeamRoleAssignments).mockResolvedValue([]);
+  vi.mocked(listCampusRoleAssignments).mockResolvedValue([]);
 });
 
 describe("WorkflowForm members section", () => {
@@ -144,7 +143,7 @@ describe("WorkflowForm members section", () => {
   it("pre-fills the current members of an edited workflow", async () => {
     vi.mocked(getWorkflowMemberPool).mockResolvedValue(
       makePool({
-        workflow: { id: 1, name: "Academic approval", state: "standby", is_active: true, is_routing: false },
+        workflow: { id: 1, name: "Academic approval", state: "active", is_active: true },
         current: [
           {
             id: 31,
@@ -169,15 +168,10 @@ describe("WorkflowForm members section", () => {
           members: [
             {
               id: 1,
-              workflow: 1,
-              workflow_name: "Academic approval",
               user: 31,
-              user_name: "Ruth Member",
-              user_email: "ruth@test.luanar",
-              designation: "Lecturer",
+              full_name: "Ruth Member",
+              email: "ruth@test.luanar",
               team: 4,
-              team_name: "Bunda College Faculty",
-              added_by: 1,
               created_at: "2026-01-01T00:00:00Z",
             },
           ],
@@ -199,6 +193,9 @@ describe("WorkflowForm members section", () => {
     render(<WorkflowForm team={team} roles={roles} />);
     await screen.findByText("Ruth Member");
 
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Bunda College Faculty replacement" },
+    });
     fireEvent.click(
       screen.getByRole("button", { name: "Add step" })
     );
@@ -207,7 +204,6 @@ describe("WorkflowForm members section", () => {
     );
     expect(screen.getByText(/On this chain/)).toBeInTheDocument();
 
-    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>
@@ -237,6 +233,9 @@ describe("WorkflowForm approver picker", () => {
     vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={team} roles={roles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Supervisor chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
 
     await screen.findByRole("combobox", { name: /approver/i });
@@ -246,7 +245,6 @@ describe("WorkflowForm approver picker", () => {
       screen.getByRole("combobox", { name: /approver/i }),
       { target: { value: "32" } }
     );
-    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>
@@ -348,6 +346,9 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
     vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registrar chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "Role" }),
@@ -362,7 +363,6 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
       screen.queryByRole("combobox", { name: "Approver" })
     ).not.toBeInTheDocument();
 
-    fillName();
     fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
 
     await waitFor(() =>
@@ -398,6 +398,9 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
     vi.mocked(listEligibleApprovers).mockResolvedValue([dingo]);
 
     render(<WorkflowForm team={adminTeam} roles={wideRoles} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registrar chain" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "Role" }),
@@ -410,7 +413,7 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
     expect((select as HTMLSelectElement).value).toBe("");
   });
 
-  it("does not fill an institution-wide step on an academic team", async () => {
+  it("does not offer an institution-wide role on an academic team", async () => {
     vi.mocked(listRoleAssignments).mockResolvedValue([
       {
         id: 9,
@@ -430,15 +433,130 @@ describe("WorkflowForm institution-wide auto-appointment", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "Role" }),
-      { target: { value: "registrar" } }
-    );
 
-    const select = await screen.findByRole("combobox", {
-      name: "Approver",
+    expect(
+      screen.queryByRole("option", { name: /Registrar/ })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("WorkflowForm wide holder scopes", () => {
+  const hodRole = {
+    id: 3,
+    code: "hod",
+    label: "Head of Department",
+    description: "",
+    is_active: true,
+    history_scope: "section" as const,
+    handles_cancellation: false,
+    is_institution_wide: false,
+    is_in_use: false,
+    usage: [],
+    created_at: "",
+    updated_at: "",
+  };
+  const rolesWithHod = [...roles, hodRole];
+
+  it("shows the team-wide holder on the step and leaves the payload unstaffed", async () => {
+    vi.mocked(listTeamRoleAssignments).mockResolvedValue([
+      {
+        id: 5,
+        team: 4,
+        role: 3,
+        user: 40,
+        user_name: "Hana Hod",
+        role_label: "Head of Department",
+        is_team_manager: false,
+        created_at: "",
+      },
+    ]);
+    vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
+
+    render(
+      <WorkflowForm
+        team={makeTeam({ id: 4, category: "administration" })}
+        roles={rolesWithHod}
+      />
+    );
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "HOD chain" },
     });
-    expect((select as HTMLSelectElement).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Role" }), {
+      target: { value: "hod" },
+    });
+
+    await screen.findByText("Hana Hod");
+    expect(
+      screen.getByText("Locked to the team-wide holder of this role.")
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
+    await waitFor(() =>
+      expect(createWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sections: expect.arrayContaining([
+            expect.objectContaining({ approver_role: "hod", approver: null }),
+          ]),
+        })
+      )
+    );
+  });
+
+  it("shows a campus-wide holder to an academic team at its campus", async () => {
+    vi.mocked(listCampusRoleAssignments).mockResolvedValue([
+      {
+        id: 6,
+        campus: 2,
+        role: 3,
+        user: 41,
+        user_name: "Cara Campus",
+        role_label: "Head of Department",
+        created_at: "",
+      },
+    ]);
+
+    render(
+      <WorkflowForm
+        team={makeTeam({ id: 4, category: "academic", campus: 2 })}
+        roles={rolesWithHod}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Role" }), {
+      target: { value: "hod" },
+    });
+
+    await screen.findByText("Cara Campus");
+    expect(
+      screen.getByText("Locked to the campus-wide holder of this role.")
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer a role another team holds wide", async () => {
+    vi.mocked(listTeamRoleAssignments).mockResolvedValue([
+      {
+        id: 5,
+        team: 99,
+        role: 3,
+        user: 40,
+        user_name: "Hana Hod",
+        role_label: "Head of Department",
+        is_team_manager: false,
+        created_at: "",
+      },
+    ]);
+
+    render(
+      <WorkflowForm team={makeTeam({ id: 4 })} roles={rolesWithHod} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("option", { name: "Head of Department" })
+      ).not.toBeInTheDocument()
+    );
   });
 });
 

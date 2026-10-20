@@ -7,8 +7,6 @@ import { CircleCheck, CircleStop } from "lucide-react";
 import type { Team, TeamReadiness } from "@/lib/teams";
 import { deactivateTeam, validateTeam } from "@/lib/teams-client";
 import { STATUS_STYLES } from "@/lib/status-styles";
-import { Button } from "@/components/ui/button";
-import { ConfirmButton } from "@/components/ui/confirm-button";
 
 /**
  * Whether a team can route, and taking it out of service.
@@ -21,19 +19,7 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
  * retirement, which stops new applications without touching the ones already
  * inside the team.
  */
-export function TeamLifecycleActions({
-  team,
-  canRetire = true,
-}: {
-  team: Team;
-  /**
-   * Whether the viewer may retire the team. Readiness is a check anyone who may
-   * see the team can run; retirement changes the team's lifecycle and stays
-   * HR's, so a manager sees the check but not the button. Defaults to `true` so
-   * the existing HR caller is unchanged.
-   */
-  canRetire?: boolean;
-}) {
+export function TeamLifecycleActions({ team }: { team: Team }) {
   const router = useRouter();
   const [readiness, setReadiness] = useState<TeamReadiness | null>(null);
   const [busy, setBusy] = useState<"" | "validate" | "deactivate">("");
@@ -69,25 +55,25 @@ export function TeamLifecycleActions({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
+        <button
+          type="button"
           onClick={() => run("validate")}
           disabled={busy !== ""}
-          loading={busy === "validate"}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Check readiness
-        </Button>
+          {busy === "validate" ? "Checking…" : "Check readiness"}
+        </button>
 
-        {isActive && canRetire && (
-          <ConfirmButton
-            onConfirm={() => run("deactivate")}
+        {isActive && (
+          <button
+            type="button"
+            onClick={() => run("deactivate")}
             disabled={busy !== ""}
-            loading={busy === "deactivate"}
-            prompt="New applications stop entering this team. Those already inside keep going."
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-3 py-1.5 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <CircleStop className="h-4 w-4" />
-            Retire team
-          </ConfirmButton>
+            {busy === "deactivate" ? "Retiring…" : "Retire team"}
+          </button>
         )}
       </div>
 

@@ -7,15 +7,15 @@ from users.models import User
 
 
 class Team(models.Model):
-    """A group of employees sharing one approval workflow.
+    """A group of employees sharing one or more approval workflows.
 
-    A team routes every application its members submit through exactly one
-    :class:`Workflow` — the one :attr:`workflow` points at. A team may *own*
-    several workflows (:attr:`Workflow.team`), so HR can build a replacement
-    chain alongside the one in force, but only one of them ever routes, and it
-    is picked explicitly rather than guessed. At submission time the applicant's
-    team is what selects the workflow — there is no category matching — and that
-    workflow's :class:`Section` rows are who may act at each step.
+    A team may own several chains (:attr:`Workflow.team`) and every one of them
+    can be in force at the same time. Which chain an application follows is not
+    a property of the team but of the applicant: each employee is a normal
+    member of exactly one of the team's workflows
+    (:class:`workflows.models.WorkflowMember`) and routes through that one, so
+    two people on the same team can be inside two different chains
+    simultaneously.
 
     There is no department. A team is identified by its name, its
     :attr:`category`, and — for an academic team — the :class:`Campus` it sits
@@ -23,26 +23,9 @@ class Team(models.Model):
     free-text field that quietly accumulates typos ("Main campus", "main
     campus", "MAIN").
 
-    The chain exists *because* the team does, and is written in the same request
-    as the team. There is deliberately no reusable chain a second team can be
-    pointed at: a shared chain makes "edit this team's approval steps" and
-    "silently re-route someone else's applications" the same action, which is
-    not an edit HR can be asked to perform safely.
-
-    :attr:`workflow` is **nullable**, and null only while the team is being
-    configured. HR creates a team's identity first and its approval chain
-    second, so a chainless team is a real, inspectable object — and it routes
-    nothing purely because there is nothing to route through —
-    :func:`workflows.services.validate_team` reports the missing chain rather
-    than a team that silently fails at submission.
-
     The lifecycle is one authoritative field, :attr:`status`, and it is
-    deliberately a three-value choice rather than a boolean:
+    deliberately a two-value choice rather than a boolean:
 
-    ``DRAFT``
-        A legacy state, retained for teams written before creation put a team
-        in force. A draft team is invisible to routing, so a half-finished
-        configuration cannot strand an employee's application.
     ``ACTIVE``
         The only status that routes (invariant 12.5). Every team is created here:
         creating a team *is* the decision to put it in force, so there is no
@@ -62,7 +45,6 @@ class Team(models.Model):
     class Status(models.TextChoices):
         """The team's lifecycle, and the single field that says which."""
 
-        DRAFT = "draft", "Draft"
         ACTIVE = "active", "Active"
         INACTIVE = "inactive", "Inactive"
 
@@ -107,30 +89,13 @@ class Team(models.Model):
             "approvers and reporting."
         ),
     )
-    workflow = models.OneToOneField(
-        "workflows.Workflow",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="routed_by",
-        help_text=(
-            "The one workflow this team routes applications through. A team may "
-            "own several workflows (Workflow.team) — for example a replacement "
-            "chain being built alongside the live one — but exactly one of them "
-            "is ever in force, it is picked here rather than assumed, and no "
-            "second team may point at it: a chain belongs to the team it was "
-            "built for, and sharing one would mean editing one team's steps "
-            "silently re-routing another. Blank only while the team is still a "
-            "draft being configured."
-        ),
-    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.DRAFT,
+        default=Status.ACTIVE,
         help_text=(
-            "Draft teams do not route. Only an active team inside its "
-            "effective dates routes an application."
+            "Only an active team inside its effective dates routes an "
+            "application."
         ),
     )
     effective_from = models.DateField(
@@ -138,7 +103,7 @@ class Team(models.Model):
         blank=True,
         help_text=(
             "The first date this team routes applications. Blank means active "
-            "from the moment it is activated."
+            "from the moment it is created."
         ),
     )
     effective_to = models.DateField(

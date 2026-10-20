@@ -1,5 +1,6 @@
 import { apiErrorMessage } from "./utils";
 import type {
+  CarryOverResult,
   FinancialYear,
   FinancialYearInput,
   PublicHoliday,
@@ -17,6 +18,27 @@ export async function updateFinancialYear(
   input: FinancialYearInput
 ): Promise<FinancialYear> {
   return proxyPatch<FinancialYear>(`/api/hr/financial-years/${id}`, input);
+}
+
+/**
+ * Rolls rejected-leave days from a financial year into the next one.
+ *
+ * Idempotent server-side: running it twice grants nothing the second time. The
+ * result reports each employee's carried days, so the caller can show a summary.
+ */
+export async function runCarryOver(
+  id: number | string
+): Promise<CarryOverResult> {
+  const response = await fetch(`/api/hr/financial-years/${id}/carry-over`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data));
+  }
+  return response.json();
 }
 
 export async function createPublicHoliday(

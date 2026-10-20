@@ -27,21 +27,16 @@ export interface TeamStatusFilter {
 export interface TeamsSectionProps {
   teams: Team[];
   campuses: Campus[];
-  /** Every approver role: the chain builder picks one per step. */
+  /** The active team-scoped roles: the manager picker offers one per team. */
   roles: ApproverRole[];
   rolesError: string;
-  /**
-   * Everyone the create overlay's manager picker may offer. The manager is
-   * designated when the team is created, so the people who may hold it have to
-   * be on the page before the overlay opens.
-   */
-  employees?: Employee[];
+  /** Everyone the manager picker may offer, scoped to the team's category there. */
+  employees: Employee[];
   /**
    * Every current wide approver, whatever their scope. A person holds only one
-   * wide approver role, so those who already hold one are not offered as a
-   * team's manager.
+   * wide approver role, so these are excluded from the manager picker.
    */
-  wideHolderUserIds?: number[];
+  wideHolderUserIds: number[];
   /**
    * The retired/in-force toggle.
    *
@@ -55,12 +50,9 @@ export interface TeamsSectionProps {
   filters?: TeamStatusFilter[];
   error?: string;
   /**
-   * Whether the viewer may create a team.
-   *
-   * Creating a team is HR's, not a manager's: a manager inherits the teams they
-   * are flagged for and configures their chains and rosters, but does not mint
-   * new routing units. Defaults to `true` so the existing HR caller is
-   * unchanged.
+   * Whether the caller may create teams. HR only: a team manager reads and
+   * operates their team but does not create teams or edit their identity.
+   * Defaults to true so the HR list renders unchanged.
    */
   canCreate?: boolean;
 }
@@ -74,17 +66,17 @@ export interface TeamsSectionProps {
  * not in it.
  *
  * There is deliberately no "saved but not in this table" warning here, unlike the
- * delegations and employees lists. A new team is a draft, and the list query
- * excludes only retired teams, so a draft is in the table under both filters —
- * the warning would be code that can never fire.
+ * delegations and employees lists. A new team is active immediately, and the
+ * list query excludes only retired teams, so it is in the table under both
+ * filters — the warning would be code that can never fire.
  */
 export function TeamsSection({
   teams,
   campuses,
   roles,
   rolesError,
-  employees = [],
-  wideHolderUserIds = [],
+  employees,
+  wideHolderUserIds,
   filters = [],
   error,
   canCreate = true,
@@ -99,7 +91,7 @@ export function TeamsSection({
           <h3 className="text-lg font-semibold text-text-primary">Teams</h3>
           <p className="mt-1 text-sm text-text-secondary">
             The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application.
+            team&apos;s chains decide who approves their application.
           </p>
         </div>
         {canCreate && (
@@ -151,7 +143,7 @@ export function TeamsSection({
           targetKey={overlay.target}
           size="lg"
           title="New team"
-          description="A team is created as a draft that routes nothing until it owns an approval chain. First describe the team, then name the manager who will run it: they build the chain and staff each step from the team's own page."
+          description="A new team starts active but routes nothing until its manager builds a chain. Describe the team, then assign the manager who runs its members and chains."
           onOpenChange={(open) => {
             if (!open) overlay.close();
           }}

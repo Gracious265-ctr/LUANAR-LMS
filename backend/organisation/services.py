@@ -134,6 +134,37 @@ def managed_team_ids_for(user) -> list[int]:
     )
 
 
+def managed_team_ids(user) -> set[int] | None:
+    """The team ids ``user`` may manage, or ``None`` for an unrestricted caller.
+
+    ``None`` for HR keeps the queryset filters off the hot path: a manager's
+    scope is a small explicit set, HR's is "everything". The team, workflow, and
+    section-membership viewsets filter through this, so a manager can neither
+    list, read, nor write a team (or a workflow, or a section membership) that is
+    not theirs.
+    """
+    if not user or not user.is_authenticated:
+        return set()
+    if user.role == User.Role.HR or getattr(user, "is_superuser", False):
+        return None
+    return set(managed_team_ids_for(user))
+
+
+def require_can_manage_team(actor, team) -> None:
+    """Refuse an actor who is neither HR nor ``team``'s designated manager.
+
+    The organisation-side sibling of the team-management guard: the services
+    that touch one team's roster and holdings answer to HR and that team's
+    manager alone. Raising :class:`WorkflowMemberError` keeps the refusal in the
+    shape the callers already translate.
+    """
+    if is_hr_actor(actor) or is_team_manager(actor, team):
+        return
+    raise WorkflowMemberError(
+        "detail", "You do not have permission to manage this team."
+    )
+
+
 def _require_hr_actor(actor, error_cls: type[Exception]) -> None:
     """Refuse ``actor`` unless they are HR: the identity/lifecycle guard."""
     if is_hr_actor(actor):
@@ -1094,6 +1125,33 @@ def _employee_profile_for(user: User):
     return profile
 
 
+def team_manager_profile(team: Team | None) -> EmployeeProfile | None:
+    """The employee record of ``team``'s designated manager, if there is one.
+
+    Who may join a team's roster is measured against the *manager's* own
+    category, so callers can ask which category governs a team without first
+    finding the manager and then loading their profile separately. Returns
+    ``None`` for a team with no active designated manager — the
+    not-yet-handed-over team — so the caller can fall back to the team's own
+    category.
+    """
+    if team is None:
+        return None
+    assignment = (
+        TeamRoleAssignment.objects.filter(
+            team=team,
+            is_team_manager=True,
+            role__is_active=True,
+            user__is_active=True,
+        )
+        .select_related("user")
+        .first()
+    )
+    if assignment is None:
+        return None
+    return _employee_profile_for(assignment.user)
+
+
 def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     """Place an active employee on a team as a normal member.
 
@@ -1101,13 +1159,16 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     approver eligibility: the employee's :attr:`EmployeeProfile.team` is the
     single record of which team's approval chain their leave routes through.
 
-    Membership is scoped two ways. The team's **category** decides who may
-    belong: an academic team takes academic employees, an administration team
-    takes administration employees, and a mismatch is refused rather than
-    allowed to sit on the roster until routing surprises someone. And a **wide
-    approver** — institution-wide, team-wide on this team, or campus-wide at
-    this team's campus — is not a normal member: they staff steps from the
-    Approvers tab and are kept out of the roster, so being an approver never
+    Membership is scoped two ways. The category of the team's **manager**
+    decides who may belong: an academic manager's team takes academic
+    employees, an administration manager's team takes administration employees,
+    and a mismatch is refused rather than allowed to sit on the roster until
+    routing surprises someone. The manager's own category is what counts, and a
+    team's category is the fallback only while it has no designated manager yet
+    (see :func:`team_manager_profile`). And a **wide approver** —
+    institution-wide, team-wide on this team, or campus-wide at
+    this team's campus — is not a normal member: they staff steps from
+    the Approvers tab and are kept out of the roster, so being an approver never
     also quietly routes someone's leave as a member.
 
     Somebody already on a different team is refused rather than moved. Moving
@@ -1115,6 +1176,7 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     approvers are no longer members, and it would re-route their leave without
     HR choosing to — a deliberate edit, not a side effect of filling a roster.
     """
+    require_can_manage_team(actor, team)
     if not user.is_active:
         raise WorkflowMemberError(
             "user",
@@ -1128,14 +1190,18 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             f"{_member_display_name(user)} has no employee record, so there is "
             "nothing to place on a team. Complete their employee record first.",
         )
-    if profile.category != team.category:
+    # Who may join is measured against the manager's own category, not the
+    # team record's: the manager is the person the roster is built around. A
+    # team not yet handed over has no manager, so its own category stands in.
+    manager_profile = team_manager_profile(team)
+    governing = manager_profile if manager_profile is not None else team
+    required_category = governing.category
+    if profile.category != required_category:
         raise WorkflowMemberError(
             "user",
             f'{_member_display_name(user)} is an '
-            f'{profile.get_category_display()} employee, but "{team.name}" is an '
-            f'{team.get_category_display()} team. An '
-            f'{team.get_category_display()} team takes only '
-            f'{team.get_category_display()} employees.',
+            f'{profile.get_category_display()} employee, but "{team.name}" takes '
+            f'only {governing.get_category_display()} employees.',
         )
     if user.pk in wide_approver_ids_for_team(team):
         raise WorkflowMemberError(

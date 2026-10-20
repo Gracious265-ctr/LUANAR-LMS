@@ -12,8 +12,6 @@ import {
   removeSectionMember,
 } from "@/lib/section-members-client";
 import type { SectionMember } from "@/lib/workflows";
-import { Button } from "@/components/ui/button";
-import { ConfirmButton } from "@/components/ui/confirm-button";
 
 /**
  * Names the one person who decides at each step of a team's chain.
@@ -50,7 +48,11 @@ export function TeamMemberList({ team }: { team: Team }) {
         const [people, periods] = await Promise.all([
           roleId === undefined
             ? Promise.resolve([] as EligibleApprover[])
-            : listEligibleApprovers(team.id, roleId, team.workflow ?? undefined),
+            : listEligibleApprovers(
+                team.id,
+                roleId,
+                section.workflow ?? undefined
+              ),
           listSectionMembers(section.id),
         ]);
         return [section.id, { people, open: periods[0] ?? null }] as const;
@@ -79,7 +81,7 @@ export function TeamMemberList({ team }: { team: Team }) {
     };
     // Re-run when the server props change after an appointment, so the current
     // holder and the eligible list stay in step with the team.
-  }, [team.id, team.sections, team.workflow, roleIdByCode]);
+  }, [team.id, team.sections, roleIdByCode]);
 
   async function appoint(section: TeamSection, userId: number) {
     setError("");
@@ -211,29 +213,27 @@ export function TeamMemberList({ team }: { team: Team }) {
                   ))}
                 </select>
                 {current ? (
-                  <ConfirmButton
-                    size="sm"
-                    onConfirm={() => clear(section)}
+                  <button
+                    type="button"
+                    onClick={() => void clear(section)}
                     disabled={busy === section.id}
-                    loading={busy === section.id}
-                    prompt={`End ${current.user_name}'s term on ${section.name}?`}
                     aria-label={`Remove ${current.user_name} from ${section.name}`}
+                    className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Remove
-                  </ConfirmButton>
+                    {busy === section.id ? "Saving..." : "Remove"}
+                  </button>
                 ) : null}
-                <Button
-                  variant="link"
-                  size="sm"
+                <button
+                  type="button"
                   onClick={() => void toggleHistory(section.id)}
                   aria-label={`Show past approvers of ${section.name}`}
                   aria-pressed={Boolean(showHistory[section.id])}
-                  className="ml-auto"
+                  className="ml-auto text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {showHistory[section.id]
                     ? "Hide past approvers"
                     : "Who was here before?"}
-                </Button>
+                </button>
               </div>
 
               {options.length === 0 ? (

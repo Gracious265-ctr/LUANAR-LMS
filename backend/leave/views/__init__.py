@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 
 from django.http import Http404
 from django.utils import timezone
@@ -124,6 +125,62 @@ class FinancialYearViewSet(
 
     def get_queryset(self):
         return FinancialYear.objects.all()
+
+    @action(detail=True, methods=["post"], url_path="carry-over")
+    def carry_over(self, request, pk=None):
+        """Roll rejected-leave days from this year into the next one.
+
+        HR-triggered, idempotent. Scans the *closing* year (this object) for
+        applications still rejected, computes each employee's carry-over
+        (``leave.services.carry_over``) and writes ``LeaveCarryOver`` rows that
+        fund the following year. Ordinary unused entitlement is not carried.
+        Pass ``?dry_run=1`` to preview without writing.
+        """
+        from ..services import financial_year_label
+        from ..services.carry_over import (
+            carry_over_financial_year,
+            next_financial_year,
+        )
+
+        closing_year = self.get_object()
+        opening_year = next_financial_year(closing_year)
+        if opening_year is None:
+            return Response(
+                {
+                    "detail": (
+                        "No financial year is configured to follow this one; "
+                        "create it first."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        dry_run_raw = request.query_params.get("dry_run")
+        if dry_run_raw is None:
+            dry_run_raw = request.data.get("dry_run")
+        dry_run = str(dry_run_raw or "").lower() in {"1", "true", "yes"}
+        results = carry_over_financial_year(
+            closing_year, opening_year, dry_run=dry_run
+        )
+
+        return Response(
+            {
+                "from_financial_year": financial_year_label(closing_year),
+                "to_financial_year": financial_year_label(opening_year),
+                "dry_run": dry_run,
+                "employees": [
+                    {
+                        "employee_id": row["employee_id"],
+                        "days": str(row["days"]),
+                        "created": row["created"],
+                    }
+                    for row in results
+                ],
+                "total_days": str(
+                    sum((row["days"] for row in results), start=Decimal(0))
+                ),
+            }
+        )
 
 
 class PublicHolidayViewSet(

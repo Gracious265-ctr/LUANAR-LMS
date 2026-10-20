@@ -9,7 +9,6 @@ from rest_framework import serializers
 
 from users.models import User
 
-from teams.models import TeamRoleAssignment
 from workflows.models import Workflow
 from .models import (
     ApproverRole,
@@ -22,7 +21,6 @@ from .services import (
     create_campus,
     create_campus_role_assignment,
     create_role_assignment,
-    create_team_role_assignment,
     deactivate_approver_role,
     role_usage_map,
     update_approver_role,
@@ -306,39 +304,6 @@ class WideRoleAssignmentSerializer(serializers.ModelSerializer):
             )
         return value
 
-
-class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
-    """One team-wide holding: this role, on this team, held by this person.
-
-    ``is_team_manager`` designates the holder as the team's single designated
-    manager, the flag the team's members and chains are run under. It is read
-    here and written through the ``set-manager``/``clear-manager`` actions, which
-    clear it from any other holder on the team first — so the one-manager-per-team
-    rule is the service's, and this shape only reports it.
-    """
-
-    class Meta:
-        model = TeamRoleAssignment
-        fields = [
-            "id",
-            "team",
-            "role",
-            "user",
-            "user_name",
-            "role_label",
-            "is_team_manager",
-            "created_at",
-        ]
-        read_only_fields = ["id", "is_team_manager", "created_at"]
-        validators: list = []
-
-    def create(self, validated_data: dict) -> TeamRoleAssignment:
-        return create_team_role_assignment(
-            team=validated_data["team"],
-            role=validated_data["role"],
-            user=validated_data["user"],
-            actor=self.context["actor"],
-        )
 
 
 class CampusRoleAssignmentSerializer(WideRoleAssignmentSerializer):
