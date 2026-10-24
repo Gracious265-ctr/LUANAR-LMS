@@ -7,6 +7,7 @@ import type {
   TeamReadiness,
   TeamStatus,
 } from "./teams";
+import type { Employee } from "./employees";
 import { apiErrorMessage } from "./utils";
 
 export const TEAM_STATUS_LABELS: Record<TeamStatus, string> = {
@@ -73,6 +74,26 @@ export async function listEligibleApprovers(
   }
   const data = (await response.json()) as { candidates?: EligibleApprover[] };
   return data.candidates ?? [];
+}
+
+/**
+ * The people who may be placed on a team's roster, read by the team itself.
+ *
+ * The same list HR reads from the employee directory (`?team=none&category=…`,
+ * minus its wide approvers), but through a route a team's manager may reach: the
+ * directory is HR-only, so a manager building their roster could otherwise only
+ * remove people. The backend scopes the answer to the team, so a manager who
+ * does not run the team gets the same empty refusal a scoped read gives.
+ */
+export async function listMemberCandidates(
+  team: number | string
+): Promise<Employee[]> {
+  const response = await fetch(`/api/hr/teams/${team}/member-candidates/`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data));
+  }
+  return (await response.json()) as Employee[];
 }
 
 export async function createTeam(input: TeamInput): Promise<Team> {

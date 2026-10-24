@@ -4,9 +4,13 @@ import { ArrowLeft } from "lucide-react";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { ApproverRole } from "@/lib/approver-roles";
+import { listActiveApproverRoles } from "@/lib/approver-roles-client";
 import { listApproverRoles } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
+import {
+  canAccessTeams,
+  isTeamsAdministrator,
+} from "@/lib/nav/teams-nav";
 import { getWorkflow } from "@/lib/workflows";
 import { getTeam } from "@/lib/teams";
 
@@ -32,7 +36,7 @@ export default async function EditWorkflowPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
+  if (!canAccessTeams(user)) {
     redirect("/dashboard");
   }
 
@@ -56,7 +60,11 @@ export default async function EditWorkflowPage({
   let roles: ApproverRole[] = [];
   let rolesError = "";
   try {
-    roles = await listApproverRoles();
+    // HR reads the whole role list; a manager may not reach that HR-only
+    // endpoint, so they read the read-only list a team's manager is allowed.
+    roles = isTeamsAdministrator(user)
+      ? await listApproverRoles()
+      : await listActiveApproverRoles();
   } catch {
     rolesError = ROLES_ERROR;
   }

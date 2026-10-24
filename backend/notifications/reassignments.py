@@ -104,7 +104,7 @@ def _leave_type_name(application) -> str:
     (the FK upgrade is an integration-track concern), so the name needs the same
     ``LeaveType`` lookup the pending-queue serializer does.
     """
-    from leave_config.models import LeaveType
+    from leave_types.models import LeaveType
 
     if not application.leave_type_id:
         return ""

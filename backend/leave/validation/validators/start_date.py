@@ -10,6 +10,7 @@ checks and the rules snapshot.
 
 from ..types import ValidationContext, ValidationIssue
 from ..working_days import (
+    configured_weekdays,
     count_calendar_days,
     count_working_days,
     is_weekend,
@@ -25,6 +26,7 @@ def validate_start_date(
 
     issues: list[ValidationIssue] = []
     start, end, today = ctx.start_date, ctx.end_date, ctx.today
+    weekdays = configured_weekdays()
 
     if start == today:
         issues.append(
@@ -46,7 +48,7 @@ def validate_start_date(
         )
     else:
         holiday_name = ctx.holidays.get(start)
-        if is_weekend(start):
+        if is_weekend(start, weekdays):
             issues.append(
                 ValidationIssue(
                     code="START_NOT_WORKING_DAY",
@@ -69,7 +71,7 @@ def validate_start_date(
             )
 
     holidays = set(ctx.holidays)
-    ctx.working_days = count_working_days(start, end, holidays)
+    ctx.working_days = count_working_days(start, end, holidays, weekdays)
     ctx.calendar_days = count_calendar_days(start, end)
 
     if ctx.working_days == 0:

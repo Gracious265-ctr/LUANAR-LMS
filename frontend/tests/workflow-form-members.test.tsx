@@ -215,6 +215,11 @@ describe("WorkflowForm members section", () => {
         expect.objectContaining({ members: [31], team: 4 })
       )
     );
+    // It lands on the team's workflow list under /dashboard, which is where the
+    // report actually lives: /organisation/teams/... is not a route.
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith("/dashboard/teams/4/workflows")
+    );
   });
 });
 

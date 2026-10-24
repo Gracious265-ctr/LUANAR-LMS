@@ -6,7 +6,7 @@ import { CampusTable } from "@/components/hr/campus-table";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
-import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
 import { buttonVariants } from "@/components/ui/button";
 
 const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
@@ -27,7 +27,7 @@ export default async function CampusesPage() {
   if (!user) {
     redirect("/login");
   }
-  if (!isOrganisationAdministrator(user)) {
+  if (!isTeamsAdministrator(user)) {
     redirect("/dashboard");
   }
 

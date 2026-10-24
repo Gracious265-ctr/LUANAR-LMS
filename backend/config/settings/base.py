@@ -38,18 +38,20 @@ INSTALLED_APPS = [
     # Local apps
     "users",
     "leave",
-    "organisation",
+    "roles",
+    "campuses",
     "teams",
     "approvals",
-    "workflows",
+    "chains",
     "notifications",
     "plans",
     "documents",
     "audit",
     "launcher",
     "directory",
-    "org",
-    "leave_config",
+    "org_structure",
+    "leave_types",
+    "calendar_app",
 ]
 
 MIDDLEWARE = [
@@ -116,7 +118,7 @@ LEAVE_TRACKING_PROVIDER = "leave.tracking.database_provider.DatabaseTrackingProv
 # Approver workflow (Unit 16). The workflow provider resolves the stage chain
 # for an application from the real HR-track Workflow/WorkflowStage configuration
 # (Unit 21); see docs/workflow-to-approver-routing.md.
-WORKFLOW_PROVIDER = "workflows.providers.DatabaseWorkflowProvider"
+WORKFLOW_PROVIDER = "chains.providers.DatabaseWorkflowProvider"
 
 # Leave cancellation balance (Unit 18). The balance provider answers how many
 # annual days an approved application deducted and records the restoration when
@@ -222,6 +224,14 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
 # ``True`` runs it inline at the enqueue point, which is what a single-process
 # development server needs so a submitted application still sends its mail.
 NOTIFICATIONS_SYNC_SEND = env.bool("NOTIFICATIONS_SYNC_SEND", default=False)
+
+# How often the navbar bell refetches its unread count while the app is open
+# (refinement unit 08 §2.3). The frontend currently keeps this as a constant in
+# ``lib/hooks/useUnreadCount.ts`` — at this scale a config endpoint is not worth
+# the extra round trip.
+NOTIFICATION_POLL_INTERVAL_SECONDS = env.int(
+    "NOTIFICATION_POLL_INTERVAL_SECONDS", default=30
+)
 
 # Development-only recipient override. The seeded users carry undeliverable
 # addresses (``@test.luanar``), so a live SMTP smoke test would otherwise 550 on

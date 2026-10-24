@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 
-from workflows.testing import create_user_with_role
+from chains.testing import create_user_with_role
 from django.core import mail
 from django.test import TestCase
 from django.utils import timezone
@@ -39,7 +39,7 @@ from notifications.services import (
     queue_decision_email,
 )
 from notifications.tasks import deliver_notification
-from workflows.events import (
+from chains.events import (
     APPLICATION_FINALISED,
     DECISION_RECORDED,
     ApprovalEvent,

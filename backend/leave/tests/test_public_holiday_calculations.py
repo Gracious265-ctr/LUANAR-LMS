@@ -17,15 +17,15 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from calendar_app.models import Holiday
 from leave.cancellations.models import LeaveBalanceTransaction
 from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
 )
-from leave_config.models import LeaveType
-from workflows.testing import team_for
+from leave_types.models import LeaveType
+from chains.testing import team_for
 from leave.services.submission import submit_application
 from leave.services.working_days import calculate_working_days, holidays_in_range
 from users.models import EmployeeProfile
@@ -113,7 +113,7 @@ class PublicHolidayBase(TestCase):
         # irrelevant to day counting, so it uses the stub chain.
         self.workflow = StubWorkflowProvider()
         patcher = mock.patch(
-            "workflows.providers.get_workflow_provider",
+            "chains.providers.get_workflow_provider",
             return_value=self.workflow,
         )
         patcher.start()
@@ -124,8 +124,15 @@ class PublicHolidayBase(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
-    def holiday(self, day: date, name: str = "Public Holiday") -> PublicHoliday:
-        return PublicHoliday.objects.create(name=name, date=day)
+    def holiday(self, day: date, name: str = "Public Holiday") -> Holiday:
+        # Concrete one-off dates, exactly as the retired PublicHoliday table
+        # behaved — recurrence and observed shift are exercised separately.
+        return Holiday.objects.create(
+            name=name,
+            date=day,
+            is_recurring=False,
+            observed_shift=False,
+        )
 
     def draft(self, start=FULL_WEEK_START, end=FULL_WEEK_END):
         return LeaveApplication.objects.create(
@@ -533,8 +540,13 @@ class HolidayChangeRefreshesDraftsTests(PublicHolidayBase):
         client.force_authenticate(user=hr)
 
         response = client.post(
-            "/api/v1/public-holidays/",
-            {"name": "Eid al-Fitr", "date": MIDWEEK.isoformat()},
+            "/api/v1/calendar/holidays/",
+            {
+                "name": "Eid al-Fitr",
+                "date": MIDWEEK.isoformat(),
+                "is_recurring": False,
+                "observed_shift": False,
+            },
             format="json",
         )
 

@@ -656,4 +656,53 @@ describe("WideHoldingPanel", () => {
     // The panel is still the place to try again from.
     expect(screen.getByRole("button", { name: "Save holder" })).toBeEnabled();
   });
+
+  describe("read-only for a team manager", () => {
+    const holding: WideHolding = {
+      id: 21,
+      role: 1,
+      user: 5,
+      user_name: "Bob Lead",
+      role_label: "Supervisor",
+    };
+
+    it("states who the holders are without offering a form", () => {
+      renderPanel("team", {
+        scopeId: 4,
+        canManage: false,
+        holdings: [holding],
+      });
+
+      // It reads as a statement of the team's wide approvers...
+      expect(
+        screen.getByText("Bob Lead", { exact: false })
+      ).toBeInTheDocument();
+      expect(screen.getByText("Wide approvers")).toBeInTheDocument();
+      // ...and draws none of the writes HR owns.
+      expect(screen.queryByRole("button", { name: "Save holder" })).toBeNull();
+      expect(screen.queryByLabelText("Role")).toBeNull();
+      expect(screen.queryByLabelText("Person")).toBeNull();
+      expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Make manager" })).toBeNull();
+      expect(
+        screen.getByText(/assigned by HR/i)
+      ).toBeInTheDocument();
+    });
+
+    it("still offers HR every write", () => {
+      renderPanel("team", {
+        scopeId: 4,
+        canManage: true,
+        holdings: [holding],
+      });
+
+      expect(screen.getByRole("button", { name: "Save holder" })).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: /Remove Bob Lead/ })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Make manager" })
+      ).toBeInTheDocument();
+    });
+  });
 });

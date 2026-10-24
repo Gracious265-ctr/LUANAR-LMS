@@ -36,19 +36,20 @@ from django.db import transaction
 from django.utils import timezone
 
 from leave.models import FinancialYear, GradeEntitlement
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from users.models import EmployeeProfile
-from organisation.models import (
+from campuses.models import Campus, CampusRoleAssignment
+from roles.models import ApproverRole, RoleAssignment (
     ApproverRole,
 )
 from teams.models import (
     Team,
 )
-from workflows.services import (
+from chains.services import (
     assign_workflow_member,
     create_team,
 )
-from organisation.services import (
+from roles.services import (
     create_role_assignment,
 )
 
@@ -161,7 +162,7 @@ class Command(BaseCommand):
 
         self._staff_team(team=team, employees=employees, actor=admin)
 
-        self._ensure_leave_config()
+        self._ensure_leave_types()
 
         self._report(team=team, admin=admin, supervisor=supervisor, registrar=registrar)
 
@@ -301,7 +302,7 @@ class Command(BaseCommand):
 
     # -------------------------------------------------------------- leave config
 
-    def _ensure_leave_config(self) -> None:
+    def _ensure_leave_types(self) -> None:
         today = timezone.localdate()
         year_start = date(today.year, 1, 1)
         year_end = date(today.year, 12, 31)

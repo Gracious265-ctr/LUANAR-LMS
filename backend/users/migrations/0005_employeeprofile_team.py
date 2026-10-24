@@ -12,8 +12,7 @@ default. Backfilling a plausible team per employee would be a guess, and a wrong
 guess is worse than an explicit gap — it would route real applications to the
 wrong approver.
 
-Depends on ``workflows.0010`` because ``Team`` is created there, and not on a
-later workflows migration: nothing about a team changes in 0011 or 0012.
+Depends on ``teams.0001`` because ``Team`` is created there.
 """
 
 from django.db import migrations, models
@@ -22,7 +21,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("users", "0004_employeeprofile_gender"),
-        ("workflows", "0010_approverrole_campus_team_structure"),
+        ("teams", "0001_initial"),
     ]
 
     operations = [
@@ -39,7 +38,7 @@ class Migration(migrations.Migration):
                 null=True,
                 on_delete=models.PROTECT,
                 related_name="members",
-                to="workflows.team",
+                to="teams.team",
             ),
         ),
     ]

@@ -18,7 +18,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from approvals.models import ApplicationStage
-from workflows.policies import is_self_application
+from chains.policies import is_self_application
 
 from ..models import LeaveApplication
 from .events import (
@@ -166,7 +166,7 @@ def get_eligibility(
     if application.start_date is None or application.start_date <= tod:
         return Eligibility(None, "leave_already_started", None, None)
 
-    from workflows.providers import get_workflow_provider
+    from chains.providers import get_workflow_provider
 
     stages = get_workflow_provider().get_cancellation_stages(application)
     if not stages or any(not stage.approver_user_ids for stage in stages):
@@ -316,7 +316,7 @@ def _withdraw(application, user, reason: str, now) -> CancellationRequest:
 
 def _request(application, user, reason: str, now) -> CancellationRequest:
     """Create an approval-based cancellation request (spec 3.5 step 5)."""
-    from workflows.providers import get_workflow_provider
+    from chains.providers import get_workflow_provider
 
     stages_spec = get_workflow_provider().get_cancellation_stages(application)
     if not stages_spec or any(not stage.approver_user_ids for stage in stages_spec):
@@ -639,7 +639,7 @@ def _restore_balance(*, application, request) -> None:
 
 def _event_recipients(application) -> list[int]:
     """The employee plus every workflow member in the original snapshot."""
-    from workflows.providers import get_workflow_provider
+    from chains.providers import get_workflow_provider
 
     member_ids = set(
         get_workflow_provider().get_workflow_member_user_ids(application)

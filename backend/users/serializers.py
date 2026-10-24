@@ -6,7 +6,7 @@ from rest_framework import serializers
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
 from teams.models import Team
-from organisation.services import approver_role_codes_for
+from roles.services import approver_role_codes_for
 
 from .models import EmployeeProfile
 from .services import request_password_set
@@ -57,7 +57,7 @@ class UserSerializer(serializers.ModelSerializer):
         from importing ``organisation`` (which imports ``users.models``) at
         module load.
         """
-        from organisation.services import managed_team_ids_for
+        from roles.services import managed_team_ids_for
 
         return bool(managed_team_ids_for(obj))
 

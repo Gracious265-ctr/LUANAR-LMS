@@ -32,7 +32,7 @@ from notifications.reassignments import (
 )
 from approvals.models import Reassignment
 from approvals.services import ReassignmentError, reassign_application
-from workflows.testing import make_approver
+from chains.testing import make_approver
 
 User = get_user_model()
 

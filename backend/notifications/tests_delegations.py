@@ -34,7 +34,7 @@ from notifications.models import NotificationOutbox, NotificationOutboxLockedErr
 from notifications.tasks import deliver_notification
 from approvals.models import Delegation
 from approvals.services import DelegationActionError
-from workflows.testing import make_approver
+from chains.testing import make_approver
 
 User = get_user_model()
 

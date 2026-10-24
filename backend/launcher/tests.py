@@ -2,11 +2,12 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.test import TestCase
 
-from workflows.testing import ensure_roles, team_for
+from chains.testing import ensure_roles, team_for
 
 from .services import (
+    can_access_calendar,
     can_access_documents,
-    can_access_leave_config,
+    can_access_leave_types,
     can_access_org,
     get_launcher_apps,
 )
@@ -39,15 +40,15 @@ class LeaveConfigLauncherTests(TestCase):
 
     def test_employee_never_sees_the_card(self):
         employee = make_user(User.Role.EMPLOYEE, "employee@example.com")
-        self.assertNotIn("leave-config", self.keys(employee))
+        self.assertNotIn("leave-types", self.keys(employee))
 
     def test_approver_never_sees_the_card(self):
         approver = make_user(User.Role.APPROVER, "approver@example.com")
-        self.assertNotIn("leave-config", self.keys(approver))
+        self.assertNotIn("leave-types", self.keys(approver))
 
     def test_hr_sees_the_card(self):
         hr = make_user(User.Role.HR, "hr@example.com")
-        self.assertIn("leave-config", self.keys(hr))
+        self.assertIn("leave-types", self.keys(hr))
 
     def test_superuser_sees_the_card(self):
         admin = User.objects.create_superuser(
@@ -55,7 +56,7 @@ class LeaveConfigLauncherTests(TestCase):
             email="admin@example.com",
             password="hunter2-hunter2",
         )
-        self.assertIn("leave-config", self.keys(admin))
+        self.assertIn("leave-types", self.keys(admin))
 
     def test_the_card_carries_no_badge(self):
         # Configurability is a yes/no fact, not a quantity; a "0" badge would
@@ -63,21 +64,56 @@ class LeaveConfigLauncherTests(TestCase):
         # registry page full of leave types means.
         hr = make_user(User.Role.HR, "hr-badge@example.com")
         card = next(
-            app for app in get_launcher_apps(hr) if app["key"] == "leave-config"
+            app for app in get_launcher_apps(hr) if app["key"] == "leave-types"
         )
         self.assertIsNone(card["badge"])
 
     def test_the_gate_matches_the_service_the_pages_use(self):
         hr = make_user(User.Role.HR, "hr-gate@example.com")
         employee = make_user(User.Role.EMPLOYEE, "employee-gate@example.com")
-        from leave_config.services import can_access_leave_config as service_gate
+        from leave_types.services import can_access_leave_types as service_gate
 
-        self.assertTrue(can_access_leave_config(hr))
+        self.assertTrue(can_access_leave_types(hr))
         self.assertTrue(service_gate(hr))
-        self.assertFalse(can_access_leave_config(employee))
+        self.assertFalse(can_access_leave_types(employee))
         self.assertFalse(service_gate(employee))
-        self.assertFalse(can_access_leave_config(AnonymousUser()))
-        self.assertFalse(can_access_leave_config(None))
+        self.assertFalse(can_access_leave_types(AnonymousUser()))
+        self.assertFalse(can_access_leave_types(None))
+
+
+class CalendarLauncherTests(TestCase):
+    """Refinement unit 07 §2: the Calendar card is HR/superuser only."""
+
+    @staticmethod
+    def keys(user) -> list[str]:
+        return [app["key"] for app in get_launcher_apps(user)]
+
+    def test_employee_never_sees_the_card(self):
+        employee = make_user(User.Role.EMPLOYEE, "cal-employee@example.com")
+        self.assertNotIn("calendar-app", self.keys(employee))
+
+    def test_hr_sees_the_card(self):
+        hr = make_user(User.Role.HR, "cal-hr@example.com")
+        self.assertIn("calendar-app", self.keys(hr))
+
+    def test_superuser_sees_the_card(self):
+        admin = User.objects.create_superuser(
+            username="cal-admin@example.com",
+            email="cal-admin@example.com",
+            password="hunter2-hunter2",
+        )
+        self.assertIn("calendar-app", self.keys(admin))
+
+    def test_the_gate_matches_the_calendar_service(self):
+        from calendar_app.services import can_access_calendar as service_gate
+
+        hr = make_user(User.Role.HR, "cal-gate-hr@example.com")
+        employee = make_user(User.Role.EMPLOYEE, "cal-gate-emp@example.com")
+
+        self.assertTrue(can_access_calendar(hr))
+        self.assertTrue(service_gate(hr))
+        self.assertFalse(can_access_calendar(employee))
+        self.assertFalse(can_access_calendar(None))
 
 
 class OrgLauncherTests(TestCase):
@@ -140,7 +176,7 @@ class OrgLauncherTests(TestCase):
     def test_the_gate_matches_the_page_guard(self):
         manager, _ = self.make_team_manager("guard-org@example.com")
         employee = make_user(User.Role.EMPLOYEE, "guard-plain@example.com")
-        from organisation.services import managed_team_ids_for
+        from roles.services import managed_team_ids_for
 
         self.assertTrue(can_access_org(manager))
         self.assertEqual(len(managed_team_ids_for(manager)), 1)

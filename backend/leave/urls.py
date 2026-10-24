@@ -7,7 +7,6 @@ from .views import (
     FinancialYearViewSet,
     GradeEntitlementViewSet,
     LeaveApplicationViewSet,
-    PublicHolidayViewSet,
     SupportingDocumentViewSet,
 )
 from .views.dashboard import LeaveDashboardView
@@ -20,7 +19,6 @@ app_name = "leave"
 hr_router = SimpleRouter()
 hr_router.register("entitlements", GradeEntitlementViewSet, basename="entitlement")
 hr_router.register("financial-years", FinancialYearViewSet, basename="financial-year")
-hr_router.register("public-holidays", PublicHolidayViewSet, basename="public-holiday")
 
 application_router = DefaultRouter()
 application_router.register(

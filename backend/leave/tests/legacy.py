@@ -17,12 +17,13 @@ from rest_framework.test import APIClient
 from users.models import EmployeeProfile, User
 
 from audit.models import AuditEntry
-from workflows.models import (
+from chains.models import (
     Section,
     SectionMember,
     Workflow,
 )
-from organisation.models import (
+from campuses.models import Campus, CampusRoleAssignment
+from roles.models import ApproverRole, RoleAssignment (
     ApproverRole,
     Campus,
     RoleAssignment,
@@ -31,21 +32,19 @@ from teams.models import (
     Team,
 )
 
+from calendar_app.models import Holiday
 from ..admin import (
     FinancialYearAdmin,
     FinancialYearAdminForm,
     GradeEntitlementAdmin,
     GradeEntitlementAdminForm,
-    PublicHolidayAdmin,
-    PublicHolidayAdminForm,
 )
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 
 from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
     SupportingDocument,
 )
 from ..services import (
@@ -733,11 +732,17 @@ class FinancialYearResolutionTests(TestCase):
             start_date=date(2027, 7, 1),
             end_date=date(2028, 6, 30),
         )
-        PublicHoliday.objects.create(
-            name="Independence Day", date=date(2026, 7, 6)
+        Holiday.objects.create(
+            name="Independence Day",
+            date=date(2026, 7, 6),
+            is_recurring=False,
+            observed_shift=False,
         )
-        PublicHoliday.objects.create(
-            name="Christmas Day", date=date(2026, 12, 25)
+        Holiday.objects.create(
+            name="Christmas Day",
+            date=date(2026, 12, 25),
+            is_recurring=False,
+            observed_shift=False,
         )
 
     def test_financial_year_for_date_matches_containing_period(self):
@@ -775,13 +780,14 @@ class FinancialYearResolutionTests(TestCase):
     def test_public_holidays_between_is_inclusive(self):
         holidays = public_holidays_between(date(2026, 7, 1), date(2026, 7, 31))
         self.assertEqual(
-            [h.name for h in holidays], ["Independence Day"]
+            [resolved.holiday.name for resolved in holidays], ["Independence Day"]
         )
 
     def test_public_holidays_between_multiple_ordered_by_date(self):
         holidays = public_holidays_between(date(2026, 1, 1), date(2026, 12, 31))
         self.assertEqual(
-            [h.name for h in holidays], ["Independence Day", "Christmas Day"]
+            [resolved.holiday.name for resolved in holidays],
+            ["Independence Day", "Christmas Day"],
         )
 
     def test_public_holidays_between_empty_range(self):
@@ -956,140 +962,6 @@ class FinancialYearEndpointTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
-class PublicHolidayEndpointTests(TestCase):
-    """HR-only CRUD for public holidays."""
-
-    def setUp(self):
-        self.client = APIClient()  # type: ignore[assignment]
-        self.hr_user = User.objects.create_user(
-            username="hr@test.luanar",
-            email="hr@test.luanar",
-            password=SEED_PASSWORD,
-            first_name="Test",
-            last_name="HR",
-            role=User.Role.HR,
-        )
-        self.employee_user = User.objects.create_user(
-            username="employee@test.luanar",
-            email="employee@test.luanar",
-            password=SEED_PASSWORD,
-            first_name="Test",
-            last_name="Employee",
-            role=User.Role.EMPLOYEE,
-        )
-
-        self.holiday = PublicHoliday.objects.create(
-            name="Independence Day", date=date(2026, 7, 6)
-        )
-        PublicHoliday.objects.create(
-            name="Christmas Day", date=date(2026, 12, 25)
-        )
-        PublicHoliday.objects.create(
-            name="New Year", date=date(2027, 1, 1)
-        )
-
-        self.list_url = "/api/v1/public-holidays/"
-        self.detail_url = f"/api/v1/public-holidays/{self.holiday.id}/"
-
-    def test_list_requires_authentication(self):
-        self.assertEqual(self.client.get(self.list_url).status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_create_requires_authentication(self):
-        response = self.client.post(self.list_url, {})
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_detail_and_update_require_authentication(self):
-        self.assertEqual(self.client.get(self.detail_url).status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(
-            self.client.patch(self.detail_url, {}).status_code,
-            status.HTTP_401_UNAUTHORIZED,
-        )
-
-    def test_non_hr_role_forbidden(self):
-        self.client.force_authenticate(user=self.employee_user)
-        self.assertEqual(self.client.get(self.list_url).status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(self.client.post(self.list_url, {}).status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(self.client.get(self.detail_url).status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            self.client.patch(self.detail_url, {}).status_code,
-            status.HTTP_403_FORBIDDEN,
-        )
-
-    def test_hr_can_list_holidays_ordered_by_date(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.get(self.list_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        names = [item["name"] for item in response.data["results"]]  # type: ignore[index]
-        self.assertEqual(names, ["Independence Day", "Christmas Day", "New Year"])
-
-    def test_hr_can_retrieve_holiday(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.get(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["name"], "Independence Day")  # type: ignore[index]
-
-    def test_hr_can_create_holiday(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {"name": "Labour Day", "date": "2027-05-01"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(PublicHoliday.objects.filter(name="Labour Day").count(), 1)
-
-    def test_hr_can_update_holiday(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.patch(
-            self.detail_url, {"name": "Independence Day (Moved)"}
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.holiday.refresh_from_db()
-        self.assertEqual(self.holiday.name, "Independence Day (Moved)")
-
-    def test_blank_name_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url, {"name": "  ", "date": "2027-05-01"}
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data)  # type: ignore[index]
-
-    def test_missing_date_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(self.list_url, {"name": "Labour Day"})
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("date", response.data)  # type: ignore[index]
-
-    def test_duplicate_date_rejected(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(
-            self.list_url,
-            {"name": "Duplicate", "date": "2026-07-06"},
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("date", response.data)  # type: ignore[index]
-
-    def test_year_filter(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.get(self.list_url, {"year": "2027"})
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["count"], 1)  # type: ignore[index]
-        self.assertEqual(response.data["results"][0]["name"], "New Year")  # type: ignore[index]
-
-    def test_invalid_year_filter_returns_400_not_500(self):
-        self.client.force_authenticate(user=self.hr_user)
-        for bad in ("abc", "thirty", "4.5"):
-            response = self.client.get(self.list_url, {"year": bad})
-            self.assertEqual(
-                response.status_code, status.HTTP_400_BAD_REQUEST, f"year={bad}"
-            )
-
-    def test_delete_not_allowed(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.delete(self.detail_url)
-        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
-
-
 class FinancialYearAdminTests(TestCase):
     """Admin form applies overlap and single-active rules; no hard delete."""
 
@@ -1150,31 +1022,6 @@ class FinancialYearAdminTests(TestCase):
         self.assertFalse(model_admin.has_delete_permission(request=None))
 
 
-class PublicHolidayAdminTests(TestCase):
-    """Admin form applies the unique-date rule and no hard delete."""
-
-    def setUp(self):
-        self.holiday = PublicHoliday.objects.create(
-            name="Independence Day", date=date(2026, 7, 6)
-        )
-
-    def test_form_rejects_duplicate_date(self):
-        form = PublicHolidayAdminForm(
-            data={"name": "Duplicate", "date": self.holiday.date.isoformat()}
-        )
-        self.assertFalse(form.is_valid())
-        self.assertIn("date", form.errors)
-
-    def test_form_allows_updating_the_same_holiday(self):
-        form = PublicHolidayAdminForm(
-            data={"name": "Independence Day", "date": self.holiday.date.isoformat()},
-            instance=self.holiday,
-        )
-        self.assertTrue(form.is_valid())
-
-    def test_admin_does_not_allow_delete(self):
-        model_admin = PublicHolidayAdmin(PublicHoliday, AdminSite())
-        self.assertFalse(model_admin.has_delete_permission(request=None))
 class WorkingDaysCalculationTest(TestCase):
     def test_monday_to_friday_returns_5(self):
         start = date(2026, 9, 14)  # Monday

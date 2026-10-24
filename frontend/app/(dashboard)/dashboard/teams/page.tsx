@@ -16,9 +16,9 @@ import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  canAccessOrganisation,
-  isOrganisationAdministrator,
-} from "@/lib/nav/organisation-nav";
+  canAccessTeams,
+  isTeamsAdministrator,
+} from "@/lib/nav/teams-nav";
 import { FadeIn } from "@/components/motion/FadeIn";
 
 const TEAMS_ERROR = "Unable to load teams. Please try again.";
@@ -42,11 +42,11 @@ async function TeamsPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
+  if (!canAccessTeams(user)) {
     redirect("/dashboard");
   }
 
-  const isAdministrator = isOrganisationAdministrator(user);
+  const isAdministrator = isTeamsAdministrator(user);
 
   const { retired } = await searchParams;
   const showRetired = retired === "1";
@@ -56,6 +56,10 @@ async function TeamsPage({
   // roles its chain picks one of per step, the employees its manager may be
   // chosen from, and every current wide holder — a person holds only one wide
   // approver role, so those are excluded from the manager picker.
+  //
+  // A manager creates no teams (that is an HR decision), so for them none of it
+  // is read: every one of these endpoints is HR-only, and asking would only fill
+  // the page with errors about a form they never open.
   const [
     teamsResult,
     campusesResult,
@@ -69,18 +73,28 @@ async function TeamsPage({
       (value) => ({ value, error: "" }),
       () => ({ value: [] as Team[], error: TEAMS_ERROR })
     ),
-    listCampuses().then(
-      (value) => ({ value, error: "" }),
-      () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
-    ),
-    listApproverRoles().then(
-      (value) => ({ value, error: "" }),
-      () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
-    ),
-    listAllEmployees().catch(() => [] as Employee[]),
-    listRoleAssignments().catch(() => []),
-    listTeamRoleAssignments().catch(() => []),
-    listCampusRoleAssignments().catch(() => []),
+    isAdministrator
+      ? listCampuses().then(
+          (value) => ({ value, error: "" }),
+          () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
+        )
+      : Promise.resolve({ value: [] as Campus[], error: "" }),
+    isAdministrator
+      ? listApproverRoles().then(
+          (value) => ({ value, error: "" }),
+          () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
+        )
+      : Promise.resolve({ value: [] as ApproverRole[], error: "" }),
+    isAdministrator
+      ? listAllEmployees().catch(() => [] as Employee[])
+      : Promise.resolve([] as Employee[]),
+    isAdministrator ? listRoleAssignments().catch(() => []) : Promise.resolve([]),
+    isAdministrator
+      ? listTeamRoleAssignments().catch(() => [])
+      : Promise.resolve([]),
+    isAdministrator
+      ? listCampusRoleAssignments().catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const wideHolderUserIds = Array.from(

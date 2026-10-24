@@ -20,7 +20,7 @@ from django.utils import timezone
 from notifications.models import NotificationOutbox
 from notifications.tasks import _from_email, deliver_notification, enqueue_delivery
 from approvals.models import Delegation
-from workflows.testing import make_approver
+from chains.testing import make_approver
 
 DELIVERY_TASK = "notifications.tasks.deliver_notification"
 

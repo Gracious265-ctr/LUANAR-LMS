@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from leave.models import FinancialYear, GradeLeaveEntitlement
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from leave.services import get_entitlement
 
 User = get_user_model()

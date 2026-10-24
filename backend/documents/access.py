@@ -28,7 +28,7 @@ def visible_employee_ids(user) -> set[int] | None:
     if user.role == User.Role.HR or getattr(user, "is_superuser", False):
         return None
 
-    from organisation.services import managed_team_ids_for
+    from roles.services import managed_team_ids_for
     from users.models import EmployeeProfile
 
     team_ids = managed_team_ids_for(user)

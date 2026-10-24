@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import type { FinancialYear } from "@/lib/financial-years";
+import { deleteFinancialYear } from "@/lib/financial-years-client";
+import { DeleteRowButton } from "./delete-row-button";
 import { EmptyState } from "@/components/ui/states";
 import { currentDateIso } from "@/lib/utils";
 import { EditActionLink, EditIconButton } from "./edit-action-link";
@@ -88,15 +90,24 @@ export function FinancialYearTable({
                       : "Past"}
                 </Badge>
               </TableCell>
-              <TableCell className="text-right">
-                {onEdit ? (
-                  <EditIconButton
-                    onClick={() => onEdit(year.id)}
-                    label={`Edit ${year.start_date} financial year`}
+              <TableCell>
+                <div className="flex items-center justify-end gap-2">
+                  {onEdit ? (
+                    <EditIconButton
+                      onClick={() => onEdit(year.id)}
+                      label={`Edit ${year.start_date} financial year`}
+                    />
+                  ) : (
+                    <EditActionLink
+                      href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`}
+                    />
+                  )}
+                  <DeleteRowButton
+                    label={`Delete ${year.start_date} financial year`}
+                    prompt={`Delete the ${year.start_date} – ${year.end_date} financial year?`}
+                    onDelete={() => deleteFinancialYear(year.id)}
                   />
-                ) : (
-                  <EditActionLink href={`/dashboard/hr-admin/calendar/financial-years/${year.id}/edit`} />
-                )}
+                </div>
               </TableCell>
             </TableRow>
           );

@@ -24,7 +24,7 @@ def check_workflow_ready(application) -> bool:
     when the employee's team routes through no workflow, or a stage has no active
     approver.
     """
-    from workflows.providers import WorkflowConfigError, get_workflow_provider
+    from chains.providers import WorkflowConfigError, get_workflow_provider
 
     try:
         definitions = get_workflow_provider().get_stage_definitions(application)

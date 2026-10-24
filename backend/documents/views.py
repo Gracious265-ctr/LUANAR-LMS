@@ -95,7 +95,7 @@ def _approved_document_or_404(user, application_id, *, hr_allowed: bool):
     confirm which applications or documents exist.
     """
     from users.models import User
-    from workflows.policies import get_view_access
+    from chains.policies import get_view_access
 
     document = (
         ApprovedLeaveDocument.objects.select_related("application")

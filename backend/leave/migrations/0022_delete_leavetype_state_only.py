@@ -1,8 +1,8 @@
-"""Hand ownership of ``LeaveType`` to ``leave_config`` (§1.1).
+"""Hand ownership of ``LeaveType`` to ``leave_types`` (§1.1).
 
 State-only, and deliberately so: ``leave_leavetype`` is the pre-existing table,
 so nothing is copied, dropped, or altered in the database — the ``leave`` app
-simply stops declaring a model the ``leave_config`` app now owns, and the two
+simply stops declaring a model the ``leave_types`` app now owns, and the two
 grade-entitlement foreign keys are re-pointed at the identical table under its
 new owner. Every referencing row keeps working because the table name and the
 integer primary key never change.
@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("leave", "0021_delete_leaverule"),
         ("plans", "0003_alter_leaveplan_leave_type"),
-        ("leave_config", "0001_initial"),
+        ("leave_types", "0001_initial"),
     ]
 
     operations = [
@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                     field=models.ForeignKey(
                         on_delete=django.db.models.deletion.PROTECT,
                         related_name="grade_leave_entitlements",
-                        to="leave_config.leavetype",
+                        to="leave_types.leavetype",
                     ),
                 ),
                 migrations.AlterField(
@@ -50,7 +50,7 @@ class Migration(migrations.Migration):
                         null=True,
                         on_delete=django.db.models.deletion.PROTECT,
                         related_name="grade_entitlements",
-                        to="leave_config.leavetype",
+                        to="leave_types.leavetype",
                     ),
                 ),
                 migrations.DeleteModel(

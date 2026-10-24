@@ -6,10 +6,10 @@ from rest_framework import serializers
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from users.models import User
 
-from organisation.services import approver_role_codes_for, is_approver_user
+from roles.services import approver_role_codes_for, is_approver_user
 
 from .models import Delegation, Reassignment
 from .services import (

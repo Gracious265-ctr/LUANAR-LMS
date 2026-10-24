@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('leave_config', '0002_fold_leave_rules_into_types'),
+        ('leave_types', '0002_fold_leave_rules_into_types'),
         ('plans', '0002_schedule_plan_check'),
     ]
 
@@ -15,6 +15,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='leaveplan',
             name='leave_type',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='leave_plans', to='leave_config.leavetype'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='leave_plans', to='leave_types.leavetype'),
         ),
     ]

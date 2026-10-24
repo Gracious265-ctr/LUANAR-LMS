@@ -1,3 +1,5 @@
+import { apiErrorMessage } from "./utils";
+
 export interface SupportingDocument {
   id: string;
   file_url: string;
@@ -36,6 +38,12 @@ export interface LeaveApplication {
   documents: SupportingDocument[];
 }
 
+/**
+ * Machine-readable document errors the API returns in place of a `detail`
+ * sentence. Kept as a code→message map because these two refuse a document
+ * write for a reason no prose `detail` carries, and the client shows the
+ * sentence itself rather than a generic banner.
+ */
 const DOCUMENT_ERRORS: Record<string, string> = {
   application_not_editable:
     "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
@@ -43,77 +51,97 @@ const DOCUMENT_ERRORS: Record<string, string> = {
     "This document has already been removed or replaced.",
 };
 
-async function documentError(res: Response, fallback: string): Promise<Error> {
-  const body = await res.json().catch(() => ({}));
-  const detail =
-    (body?.detail as string | undefined) ||
-    DOCUMENT_ERRORS[body?.code as string] ||
-    fallback;
-  return new Error(detail);
+/**
+ * The single seam every call in this module goes through.
+ *
+ * Parses the DRF error body the same way the rest of the leave client does
+ * (``apiErrorMessage`` reads ``detail``, then the first message of each field),
+ * and folds in the code-keyed document errors above so a refusal without a
+ * sentence still reads as one. A non-JSON or empty body falls back to the
+ * caller's generic message — the one thing a caller knows that the body does
+ * not: what it was trying to do.
+ */
+async function request<T>(
+  path: string,
+  { fallback, ...init }: RequestInit & { fallback: string }
+): Promise<T> {
+  const res = await fetch(path, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const code =
+      body && typeof body === "object"
+        ? (body as { code?: string }).code
+        : undefined;
+    const hasBody =
+      body != null &&
+      (typeof body !== "object" || Object.keys(body as object).length > 0);
+    const message =
+      (code && DOCUMENT_ERRORS[code]) ||
+      (hasBody ? apiErrorMessage(body) : "") ||
+      fallback;
+    throw new Error(message);
+  }
+  // A 204 (DELETE) has no body; a caller that returns ``void`` expects nothing
+  // back, and parsing an empty stream would throw where the request succeeded.
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  return res.json();
 }
+
+const API = "/api/leave/leave-applications";
 
 export async function getLeaveApplications(status?: string): Promise<{
   count: number;
   results: LeaveApplication[];
 }> {
-  const url = new URL("/api/leave/leave-applications/", window.location.origin);
-  if (status) url.searchParams.set("status", status);
-  const res = await fetch(url.toString(), {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request(`${API}/${query}`, {
     credentials: "include",
+    fallback: "Failed to fetch applications",
   });
-  if (!res.ok) throw new Error("Failed to fetch applications");
-  return res.json();
 }
 
 export async function getLeaveApplication(
   id: string
 ): Promise<LeaveApplication> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/`, {
+  return request(`${API}/${id}/`, {
     credentials: "include",
+    fallback: "Failed to fetch application",
   });
-  if (!res.ok) throw new Error("Failed to fetch application");
-  return res.json();
 }
 
 export async function createLeaveApplication(
   data: Partial<LeaveApplication>
 ): Promise<LeaveApplication> {
-  const res = await fetch("/api/leave/leave-applications/", {
+  return request(`${API}/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(data),
+    fallback: "Failed to create application",
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to create" }));
-    throw new Error(error.detail || "Failed to create application");
-  }
-  return res.json();
 }
 
 export async function updateLeaveApplication(
   id: string,
   data: Partial<LeaveApplication>
 ): Promise<LeaveApplication> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/`, {
+  return request(`${API}/${id}/`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(data),
+    fallback: "Failed to update application",
   });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to update" }));
-    throw new Error(error.detail || "Failed to update application");
-  }
-  return res.json();
 }
 
 export async function deleteLeaveApplication(id: string): Promise<void> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/`, {
+  await request(`${API}/${id}/`, {
     method: "DELETE",
     credentials: "include",
+    fallback: "Failed to delete application",
   });
-  if (!res.ok) throw new Error("Failed to delete application");
 }
 
 export async function uploadDocument(
@@ -122,44 +150,35 @@ export async function uploadDocument(
 ): Promise<SupportingDocument> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/`,
-    {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-    }
-  );
-  if (!res.ok) throw await documentError(res, "Failed to upload document");
-  return res.json();
+  return request(`${API}/${applicationId}/documents/`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+    fallback: "Failed to upload document",
+  });
 }
 
 export async function listDocuments(
   applicationId: string,
   { includeRetired = false }: { includeRetired?: boolean } = {}
 ): Promise<SupportingDocument[]> {
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/${
+  return request(
+    `${API}/${applicationId}/documents/${
       includeRetired ? "?include_retired=true" : ""
     }`,
-    { credentials: "include" }
+    { credentials: "include", fallback: "Failed to fetch documents" }
   );
-  if (!res.ok) throw new Error("Failed to fetch documents");
-  return res.json();
 }
 
 export async function deleteDocument(
   applicationId: string,
   documentId: string
 ): Promise<void> {
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/${documentId}/`,
-    {
-      method: "DELETE",
-      credentials: "include",
-    }
-  );
-  if (!res.ok) throw await documentError(res, "Failed to delete document");
+  await request(`${API}/${applicationId}/documents/${documentId}/`, {
+    method: "DELETE",
+    credentials: "include",
+    fallback: "Failed to delete document",
+  });
 }
 
 export async function replaceDocument(
@@ -169,15 +188,14 @@ export async function replaceDocument(
 ): Promise<SupportingDocument> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(
-    `/api/leave/leave-applications/${applicationId}/documents/${documentId}/replace/`,
+  const data = await request<{ document: SupportingDocument }>(
+    `${API}/${applicationId}/documents/${documentId}/replace/`,
     {
       method: "POST",
       credentials: "include",
       body: formData,
+      fallback: "Failed to replace document",
     }
   );
-  if (!res.ok) throw await documentError(res, "Failed to replace document");
-  const data = await res.json();
   return data.document;
 }

@@ -88,6 +88,39 @@ function typeName(value: string) {
   fireEvent.change(screen.getByLabelText("Name"), { target: { value } });
 }
 
+function goToStep(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: name }));
+}
+
+async function goToEligibility() {
+  // Already on Eligibility or past it (Rules)? Nothing to click.
+  if (
+    screen.queryByLabelText("Branch scope") ||
+    screen.queryByLabelText("Maximum duration (days)")
+  ) {
+    return;
+  }
+  const name = screen.getByLabelText("Name") as HTMLInputElement;
+  if (!name.value && !name.readOnly) {
+    fireEvent.change(name, { target: { value: "Test Leave" } });
+  }
+  goToStep("Next");
+  await waitFor(() =>
+    expect(screen.queryByLabelText("Branch scope")).toBeTruthy()
+  );
+}
+
+async function goToRules() {
+  await goToEligibility();
+  if (screen.queryByLabelText("Maximum duration (days)")) {
+    return;
+  }
+  goToStep("Next");
+  await waitFor(() =>
+    expect(screen.queryByLabelText("Maximum duration (days)")).toBeTruthy()
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   routerMock.push.mockClear();
@@ -103,20 +136,14 @@ beforeEach(() => {
 });
 
 describe("LeaveTypeForm — the five sections (spec 3.3)", () => {
-  it("offers every section the spec lists and no entitlement field", () => {
+  it("offers every section the spec lists and no entitlement field", async () => {
     renderForm();
 
-    for (const section of [
-      "Basics",
-      "Eligibility",
-      "Rules",
-      "Planning",
-      "Approval",
-    ]) {
-      expect(
-        screen.getByRole("heading", { name: section })
-      ).toBeInTheDocument();
-    }
+    expect(screen.getAllByRole("heading", { name: "Basics" }).length).toBeGreaterThan(0);
+    await goToRules();
+
+    expect(screen.getByRole("heading", { name: "Planning" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Approval" })).toBeInTheDocument();
 
     // §1.3: the days-per-year number is not a property of a leave type, so no
     // control could be mistaken for one.
@@ -125,21 +152,24 @@ describe("LeaveTypeForm — the five sections (spec 3.3)", () => {
     expect(screen.queryByText(/entitlement/i)).not.toBeInTheDocument();
   });
 
-  it("pre-selects the defaults a new type starts from", () => {
+  it("pre-selects the defaults a new type starts from", async () => {
     renderForm();
 
+    expect(screen.getByLabelText("Indigo")).not.toBeChecked();
+    expect(screen.getByLabelText("Blue")).toBeChecked();
+    await goToEligibility();
     expect(screen.getByLabelText("Branch scope")).toHaveTextContent("Both");
     expect(screen.getByLabelText("Eligible gender")).toHaveTextContent("Any");
+    await goToRules();
     expect(screen.getByRole("checkbox", { name: /plannable/i })).toBeChecked();
     expect(
       screen.getByLabelText("Requires a supporting document")
     ).not.toBeChecked();
-    expect(screen.getByLabelText("Indigo")).not.toBeChecked();
-    expect(screen.getByLabelText("Blue")).toBeChecked();
   });
 
   it("offers the directory's grades for eligibility, not a typed-in list", async () => {
     renderForm();
+    await goToEligibility();
 
     expect(await screen.findByLabelText("Grade A")).toBeInTheDocument();
     expect(screen.getByLabelText("Grade G")).toBeInTheDocument();
@@ -148,14 +178,27 @@ describe("LeaveTypeForm — the five sections (spec 3.3)", () => {
 
   it("hides the registrar question for an Academic-scoped type", async () => {
     renderForm({ branch_scope: "administrative" });
+    // Need to go to rules
+    try {
+      const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+      if (!nameInput.value) fireEvent.change(nameInput, { target: { value: "Test Leave" } });
+    } catch (e) {}
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
     expect(
       screen.getByRole("heading", { name: "Approval" })
     ).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
     await selectOption(
       screen.getByLabelText("Branch scope"),
       "Academic"
     );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
 
     await waitFor(() =>
       expect(
@@ -169,11 +212,23 @@ describe("LeaveTypeForm — the five sections (spec 3.3)", () => {
 
   it("offers the registrar question again once the scope is not Academic", async () => {
     renderForm({ branch_scope: "academic" });
+    try {
+      const nameInput = screen.getByLabelText("Name") as HTMLInputElement;
+      if (!nameInput.value) fireEvent.change(nameInput, { target: { value: "Test Leave" } });
+    } catch (e) {}
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
     expect(
       screen.queryByRole("heading", { name: "Approval" })
     ).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
     await selectOption(screen.getByLabelText("Branch scope"), "Administrative");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
 
     expect(
       await screen.findByRole("heading", { name: "Approval" })
@@ -182,17 +237,18 @@ describe("LeaveTypeForm — the five sections (spec 3.3)", () => {
 });
 
 describe("LeaveTypeForm — inline validation (spec 3.3)", () => {
-  it("requires a name", () => {
+  it("requires a name", async () => {
     renderForm();
-    submit();
-
+    // Try to go to next without filling name
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Name is required.");
     expect(createLeaveType).not.toHaveBeenCalled();
   });
 
-  it("rejects a negative maximum duration without leaving the page", () => {
+  it("rejects a negative maximum duration without leaving the page", async () => {
     renderForm();
     typeName("Study leave");
+    await goToRules();
     fireEvent.change(screen.getByLabelText("Maximum duration (days)"), {
       target: { value: "-3" },
     });
@@ -207,9 +263,10 @@ describe("LeaveTypeForm — inline validation (spec 3.3)", () => {
     expect(createLeaveType).not.toHaveBeenCalled();
   });
 
-  it("rejects a negative notice period", () => {
+  it("rejects a negative notice period", async () => {
     renderForm();
     typeName("Study leave");
+    await goToRules();
     fireEvent.change(screen.getByLabelText("Notice period (days)"), {
       target: { value: "-1" },
     });
@@ -222,9 +279,9 @@ describe("LeaveTypeForm — inline validation (spec 3.3)", () => {
     expect(createLeaveType).not.toHaveBeenCalled();
   });
 
-  it("clears a field's message as soon as the field is corrected", () => {
+  it("clears a field's message as soon as the field is corrected", async () => {
     renderForm();
-    submit();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("alert")).toBeInTheDocument();
 
     typeName("Study leave");
@@ -237,11 +294,15 @@ describe("LeaveTypeForm — saving", () => {
   it("creates a type and returns to the list", async () => {
     renderForm();
     typeName("  Study leave  ");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
+    await screen.findByLabelText("Grade A");
+    fireEvent.click(screen.getByLabelText("Grade A"));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Notice period (days)")).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("Notice period (days)"), {
       target: { value: "14" },
     });
-    await screen.findByLabelText("Grade A");
-    fireEvent.click(screen.getByLabelText("Grade A"));
 
     fireEvent.click(screen.getByRole("button", { name: /create leave type/i }));
 
@@ -260,6 +321,10 @@ describe("LeaveTypeForm — saving", () => {
   it("edits the record it was given", async () => {
     renderForm({});
     typeName("Sabbatical leave");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
@@ -276,11 +341,18 @@ describe("LeaveTypeForm — saving", () => {
     );
     renderForm();
     typeName("Annual leave");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Branch scope")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByLabelText("Maximum duration (days)")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /create leave type/i }));
 
+    // The name field lives on Basics, so the form returns there and shows the
+    // message beside it without the reader hunting for it.
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeInTheDocument());
     expect(
-      await screen.findByText("A leave type with this name already exists.")
+      screen.getByText("A leave type with this name already exists.")
     ).toBeInTheDocument();
     // The message belongs to the name field, so the form-level banner stays
     // empty rather than repeating it.
@@ -296,6 +368,7 @@ describe("LeaveTypeForm — saving", () => {
     );
     renderForm();
     typeName("Annual leave two");
+    await goToRules();
 
     fireEvent.click(screen.getByRole("button", { name: /create leave type/i }));
 
@@ -338,10 +411,11 @@ describe("LeaveTypeForm — the record's own state", () => {
 
     // Its rules have no other home now that the Leave Rules screens are gone,
     // so this form is where HR changes them.
-    expect(screen.getByRole("heading", { name: "Rules" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Name")).toBeInTheDocument());
     expect(screen.getByLabelText("Name")).toHaveValue("Annual leave");
     expect(screen.getByLabelText("Name")).toHaveAttribute("readonly");
     expect(screen.getByLabelText("Short code")).toHaveAttribute("readonly");
+    await goToRules();
 
     fireEvent.change(screen.getByLabelText("Notice period (days)"), {
       target: { value: "21" },

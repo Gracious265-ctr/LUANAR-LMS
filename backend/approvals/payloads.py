@@ -12,7 +12,7 @@ from decimal import Decimal
 from audit.models import AuditEntry
 from audit.services import actor_display_name
 from leave.models import GradeEntitlement, LeaveApplication, SupportingDocument
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from leave.services import active_financial_year, financial_year_label
 
 from .models import ApplicationStage, ApprovalDecision
@@ -65,7 +65,7 @@ def list_item(application: LeaveApplication, user) -> dict:
 
 def review_payload(application: LeaveApplication, user, view_access) -> dict:
     """The full review payload (spec 1.3). ``view_access`` governs history."""
-    from workflows.policies import get_decision_authority
+    from chains.policies import get_decision_authority
 
     employee_profile = _profile(application.employee)
     approver_profile = _profile(user)
@@ -277,7 +277,7 @@ def _document_block(document: SupportingDocument) -> dict:
 
 
 def _leave_history_scope(view_access, employee_profile, approver_profile):
-    from workflows.policies import get_leave_history_scope
+    from chains.policies import get_leave_history_scope
 
     return get_leave_history_scope(view_access, employee_profile, approver_profile)
 

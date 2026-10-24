@@ -17,17 +17,18 @@ import {
   listRoleAssignments,
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
+import { listActiveApproverRoles } from "@/lib/approver-roles-client";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  canAccessOrganisation,
-  isOrganisationAdministrator,
-} from "@/lib/nav/organisation-nav";
+  canAccessTeams,
+  isTeamsAdministrator,
+} from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
+import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { listMemberCandidates } from "@/lib/teams-client";
 import {
-  getTeam,
-  listTeamWorkflows,
   teamCategoryBadgeTone,
   teamCategoryLabel,
   teamStatusBadgeTone,
@@ -59,6 +60,51 @@ const TABS = [
 type TabValue = (typeof TABS)[number]["value"];
 
 /**
+ * The people a roster may add, read by whoever is looking.
+ *
+ * HR reads the employee directory's "unassigned, matching category, not a wide
+ * approver for this team" filters. A team's manager may not reach the directory
+ * at all, so they read the same list through the team's own member-candidates
+ * route, scoped by the backend to the team they run. Both are the backend's
+ * answer, never a subtraction here.
+ */
+async function loadMemberCandidates(
+  team: Team,
+  isAdministrator: boolean
+): Promise<Employee[]> {
+  try {
+    if (isAdministrator) {
+      return await listUnassignedEmployees(
+        team.category as EmployeeCategory,
+        team.id
+      );
+    }
+    return await listMemberCandidates(team.id);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The roles a team-wide holder may be given, read by whoever is looking.
+ *
+ * HR reads the whole role list. A manager may not reach the HR-only role
+ * endpoint, so they read the read-only list a manager is allowed; writing roles
+ * stays HR's either way.
+ */
+async function loadScopedRoles(
+  isAdministrator: boolean
+): Promise<ApproverRole[]> {
+  try {
+    return isAdministrator
+      ? await listApproverRoles()
+      : await listActiveApproverRoles();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * One team: what it is, what it routes, and who can act for it.
  *
  * The chain and its roster live here rather than on the list, because staffing
@@ -80,13 +126,13 @@ export default async function TeamPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
+  if (!canAccessTeams(user)) {
     redirect("/dashboard");
   }
   // Whether the viewer sees the HR-only controls on this team. A manager may
   // read and configure their team's chains and roster, but editing the team's
   // identity and retiring it stay HR's.
-  const isAdministrator = isOrganisationAdministrator(user);
+  const isAdministrator = isTeamsAdministrator(user);
 
   let team: Team;
   try {
@@ -104,22 +150,23 @@ export default async function TeamPage({
       // A team-wide holder must be the same category as the team, so the
       // Approvers tab's feed is the whole directory's matching half, read as a
       // server filter rather than by subtracting here. A holder need not be a
-      // member of the team.
-      listAllEmployees(team.category as EmployeeCategory).catch(
-        () => [] as Employee[]
-      ),
+      // member of the team. HR-only: a manager cannot read the directory, so for
+      // them this is empty and the Approvers tab is read-only.
+      isAdministrator
+        ? listAllEmployees(team.category as EmployeeCategory).catch(
+            () => [] as Employee[]
+          )
+        : Promise.resolve([] as Employee[]),
       // The roster's candidates match this team: only unassigned employees of
       // the team's own category, never a wide approver (who serves steps from
-      // the Approvers tab). Filtered by the backend, not by subtraction here.
-      listUnassignedEmployees(
-        team.category as EmployeeCategory,
-        team.id
-      ).catch(() => [] as Employee[]),
+      // the Approvers tab). Read through the team's own route, which a manager
+      // may reach; HR reads the same list from the directory's filters.
+      loadMemberCandidates(team, isAdministrator),
       listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
       // Every team's holdings, so this team's own can be filtered out here and
       // the whole set still fed to the panel as the one-wide-approver pool.
       listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[]),
-      listApproverRoles().catch(() => [] as ApproverRole[]),
+      loadScopedRoles(isAdministrator),
       listRoleAssignments().catch(() => [] as RoleAssignment[]),
       listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
     ]);
@@ -381,6 +428,7 @@ export default async function TeamPage({
                 employees={employees}
                 holdings={holdings}
                 excludedUserIds={wideHolderUserIds}
+                canManage={isAdministrator}
               />
             </div>
           )}

@@ -47,7 +47,7 @@ export default function LeaveDashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
             Leave Applications
           </h1>
           <p className="text-text-muted">Welcome back</p>

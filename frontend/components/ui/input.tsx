@@ -2,14 +2,15 @@ import { cn } from "@/lib/utils";
 
 import { Label } from "./label";
 
-/** One source of truth for every text control's border, fill and focus ring. */
+/** One source of truth for every text control's border, fill and focus ring - SARIS design. */
 export const fieldStyles = [
-  "w-full rounded-control border border-input-border bg-input-background px-control-x-md py-control-y",
-  "text-sm text-text-primary placeholder:text-text-placeholder",
-  "transition-[border-color,box-shadow] duration-base ease-standard",
-  "focus-visible:border-input-border-focus focus-ring",
-  "disabled:cursor-not-allowed disabled:bg-input-disabled disabled:text-text-disabled",
-  "aria-[invalid=true]:border-border-error aria-[invalid=true]:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#DC2626]",
+  "w-full rounded-sm border border-input-border bg-input-background px-4 py-2.5",
+  "text-base text-text-primary placeholder:text-text-placeholder",
+  "transition-[border-color,box-shadow,background-color,transform] duration-base ease-standard",
+  "hover:-translate-y-px hover:shadow-[var(--focus-ring-shadow)_0px_4px_12px]",
+  "focus-visible:outline-none focus-visible:border-input-border-focus focus-visible:-translate-y-0.5 focus-visible:shadow-[var(--focus-ring-shadow)_0px_0px_0px_3px,rgba(102,126,234,0.15)_0px_8px_25px] focus-visible:bg-[linear-gradient(135deg,rgba(255,255,255,1)_0%,rgba(240,244,255,1)_100%)]",
+  "disabled:cursor-not-allowed disabled:bg-input-disabled disabled:text-text-disabled disabled:translate-y-0 disabled:shadow-none",
+  "aria-[invalid=true]:border-border-error",
 ] as const;
 
 export function Input({

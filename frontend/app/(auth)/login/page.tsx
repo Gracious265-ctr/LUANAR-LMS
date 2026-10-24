@@ -61,15 +61,15 @@ function LoginForm() {
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
-      <Card className="border-0 mini-h-screen shadow-card backdrop-blur-sm backdrop-saturate-150 w-full max-w-sm">
-        <div className="relative z-10 flex justify-center mb-6s">
+      <Card className="border-0">
+        <div className="relative z-10 flex justify-center mb-6">
 
         </div>
-        <h1 className="text-xl font-semibold tracking-tight text-center text-text-primary mb-2">
-          LUANAR Leave Management
+        <h1 className="text-[24px] font-bold leading-[1.2] tracking-tight text-center text-text-heading mb-2">
+          Welcome Back!
         </h1>
-        <p className="text-sm text-center text-text-secondary mb-8">
-          Sign in to your account
+        <p className="text-base text-center text-text-secondary mb-8">
+          LUANAR Leave Management System
         </p>
 
         {justChanged && (
@@ -88,7 +88,7 @@ function LoginForm() {
               name="email"
               type="email"
               required
-              placeholder="your@email.luanar"
+              placeholder="Enter your email"
             />
           </Field>
 
@@ -106,16 +106,16 @@ function LoginForm() {
             <FormError>{error}</FormError>
           )}
 
-          <Button type="submit" variant="primary" className="w-full" loading={loading}>
-            {loading ? "Signing in..." : "Sign in"}
+          <Button type="submit" variant="primary" className="w-full h-10 text-sm font-medium" loading={loading}>
+            {loading ? "Signing in..." : "Sign In"}
           </Button>
 
           <div className="text-center text-sm text-text-secondary">
             <Link
               href="/forgot-password"
-              className="text-sm underline-offset-2 hover:underline"
+              className="text-sm text-text-secondary hover:text-brand-primary-gradient-start hover:underline"
             >
-              Forgotten your password?
+              Forgot Password?
             </Link>
           </div>
         </form>

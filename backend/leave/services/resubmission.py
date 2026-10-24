@@ -127,6 +127,13 @@ def resubmit_application(*, user, application_id):
         )
         app.refresh_from_db()
 
+        # The returning stage is pending again, so it is a new pending item for
+        # everyone still entitled to act — the same feed row the materialisation
+        # and advancement paths write (refinement unit 08 §2.1).
+        from approvals.services import notify_stage_pending
+
+        notify_stage_pending(stage, app)
+
         record_revision(app, user=user)
 
         record_audit(

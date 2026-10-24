@@ -12,8 +12,8 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('leave', '0022_delete_leavetype_state_only'),
-        ('organisation', '0001_initial'),
-        ('workflows', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
+        ('roles', '0001_initial'),
+        ('chains', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -39,8 +39,8 @@ class Migration(migrations.Migration):
                         ('updated_at', models.DateTimeField(auto_now=True)),
                         ('application', models.ForeignKey(help_text='The application this stage belongs to.', on_delete=django.db.models.deletion.CASCADE, related_name='stages', to='leave.leaveapplication')),
                         ('assigned_approver', models.ForeignKey(blank=True, help_text="The member of the stage's section who actually decided it, or who claimed it by acting. Null while the stage is still open, because a section is resolved by whoever acts first — the people entitled to act are the eligible_approvers snapshot, not this field.", null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to=settings.AUTH_USER_MODEL)),
-                        ('role_ref', models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='organisation.approverrole')),
-                        ('section_ref', models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed; the snapshotted role fields stay authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='workflows.section')),
+                        ('role_ref', models.ForeignKey(blank=True, help_text='The live role this stage was materialised from. Null only for rows written before roles became data; ``role`` stays authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='roles.approverrole')),
+                        ('section_ref', models.ForeignKey(blank=True, help_text='The live section this stage was materialised from. Null only for rows written before sections existed; the snapshotted role fields stay authoritative in that case. Kept for traceability — not for reading behaviour.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to='chains.section')),
                     ],
                     options={
                         'db_table': 'workflows_applicationstage',

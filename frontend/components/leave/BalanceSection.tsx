@@ -16,9 +16,10 @@ export function BalanceSection({ balances }: { balances: LeaveBalance[] }) {
         Your Balance
       </h2>
       {balances.length === 0 ? (
-        <p className="text-sm text-text-muted">
-          No leave balances are available for the current year yet.
-        </p>
+        <div className="rounded-xl border border-border-default bg-surface-card p-6 text-center">
+          <p className="text-sm text-text-secondary">No leave balances are available for the current year yet.</p>
+          <p className="mt-1 text-xs text-text-muted">Contact HR if you expect balances to appear.</p>
+        </div>
       ) : (
         <div className="flex flex-wrap gap-6">
           {balances.map((balance) => (

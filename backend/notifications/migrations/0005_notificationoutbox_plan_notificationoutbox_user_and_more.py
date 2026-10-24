@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
         ('leave', '0019_leaveapplication_source_plan_and_more'),
         ('notifications', '0004_remove_notificationoutbox_one_notification_subject_and_more'),
         ('plans', '0001_initial'),
-        ('workflows', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
+        ('chains', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

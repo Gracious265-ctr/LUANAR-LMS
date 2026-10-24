@@ -1,13 +1,18 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
-import { FinancialYearsSection } from "@/components/hr/FinancialYearsSection";
-import { HolidaysSection } from "@/components/hr/HolidaysSection";
-import { getCurrentUser } from "@/lib/auth";
+import { CalendarTabs, type CalendarTab } from "@/components/hr/CalendarTabs";
+import { CalendarMonthGrid } from "@/components/hr/CalendarMonthGrid";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FadeIn } from "@/components/motion/FadeIn";
 import {
+  listCalendarEvents,
   listFinancialYears,
-  listPublicHolidays,
+  listHolidays,
+  listResolvedHolidays,
+  getWorkingDayPattern,
+  requireCalendarAccess,
+  type ResolvedHoliday,
 } from "@/lib/financial-years";
 import {
   Select,
@@ -16,26 +21,69 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card } from "@/components/ui/card";
-import { FadeIn } from "@/components/motion/FadeIn";
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function parseMonth(value: string | undefined): { year: number; month: number } {
+  if (value && /^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split("-").map(Number);
+    if (month >= 1 && month <= 12) {
+      return { year, month };
+    }
+  }
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+}
+
+function shiftMonth(
+  { year, month }: { year: number; month: number },
+  delta: number
+): string {
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}`;
+}
 
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string | string[] }>;
+  searchParams: Promise<{
+    year?: string | string[];
+    tab?: string | string[];
+    month?: string | string[];
+    holiday?: string | string[];
+    event?: string | string[];
+    financialYear?: string | string[];
+    workingDays?: string | string[];
+  }>;
 }) {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
-  }
+  await requireCalendarAccess();
 
   const params = await searchParams;
-  const yearFilter =
-    typeof params.year === "string" && params.year ? params.year : "";
+  const first = (value: string | string[] | undefined) =>
+    typeof value === "string" && value ? value : "";
+
+  const yearFilter = first(params.year);
+  const grid = parseMonth(first(params.month) || undefined);
+
+  // A deep link to an overlay should land on the tab that hosts it, so the
+  // dialog and the table it belongs to are visible together.
+  const requestedTab = first(params.tab);
+  const overlayTab: CalendarTab | "" =
+    first(params.financialYear)
+      ? "financial-years"
+      : first(params.holiday) || first(params.event)
+        ? "holidays"
+        : first(params.workingDays)
+          ? "working-days"
+          : "";
+  const initialTab: CalendarTab =
+    requestedTab === "holidays" ||
+    requestedTab === "working-days" ||
+    requestedTab === "financial-years"
+      ? requestedTab
+      : overlayTab || "financial-years";
 
   let financialYears;
   let yearsError = "";
@@ -48,84 +96,141 @@ export default async function CalendarPage({
   let holidays;
   let holidaysError = "";
   try {
-    holidays = await listPublicHolidays(yearFilter || undefined);
+    holidays = await listHolidays(yearFilter || undefined);
   } catch {
-    holidaysError = "Unable to load public holidays. Please try again.";
+    holidaysError = "Unable to load holidays. Please try again.";
+  }
+
+  let events;
+  try {
+    events = await listCalendarEvents();
+  } catch {
+    events = { count: 0, next: null, previous: null, results: [] };
+  }
+
+  let workingDays;
+  try {
+    workingDays = await getWorkingDayPattern();
+  } catch {
+    workingDays = {
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+    };
+  }
+
+  const daysInMonth = new Date(Date.UTC(grid.year, grid.month, 0)).getUTCDate();
+  let resolvedHolidays: ResolvedHoliday[] = [];
+  try {
+    resolvedHolidays = await listResolvedHolidays(
+      `${grid.year}-${pad(grid.month)}-01`,
+      `${grid.year}-${pad(grid.month)}-${pad(daysInMonth)}`
+    );
+  } catch {
+    resolvedHolidays = [];
   }
 
   const availableYears = Array.from(
     new Set((financialYears?.results ?? []).map((year) => year.start_date.slice(0, 4)))
   ).sort((a, b) => b.localeCompare(a));
 
+  const gridNav = (delta: number, label: string) => (
+    <Link
+      href={`/dashboard/hr-admin/calendar?tab=holidays&month=${shiftMonth(grid, delta)}`}
+      className="rounded-md border border-border-default px-2 py-1 text-xs font-medium text-text-secondary hover:text-text-primary"
+    >
+      {label}
+    </Link>
+  );
+
   return (
     <FadeIn>
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-text-primary">Leave calendar</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary">
+            Calendar
+          </h2>
           <p className="text-text-secondary">
-            Configure the university&apos;s financial years and public holidays.
-            The system uses the active financial year when validating leave
-            applications, and public holidays do not count as working leave days.
+            Configure financial years, holidays, events, and the working-day
+            pattern. The system uses these when validating leave applications:
+            public holidays and non-working days do not count as working leave
+            days.
           </p>
         </div>
 
-        <Card>
-          {yearsError ? (
+        {yearsError ? (
+          <Card>
             <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
               {yearsError}
             </div>
-          ) : financialYears ? (
-            <FinancialYearsSection years={financialYears.results} />
-          ) : null}
-        </Card>
+          </Card>
+        ) : (
+          <CalendarTabs
+            initialTab={initialTab}
+            financialYears={financialYears?.results ?? []}
+            holidays={holidays?.results ?? []}
+            holidayYearFilter={yearFilter}
+            events={events.results}
+            workingDays={workingDays}
+            grid={
+              <div className="space-y-2">
+                <div className="flex items-center justify-end gap-2">
+                  {gridNav(-1, "Previous month")}
+                  {gridNav(1, "Next month")}
+                </div>
+                <CalendarMonthGrid
+                  year={grid.year}
+                  month={grid.month}
+                  holidays={resolvedHolidays}
+                  events={events.results}
+                  workingDays={workingDays}
+                />
+              </div>
+            }
+            holidayFilter={
+              <form method="get" className="mb-4 flex items-center gap-2">
+                <input type="hidden" name="tab" value="holidays" />
+                <input
+                  type="hidden"
+                  name="month"
+                  value={`${grid.year}-${pad(grid.month)}`}
+                />
+                <Select name="year" defaultValue={yearFilter}>
+                  <SelectTrigger size="sm" aria-label="Year" className="w-auto py-1.5">
+                    <SelectValue placeholder="All years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">All years</SelectItem>
+                    {availableYears.map((year) => (
+                      <SelectItem key={year} value={year}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="submit" variant="secondary" size="sm">
+                  Filter
+                </Button>
+                {yearFilter && (
+                  <Link
+                    href="/dashboard/hr-admin/calendar?tab=holidays"
+                    className="rounded-md px-2 py-1.5 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    Clear
+                  </Link>
+                )}
+              </form>
+            }
+          />
+        )}
 
-        <Card>
-          {holidaysError ? (
-            <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
-              {holidaysError}
-            </div>
-          ) : holidays ? (
-            <HolidaysSection
-              holidays={holidays.results}
-              yearFilter={yearFilter}
-              filter={
-                /*
-                  A plain GET form, so submitting it navigates to the `year`
-                  parameter alone and drops any open overlay key. That is harmless
-                  today because the filter sits behind the modal and cannot be
-                  reached while it is open; it would need to carry the overlay key
-                  forward if the two ever became usable together.
-                */
-                <form method="get" className="mb-4 flex items-center gap-2">
-                  <Select name="year" defaultValue={yearFilter}>
-                    <SelectTrigger size="sm" aria-label="Year" className="w-auto py-1.5">
-                      <SelectValue placeholder="All years" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">All years</SelectItem>
-                      {availableYears.map((year) => (
-                        <SelectItem key={year} value={year}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="submit" variant="secondary" size="sm">
-                    Filter
-                  </Button>
-                  {yearFilter && (
-                    <Link
-                      href="/dashboard/hr-admin/calendar"
-                      className="rounded-md px-2 py-1.5 text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-                    >
-                      Clear
-                    </Link>
-                  )}
-                </form>
-              }
-            />
-          ) : null}
-        </Card>
+        {holidaysError && (
+          <p className="text-sm text-status-rejected">{holidaysError}</p>
+        )}
       </div>
     </FadeIn>
   );

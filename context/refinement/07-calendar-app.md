@@ -1,6 +1,7 @@
 # Unit — Calendar App
 
-*Unit number left open. New module — adds `backend/calendar_app/` (named to avoid clashing with Python's/Django's own `calendar` naming) and `frontend/app/(dashboard)/calendar/`. HR-only on the launcher, per the confirmed access decision below. Several already-written specs (Leave validation's notice/duration calculation, the Leave dashboard, Leave Plans' reminder scheduling) should read from this app once it exists rather than assuming calendar-day math.*
+
+read `context/AGENTS.md` before starting
 
 ---
 

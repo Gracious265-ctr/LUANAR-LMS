@@ -40,7 +40,7 @@ def make_user(username="employee@test.luanar", **kwargs):
     setting the user row alone no longer makes somebody an approver — see
     :func:`workflows.services.is_approver_user`.
     """
-    from workflows.testing import create_user_with_role
+    from chains.testing import create_user_with_role
 
     kwargs.setdefault("role", User.Role.EMPLOYEE)
     return create_user_with_role(
@@ -193,10 +193,11 @@ def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | Non
     The applicant's own id is excluded so a stubbed chain never resolves a stage
     to the applicant, a configuration ``assign_workflow`` rejects outright.
     """
-    from workflows.models import (
+    from chains.models import (
         SectionMember,
     )
-    from organisation.models import (
+    from campuses.models import Campus, CampusRoleAssignment
+from roles.models import ApproverRole, RoleAssignment (
         ApproverRole,
         RoleAssignment,
     )
@@ -236,7 +237,7 @@ def register_chain_approvers(
     approves. Rather than repeating four ``register_approver`` calls in every
     ``setUp``, they call this to obtain a chain the product would accept.
     """
-    from workflows.testing import make_approver
+    from chains.testing import make_approver
 
     chain = roles or ("supervisor", "hod", "registrar", "dvc")
     approvers = {
@@ -285,7 +286,7 @@ class StubWorkflowProvider:
         the filler is indistinguishable from a hand-registered one, including to
         :func:`workflows.services.is_approver_user`.
         """
-        from workflows.testing import make_approver
+        from chains.testing import make_approver
 
         if role not in self._fillers:
             user = make_approver(
@@ -312,8 +313,8 @@ class StubWorkflowProvider:
         A *shared* stage is not a skip: the applicant leaves a colleague behind,
         so that stage routes to them and the chain still opens at section one.
         """
-        from workflows.providers import StageDefinition
-        from workflows.testing import ensure_roles
+        from chains.providers import StageDefinition
+        from chains.testing import ensure_roles
 
         applicant_id = application.employee_id
         roles = ensure_roles(*self.default_chain)
@@ -366,7 +367,7 @@ class StubWorkflowProvider:
             )
 
         if sole_applicant_order == len(resolved) and sole_applicant_order is not None:
-            from workflows.providers import _hr_review_stage
+            from chains.providers import _hr_review_stage
 
             definitions.append(_hr_review_stage(len(resolved) + 1, applicant_id))
         return definitions
@@ -376,7 +377,7 @@ class StubWorkflowProvider:
             return []
         from django.db.models import Min
         from approvals.models import ApplicationStage
-        from workflows.providers import CancellationStageSpec
+        from chains.providers import CancellationStageSpec
 
         cycle = (
             ApplicationStage.objects.filter(application=application).aggregate(
@@ -433,7 +434,7 @@ def ensure_annual_leave_type(leave_type_id: int = 1) -> None:
     restoration has to configure the type, exactly as HR would in the Leave
     Configuration app (there is no separate rule row to configure any more).
     """
-    from leave_config.models import LeaveType
+    from leave_types.models import LeaveType
 
     LeaveType.objects.update_or_create(
         id=leave_type_id,
@@ -479,7 +480,7 @@ class StubProviderMixin:
             mock.patch("leave.cancellations.services.get_today", return_value=today),
             mock.patch("leave.cancellations.providers.get_today", return_value=today),
             mock.patch(
-                "workflows.providers.get_workflow_provider",
+                "chains.providers.get_workflow_provider",
                 return_value=stub.workflow,
             ),
             mock.patch("leave.cancellations.providers.get_today", return_value=today),

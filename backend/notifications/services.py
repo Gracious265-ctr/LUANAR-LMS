@@ -17,7 +17,9 @@ decision is durable. Discipline:
 
 from __future__ import annotations
 
-from workflows.events import APPLICATION_FINALISED, ApprovalEvent
+from chains.events import APPLICATION_FINALISED, ApprovalEvent
+
+from .models import Notification
 
 #: The domain these notifications belong to (kept in the body/subject for now).
 #: The send site in :mod:`notifications.tasks` uses it for the fallback
@@ -108,10 +110,131 @@ def queue_decision_email(event: ApprovalEvent) -> None:
 
 def register_decision_email_consumer() -> None:
     """Attach the email dispatcher to the Unit 16 bus."""
-    from workflows.events import register_consumer
+    from chains.events import register_consumer
 
     register_consumer(queue_decision_email)
 
 
 class NotificationSeamUnresolvableError(Exception):
     """Raised when an email recipient cannot be resolved from the record."""
+
+
+# ---------------------------------------------------------------------------
+# In-app notifications (refinement unit 08).
+#
+# The module-level seam every source module calls instead of inventing its own
+# feed. Notifications are personal rows scoped to their recipient, so every
+# read/mutation below is filtered by recipient and can never touch another
+# user's feed — the same ownership discipline as every other personal-data
+# endpoint in the project.
+# ---------------------------------------------------------------------------
+
+
+def create_notification(recipient, event_type: str, message: str, link: str) -> Notification:
+    """Persist one in-app notification for ``recipient``."""
+    return Notification.objects.create(
+        recipient=recipient, event_type=event_type, message=message, link=link
+    )
+
+
+def get_recent_notifications(user, limit=15, unread_only: bool = False) -> list[Notification]:
+    """The most recent notifications for the popover, newest first."""
+    queryset = Notification.objects.filter(recipient=user)
+    if unread_only:
+        queryset = queryset.filter(is_read=False)
+    return list(queryset.order_by("-created_at")[:limit])
+
+
+def get_unread_count(user) -> int:
+    """The badge count for the navbar bell."""
+    return Notification.objects.filter(recipient=user, is_read=False).count()
+
+
+def mark_read(notification_id: str, user) -> None:
+    """Mark one of the user's notifications read; another user's id is a no-op."""
+    Notification.objects.filter(id=notification_id, recipient=user).update(is_read=True)
+
+
+def mark_all_read(user) -> None:
+    """Clear the requesting user's unread feed."""
+    Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
+
+
+#: ``ApprovalDecision.Action`` → the in-app ``event_type`` suffix vocabulary.
+_DECISION_EVENT_SUFFIXES = {
+    "approve": "approved",
+    "reject": "rejected",
+    "return_for_correction": "correction_required",
+}
+
+
+def queue_decision_notification(event: ApprovalEvent) -> None:
+    """In-app feed row for the employee when their application reaches a
+    terminal outcome (refinement unit 08 §2.1).
+
+    Registered on the same Unit 16 bus as the email consumer, so it runs on
+    commit and only once the decision is durable. An *intermediate* approve is
+    deliberately silent — the employee's application is not "approved" until the
+    chain finalises (``APPLICATION_FINALISED``); reject and
+    return-for-correction are terminal the moment they are recorded. The next
+    stage's approvers are notified at the point the stage is opened, not here.
+    """
+    from approvals.models import ApprovalDecision
+
+    if event.action == ApprovalDecision.Action.APPROVE:
+        if event.kind != APPLICATION_FINALISED:
+            return
+        outcome = "was approved"
+    elif event.action == ApprovalDecision.Action.REJECT:
+        outcome = "was rejected"
+    else:
+        outcome = "needs correction"
+
+    employee = _application_employee(event.application_id)
+    if employee is None:
+        return
+    create_notification(
+        recipient=employee,
+        event_type=f"application.{_DECISION_EVENT_SUFFIXES[event.action]}",
+        message=_decision_message(event.application_id, outcome),
+        link=f"/applications/{event.application_id}",
+    )
+
+
+def _decision_message(application_id: str, outcome: str) -> str:
+    """Short human-readable line, e.g. 'Your Annual leave application was approved'."""
+    return f"Your {_application_leave_type_name(application_id)} application {outcome}"
+
+
+def _application_employee(application_id: str):
+    from leave.models import LeaveApplication
+
+    application = LeaveApplication.objects.filter(pk=application_id).only("employee_id").first()
+    return application.employee if application is not None else None
+
+
+def _application_leave_type_name(application_id: str) -> str:
+    """Leave type name resolved through the soft ``leave_type_id`` reference."""
+    from leave.models import LeaveApplication
+    from leave_types.models import LeaveType
+
+    leave_type_id = (
+        LeaveApplication.objects.filter(pk=application_id)
+        .values_list("leave_type_id", flat=True)
+        .first()
+    )
+    if leave_type_id is None:
+        return "leave"
+    return (
+        LeaveType.objects.filter(pk=leave_type_id)
+        .values_list("name", flat=True)
+        .first()
+        or "leave"
+    )
+
+
+def register_decision_notification_consumer() -> None:
+    """Attach the in-app feed to the Unit 16 bus."""
+    from chains.events import register_consumer
+
+    register_consumer(queue_decision_notification)

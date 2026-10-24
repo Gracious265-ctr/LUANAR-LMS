@@ -4,7 +4,7 @@ import { ArrowLeft, Plus } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessOrganisation } from "@/lib/nav/organisation-nav";
+import { canAccessTeams } from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
 import { buttonVariants } from "@/components/ui/button";
@@ -32,7 +32,7 @@ export default async function TeamWorkflowsPage({
   if (!user) {
     redirect("/login");
   }
-  if (!canAccessOrganisation(user)) {
+  if (!canAccessTeams(user)) {
     redirect("/dashboard");
   }
 

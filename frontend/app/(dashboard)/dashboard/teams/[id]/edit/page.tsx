@@ -8,7 +8,7 @@ import { listApproverRoles } from "@/lib/approver-roles";
 import type { Campus } from "@/lib/teams";
 import { getTeam, listCampuses } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
-import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
 import { FadeIn } from "@/components/motion/FadeIn";
 
 const CAMPUSES_ERROR = "Unable to load campuses, so this team cannot be scoped to one.";
@@ -26,7 +26,7 @@ export default async function EditTeamPage({
   if (!user) {
     redirect("/login");
   }
-  if (!isOrganisationAdministrator(user)) {
+  if (!isTeamsAdministrator(user)) {
     redirect("/dashboard");
   }
 
