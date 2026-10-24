@@ -133,7 +133,7 @@ def submit_application(*, user, application_id):
         )
 
         try:
-            from workflows.services import (
+            from chains.services import (
                 WorkflowAssignmentError,
             )
             from approvals.services import (

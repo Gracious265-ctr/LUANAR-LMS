@@ -34,14 +34,14 @@ from notifications.models import NotificationOutbox
 from notifications.services import queue_decision_email
 from notifications.tasks import deliver_notification
 from users.models import EmployeeProfile
-from workflows.events import (
+from chains.events import (
     APPLICATION_FINALISED,
     DECISION_RECORDED,
     _consumers,
     _reset_consumers_for_tests,
     register_consumer,
 )
-from workflows.models import (
+from chains.models import (
     Workflow,
 )
 from approvals.models import (
@@ -50,7 +50,7 @@ from approvals.models import (
     Delegation,
     Reassignment,
 )
-from workflows.providers import DatabaseWorkflowProvider
+from chains.providers import DatabaseWorkflowProvider
 from approvals.services import decide, reassign_application
 
 User = get_user_model()
@@ -84,7 +84,7 @@ class EndToEndBase(StubProviderMixin, TestCase):
         # Use Unit 21's real HR-configured provider rather than the stub chain,
         # so "HR configured the chain" is genuinely part of the journey.
         patcher = mock.patch(
-            "workflows.providers.get_workflow_provider",
+            "chains.providers.get_workflow_provider",
             return_value=DatabaseWorkflowProvider(),
         )
         patcher.start()

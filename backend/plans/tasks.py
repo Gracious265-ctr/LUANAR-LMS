@@ -5,7 +5,7 @@ re-trigger) sends nothing twice:
 
 1. **Remind** — an ``upcoming`` plan whose type names a ``notice_days``
    window that has just opened is emailed and moved to ``notified``. The
-   window is ``LeaveType.notice_days`` read straight from ``leave_config`` —
+   window is ``LeaveType.notice_days`` read straight from ``leave_types`` —
    the single number Unit 14's submission validation enforces too.
 2. **Follow up** — a ``notified`` plan still unconverted
    :data:`FOLLOW_UP_AFTER_DAYS` days later gets one follow-up, then never again.
@@ -23,6 +23,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from notifications.plans import PLAN_FOLLOW_UP, PLAN_REMINDER, queue_plan_email
+from notifications.services import create_notification
 
 from .models import LeavePlan, LeavePlanStatus
 from .services import mark_missed_plans
@@ -44,6 +45,16 @@ def _send_reminders(today) -> int:
         if today < plan.planned_start_date - timedelta(days=notice):
             continue
         _, created = queue_plan_email(plan, PLAN_REMINDER)
+        if created:
+            create_notification(
+                recipient=plan.employee,
+                event_type="plan.reminder",
+                message=(
+                    f"Reminder: your planned {plan.leave_type.name} leave "
+                    f"starts {plan.planned_start_date}"
+                ),
+                link=f"/dashboard/plans/{plan.pk}",
+            )
         plan.status = LeavePlanStatus.NOTIFIED
         if plan.notified_at is None:
             plan.notified_at = timezone.now()
@@ -70,6 +81,16 @@ def _send_follow_ups(today) -> int:
         if today < due_on:
             continue
         _, created = queue_plan_email(plan, PLAN_FOLLOW_UP)
+        if created:
+            create_notification(
+                recipient=plan.employee,
+                event_type="plan.follow_up",
+                message=(
+                    f"You planned {plan.leave_type.name} leave starting "
+                    f"{plan.planned_start_date} but have not applied yet"
+                ),
+                link=f"/dashboard/plans/{plan.pk}",
+            )
         plan.follow_up_sent_at = timezone.now()
         plan.save(update_fields=["follow_up_sent_at", "updated_at"])
         if created:

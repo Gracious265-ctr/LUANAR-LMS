@@ -8,15 +8,12 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from audit.validation import positive_int
-
 from users.permissions import IsHRRole
 
 from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
 )
 from ..permissions import IsOwner
 from ..serializers import (
@@ -24,7 +21,6 @@ from ..serializers import (
     FinancialYearSerializer,
     GradeEntitlementSerializer,
     LeaveApplicationSerializer,
-    PublicHolidaySerializer,
 )
 from ..services import (
     leave_types_available_to,
@@ -124,29 +120,6 @@ class FinancialYearViewSet(
 
     def get_queryset(self):
         return FinancialYear.objects.all()
-
-
-class PublicHolidayViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    viewsets.GenericViewSet,
-):
-    """HR-only CRUD for configured public holidays (no hard delete)."""
-
-    serializer_class = PublicHolidaySerializer
-    permission_classes = [permissions.IsAuthenticated, IsHRRole]
-    http_method_names = ["get", "post", "patch", "head", "options"]
-
-    def get_queryset(self):
-        queryset = PublicHoliday.objects.all()
-        year = self.request.query_params.get("year")
-        if year:
-            queryset = queryset.filter(
-                date__year=positive_int(year, "year")
-            )
-        return queryset
 
 
 class LeaveApplicationViewSet(viewsets.ModelViewSet):

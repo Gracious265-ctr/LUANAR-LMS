@@ -12,24 +12,24 @@ from rest_framework.test import APIClient
 
 from documents.models import LeaveDocumentTemplate
 from documents.services import get_template
+from calendar_app.models import Holiday
 from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
     SupportingDocument,
 )
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from users.models import User
 
-from workflows.models import (
+from chains.models import (
     Workflow,
 )
 from approvals.models import (
     Delegation,
     Reassignment,
 )
-from workflows.testing import ensure_roles, make_approver, team_for
+from chains.testing import ensure_roles, make_approver, team_for
 
 from leave.tests.stubs import (
     EARLIEST_ANNUAL_START,
@@ -611,8 +611,13 @@ class AuditWiringTests(StubProviderMixin, TestCase):
 
     def test_public_holiday_create_and_update_are_audited(self):
         response = self.client.post(
-            "/api/v1/public-holidays/",
-            {"name": "Independence Day", "date": date(2026, 7, 6).isoformat()},
+            "/api/v1/calendar/holidays/",
+            {
+                "name": "Independence Day",
+                "date": date(2026, 7, 6).isoformat(),
+                "is_recurring": False,
+                "observed_shift": False,
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -620,7 +625,7 @@ class AuditWiringTests(StubProviderMixin, TestCase):
         self.assertEqual(self._entry_for("publicholiday", holiday_id).action, "created")
 
         response = self.client.patch(
-            f"/api/v1/public-holidays/{holiday_id}/",
+            f"/api/v1/calendar/holidays/{holiday_id}/",
             {"name": "Independence Day (public)"},
             format="json",
         )

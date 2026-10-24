@@ -24,10 +24,10 @@ from leave.models import (
     GradeLeaveEntitlement,
     LeaveApplication,
 )
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from users.models import EmployeeProfile
 from approvals.models import ApplicationStage, ApprovalDecision
-from workflows.testing import team_for
+from chains.testing import team_for
 
 from .stubs import make_user
 

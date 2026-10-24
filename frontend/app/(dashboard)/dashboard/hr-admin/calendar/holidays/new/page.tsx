@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getCurrentUser } from "@/lib/auth";
+import { requireCalendarAccess } from "@/lib/financial-years";
 
 /**
  * Create and edit now happen in an overlay on the list page, so this route only
@@ -12,14 +12,7 @@ import { getCurrentUser } from "@/lib/auth";
  * bouncing through a list page that would refuse them anyway.
  */
 export default async function ShimPage() {
-  const user = await getCurrentUser();
+  await requireCalendarAccess();
 
-  if (!user) {
-    redirect("/login");
-  }
-  if (user.role !== "hr") {
-    redirect("/dashboard");
-  }
-
-  redirect(`/dashboard/hr-admin/calendar?holiday=new`);
+  redirect(`/dashboard/hr-admin/calendar?tab=holidays&holiday=new`);
 }

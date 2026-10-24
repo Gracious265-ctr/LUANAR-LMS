@@ -252,6 +252,32 @@ Every account is seeded with the password `testpass123`. The command is
 idempotent, so it is safe to re-run. It is for development and testing only —
 it is not the path real users are onboarded through.
 
+To test the system end to end — every capacity, not just the leave flow — there
+is a second command:
+
+```bash
+cd backend
+uv run manage.py seed_test_profiles
+```
+
+It creates fourteen accounts on `@e2e.luanar` (same password): **HR**, **DVC**,
+**Registrar**, **Supervisor**, **HOD**, **Dean**, **Campus Registrar** and seven
+employees. Two teams are made routable — an administration chain
+`Supervisor → HOD → Registrar → DVC` and, at **Main Campus**, an academic chain
+`Dean → Campus Registrar` — along with the institution-wide Registrar and DVC
+holdings, a campus-wide Campus Registrar holding, and the same baseline leave
+configuration. It is idempotent too. An office has exactly one holder, so run it
+**after** `seed_demo_data` if both are used: it moves the Registrar holding onto
+the E2E account and re-points the step that named the previous holder.
+
+Both sets of demo accounts can be retired with
+
+```bash
+uv run manage.py retire_demo_users        # and --undo to bring them back
+```
+
+which sweeps every `@test.luanar` and `@e2e.luanar` account.
+
 Once someone is signed in they can change their own password from **My Account**
 in the sidebar. It asks for the current password, emails the account a notice,
 and signs every session out including the one they changed it from — so they
@@ -326,14 +352,15 @@ All API endpoints are versioned under `/api/v1/`:
 | POST | `/api/v1/leave-rules/` | Create an effective-dated leave rule |
 | GET | `/api/v1/leave-rules/{id}/` | Retrieve one leave rule |
 | PATCH | `/api/v1/leave-rules/{id}/` | Update a leave rule |
-| GET | `/api/v1/financial-years/` | List financial years (paginated, newest first) |
-| POST | `/api/v1/financial-years/` | Create a financial year (must not overlap; activating deactivates the previous active) |
-| GET | `/api/v1/financial-years/{id}/` | Retrieve one financial year |
-| PATCH | `/api/v1/financial-years/{id}/` | Update a financial year |
-| GET | `/api/v1/public-holidays/` | List public holidays (paginated, by date; `year=YYYY` filter) |
-| POST | `/api/v1/public-holidays/` | Create a public holiday (date must be unique) |
-| GET | `/api/v1/public-holidays/{id}/` | Retrieve one public holiday |
-| PATCH | `/api/v1/public-holidays/{id}/` | Update a public holiday |
+| GET | `/api/v1/calendar/financial-years/` | List financial years (paginated, newest first) — any authenticated user |
+| POST/DELETE | `/api/v1/calendar/financial-years/` | Create/delete a financial year (HR only; create must not overlap — activating deactivates the previous active; delete returns 409 while an entitlement or plan references it) |
+| PATCH | `/api/v1/calendar/financial-years/{id}/` | Update a financial year (HR only) |
+| GET | `/api/v1/calendar/holidays/` | List holiday rows (paginated; `year=YYYY`, `financial_year=` filters). With `start=&end=` returns resolved occurrences in range (recurrence expanded, `observed_shift` applied) — any authenticated user |
+| POST/PATCH/DELETE | `/api/v1/calendar/holidays/` | Configure a holiday (HR only) |
+| GET | `/api/v1/calendar/working-days/` | Read the working-day pattern (defaults to Mon–Fri until saved) — any authenticated user |
+| PATCH | `/api/v1/calendar/working-days/` | Replace the working-day pattern (HR only) |
+| GET | `/api/v1/calendar/events/` | List events (paginated; `start=&end=` overlap filter) — any authenticated user |
+| POST/PATCH/DELETE | `/api/v1/calendar/events/` | Configure an event (HR only) |
 | GET | `/api/v1/workflows/` | List approval workflows (paginated, by name; each row includes `state`, `effective_from`, `is_active`) |
 | POST | `/api/v1/workflows/` | Create a workflow with its ordered approval stages (draft unless `effective_from` is sent; activating/scheduling validates approver availability and scope conflicts) |
 | GET | `/api/v1/workflows/{id}/` | Retrieve one workflow with its stages |

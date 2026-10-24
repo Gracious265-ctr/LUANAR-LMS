@@ -17,7 +17,7 @@ from rest_framework import serializers as drf_serializers
 
 from audit.validation import uuid_value
 from leave.models import LeaveApplication, SupportingDocument
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from leave.cancellations import payloads as cancellation_payloads
 from leave.cancellations.models import (
     CancellationApprovalStage,
@@ -46,8 +46,8 @@ from approvals.models import (
     Reassignment,
 )
 
-from workflows.policies import get_view_access
-from workflows.permissions import IsApproverRoleOrHR
+from chains.policies import get_view_access
+from chains.permissions import IsApproverRoleOrHR
 
 from approvals.serializers import (
     DelegationActionSerializer,
@@ -60,7 +60,7 @@ from .payloads import (
     list_item,
     review_payload,
 )
-from organisation.services import (
+from roles.services import (
     approver_role_labels_for,
     is_approver_user,
 )

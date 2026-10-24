@@ -67,7 +67,7 @@ def _deducts_annual_balance(application) -> bool:
     The submission snapshot owns the answer, because it is the configuration
     the application was actually approved under. Only when no snapshot exists —
     a row created directly, outside the normal submission path — does the
-    live ``leave_config`` flag answer. With neither, the safe answer is
+    live ``leave_types`` flag answer. With neither, the safe answer is
     "does not deduct": a cancellation must never invent a restoration the
     configuration never granted.
     """
@@ -87,7 +87,7 @@ def _deducts_annual_balance(application) -> bool:
 
 def _consumes_flag(leave_type_id: int) -> bool | None:
     """The type's live ``consumes_annual_entitlement``, or None if it is gone."""
-    from leave_config.services import consumes_annual_entitlement
+    from leave_types.services import consumes_annual_entitlement
 
     try:
         return consumes_annual_entitlement(leave_type_id)

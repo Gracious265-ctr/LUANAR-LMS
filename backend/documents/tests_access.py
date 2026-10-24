@@ -20,7 +20,7 @@ from leave.models import LeaveApplication, SupportingDocument
 from teams.models import TeamRoleAssignment
 from users.models import EmployeeProfile
 
-from workflows.testing import ensure_roles, make_team
+from chains.testing import ensure_roles, make_team
 
 User = get_user_model()
 

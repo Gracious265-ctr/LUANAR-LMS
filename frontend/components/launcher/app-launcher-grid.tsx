@@ -32,18 +32,26 @@ export function AppLauncherGrid() {
       if (!(key in APPS_REGISTRY)) return null;
       return { ...a, key };
     })
-    .filter(Boolean) as Array<{ key: AppKey; badge: { count?: number; label?: string; tone?: string } | null }>;
+    .filter(Boolean) as Array<{
+    key: AppKey;
+    badge: { count?: number; label?: string; tone?: string } | null;
+  }>;
 
   if (apps.length === 0) {
     return (
-      <div className="text-center py-12 text-muted-foreground">
-        No apps available for your role.
+      <div className="text-center py-12">
+        <p className="text-sm font-medium text-text-primary">
+          No apps available for your role
+        </p>
+        <p className="mt-1 text-sm text-text-muted">
+          Contact your administrator if you need access.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4 sm:gap-5">
       {apps.map((app) => (
         <AppCard key={app.key} keyName={app.key} badge={app.badge} />
       ))}

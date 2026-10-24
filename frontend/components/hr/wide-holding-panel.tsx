@@ -100,6 +100,7 @@ export function WideHoldingPanel({
   employees,
   holdings,
   excludedUserIds = [],
+  canManage = true,
 }: {
   scope: WideScope;
   /** The roles that may be held at this scope, in the order to offer them. */
@@ -127,6 +128,13 @@ export function WideHoldingPanel({
    * would create a person who reappears in another wide-approver section.
    */
   excludedUserIds?: number[];
+  /**
+   * Whether the viewer may write here. A team's manager reads this panel as a
+   * statement of who its wide approvers are; assigning, removing, and
+   * designating a manager stay HR's, so for a manager the panel draws no form
+   * and no buttons — a read, not a form they could not save.
+   */
+  canManage?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -299,7 +307,7 @@ export function WideHoldingPanel({
     <div className="rounded-lg border border-border-default bg-surface-page p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 className="text-sm font-semibold text-text-primary">
-          Assign a wide approver
+          {canManage ? "Assign a wide approver" : "Wide approvers"}
         </h4>
         <span className="text-xs uppercase tracking-wide text-text-muted">
           {wideScopeLabel(scope)}
@@ -323,30 +331,32 @@ export function WideHoldingPanel({
                   </Badge>
                 )}
               </span>
-              <div className="flex items-center gap-2">
-                {scope === "team" && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleToggleManager(holding)}
-                    className="rounded-md border border-border-default px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {holding.is_team_manager
-                      ? "Remove as manager"
-                      : "Make manager"}
-                  </button>
-                )}
-                <ConfirmButton
-                size="sm"
-                disabled={busy}
-                loading={busy}
-                onConfirm={() => handleRemove(holding)}
-                prompt={`Remove ${holding.user_name} as ${holding.role_label}?`}
-                aria-label={`Remove ${holding.user_name} from ${holding.role_label}`}
-              >
-                Remove
-              </ConfirmButton>
-              </div>
+              {canManage && (
+                <div className="flex items-center gap-2">
+                  {scope === "team" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => handleToggleManager(holding)}
+                      className="rounded-md border border-border-default px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-button-secondary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {holding.is_team_manager
+                        ? "Remove as manager"
+                        : "Make manager"}
+                    </button>
+                  )}
+                  <ConfirmButton
+                  size="sm"
+                  disabled={busy}
+                  loading={busy}
+                  onConfirm={() => handleRemove(holding)}
+                  prompt={`Remove ${holding.user_name} as ${holding.role_label}?`}
+                  aria-label={`Remove ${holding.user_name} from ${holding.role_label}`}
+                >
+                  Remove
+                </ConfirmButton>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -359,7 +369,12 @@ export function WideHoldingPanel({
         </p>
       )}
 
-      {roles.length === 0 ? (
+      {!canManage ? (
+        <p className="mt-2 text-xs text-text-muted">
+          A team&apos;s wide approvers are assigned by HR. Ask HR to change who
+          holds these.
+        </p>
+      ) : roles.length === 0 ? (
         <p className="mt-2 text-xs text-text-muted">
           No roles may be held at this scope right now.
         </p>

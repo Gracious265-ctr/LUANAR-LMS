@@ -5,9 +5,9 @@ from django.db import models
 from django.db.models import Min
 from django.utils import timezone
 
-# ``LeaveType`` lives in ``leave_config`` (refinement unit 06). This app only
+# ``LeaveType`` lives in ``leave_types`` (refinement unit 06). This app only
 # ever references it by name — every rule on it is read through
-# ``leave_config.services``, never copied onto a model here.
+# ``leave_types.services``, never copied onto a model here.
 
 
 class GradeEntitlement(models.Model):
@@ -29,7 +29,7 @@ class GradeEntitlement(models.Model):
     days = models.PositiveIntegerField()
     effective_from = models.DateField()
     leave_type = models.ForeignKey(
-        "leave_config.LeaveType",
+        "leave_types.LeaveType",
         on_delete=models.PROTECT,
         related_name="grade_entitlements",
         null=True,
@@ -114,7 +114,7 @@ class GradeLeaveEntitlement(models.Model):
         help_text="External grade identifier from the organisation provider.",
     )
     leave_type = models.ForeignKey(
-        "leave_config.LeaveType",
+        "leave_types.LeaveType",
         on_delete=models.PROTECT,
         related_name="grade_leave_entitlements",
     )
@@ -145,23 +145,6 @@ class GradeLeaveEntitlement(models.Model):
         )
 
 
-class PublicHoliday(models.Model):
-    """A configured public-holiday date (named, occurs at most once)."""
-
-    name = models.CharField(max_length=200)
-    date = models.DateField(unique=True)
-
-    class Meta:
-        ordering = ["date"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["date"],
-                name="publicholiday_date_unique",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.name} ({self.date})"
 class LeaveApplication(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"

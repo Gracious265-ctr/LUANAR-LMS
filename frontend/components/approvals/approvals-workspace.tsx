@@ -32,7 +32,7 @@ export function ApprovalsWorkspace({
 }) {
   const [view, setView] = useState<WorkspaceView>(initialView);
 
-  const tabs: { value: WorkspaceView; label: string }[] = [
+  const tabs: { value: WorkspaceView; label: string; count?: number }[] = [
     { value: "applications", label: "Applications" },
     { value: "cancellations", label: "Cancellation requests" },
   ];
@@ -56,7 +56,7 @@ export function ApprovalsWorkspace({
       >
         <TabsList variant="segmented" aria-label="Approvals workspace">
           {tabs.map((tab) => (
-            <TabsTrigger key={tab.value} variant="segmented" value={tab.value}>
+            <TabsTrigger key={tab.value} variant="segmented" value={tab.value} className="flex items-center gap-2">
               {tab.label}
             </TabsTrigger>
           ))}

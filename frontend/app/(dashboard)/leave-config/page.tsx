@@ -40,7 +40,7 @@ export default async function LeaveConfigPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-text-primary">
+          <h2 className="text-2xl font-semibold tracking-tight text-text-primary">
             Leave Configuration
           </h2>
           <p className="text-text-secondary">
@@ -60,9 +60,12 @@ export default async function LeaveConfigPage({
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-text-primary">
-            All leave types
-          </h3>
+          <div>
+            <h3 className="text-lg font-semibold text-text-primary">
+              All leave types
+            </h3>
+            <p className="text-sm text-text-muted">Retired types are hidden by default.</p>
+          </div>
           <ShowInactiveToggle checked={includeInactive} />
         </div>
 

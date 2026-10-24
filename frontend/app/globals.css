@@ -6,15 +6,28 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Brand and Primary — Stripe's core brand is `#533afd`. Derive subtle tints
-     for selected/soft surfaces from the primary to avoid introducing arbitrary
-     hues. */
-  --brand-primary: #533afd;
-  --brand-primary-hover: #665efd;
-  --brand-primary-active: #4236cc;
-  --brand-primary-subtle: #f2f0ff;
-  --brand-primary-muted: #e7e2ff;
-  --brand-primary-border: #d3cbff;
+  /* Course Design Cards Colors */
+  --clr-blue: #1890ff;
+  --clr-green: #01c3a8;
+  --clr-orange: #ffb741;
+  --clr-red: #a63d2a;
+  --bg-dark: #232228;
+  --bg-footer: #151419;
+  --color-white: #fff;
+  --color-gray-light: #ddd;
+  --color-gray-medium: #363636;
+  --color-gray-dark: #292929;
+  --color-gray-very-dark: #222127;
+
+  /* Brand and Primary — SARIS design system */
+  --brand-primary: #667eea;
+  --brand-primary-gradient-start: #764ba2;
+  --brand-primary-gradient-end: #667eea;
+  --brand-primary-hover: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  --brand-primary-active: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --brand-primary-subtle: #f0f4ff;
+  --brand-primary-muted: #e0e7ff;
+  --brand-primary-border: #c7d2fe;
   --brand-primary-foreground: #FFFFFF;
 
   /* Institutional Secondary */
@@ -25,34 +38,37 @@
   --brand-secondary-border: #B8E5BF;
   --brand-secondary-foreground: #FFFFFF;
 
-  /* Neutral Surfaces — Stripe uses a clean, light palette with plenty of white. */
-  --surface-page: #f1f1ee;
-  --surface-card: #FFFFFF;
+  
+  --surface-page: #e2e8f0;
+  --surface-card: #F2F2F2;
   --surface-elevated: #FFFFFF;
-  --surface-muted: #f7fafc;
-  --surface-subtle: #f7fafc;
+  --surface-muted: #f8fafc;
+  --surface-subtle: #f1f5f9;
   --surface-hover: #f6f9fc;
   --surface-active: #eaf0f6;
   --surface-disabled: #f7fafc;
 
-  /* Text — predominantly black for body on light surfaces. */
+
   --text-primary: #000000;
-  --text-secondary: #3d4d6b;
-  --text-muted: #7d8ba4;
-  --text-placeholder: #7d8ba4;
-  --text-disabled: #b1bbc9;
+  --text-secondary: #374151;
+  --text-muted: #9ca3af;
+  --text-placeholder: #9ca3af;
+  --text-disabled: #9ca3af;
   --text-on-brand: #FFFFFF;
-  --text-link: #533afd;
-  --text-link-hover: #665efd;
+  --text-heading: #111827;
+  --text-link: #374151;
+  --text-link-hover: #764ba2;
 
   /* Borders and Dividers */
-  --border-default: #e3e8ef;
-  --border-subtle: #f2f4f7;
-  --border-strong: #c9d1dc;
-  --border-focus: #533afd;
-  --border-error: #df1b41;
+  --border-default: #e5e7eb;
+  --border-subtle: #e5e7eb;
+  --border-strong: #d1d5db;
+  --border-focus: #667eea;
+  --border-error: #dc2626;
+  --border-error-light: #ef4444;
   --border-success: #0a7c42;
   --border-warning: #d97904;
+  --focus-ring-shadow: rgba(102, 126, 234, 0.1);
 
   /* Semantic Status Colors */
   --status-pending: #D97706;
@@ -70,13 +86,13 @@
 
   /* Form and Interaction */
   --input-background: #FFFFFF;
-  --input-border: #e3e8ef;
-  --input-border-hover: #c9d1dc;
-  --input-border-focus: #533afd;
-  --input-ring-focus: #533afd33;
+  --input-border: #e5e7eb;
+  --input-border-hover: #d1d5db;
+  --input-border-focus: #667eea;
+  --input-ring-focus: rgba(102, 126, 234, 0.1);
   --input-disabled: #f7fafc;
-  --button-primary: #533afd;
-  --button-primary-hover: #665efd;
+  --button-primary: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  --button-primary-hover: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
   --button-secondary: #FFFFFF;
   --button-secondary-hover: #f7fafc;
   --button-destructive: #df1b41;
@@ -96,11 +112,7 @@
   --accent-slate: #64748B;
   --accent-slate-subtle: #F1F5F9;
 
-  /* AI Accent */
-  --ai-primary: #7C3AED;
-  --ai-subtle: #F5F3FF;
-  --ai-border: #DDD6FE;
-  --ai-foreground: #FFFFFF;
+  
 
   /* Chart palette: derived from the accent ramp so charts stay on brand
      without introducing new hues. */
@@ -120,61 +132,33 @@
   --sidebar-border: var(--border-default);
   --sidebar-ring: var(--border-focus);
 
-  /* Border Radius
-     The scale is deliberately only three values. `6px` is the default for every
-     card, input, button, select and dialog; `4px` is for small inline elements
-     such as badges; `9999px` is reserved for genuine circles — avatars,
-     timeline dots, stepper rings, scrollbars and count bubbles.
-
-     `md` is the control scale, so every button, input, select, textarea, chip
-     and date-picker trigger resolves to `rounded-control`, which points here.
-     The former `lg`/`xl`/`2xl`/`3xl`/`4xl` container steps all collapse onto
-     `6px` as well: with a 1px border carrying the edge, a larger radius stops
-     reading as "container" and starts competing with the pill shapes, so the
-     extra steps were decoration rather than hierarchy. `calendar` stays at
-     `4px` so multi-day range bars and day cells keep square-ish corners
-     instead of collapsing into circles. */
-  --radius: 6px;
-  --radius-xs: 3px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 6px;
-  --radius-2xl: 8px;
-  --radius-3xl: 8px;
-  --radius-4xl: 10px;
-  --radius-full: 100px;
+  /* Border Radius - SARIS Design */
+  --radius: 9px;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 16px;
+  --radius-full: 9999px;
   --radius-calendar: 4px;
 
-  /* Depth
-     Border-first: a static element's edge is a real 1px `border`, not a shadow.
-     `card`/`subtle` therefore carry only the soft drop that lifts a bordered
-     surface off the page — the spec's own `elevation.card` also embeds a
-     `0 0 0 1px` ring, which would render a 2px edge next to the border we
-     already draw, so the ring is dropped and the border kept.
-
-     Shadows earn their keep in three places only: hover (the element is being
-     acted on), overlays (popovers/dropdowns/tooltips), and modals. */
+  /* Depth - SARIS Design */
   --shadow-none: none;
-  --shadow-subtle: 0px 1px 3px rgba(23, 23, 23, 0.04);
-  --shadow-card: 0px 3px 6px rgba(23, 23, 23, 0.06);
+  --shadow-subtle: 0px 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   --shadow-xs: var(--shadow-subtle);
-  --shadow-hover: 0px 15px 35px rgba(23, 23, 23, 0.08);
-  --shadow-dropdown: 0px 4px 8px rgba(23, 23, 23, 0.05);
-  --shadow-modal: 0px 16px 32px rgba(50, 50, 93, 0.12);
-  --shadow-pressed: inset 0 1px 2px rgba(23, 23, 23, 0.04);
+  --shadow-hover: 0 8px 25px rgba(102, 126, 234, 0.25);
+  --shadow-dropdown: 0px 4px 8px rgba(0, 0, 0, 0.05);
+  --shadow-modal: 0px 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-pressed: none;
 
-  /* Focus is the one depth that is a ring rather than a drop: an opaque
-     surface-coloured inner ring to separate the indicator from the control,
-     then the brand ring outside it. This keeps the indicator legible on both
-     light and dark surfaces without relying on a `ring-offset` colour, which
-     breaks on transparent and gradient parents. */
-  --shadow-focus: 0 0 0 2px #ffffff, 0 0 0 4px #533afd;
+  /* Focus is the one depth that is a ring rather than a drop */
+  --shadow-focus: 0 0 0 3px rgba(102, 126, 234, 0.1), 0 8px 25px rgba(102, 126, 234, 0.15);
 
-  /* shadcn elevation scale, aliased onto the depths above so vendored
-     components read correctly without introducing a second visual language.
-     The shadcn names imply heavier treatment than the same surface gets here,
-     so `sm`/`md` are mapped down to the card depth rather than up. */
+
   --shadow-2xs: 0 1px 2px 0 #0000000d;
   --shadow-sm: var(--shadow-card);
   --shadow-md: var(--shadow-card);
@@ -225,21 +209,22 @@
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
-  /* Typography */
+  /* Typography - SARIS uses Inter */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --tracking-tight: -0.01em;
   --tracking-normal: 0;
   --text-xs-line: 18px;
-  --text-sm-line: 20px;
-  --text-base-line: 24px;
-  --text-lg-line: 28px;
-  --text-xl-line: 28px;
-  --text-2xl-line: 32px;
-  --text-3xl-line: 36px;
-  --text-4xl-line: 40px;
+  --text-sm-line: 1.5;
+  --text-base-line: 1.5;
+  --text-lg-line: 1.5;
+  --text-xl-line: 1.2;
+  --text-2xl-line: 1.2;
+  --text-3xl-line: 1.2;
+  --text-4xl-line: 1.2;
   --measure-body: 68ch;
 
   /* Controls */
-  --control-radius: 4px;
+  --control-radius: 8px;
   --control-height-sm: 32px;
   --control-height-md: 36px;
   --control-height-lg: 40px;
@@ -249,8 +234,8 @@
   --control-pad-x-lg: 16px;
   --control-pad-y: 8px;
   --control-gap: 8px;
-  --ring-width: 2px;
-  --ring-offset: 2px;
+  --ring-width: 3px;
+  --ring-offset: 0px;
   --disabled-opacity: 0.6;
 
   /* Theme Tokens */
@@ -277,7 +262,8 @@
 
 :root.dark {
   /* Brand and Primary — hue held at 202°, lightness lifted for a dark ground */
-  --brand-primary: #7d8ba4; /* neutral; Stripe dark scheme primarily uses white/greys with subtle colour accents */
+  --brand-primary: #7d8ba4;
+  /* neutral; Stripe dark scheme primarily uses white/greys with subtle colour accents */
   --brand-primary-hover: #5f6f8b;
   --brand-primary-active: #5f6f8b;
   --brand-primary-subtle: #1a2028;
@@ -375,11 +361,6 @@
   --accent-slate: #9BA2AE;
   --accent-slate-subtle: #242D3A;
 
-  /* AI Accent — a light purple on dark takes dark text, not white */
-  --ai-primary: #C4B5FD;
-  --ai-subtle: #3B2A63;
-  --ai-border: #4C3A7A;
-  --ai-foreground: #1A212E;
 
   /* Depth
      The light theme's 5% black is nearly invisible against a #1A212E ground, so
@@ -576,7 +557,7 @@
 
   /* Font Family — Stripe uses sohne-var as its primary typeface. System
      fallbacks are kept to avoid relying on a locally unavailable font. */
-  --font-sans: sohne-var, ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
 
   /* Font Sizes
@@ -602,7 +583,8 @@
   --leading-body: 1.5;
   /* Headings sit at 1.2 per the spec's display/H1 rows. */
   --leading-tight: 1.2;
-  --tracking-display: -0.02em; /* 32px and up (Geist display) */
+  --tracking-display: -0.02em;
+  /* 32px and up (Geist display) */
 
   /* Breakpoints
      The data tables in this app are wide enough that a tablet in landscape is
@@ -617,7 +599,8 @@
   --breakpoint-md: 960px;
 
   /* Letter Spacing */
-  --tracking-tight: -0.01em; /* 24px titles (Geist) */
+  --tracking-tight: -0.01em;
+  /* 24px titles (Geist) */
   --tracking-normal: 0;
 
   /* Controls */
@@ -638,6 +621,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -649,6 +633,7 @@
     opacity: 1;
     transform: translateY(0);
   }
+
   to {
     opacity: 0;
     transform: translateY(8px);
@@ -673,6 +658,7 @@
   from {
     height: 0;
   }
+
   to {
     height: var(--radix-accordion-content-height);
   }
@@ -682,6 +668,7 @@
   from {
     height: var(--radix-accordion-content-height);
   }
+
   to {
     height: 0;
   }
@@ -799,6 +786,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -820,6 +808,7 @@ body {
    `:not()` because those rows are a desktop-density table being read sideways
    on a phone, and growing their actions would triple the row height. */
 @media (max-width: 959px) {
+
   button:not([data-dense]),
   a[role="button"]:not([data-dense]),
   input:not([type="checkbox"]):not([type="radio"]):not([data-dense]),
@@ -832,4 +821,181 @@ body {
   .overflow-x-auto a[role="button"] {
     min-height: unset;
   }
+}
+
+/* Course Design Cards */
+.card {
+  border-radius: 1rem;
+  padding: 2rem;
+  width: 100%;
+  max-width: 22rem;
+  min-height: 24rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.card-header .date {
+  font-size: 0.875rem;
+}
+
+.card-body {
+  flex: 1;
+}
+
+.card-body h3 {
+  color: var(--color-white);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  text-transform: capitalize;
+}
+
+.card-body p {
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 1.5rem;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.progress span {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.875rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background-color: var(--color-white);
+  border-radius: 9999px;
+  width: var(--progress-width, 50%);
+}
+
+.green .progress-bar::after {
+  width: 90%;
+}
+
+.orange .progress-bar::after {
+  width: 30%;
+}
+
+.red .progress-bar::after {
+  width: 50%;
+}
+
+.blue .progress-bar::after {
+  width: 20%;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+.card-footer ul {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card-footer li {
+  margin-left: -0.5rem;
+}
+
+.card-footer li:first-child {
+  margin-left: 0;
+}
+
+.card-footer li:last-child {
+  margin-left: 0.25rem;
+}
+
+.card-footer img {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  object-fit: cover;
+}
+
+.btn-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.2);
+  color: var(--color-white);
+  transition: background-color 0.2s ease-in-out;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-add:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-countdown {
+  color: var(--color-white);
+  font-size: 0.875rem;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  background-color: rgba(255, 255, 255, 0.2);
+  transition: background-color 0.2s ease-in-out;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-countdown:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.green {
+  background-color: var(--clr-green);
+}
+
+.orange {
+  background-color: var(--clr-orange);
+}
+
+.red {
+  background-color: var(--clr-red);
+}
+
+.blue {
+  background-color: var(--clr-blue);
 }

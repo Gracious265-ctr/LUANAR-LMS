@@ -11,11 +11,19 @@ notice, from a Monday, is the earliest valid start).
 from datetime import date, timedelta
 
 from ..types import ValidationContext, ValidationIssue
-from ..working_days import count_working_days, working_days_elapsed
+from ..working_days import (
+    configured_weekdays,
+    count_working_days,
+    working_days_elapsed,
+)
 
 
 def _earliest_start(
-    today: date, min_notice: int, unit: str, holidays: set[date]
+    today: date,
+    min_notice: int,
+    unit: str,
+    holidays: set[date],
+    weekdays: set[int],
 ) -> date:
     """Return the earliest start date that satisfies the notice rule."""
     if unit == "calendar_days":
@@ -25,7 +33,7 @@ def _earliest_start(
     # Working days: step forward from tomorrow until the notice is met.
     candidate = date.fromordinal(today.toordinal() + 1)
     while count_working_days(
-        date.fromordinal(today.toordinal() + 1), candidate, holidays
+        date.fromordinal(today.toordinal() + 1), candidate, holidays, weekdays
     ) < min_notice:
         candidate = date.fromordinal(candidate.toordinal() + 1)
     return candidate
@@ -42,18 +50,21 @@ def validate_notice(
         return [], ["notice"]
 
     holidays = set(ctx.holidays)
+    weekdays = configured_weekdays()
     unit = rules.min_notice_unit
     if unit == "calendar_days":
         given = (ctx.start_date - ctx.today).days
     elif unit == "working_days":
-        given = working_days_elapsed(ctx.today, ctx.start_date, holidays)
+        given = working_days_elapsed(ctx.today, ctx.start_date, holidays, weekdays)
     else:
         return [], ["notice"]
 
     if given >= rules.min_notice:
         return [], []
 
-    earliest = _earliest_start(ctx.today, rules.min_notice, unit, holidays)
+    earliest = _earliest_start(
+        ctx.today, rules.min_notice, unit, holidays, weekdays
+    )
     unit_label = "working days" if unit == "working_days" else "calendar days"
     message = (
         f"This leave type needs {rules.min_notice} {unit_label} notice. "

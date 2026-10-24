@@ -1,56 +1,101 @@
 import { apiErrorMessage } from "./utils";
 import type {
+  CalendarEvent,
+  CalendarEventInput,
   FinancialYear,
   FinancialYearInput,
-  PublicHoliday,
-  PublicHolidayInput,
+  Holiday,
+  HolidayInput,
+  WorkingDayPattern,
 } from "./financial-years";
 
 export async function createFinancialYear(
   input: FinancialYearInput
 ): Promise<FinancialYear> {
-  return proxyPost<FinancialYear>("/api/hr/financial-years", input);
+  return proxyWrite<FinancialYear>("/api/hr/financial-years", "POST", input);
 }
 
 export async function updateFinancialYear(
   id: number | string,
   input: FinancialYearInput
 ): Promise<FinancialYear> {
-  return proxyPatch<FinancialYear>(`/api/hr/financial-years/${id}`, input);
+  return proxyWrite<FinancialYear>(
+    `/api/hr/financial-years/${id}`,
+    "PATCH",
+    input
+  );
 }
 
-export async function createPublicHoliday(
-  input: PublicHolidayInput
-): Promise<PublicHoliday> {
-  return proxyPost<PublicHoliday>("/api/hr/public-holidays", input);
+/**
+ * Delete a financial year.
+ *
+ * The backend refuses with 409 while a leave entitlement or plan still
+ * references the period and answers with a sentence saying so; that refusal is
+ * surfaced to HR rather than hidden, because the blocker is theirs to clear.
+ */
+export async function deleteFinancialYear(id: number | string): Promise<void> {
+  await proxyWrite<void>(`/api/hr/financial-years/${id}`, "DELETE");
 }
 
-export async function updatePublicHoliday(
+export async function createHoliday(input: HolidayInput): Promise<Holiday> {
+  return proxyWrite<Holiday>("/api/hr/holidays", "POST", input);
+}
+
+export async function updateHoliday(
   id: number | string,
-  input: PublicHolidayInput
-): Promise<PublicHoliday> {
-  return proxyPatch<PublicHoliday>(`/api/hr/public-holidays/${id}`, input);
+  input: HolidayInput
+): Promise<Holiday> {
+  return proxyWrite<Holiday>(`/api/hr/holidays/${id}`, "PATCH", input);
 }
 
-async function proxyPost<T>(endpoint: string, body: unknown): Promise<T> {
+export async function deleteHoliday(id: number | string): Promise<void> {
+  await proxyWrite<void>(`/api/hr/holidays/${id}`, "DELETE");
+}
+
+export async function createCalendarEvent(
+  input: CalendarEventInput
+): Promise<CalendarEvent> {
+  return proxyWrite<CalendarEvent>("/api/hr/calendar-events", "POST", input);
+}
+
+export async function updateCalendarEvent(
+  id: number | string,
+  input: CalendarEventInput
+): Promise<CalendarEvent> {
+  return proxyWrite<CalendarEvent>(
+    `/api/hr/calendar-events/${id}`,
+    "PATCH",
+    input
+  );
+}
+
+export async function deleteCalendarEvent(id: number | string): Promise<void> {
+  await proxyWrite<void>(`/api/hr/calendar-events/${id}`, "DELETE");
+}
+
+export async function updateWorkingDayPattern(
+  input: WorkingDayPattern
+): Promise<WorkingDayPattern> {
+  return proxyWrite<WorkingDayPattern>(
+    "/api/hr/working-days",
+    "PATCH",
+    input
+  );
+}
+
+async function proxyWrite<T>(
+  endpoint: string,
+  method: "POST" | "PATCH" | "DELETE",
+  body?: unknown
+): Promise<T> {
   const response = await fetch(endpoint, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(apiErrorMessage(data));
+  if (response.status === 204) {
+    return undefined as T;
   }
-  return response.json();
-}
-
-async function proxyPatch<T>(endpoint: string, body: unknown): Promise<T> {
-  const response = await fetch(endpoint, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(apiErrorMessage(data));

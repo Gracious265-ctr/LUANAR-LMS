@@ -14,6 +14,7 @@ import {
   History,
   Home,
   KeyRound,
+  LayoutGrid,
   LogOut,
   Menu,
   ShieldCheck,
@@ -42,10 +43,13 @@ import {
   isLeaveConfigModule,
   LEAVE_CONFIG_NAV_ITEMS,
 } from "@/lib/nav/leave-config-nav";
-import { isOrganisationModule, organisationNavItems } from "@/lib/nav/organisation-nav";
+import { isTeamsModule, teamsNavItems } from "@/lib/nav/teams-nav";
 import { approvalsNavItems, isApprovalsModule } from "@/lib/nav/approvals-nav";
+import { isCalendarModule, CALENDAR_NAV_ITEMS } from "@/lib/nav/calendar-nav";
 import { cn } from "@/lib/utils";
 
+import { Navbar1 } from "@/components/ui/navbar-1";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ApprovalsNavItem } from "@/components/approvals/approvals-nav-item";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -160,12 +164,17 @@ export function DashboardShell({
   );
 
   return (
-    <div className="flex h-screen">
-      <div className="flex w-full bg-surface-page text-text-primary">
+    <div className="flex h-dvh overflow-hidden">
+      <div className="flex h-full min-h-0 w-full bg-surface-page text-text-primary">
         {/* The rail is hidden on a phone rather than rendered narrow: a 64px
             column of icons cannot be labelled, so it would need a second set of
             accessible names for no gain. The drawer carries the same nav. */}
-        <div className={cn("hidden shrink-0 md:block", isMobile && "md:hidden")}>
+        <div
+          className={cn(
+            "hidden h-full min-h-0 shrink-0 px-3 py-3 md:block",
+            isMobile && "md:hidden"
+          )}
+        >
           <Sidebar
             open={sidebarOpen}
             setOpen={setSidebarOpen}
@@ -182,14 +191,19 @@ export function DashboardShell({
 
         <Drawer open={drawerOpen} onOpenChange={setDrawerOpen} nav={nav} user={user} />
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <Navbar1
             user={user}
             onLogout={handleLogout}
+            showNavToggle
             onOpenNav={() => setDrawerOpen(true)}
             navOpen={drawerOpen}
+            showAllApps
+            showNotifications
+            showWelcome
           />
-          <main className="flex-1 overflow-auto p-4 sm:p-6">{children}</main>
+
+          <main className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">{children}</main>
         </div>
       </div>
 
@@ -230,8 +244,8 @@ const Drawer = memo(function Drawer({
           // because the nav is the content, but a screen reader still announces
           // what this surface is before the links.
           className={cn(
-            "fixed inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col md:hidden",
-            "border-r border-border-default bg-surface-card p-2 shadow-modal",
+            "fixed inset-y-4 left-4 flex w-72 max-w-[calc(100vw-2rem)] flex-col rounded-3xl",
+            "border border-border-default bg-surface-card p-2 shadow-modal md:hidden",
             "data-[state=open]:animate-in data-[state=open]:slide-in-from-left-2",
             "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left-2",
           )}
@@ -276,7 +290,7 @@ const Sidebar = memo(function Sidebar({
     <nav
       id={NAV_ID}
       className={cn(
-        "sticky top-0 flex h-screen shrink-0 flex-col border-r transition-[width] duration-200 ease-in-out",
+        "flex h-full shrink-0 flex-col rounded-3xl border shadow-md transition-[width] duration-200 ease-in-out",
         "border-border-default bg-surface-card p-2",
         open ? "w-64" : "w-16"
       )}
@@ -323,8 +337,8 @@ const NavLinks = memo(function NavLinks({
   showAdmin: boolean;
   open: boolean;
 }) {
-  // The Leave, Plans, Leave-Configuration, Organisation, Documents, and
-  // Approvals modules each own their own short rail: a way back to the
+  // The Leave, Plans, Leave-Configuration, Teams, Documents, Approvals,
+  // and Calendar modules each own their own short rail: a way back to the
   // launcher, then exactly the destinations that belong to that module. Kept
   // out of the institutional rail so the two cannot leak into each other — a
   // module user never sees the HR folio, and HR never sees a truncated list.
@@ -336,14 +350,16 @@ const NavLinks = memo(function NavLinks({
         ? LEAVE_CONFIG_NAV_ITEMS
         : isDocumentsModule(currentPath)
           ? DOCUMENTS_NAV_ITEMS
-          : isOrganisationModule(currentPath)
-            ? organisationNavItems({ isHr: showHR || showAdmin })
-            : isApprovalsModule(currentPath)
-              ? approvalsNavItems({
-                  pendingApprovals,
-                  canRequestCover: showCover,
-                })
-              : null;
+          : isTeamsModule(currentPath)
+            ? teamsNavItems({ isHr: showHR || showAdmin })
+            : isCalendarModule(currentPath)
+              ? CALENDAR_NAV_ITEMS
+              : isApprovalsModule(currentPath)
+                ? approvalsNavItems({
+                    pendingApprovals,
+                    canRequestCover: showCover,
+                  })
+                : null;
   if (moduleItems) {
     return (
       <ModuleNavLinks currentPath={currentPath} open={open} items={moduleItems} />
@@ -560,7 +576,6 @@ const ModuleNavLinks = memo(function ModuleNavLinks({
 }) {
   return (
     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
-      <AllAppsLink open={open} />
       {items.map((item) => (
         <Option
           key={item.href}
@@ -578,32 +593,7 @@ const ModuleNavLinks = memo(function ModuleNavLinks({
 });
 
 /** The single path out of a module, back to the launcher. */
-const AllAppsLink = memo(function AllAppsLink({ open }: { open: boolean }) {
-  return (
-    <div className="mb-2 border-b border-border-default pb-2">
-      <Link
-        href={ALL_APPS_HREF}
-        // Collapsed, the label is not rendered, so the icon alone would leave
-        // the link with no accessible name.
-        aria-label="All apps"
-        className={cn(
-          "relative flex h-11 w-full items-center rounded-md transition-colors duration-200",
-          "text-text-secondary hover:bg-surface-hover hover:text-text-primary"
-        )}
-      >
-        <div className="grid h-full w-12 place-content-center">
-          <ChevronLeft className="h-4 w-4" />
-        </div>
 
-        {open && (
-          <span className="text-sm font-medium transition-opacity duration-200">
-            All Apps
-          </span>
-        )}
-      </Link>
-    </div>
-  );
-});
 
 const Option = memo(function Option({
   Icon,
@@ -776,6 +766,15 @@ const Header = memo(function Header({
           <Menu className="h-5 w-5" />
         </Button>
 
+        <Link
+          href={ALL_APPS_HREF}
+          aria-label="All apps"
+          className="inline-flex items-center gap-2 rounded-sm px-2 py-1 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-ring sm:px-3"
+        >
+          <LayoutGrid className="h-4 w-4" />
+          <span className="hidden sm:inline">All Apps</span>
+        </Link>
+
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-tight text-text-primary sm:text-xl">
             Leave Management
@@ -800,6 +799,8 @@ const Header = memo(function Header({
         {/* Sits beside sign-out rather than in the rail: on a phone the rail is
             a drawer, so a rail-hosted control is only reachable after opening
             it, and the header renders at every breakpoint. */}
+        <NotificationBell />
+
         <ThemeToggle />
 
         <Button

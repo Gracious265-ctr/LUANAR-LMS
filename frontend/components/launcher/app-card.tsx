@@ -22,21 +22,27 @@ export function AppCard({ keyName, badge }: AppCardProps) {
 
   return (
     <Link href={app.route} className="block">
-      <Card className="hover:shadow-md transition-shadow">
-        <div className="p-6 flex items-start gap-4">
-          <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center text-primary">
-            <Icon className="w-5 h-5" />
+      <Card className="flex aspect-square flex-col p-3 transition-shadow hover:shadow-md sm:p-6">
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center sm:gap-4">
+          <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary sm:size-12">
+            <Icon className="size-6 sm:size-7" />
           </div>
-          <div className="flex-1">
-            <div className="flex items-start justify-between">
-              <h3 className="font-semibold">{app.name}</h3>
+
+          <div className="w-full">
+            <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1">
+              <h3 className="text-base font-semibold leading-tight sm:text-lg">
+                {app.name}
+              </h3>
               {badge && badge.count ? (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
                   {badge.count} {badge.label || ""}
                 </span>
               ) : null}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">{app.description}</p>
+
+            <p className="mt-1 line-clamp-2 text-sm leading-snug text-muted-foreground sm:line-clamp-3">
+              {app.description}
+            </p>
           </div>
         </div>
       </Card>

@@ -11,7 +11,7 @@ import {
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
-import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import {
@@ -61,7 +61,7 @@ export default async function ApproversPage({
   if (!user) {
     redirect("/login");
   }
-  if (!isOrganisationAdministrator(user)) {
+  if (!isTeamsAdministrator(user)) {
     redirect("/dashboard");
   }
 

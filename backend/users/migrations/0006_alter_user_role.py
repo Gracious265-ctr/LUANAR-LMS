@@ -69,7 +69,7 @@ def backwards(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ("users", "0005_employeeprofile_team"),
-        ("workflows", "0011_backfill_approver_roles"),
+        ("roles", "0001_initial"),
     ]
 
     operations = [

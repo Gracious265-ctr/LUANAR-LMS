@@ -37,6 +37,7 @@ class AuditEntry(models.Model):
     class Action(models.TextChoices):
         CREATED = "created", "Created"
         UPDATED = "updated", "Updated"
+        DELETED = "deleted", "Deleted"
         ACTIVATED = "activated", "Activated"
         DEACTIVATED = "deactivated", "Deactivated"
         APPROVED = "approved", "Approved"
@@ -90,6 +91,8 @@ class AuditEntry(models.Model):
         CANCELLATION = "cancellation", "Cancellation request"
         BALANCE_TRANSACTION = "balance_transaction", "Leave balance transaction"
         USER_ACCOUNT = "useraccount", "User account"
+        CALENDAR_EVENT = "calendar-event", "Calendar event"
+        WORKING_DAY_PATTERN = "working-day-pattern", "Working-day pattern"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

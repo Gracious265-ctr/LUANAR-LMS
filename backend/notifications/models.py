@@ -27,6 +27,49 @@ from django.db import models
 from django.utils import timezone
 
 
+class Notification(models.Model):
+    """One in-app notification for one recipient (refinement unit 08).
+
+    Deliberately not the email outbox below: the outbox is an append-only
+    delivery ledger for mail, while this is the user-facing feed behind the
+    navbar bell. A row is created by :func:`notifications.services.
+    create_notification` at the moment a real event happens (a stage opens, a
+    decision lands, a plan reminder fires) and is read/marked through the
+    ``/api/v1/notifications/`` surface, always scoped to its recipient.
+
+    Read is the only state: there is no separate "dismiss" — a notification the
+    user has acknowledged is simply read, and rows are never deleted; they age
+    out of the popover's recent window and remain queryable.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    event_type = models.CharField(
+        max_length=100,
+        help_text="Dotted event vocabulary, e.g. 'approval.assigned', "
+        "'application.approved', 'plan.reminder'.",
+    )
+    message = models.CharField(max_length=255)
+    link = models.CharField(
+        max_length=255,
+        help_text="Relative frontend path to open, e.g. '/dashboard/approvals/<id>'.",
+    )
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["recipient", "is_read", "-created_at"])
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} → {self.recipient_id} ({'read' if self.is_read else 'unread'})"
+
+
 class NotificationOutboxLockedError(Exception):
     """Raised on any append-only outbox violation (queryset update/delete)."""
 

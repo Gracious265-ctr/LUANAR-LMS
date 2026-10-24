@@ -27,18 +27,13 @@ from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from leave.models import LeaveApplication
-from leave_config.models import LeaveType
-from leave_config.services import is_plannable
+from leave_types.models import LeaveType
+from leave_types.services import is_plannable
 from leave.services import create_draft_application
 from users.models import EmployeeProfile
-from organisation.models import (
-    CampusRoleAssignment,
-    RoleAssignment,
-)
-from teams.models import (
-    Team,
-    TeamRoleAssignment,
-)
+from campuses.models import Campus, CampusRoleAssignment
+from roles.models import ApproverRole, RoleAssignment
+from teams.models import Team, TeamRoleAssignment
 
 from .models import LeavePlan, LeavePlanStatus
 
@@ -108,7 +103,7 @@ def find_plan_overlap(
 
 
 def _assert_plannable(leave_type: LeaveType) -> None:
-    # Read through ``leave_config`` (§4.7) so this gate can never drift from the
+    # Read through ``leave_types`` (§4.7) so this gate can never drift from the
     # flag the Leave Configuration screens edit.
     if not is_plannable(leave_type):
         raise LeaveTypeNotPlannableError(

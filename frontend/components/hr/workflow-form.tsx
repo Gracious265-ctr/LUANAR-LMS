@@ -409,7 +409,7 @@ function toggleMember(userId: number) {
       } else {
         await createWorkflow(input);
       }
-      router.push(`/organisation/teams/${team.id}/workflows`);
+      router.push(`/dashboard/teams/${team.id}/workflows`);
       router.refresh();
     } catch (err) {
       setError(
@@ -682,7 +682,7 @@ function toggleMember(userId: number) {
         <p className="mb-3 text-xs text-text-muted">
           Drawn only from this team&apos;s members on the{" "}
           <a
-            href={`/organisation/teams/${team.id}?tab=members`}
+            href={`/dashboard/teams/${team.id}?tab=members`}
             className="font-medium text-brand-primary hover:text-brand-primary-hover"
           >
             Members
@@ -826,11 +826,7 @@ function toggleMember(userId: number) {
         <Button
           variant="secondary"
           onClick={() =>
-            router.push(
-              workflow
-                ? `/organisation/teams/${team.id}/workflows`
-                : `/organisation/teams/${team.id}/workflows`
-            )
+            router.push(`/dashboard/teams/${team.id}/workflows`)
           }
         >
           <ArrowLeft className="h-4 w-4" />

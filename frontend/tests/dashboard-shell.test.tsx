@@ -258,15 +258,17 @@ describe("DashboardShell", () => {
   it("renders the hide toggle at the top of the sidebar", () => {
     renderShell(mockUser);
 
-    const nav = screen.getByRole("navigation");
+    const nav = document.getElementById("dashboard-nav");
+    expect(nav).not.toBeNull();
     expect(screen.getByRole("button", { name: "Hide sidebar" })).toBeInTheDocument();
-    expect(nav).toHaveClass("w-64");
+    expect(nav).toHaveClass("w-64", "rounded-3xl", "h-full");
   });
 
   it("collapses and re-expands the sidebar from the top toggle", () => {
     renderShell(mockUser);
 
-    const nav = screen.getByRole("navigation");
+    const nav = document.getElementById("dashboard-nav");
+    expect(nav).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
     expect(nav).toHaveClass("w-16");
     expect(screen.getByRole("button", { name: "Show sidebar" })).toBeInTheDocument();
@@ -339,7 +341,9 @@ describe("DashboardShell mobile drawer", () => {
 
     fireEvent.click(hamburger);
 
-    expect(screen.getByRole("dialog")).toHaveAttribute("id", "dashboard-nav");
+    const drawer = screen.getByRole("dialog");
+    expect(drawer).toHaveAttribute("id", "dashboard-nav");
+    expect(drawer).toHaveClass("rounded-3xl", "inset-y-4", "left-4");
     expect(
       screen.getByRole("heading", { name: /Navigation for Test Employee/ })
     ).toBeInTheDocument();
@@ -944,5 +948,71 @@ describe("DashboardShell Documents module", () => {
     expect(
       within(nav).queryByRole("link", { name: "Role Assignments" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardShell Calendar module", () => {
+  it("scopes the rail to the launcher plus the Calendar landing item", () => {
+    currentPath = "/dashboard/hr-admin/calendar";
+    // The strictest visitor: an HR approver must lose their folio, approvals,
+    // and every personal destination rather than see them beside the calendar.
+    renderShell(mockHRUser, { isApprover: true, pendingApprovals: 4 });
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "All apps" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(within(nav).getByRole("link", { name: "Calendar" })).toHaveAttribute(
+      "href",
+      "/dashboard/hr-admin/calendar",
+    );
+
+    // The launcher and the one entry — nothing else leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(2);
+
+    for (const hidden of [
+      "Dashboard",
+      "My Applications",
+      "Approvals",
+      "Leave Plans",
+      "Request Cover",
+      "My Account",
+      "Audit View",
+      "Teams",
+      "Employees",
+      "Entitlements",
+      "Roles",
+    ]) {
+      expect(within(nav).queryByRole("link", { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it("marks the Calendar item active on the landing page and beneath it", () => {
+    for (const path of [
+      "/dashboard/hr-admin/calendar",
+      "/dashboard/hr-admin/calendar/holidays/new",
+    ]) {
+      currentPath = path;
+      const { unmount } = renderShell(mockAdminUser);
+
+      const nav = screen.getByRole("navigation");
+      expect(within(nav).getByRole("link", { name: "Calendar" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      unmount();
+    }
+  });
+
+  it("leaves the HR folio intact on the HR admin landing page", () => {
+    // `/dashboard/hr-admin` administers everything, so it is deliberately not
+    // in the module: HR keeps their full rail until they open the Calendar.
+    currentPath = "/dashboard/hr-admin";
+    renderShell(mockHRUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).queryByRole("link", { name: "All apps" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Employees" })).toBeInTheDocument();
   });
 });

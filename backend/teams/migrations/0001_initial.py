@@ -10,8 +10,8 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('organisation', '0001_initial'),
-        ('workflows', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
+        ('campuses', '0001_initial'),
+        ('roles', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -32,8 +32,8 @@ class Migration(migrations.Migration):
                         ('effective_to', models.DateField(blank=True, help_text='The last date this team routes applications; blank routes indefinitely. Past this date the team is retired for routing while its configuration is kept.', null=True)),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
                         ('updated_at', models.DateTimeField(auto_now=True)),
-                        ('campus', models.ForeignKey(blank=True, help_text='The campus an academic team sits at; required when the category is Academic and not allowed when it is Administration. Routing always follows the team — the campus is what scopes campus-wide approvers and reporting.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='teams', to='organisation.campus')),
-                        ('workflow', models.OneToOneField(blank=True, help_text="The one workflow this team routes applications through. A team may own several workflows (Workflow.team) — for example a replacement chain being built alongside the live one — but exactly one of them is ever in force, it is picked here rather than assumed, and no second team may point at it: a chain belongs to the team it was built for, and sharing one would mean editing one team's steps silently re-routing another. Blank only while the team is still a draft being configured.", null=True, on_delete=django.db.models.deletion.PROTECT, related_name='routed_by', to='workflows.workflow')),
+                        ('campus', models.ForeignKey(blank=True, help_text='The campus an academic team sits at; required when the category is Academic and not allowed when it is Administration. Routing always follows the team — the campus is what scopes campus-wide approvers and reporting.', null=True, on_delete=django.db.models.deletion.PROTECT, related_name='teams', to='campuses.campus')),
+                        ('workflow', models.OneToOneField(blank=True, help_text="The one workflow this team routes applications through. A team may own several workflows (Workflow.team) — for example a replacement chain being built alongside the live one — but exactly one of them is ever in force, it is picked here rather than assumed, and no second team may point at it: a chain belongs to the team it was built for, and sharing one would mean editing one team's steps silently re-routing another. Blank only while the team is still a draft being configured.", null=True, on_delete=django.db.models.deletion.PROTECT, related_name='routed_by', to='chains.workflow')),
                     ],
                     options={
                         'db_table': 'workflows_team',
@@ -45,7 +45,7 @@ class Migration(migrations.Migration):
                     fields=[
                         ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                         ('created_at', models.DateTimeField(auto_now_add=True)),
-                        ('role', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='team_role_assignments', to='organisation.approverrole')),
+                        ('role', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='team_role_assignments', to='roles.approverrole')),
                         ('team', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='role_assignments', to='teams.team')),
                         ('user', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='team_role_assignments', to=settings.AUTH_USER_MODEL)),
                     ],

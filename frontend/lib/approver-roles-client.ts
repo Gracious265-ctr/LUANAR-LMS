@@ -58,6 +58,24 @@ export async function createApproverRole(
   return send<ApproverRole>("/api/hr/approver-roles", "POST", input);
 }
 
+/**
+ * The active roles a chain's steps may name, read by a team's manager.
+ *
+ * The workflow form's role list is the same one HR reads, but that reader is
+ * HR-only, so a manager opening "New workflow" saw no roles and the Add-step and
+ * Create-workflow buttons sat disabled — a form they could not operate. This
+ * reads the read-only list the backend exposes to whoever manages a team;
+ * writing roles still goes through the HR-only role endpoints.
+ */
+export async function listActiveApproverRoles(): Promise<ApproverRole[]> {
+  const response = await fetch("/api/hr/teams/eligible-approver-roles/");
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data));
+  }
+  return (await response.json()) as ApproverRole[];
+}
+
 export async function updateApproverRole(
   id: number | string,
   input: Partial<ApproverRoleInput>

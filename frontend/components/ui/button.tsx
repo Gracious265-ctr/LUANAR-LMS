@@ -4,14 +4,12 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const CONTROL_BASE = [
-  "inline-flex items-center justify-center rounded-control font-medium whitespace-nowrap",
-  // `transform` is in the list so the extracted `scale(0.95)` press animates
-  // rather than snapping; the colour, border and shadow properties animate for
-  // the same reason.
-  "transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-standard",
-  "active:scale-[0.95]",
+  "inline-flex items-center justify-center rounded-sm font-medium whitespace-nowrap",
+  "transition-[transform,box-shadow,background-color,border-color,color] duration-base ease-standard",
+  "hover:-translate-y-px",
+  "active:translate-y-0 active:shadow-none",
   "focus-ring",
-  "disabled:cursor-not-allowed disabled:opacity-60",
+  "disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none disabled:shadow-none",
   "[&_svg]:shrink-0",
 ] as const;
 
@@ -19,19 +17,19 @@ const buttonVariants = cva(CONTROL_BASE, {
   variants: {
     variant: {
       primary: [
-        "border border-transparent bg-button-primary text-button-primary-foreground",
-        "hover:bg-button-primary-hover",
-        "active:bg-brand-primary-active active:shadow-pressed",
+        "border border-transparent bg-[linear-gradient(135deg,var(--brand-primary-gradient-start)_0%,var(--brand-primary-gradient-end)_100%)] text-white",
+        "hover:shadow-hover",
+        "active:bg-[linear-gradient(135deg,var(--brand-primary-gradient-end)_0%,var(--brand-primary-gradient-start)_100%)]",
       ],
       secondary: [
-        "border border-border-default bg-button-secondary text-text-secondary",
-        "hover:bg-button-secondary-hover hover:text-text-primary",
-        "active:bg-surface-active active:shadow-pressed",
+        "border border-border-subtle bg-transparent text-text-secondary",
+        "hover:bg-surface-page hover:border-brand-primary-gradient-start hover:text-brand-primary-gradient-start",
+        "active:bg-surface-page",
       ],
       ghost: [
         "border border-transparent bg-transparent text-text-secondary",
-        "hover:bg-surface-hover hover:text-text-primary",
-        "active:bg-surface-active",
+        "hover:bg-surface-page hover:text-brand-primary-gradient-start",
+        "active:bg-surface-page",
       ],
       destructive: [
         "border border-transparent bg-button-destructive text-text-on-brand",

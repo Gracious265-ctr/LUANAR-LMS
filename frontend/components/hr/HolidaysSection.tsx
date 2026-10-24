@@ -6,19 +6,19 @@ import { useRouter } from "next/navigation";
 
 import { Plus } from "lucide-react";
 
-import type { PublicHoliday } from "@/lib/financial-years";
+import type { FinancialYear, Holiday } from "@/lib/financial-years";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { Alert } from "@/components/ui/alert";
-import { PublicHolidayForm } from "@/components/hr/public-holiday-form";
-import { PublicHolidayTable } from "@/components/hr/public-holiday-table";
+import { HolidayForm } from "@/components/hr/holiday-form";
+import { HolidayTable } from "@/components/hr/holiday-table";
 import { Button } from "@/components/ui/button";
 
-/** Query key for the holiday overlay. Distinct from `?year` and from `financialYear`. */
+/** Query key for the holiday overlay. Distinct from `?year` and `?event`. */
 export const HOLIDAY_PARAM = "holiday";
 
 /**
- * The public-holidays half of the leave calendar, as a create/edit overlay.
+ * The holidays half of the calendar, as a create/edit overlay.
  *
  * This is the one host whose list is filtered. `?year` narrows the table, so two
  * states are reachable but unresolvable: deep-linking a holiday the active
@@ -30,22 +30,18 @@ export const HOLIDAY_PARAM = "holiday";
  */
 export function HolidaysSection({
   holidays,
+  financialYears = [],
   yearFilter,
   filter,
 }: {
-  holidays: PublicHoliday[];
+  holidays: Holiday[];
+  financialYears?: FinancialYear[];
   /** The page's active `?year` filter, used only to explain the not-found case. */
   yearFilter: string;
   /**
    * The page's year filter, rendered between the header and the table it
    * narrows. Passed in as a slot because the filter is a GET form the server
    * page owns, while the header, table, and overlay belong together here.
-   *
-   * Pass data rather than markup where you can. JSX authored in the page's
-   * server component and rendered inside this client component crosses the RSC
-   * boundary, where React stops recognising statically written siblings and
-   * warns that each child in the list needs a key — which is why the teams and
-   * delegations sections take `filters`/`tabs` as data instead.
    */
   filter?: ReactNode;
 }) {
@@ -71,9 +67,7 @@ export function HolidaysSection({
     <>
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-text-primary">
-            Public holidays
-          </h3>
+          <h3 className="text-lg font-semibold text-text-primary">Holidays</h3>
           <p className="mt-1 text-sm text-text-secondary">
             Dates that should not count as working leave days.
           </p>
@@ -102,7 +96,11 @@ export function HolidaysSection({
         </Alert>
       )}
 
-      <PublicHolidayTable holidays={holidays} onEdit={overlay.openEdit} />
+      <HolidayTable
+        holidays={holidays}
+        financialYears={financialYears}
+        onEdit={overlay.openEdit}
+      />
 
       <AdminFormOverlay
         open={overlay.isOpen}
@@ -110,13 +108,13 @@ export function HolidaysSection({
           editing
             ? `Edit ${editing.name}`
             : overlay.isCreate
-              ? "New public holiday"
-              : "Edit public holiday"
+              ? "New holiday"
+              : "Edit holiday"
         }
         description={
           editing
-            ? "Update the name or date. Each date can hold at most one holiday."
-            : "Add a date that should not count as working leave days. Each date can hold at most one holiday."
+            ? "Update the holiday, its recurrence, or its financial-year scope."
+            : "Add a date that should not count as working leave days."
         }
         onOpenChange={(open) => {
           if (!open) overlay.close();
@@ -131,8 +129,9 @@ export function HolidaysSection({
         clearFiltersLabel="Show all years"
         onClearFilters={filteredOut ? () => router.push(overlay.hrefWithoutParam) : undefined}
       >
-        <PublicHolidayForm
-          publicHoliday={editing}
+        <HolidayForm
+          holiday={editing}
+          financialYears={financialYears}
           onSuccess={(saved) => {
             setCreatedId(saved.id);
             overlay.close();

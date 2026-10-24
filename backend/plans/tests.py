@@ -19,14 +19,15 @@ from rest_framework.test import APIClient
 
 from launcher.services import _plans_badge, can_access_plans
 from leave.models import FinancialYear, LeaveApplication
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from notifications.models import NotificationOutbox
 from notifications.plans import PLAN_FOLLOW_UP, PLAN_REMINDER
 from plans.models import LeavePlan, LeavePlanStatus
 from plans.services import resolve_scopes
 from plans.tasks import FOLLOW_UP_AFTER_DAYS, check_and_notify_plans
 from users.models import EmployeeProfile
-from organisation.models import (
+from campuses.models import Campus, CampusRoleAssignment
+from roles.models import ApproverRole, RoleAssignment (
     Campus,
     CampusRoleAssignment,
     RoleAssignment,
@@ -35,7 +36,7 @@ from teams.models import (
     Team,
     TeamRoleAssignment,
 )
-from workflows.testing import ensure_roles, team_for
+from chains.testing import ensure_roles, team_for
 
 User = get_user_model()
 

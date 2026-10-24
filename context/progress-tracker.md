@@ -2,7 +2,109 @@
 
 Update this file after every meaningful implementation change.
 
+## Frontend Integration — Shared App Header (2026-10-23)
+
+- **DONE** — Applied the rounded, branded `Navbar1` consistently to the
+  authenticated launcher and dashboard. "All Apps" links back to `/` from
+  dashboard routes and is hidden on the launcher itself. The dashboard's
+  existing sidebar toggle, account, theme, notification, and sign-out actions
+  remain available; its mobile account menu uses the existing Radix dialog
+  primitives. Motion respects reduced-motion preferences. No new dependencies
+  or placeholder destinations were added.
+
+## Frontend Polish — Floating Dashboard Sidebar (2026-10-23)
+
+- **DONE** — Added inset spacing, rounded outer corners, and a subtle elevation
+  to the desktop dashboard rail and mobile navigation drawer. The desktop rail
+  now fills the viewport-height layout wrapper; page scrolling stays in the main
+  content instead of shortening the rail. Navigation items, collapse behavior,
+  drawer focus handling, and menu contents remain unchanged.
+
+## Frontend Integration — Navbar Account Profile (2026-10-23)
+
+- **DONE** — The desktop name/role/avatar control opens an account profile
+  popover with name, email, and role. The existing mobile account menu shows
+  those details and exposes the same password action. Both open a dismissible
+  in-place dialog that reuses `PasswordChangeForm` and its existing secure
+  password-change flow; success retains the form's sign-out and login redirect.
+  The direct account route remains available.
+
+## Frontend Integration — Launcher Notifications (2026-10-23)
+
+- **DONE** — The shared navbar automatically shows the existing notification
+  bell on the authenticated launcher (`/`) while preserving the dashboard's
+  explicit notification setting. The launcher does not show an All Apps link
+  to itself.
+
+## Frontend Polish — Mobile Account Avatar (2026-10-23)
+
+- **DONE** — Replaced the mobile account-menu hamburger with the signed-in
+  user's initials avatar. It opens the existing accessible account menu with
+  profile details and account actions; the icon remains the fallback when no
+  user is supplied. The dashboard's separate navigation toggle is unchanged.
+
 ## Current Phase
+
+- **Unit 08 — In-App Notifications — DONE (2026-10-21)** —
+  refinement unit `context/refinement/08-in-app-notifications.md`. A bell icon
+  in the shared app-shell top bar (`components/notifications/NotificationBell`)
+  shows an unread badge (nothing at 0, count at 1–9, "9+" beyond; 30s poll via
+  `useUnreadCount`) and opens a Radix Popover panel anchored to the bell (not a
+  Dialog/overlay). The popover lists the most recent ~15 notifications (newest
+  first), visually distinct unread rows, each row navigates to `link` and marks
+  read in one click; a per-row tick marks read without navigating; "Mark all
+  read" appears only when unread exist. Empty state: "You're all caught up".
+  New `Notification` model (`recipient`, `event_type`, `message`, `link`,
+  `is_read`, `created_at`, index on `(recipient,is_read,-created_at)`) in the
+  existing `notifications` app + `create_notification`/`get_recent_notifications`/
+  `get_unread_count`/`mark_read`/`mark_all_read`. Endpoints
+  `GET /api/v1/notifications/`, `GET /api/v1/notifications/unread-count/`,
+  `POST /api/v1/notifications/{id}/mark-read/`,
+  `POST /api/v1/notifications/mark-all-read/` (all recipient-scoped); browser
+  proxies under `/api/notifications/…`. `NOTIFICATION_POLL_INTERVAL_SECONDS=30`
+  added to settings. Wiring (additive, no logic changes): approvals — stage
+  assignment → approver via `notify_stage_pending` called from `assign_workflow`
+  and from `decide` after next-stage activation (and from resubmission),
+  terminal decisions → employee via a new on-commit bus consumer
+  `queue_decision_notification` registered in `notifications/apps.py` (approve
+  only when `APPLICATION_FINALISED`, reject/correction), intermediate approves
+  silent; Leave Plans reminders/follow-ups via `create_notification` in
+  `plans/tasks.py` gated on email idempotency. Organisation "acting assignment
+  starts" and Documents standing reminder (§2.1) not wired (no models/checks
+  exist) per developer decision. Frontend service/types/format hook, proxy
+  routes, header mount in `dashboard-shell.tsx`. Backend 77 notifications tests
+  + 134 workflow/plan/leave/resubmission/approvals tests OK. Frontend
+  notification-bell + notifications-proxy tests pass; `tsc` clean; pre-existing
+  unrelated frontend failures unchanged. Docs updated. See "Completed (Unit 08
+  — In-App Notifications)" below.
+
+- **Unit 07 — Calendar App — DONE (2026-10-19)** — refinement unit
+  `context/refinement/07-calendar-app.md`. One HR-configured institution-wide
+  calendar — financial years, working-day pattern, holidays (recurring +
+  observed-shift, optionally FY-scoped), institutional events — exposed as a
+  read-only source every module queries, HR/superuser-gated writes
+  (`can_access_calendar`, the `leave_config` `can_access_*` pattern; reads open
+  to any authenticated user). Decisions confirmed at planning: **(1)** a new
+  `Holiday` model in the new `calendar_app` **retires `leave.PublicHoliday`**
+  (rows migrate as one-off holidays; the rules provider, `holiday_refresh` and
+  `preview-days` repoint; old `/api/v1/public-holidays/` surface removed);
+  **(2)** the landing page is the **existing** `/dashboard/hr-admin/calendar`,
+  rebuilt as the spec's tabbed page (Financial Years | Holidays & Events |
+  Working Days + a plain month grid) — not a new top-level `/calendar` route;
+  **(3)** DELETE ships per spec with guards — holidays/events delete outright
+  (draft day-count refresh wired for deletes), financial-year delete is a 409
+  while entitlements/plans PROTECT-reference it; **(4)** the Plans reminder
+  stays on **calendar days** (spec §3.8's "confirm this" — recorded, not
+  patched). Recorded adaptations: endpoints mount at `/api/v1/calendar/…`
+  (project convention); the Django package is `calendar_app` (stdlib
+  `calendar` shadowing); optional Terms/Blackout tabs are **not built**;
+  launcher key `calendar-app` (icon `CalendarCog`); old
+  `/api/v1/financial-years/` endpoints retire in favour of the calendar paths;
+  `Holiday` uniqueness is `(date, financial_year)`; `GET /calendar/holidays/`
+  returns raw rows, `?start=&end=` returns resolved dates; working-days GET
+  materialises defaults without persisting (no row = Mon–Fri = current
+  behaviour); `observed_shift` resolves to the next working day. **Done:** see
+  "Completed (Unit 07 — Calendar App) (2026-10-19)" at the end of this file.
 
 - **Teams module split + Team-Manager redesign + Phase-2 extras — DONE (2026-10-18)**
   — the monolithic `backend/workflows` is split into four apps (`organisation`,
@@ -6060,3 +6162,264 @@ chain name, and the `effective_to` academic-year default; this tracker updated.
 * `.gitignore` entry for the generated Vitest JSON report; `export {}` in
   `frontend/instrumentation-client.ts` (fixes the pre-existing TS2306 pair);
   `users.0010` `IF EXISTS` idempotency.
+
+## Completed (Unit 08 — In-App Notifications)
+
+- **Backend model + service.** `notifications/models.py` adds `Notification` (UUID pk, `recipient` FK → `AUTH_USER_MODEL` related_name `notifications`, `event_type` CharField(100), `message` CharField(255), `link` CharField(255), `is_read` BooleanField default False, `created_at` DateTimeField auto_now_add, index `["recipient","is_read","-created_at"]`). `notifications/services.py` adds `create_notification`, `get_recent_notifications(user, limit=15, unread_only=False)`, `get_unread_count`, `mark_read`, `mark_all_read`, plus the approval-bus consumer `queue_decision_notification`/`register_decision_notification_consumer` and helpers; `notifications/apps.py` registers both email and notification decision consumers on ready. Migration `notifications/migrations/0007_notification.py`.
+- **API.** `notifications/serializers.py` `NotificationSerializer` (`id,event_type,message,link,is_read,created_at`). `notifications/views.py` rewrites to `NotificationListView` (`GET /api/v1/notifications/`, `?unread_only=true`), `UnreadCountView` (`GET /api/v1/notifications/unread-count/`), `MarkReadView` (`POST /api/v1/notifications/<uuid:pk>/mark-read/`, 404 on foreign id), `MarkAllReadView` (`POST /api/v1/notifications/mark-all-read/`); all `IsAuthenticated`, recipient-scoped. `notifications/urls.py` + `config/urls.py` mount under `/api/v1/`. `config/settings/base.py` adds `NOTIFICATION_POLL_INTERVAL_SECONDS=30`.
+- **Wiring (additive).** `approvals/services.py` adds public `notify_stage_pending(stage,application)` (lazy-imports `create_notification`, notifies eligible approvers) called from `assign_workflow` (after opening stage) and from `decide` after next-stage activation; `leave/services/resubmission.py` calls it after reopening. Decision notifications come via the on-commit bus consumer: only `APPLICATION_FINALISED` + `APPROVE` → `application.approved`, `REJECT` → `application.rejected`, `RETURN_FOR_CORRECTION` → `application.correction_required` to the employee; intermediate approves silent. `plans/tasks.py` creates `plan.reminder`/`plan.follow_up` notifications gated on email idempotency flags. Organisation acting assignments and Documents standing reminders not wired (no models/checks exist).
+- **Frontend.** `lib/notifications/{types,service,format}.ts`, `lib/hooks/useUnreadCount.ts` (30s poll), `components/notifications/{NotificationBell,NotificationPopover,NotificationRow}.tsx` (Popover anchored below/beside bell, not Dialog; badge 1–9, "9+" over, nothing at 0; row click marks read + navigates; inline tick marks read without navigating; header "Mark all read" only if unread; empty state "You're all caught up"; links match §2.1). Bell mounted in `components/dashboard/dashboard-shell.tsx` header next to ThemeToggle. Browser proxies `app/api/notifications/{route.ts,unread-count/route.ts,mark-all-read/route.ts,[id]/mark-read/route.ts}` via `apiFetch`.
+- **Tests.** `backend/notifications/tests_inapp.py` (service scoping, API, approval hook wiring for submit/intermediate/final approve/reject/correction/resubmission, plan reminder/follow-up). `frontend/tests/notification-bell.test.tsx`, `frontend/tests/notifications-proxy.test.ts`. All notifications suites green; workflows/plans/leave/resubmission/approvals suites green.
+
+## Completed (Unit 07 — Calendar App) (2026-10-19)
+
+**Goal.** One HR-configured institution-wide calendar — financial years,
+working-day pattern, holidays (recurring + observed-shift, optionally
+FY-scoped), institutional events — exposed as a read-only source every module
+queries, with HR/superuser-gated writes and reads open to any authenticated
+user. The unit also required patching the already-written Unit 14 day-counting
+so it computes against the working-day pattern plus holidays rather than raw
+calendar-day subtraction.
+
+**Decisions (confirmed at planning).**
+- **D1 — retire `leave.PublicHoliday`.** A new `Holiday` model in the new
+  `calendar_app` replaces it. `leave/0024` data-migrates every existing holiday
+  into `Holiday` as a one-off (`is_recurring=False`, `observed_shift=False`,
+  `financial_year=NULL`) before dropping the old table; the rules provider,
+  `holiday_refresh`, `preview-days`, and the serializers/viewsets/admin/router
+  all repoint. The old `/api/v1/public-holidays/` surface is gone.
+- **D2 — reuse the existing landing page.** `/dashboard/hr-admin/calendar` is
+  rebuilt as the spec's tabbed page (Financial Years | Holidays & Events |
+  Working Days) rather than adding a new top-level `/calendar` route, so the HR
+  sidebar "Calendar" item stays the single entry point.
+- **D3 — DELETE ships with guards.** Holidays and events delete outright (a
+  `post_delete` receiver re-derives draft day counts); financial-year DELETE
+  answers **409** while a `GradeLeaveEntitlement`/`LeavePlan` PROTECT-references
+  it, and that sentence is surfaced to HR rather than hidden.
+- **D4 — Plans reminder stays on calendar days** (spec §3.8's "confirm this" —
+  recorded, not patched; no `plans/` change).
+
+**Recorded adaptations.** Endpoints mount at `/api/v1/calendar/…` (project
+convention). The Django package is `calendar_app`, not `calendar`, to avoid
+shadowing the stdlib module. `can_access_calendar(user)` mirrors
+`can_access_leave_config` (authenticated + `is_superuser`/`is_staff` or
+`role == User.Role.HR`), because no "HR" Django group exists. The optional
+**Terms / Blackout Periods tabs are not built** (spec §3.3 says optional).
+Launcher key `calendar-app`, icon `CalendarCog`. `Holiday` uniqueness is
+`(date, financial_year)`. `GET /calendar/holidays/` returns raw paginated rows;
+`?start=&end=` returns resolved occurrences as a bare array. Working-days GET
+materialises defaults without persisting (no row = Mon–Fri = the pre-existing
+behaviour, so no test drift). `observed_shift` resolves to the next working day.
+
+**Backend.**
+- **New `calendar_app`.** Models: `WorkingDayPattern` (single row, seven
+  booleans, `working_weekdays()`), `Holiday` (`name`, `date`, `is_recurring`,
+  `observed_shift`, `financial_year` FK `leave.FinancialYear` `SET_NULL`,
+  `UniqueConstraint(date, financial_year)`), `CalendarEvent` (`title`,
+  `start_date`, `end_date`, `description`, `affects_leave_calculation`,
+  `CheckConstraint(end_date >= start_date)`).
+- **`calendar_app/services.py`** is the resolution source: `DEFAULT_WORKING_WEEKDAYS`,
+  `can_access_calendar`, `ResolvedHoliday`, `get_working_day_pattern`/
+  `working_weekdays`, `_shift_to_working_day`, `_occurrences` (recurring
+  expansion; Feb-29 skipped in non-leap years), `get_holidays_for_range`,
+  `holidays_map`.
+- **API** (`/api/v1/calendar/…`): `IsCalendarAccess` (safe methods for
+  authenticated; writes need `can_access_calendar`), `AuditedDestroyMixin`
+  (records `Action.DELETED`), `FinancialYearViewSet` (reuses
+  `leave.serializers.FinancialYearSerializer`, DELETE→409 on `ProtectedError`),
+  `HolidayViewSet` (raw list + `?start/&end` resolved list + `?year`/
+  `?financial_year`), `CalendarEventViewSet` (range filter), `WorkingDaysView`
+  (class-based `APIView`, GET defaults without persisting, PATCH replaces).
+- **Retirement/repoint of `PublicHoliday`.** `leave/services.public_holidays_between`
+  now delegates to `calendar_app.services.get_holidays_for_range`;
+  `leave/providers/database.get_public_holidays` returns `holidays_map`.
+  `leave/holiday_refresh.py` rewritten: receivers on `Holiday` (`pre_save`
+  remembers the previous date, `post_save`, `post_delete`) plus
+  `WorkingDayPattern.post_save`, with `refresh_drafts_covering(*dates)` and
+  `refresh_all_live_drafts()` updating `calculated_days` on live *draft*
+  statuses only (submitted/approved untouched — config changes are
+  forward-looking).
+- **Unit 14 patch (the required, not-optional one).**
+  `leave/validation/working_days.py` gained `configured_weekdays()` (lazy import
+  of `calendar_app.services.working_weekdays`) and optional `weekdays` params
+  defaulting to `DEFAULT_WORKING_WEEKDAYS` (keeps `SimpleTestCase` DB-free);
+  `start_date.py`, `notice.py`, and `leave/services/working_days.calculate_working_days`
+  pass `configured_weekdays()`.
+- **Launcher + audit.** `launcher.services.can_access_calendar` + a
+  `calendar-app` entry. `audit.models` gained `Action.DELETED`,
+  `TargetType.CALENDAR_EVENT` and `TargetType.WORKING_DAY_PATTERN` (migration
+  `audit/0021`).
+
+**Frontend.**
+- `app/(dashboard)/dashboard/hr-admin/calendar/page.tsx` rebuilt: `requireCalendarAccess`
+  gate (HR **or superuser** — mirrors `can_access_calendar`), reads
+  `?tab`/`?year`/`?month` and derives the initial tab from any open overlay
+  deep link, fetches financial years, holidays (year-filtered), events,
+  working-day pattern, and the month's resolved holidays in parallel.
+- New components under `components/hr/`: `CalendarTabs` (segmented control),
+  `CalendarMonthGrid` (plain React month grid, no library — **solid filled day
+  cells** per §3.2, non-working days shaded from the pattern, holidays brand
+  fill, events secondary fill), `HolidaysSection` (rewritten + extended),
+  `EventsSection`, `WorkingDaysSection`, `HolidayForm`/`HolidayTable`
+  (recurring, observed-shift, financial-year scope, per-row delete),
+  `CalendarEventForm`/`CalendarEventTable`, `DeleteRowButton` (shared inline
+  confirm), and `FinancialYearTable` gained a guarded per-row delete.
+- `lib/financial-years.ts` repointed to `/api/v1/calendar/…` and extended with
+  `Holiday`/`ResolvedHoliday`/`CalendarEvent`/`WorkingDayPattern`; the
+  client-safe weekday vocabulary moved to `lib/calendar-weekdays.ts` so a client
+  component never value-imports the `next/headers`-bearing module (guarded by
+  `tests/server-only-imports.test.ts`). `lib/financial-years-client.ts` gained
+  holiday/event/working-day/financial-year writes incl. deletes.
+- Proxies `app/api/hr/{financial-years,holidays,calendar-events,working-days}`
+  repointed to the calendar paths; the old `public-holidays` proxy removed; the
+  `holidays`/`financial-years` `new`+`[id]/edit` shims and new `events` shims
+  redirect to the overlay deep links. `lib/apps-registry.ts` gained
+  `calendar-app` (`CalendarCog`, route `/dashboard/hr-admin/calendar`).
+
+**Visual distinction (§3.2).** This app renders **solid filled** cells in the
+month grid. The Team Plans calendar already uses dashed/outlined bars; the
+actual-leave team calendar does not exist in the tree yet, so there is nothing
+to collide with. Leave date pickers shade holidays as disabled dates (a
+different UI pattern), so no third style is introduced.
+
+**Post-completion fix (2026-10-19).** The launcher's `can_access_calendar`
+admits superusers, so a superuser saw the Calendar card — but every calendar
+page and shim gated on `role === "hr"` alone and redirected them to
+`/dashboard`, which is why opening the app showed the main dashboard instead of
+the Calendar. Added `canAccessCalendar` / `requireCalendarAccess` to
+`lib/financial-years.ts` (mirroring the backend rule, matching
+`canAccessLeaveConfig`) and pointed the page and all six shims at it. Pinned by
+`tests/calendar-access.test.ts`; verified live that an authenticated superuser
+now receives the tabbed page.
+
+**Post-completion follow-up (2026-10-19).** The Calendar lived under the HR
+folio, so opening it showed the whole HR rail (employees, entitlements, roles,
+delegations, …) beside it. Treated `/dashboard/hr-admin/calendar` as its own
+module — `lib/nav/calendar-nav.ts` (`isCalendarModule` + `CALENDAR_NAV_ITEMS`)
+wired into the shell's module chain — so the rail becomes the launcher plus a
+single "Calendar" entry, matching the "don't proliferate nav items" discipline
+the tabbed page already follows. Pinned in `tests/dashboard-shell.test.tsx`.
+
+**Verification.**
+- Backend: `calendar_app` + `launcher` 54 tests OK; `leave`/`audit` 471 OK;
+  `leave_config`/`calendar_app`/`launcher` 96 OK; `users`/`org` 161 OK;
+  `plans`/`teams`/`organisation`/`directory`/`workflows`/`approvals`/
+  `notifications`/`documents` 816 OK; `manage.py check` clean;
+  `makemigrations --check --dry-run` → "No changes detected". (A single full
+  `manage.py test` run exceeds the 15-minute shell timeout; the per-app batches
+  above cover the whole suite.)
+- Frontend: `npx tsc --noEmit` clean; `npm run lint` clean; `npm test` → 116
+  files / 987 tests pass. `npm run typecheck:test` reports only the two
+  pre-existing failures unrelated to this work (`instrumentation-client.ts`
+  TS2306 pair and a stale `approver-role-table` fixture).
+
+**Deferred / not taken.** Terms and Blackout Periods tabs (optional in §3.3);
+the Team Plans calendar and the actual-leave team calendar (owned by other
+units); `plans` reminder re-based onto working days (D4).
+
+## Completed — End-to-end test profiles (`seed_test_profiles`) (2026-10-20)
+
+**Goal.** Give the whole system, not just the leave flow, an account for every
+capacity so each surface can be walked by hand: HR, DVC, Registrar, Supervisor,
+HOD, Dean, Campus Registrar and applicants on both an administration and an
+academic chain.
+
+**Delivered.** `backend/users/management/commands/seed_test_profiles.py` — an
+idempotent, transactional seeder building fourteen accounts on **`@e2e.luanar`**
+(password `testpass123`) through the same services HR's screens call
+(`create_team`, `create_role_assignment`, `create_campus_role_assignment`,
+`assign_workflow_member`, `add_section_member`), so it cannot write a
+configuration the product would refuse:
+
+- the six shipped `ApproverRole` rows, mirroring `workflows.testing.ROLE_SPECS`;
+- **Registry Operations** (administration, no campus): `Supervisor Review` →
+  `HOD Review` → `Registrar Review` → `DVC Review`, the last two written
+  unstaffed and auto-appointed from the institution-wide holdings;
+- **Main Campus Academic** (academic, at **Main Campus**): `Dean Review` →
+  `Campus Registrar Review`, the Dean appointed by hand and the registrar step
+  resolved by the campus-wide holding without an appointment;
+- institution-wide holdings for `registrar` and `dvc`; a campus-wide
+  `campus_registrar` holding at Main Campus; four administration employees and
+  three academic employees, each on their team and in its workflow member pool;
+- baseline leave configuration (active current-year `FinancialYear`, plannable
+  Annual Leave type, grade A–Z entitlement) — so applicants can plan *and* apply.
+- `retire_demo_users` now sweeps both `@test.luanar` and `@e2e.luanar`, so the
+  cleanup command still covers every published-password fixture.
+
+**Two decisions worth recording.** A role's institution-wide flag is *promoted
+by* its first holding, so the Registrar and DVC assignments run **before** the
+chains exist — selecting the role in a chain is what appoints the holder, and
+that appointment reads the promotion. And `campus_registrar` is deliberately
+**not** institution-wide: the two are mutually exclusive in the model, and an
+institution-wide approver may not serve an academic team, so a campus registrar
+modelled that way could never approve for the campus it exists to serve.
+
+**Reconciliation with `seed_demo_data`.** Both seeds can now share one dev
+database without taking each other's accounts (separate domains), but an office
+has exactly one holder: when the holding is already held, `seed_test_profiles`
+**moves** it to the `@e2e.luanar` account (rather than skipping, which would
+hand out an account that cannot act) and re-points any chain step that named the
+previous holder. The demo team is left in place; its registrar step is re-pointed
+by the next `seed_demo_data` run, exactly as that command already guards.
+
+**Verification.** `manage.py check` clean; `makemigrations --check --dry-run` →
+"No changes detected"; `validate_team` reports both teams **ready** (re-run
+idempotent — second run makes no changes); all 14 accounts authenticate via
+`POST /api/v1/auth/login/`. Tests: `users` 162 OK (incl. new
+`users/tests_seed_test_profiles.py`, 9 tests pinning sign-in for all 14, both
+teams ready, the wide-holding scopes, and the registrar take-over +
+re-point). Ruff clean on the touched files. `seed_test_profiles` must be run
+**after** `seed_demo_data` if both are used, so the demo registrar keeps its
+holding and the E2E accounts act.
+
+## Completed — Team-manager path made functional end to end (2026-10-20)
+
+**Goal.** A team manager is an ordinary employee holding a team-wide approver
+role flagged as the team's manager — the capacity the Teams app is scoped to.
+The designation, the authority, and the nav already existed, but every surface
+the manager path *needs* was HR-only, so the capacity was unreachable: the
+roster's member picker read the HR-only employee directory (403 → "No
+employees to add"), the workflow form's role list read the HR-only role
+endpoint (empty → Add-step/Create-workflow disabled), the Approvers tab was a
+dead end, and saving a chain navigated to `/organisation/teams/...`, which is
+not a route (404).
+
+**Delivered.** The manager path now works without loosening any HR-only surface.
+
+- **Backend, two manager-scoped reads** (`workflows/views.py`):
+  `GET /api/v1/teams/{id}/member-candidates/` — the roster's candidates (same
+  category, unassigned, not a wide approver for the team), read through the
+  team's own object so the manager queryset scopes it; and
+  `GET /api/v1/teams/eligible-approver-roles/` — the active roles, read-only,
+  to whoever manages a team. Both gated by the existing `IsHROrTeamManager`.
+- **Backend, closed an authorization gap**: `SectionMemberWriteSerializer`
+  names its `section` directly, so the viewset's managed-team queryset did **not**
+  scope a write — a manager could appoint a person to *any* team's step by id.
+  Added `validate_section` so a manager staffs only a step of a team they run;
+  HR/superuser keep the whole institution. This is the one behavioural fix that
+  was not purely additive.
+- **Frontend**: a manager reads candidates via `listMemberCandidates` and the
+  role list via `listActiveApproverRoles` (client-safe twins over the `/api/hr`
+  proxy); the team page skips HR-only directory/role/holding fetches for a
+  non-administrator and passes `canManage={isAdministrator}` into
+  `WideHoldingPanel`, which renders the Approvers tab **read-only** for a
+  manager (no form, no Remove, no Make-manager); the teams landing skips the
+  create-overlay fetches for a manager (they create no teams); and the workflow
+  form now navigates to `/dashboard/teams/{id}/workflows` (post-save, Cancel,
+  and the Members link) instead of the non-existent `/organisation/teams/...`.
+- **Seed**: `seed_test_profiles` now designates `hod@e2e.luanar` as manager of
+  **Registry Operations** through the product service (`create_team_role_assignment`
+  with `is_team_manager=True`, or `set_team_manager` on a re-run), so the path
+  ships with a working fixture.
+
+**Decisions locked.** Add-members is a **scoped read** (a new endpoint), not a
+loosening of `EmployeeViewSet`; workflow steps are staffed from the team's own
+members; the Approvers tab is read-only for a manager (writes stay HR's); roles
+stay written by HR only.
+
+**Verification.** Backend `workflows` + `users` **816 tests OK** (incl. new
+`workflows/tests_manager_access.py` classes: member-candidates scoped/refused,
+read-only role list, a manager staffing their own team's step and refused
+another's, HR anywhere; plus two `seed_test_profiles` manager tests). Frontend
+**117 files / 992 tests OK**; `tsc --noEmit` clean. Ruff clean on the new/edited
+seed, test, and view files.

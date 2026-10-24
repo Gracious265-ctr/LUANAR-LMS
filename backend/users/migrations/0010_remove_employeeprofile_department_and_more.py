@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('users', '0009_merge_20261002_1912'),
-        ('workflows', '0026_remove_team_department_remove_workflow_department_and_more'),
+        ('chains', '0026_remove_team_department_remove_workflow_department_and_more'),
     ]
 
     operations = [

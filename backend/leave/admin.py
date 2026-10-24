@@ -6,7 +6,6 @@ from .models import (
     FinancialYear,
     GradeEntitlement,
     GradeLeaveEntitlement,
-    PublicHoliday,
 )
 from .services import (
     find_annual_leave_type,
@@ -131,41 +130,6 @@ class FinancialYearAdmin(admin.ModelAdmin):
                 is_active=False
             )
         super().save_model(request, obj, form, change)
-
-
-class PublicHolidayAdminForm(forms.ModelForm):
-    """Admin form that enforces the unique-date rule as a field error."""
-
-    class Meta:
-        model = PublicHoliday
-        fields = "__all__"
-
-    def clean(self):
-        cleaned = super().clean()
-        holiday_date = cleaned.get("date")
-        if holiday_date:
-            queryset = PublicHoliday.objects.all()
-            if self.instance.pk is not None:
-                queryset = queryset.exclude(pk=self.instance.pk)
-            if queryset.filter(date=holiday_date).exists():
-                raise ValidationError(
-                    {
-                        "date": "A public holiday on this date already exists."
-                    }
-                )
-        return cleaned
-
-
-@admin.register(PublicHoliday)
-class PublicHolidayAdmin(admin.ModelAdmin):
-    form = PublicHolidayAdminForm
-    list_display = ("name", "date")
-    search_fields = ("name",)
-    list_filter = ("date",)
-    ordering = ("date",)
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(GradeLeaveEntitlement)

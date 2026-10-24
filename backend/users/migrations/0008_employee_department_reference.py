@@ -77,6 +77,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("users", "0007_department"),
+        ("teams", "0001_initial"),
     ]
 
     operations = [

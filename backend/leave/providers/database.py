@@ -11,14 +11,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from leave_config.models import LeaveType
-from leave_config.services import day_unit_for
+from leave_types.models import LeaveType
+from leave_types.services import day_unit_for
 from users.models import EmployeeProfile
+
+from calendar_app.services import holidays_map
 
 from ..services import (
     financial_year_for_date,
     financial_year_label,
-    public_holidays_between,
     resolved_annual_entitlement,
 )
 from .base import (
@@ -126,7 +127,7 @@ class DatabaseRulesProvider:
         )
 
     def get_public_holidays(self, start: date, end: date) -> dict[date, str]:
-        return {holiday.date: holiday.name for holiday in public_holidays_between(start, end)}
+        return holidays_map(start, end)
 
     def get_available_balance(self, employee_id: int, financial_year_label: str):
         try:

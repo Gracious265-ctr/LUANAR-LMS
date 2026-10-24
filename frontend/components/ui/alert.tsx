@@ -14,7 +14,7 @@ import { STATUS_STYLES } from "@/lib/status-styles";
  */
 const alertVariants = cva(
   [
-    "flex gap-2.5 rounded-lg p-3 text-sm",
+    "flex gap-2.5 rounded-sm p-3 text-sm",
     "[&_p]:leading-relaxed",
   ],
   {
@@ -24,7 +24,7 @@ const alertVariants = cva(
         info: "bg-brand-primary-subtle text-brand-primary",
         pending: STATUS_STYLES.pending,
         approved: STATUS_STYLES.approved,
-        rejected: STATUS_STYLES.rejected,
+        rejected: "bg-status-rejected-subtle text-status-rejected border border-status-rejected/30",
         correction: STATUS_STYLES.correction_required,
       },
     },

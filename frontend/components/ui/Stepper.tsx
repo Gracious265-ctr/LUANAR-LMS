@@ -1,19 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Clock, Minus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import { Check, Clock } from "lucide-react";
 
-import { formatDateTime } from "@/lib/tracking/format";
-import { STATUS_TEXT } from "@/lib/status-styles";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-/**
- * The status of one step (spec 2.1). Six values, defined once here and reused
- * by every surface that renders a sequence — the component never invents a
- * status, and no integration redefines these colours locally.
- */
 export type StepStatus =
   | "completed"
   | "current"
@@ -22,300 +14,202 @@ export type StepStatus =
   | "blocked"
   | "error";
 
-/**
- * One node of any ordered process (spec 2.1). This is the whole contract:
- * the component has zero awareness of leave applications, documents or org
- * units — each integration maps its own data into `Step[]`.
- */
 export interface Step {
   id: string;
-  /** Primary text — a role, a stage name, a step name. */
   label: string;
-  /** Secondary text — a unit name, a person, a detail. */
   sublabel?: string;
   status: StepStatus;
-  /** The person associated with this step, if any. */
   actor?: { id: string; name: string } | null;
-  /** When this step was completed/decided. */
   timestamp?: string | null;
-  /** Expandable text — a comment, a reason, extra context. */
-  detail?: string | null;
-  /** Shows an "Acting" badge next to the actor (approval-chain specific). */
   isActing?: boolean;
+  detail?: string | null;
 }
 
-export interface StepperProps {
+interface StepperProps {
   steps: Step[];
-  /** "auto" = horizontal desktop, vertical mobile (default). */
   orientation?: "horizontal" | "vertical" | "auto";
-  size?: "sm" | "md";
-  /** false where there is no person per step (e.g. an onboarding checklist). */
-  showAvatars?: boolean;
+  compact?: boolean;
+  className?: string;
+  activeStep?: number;
+  onStepChange?: (index: number) => void;
+  interactive?: boolean;
 }
 
-const STATUS_ICON = {
-  completed: Check,
-  current: Clock,
-  pending: Clock,
-  skipped: Minus,
-  blocked: Minus,
-  error: X,
-} as const;
-
-/** The node itself, when there is no avatar to show. */
-const NODE_STYLE: Record<StepStatus, string> = {
-  completed: "border-2 border-brand-primary bg-brand-primary text-white",
-  current:
-    "border-2 border-brand-primary bg-brand-primary-subtle text-brand-primary",
-  pending: "border border-border-strong bg-surface-card text-text-muted",
-  skipped: "border-2 border-dashed border-border-strong text-text-muted",
-  blocked:
-    "border-2 border-status-rejected/40 bg-status-rejected-subtle " +
-    STATUS_TEXT.rejected,
-  error:
-    "border-2 border-status-rejected/40 bg-status-rejected-subtle " +
-    STATUS_TEXT.rejected,
-};
-
-/** The line leaving a step: brand once the flow has settled through it. */
-function outgoingLine(status: StepStatus): string {
-  if (status === "completed") return "border-brand-primary";
-  if (status === "skipped") return "border-border-strong border-dashed";
-  if (status === "blocked" || status === "error")
-    return "border-status-rejected/40";
-  return "border-border-strong";
-}
-
-function isTerminalProblem(status: StepStatus): boolean {
-  return status === "blocked" || status === "error";
-}
-
-/**
- * One stepper for every ordered sequence (spec 2). Horizontal on desktop and
- * vertical on mobile are the same DOM tree switched with breakpoint classes;
- * `orientation` only changes flex-direction and connector placement, never the
- * step markup (spec 2.3). Nodes are never compressed below a legible minimum.
- */
 export function Stepper({
   steps,
-  orientation = "auto",
-  size = "md",
-  showAvatars = true,
+  className,
+  activeStep: controlledActiveStep,
+  onStepChange,
+  interactive = false,
 }: StepperProps) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const [internalActiveStep, setInternalActiveStep] = useState(0);
 
-  if (steps.length === 0) return null;
+  useEffect(() => {
+    if (controlledActiveStep !== undefined) {
+      return;
+    }
+    if (interactive) {
+      const currentIndex = steps.findIndex((s) => s.status === "current");
+      if (currentIndex >= 0) {
+        setInternalActiveStep(currentIndex);
+      } else {
+        const lastCompleted = steps
+          .map((s, i) => ({ s, i }))
+          .filter((x) => x.s.status === "completed")
+          .pop();
+        if (lastCompleted) {
+          setInternalActiveStep(lastCompleted.i);
+        }
+      }
+    }
+  }, [steps, controlledActiveStep, interactive]);
 
-  const auto = orientation === "auto";
-  const horizontal = orientation === "horizontal";
-  const compact = size === "sm";
+  const activeStep =
+    controlledActiveStep !== undefined ? controlledActiveStep : internalActiveStep;
 
-  const listClass = cn(
-    "flex",
-    auto ? "flex-col md:flex-row" : horizontal ? "flex-row" : "flex-col"
-  );
+  const setActiveStep = (index: number) => {
+    if (!interactive) return;
+    if (controlledActiveStep === undefined) {
+      setInternalActiveStep(index);
+    }
+    onStepChange?.(index);
+  };
 
-  const stepClass = cn(
-    "relative flex min-w-0 items-start gap-3",
-    auto
-      ? "md:flex-1 md:flex-col md:items-center md:gap-0 md:text-center"
-      : horizontal
-        ? "flex-1 flex-col items-center gap-0 text-center"
-        : ""
-  );
+  const progress = steps.length > 1 ? activeStep / (steps.length - 1) : 1;
 
   return (
-    <ol className={listClass}>
-      {steps.map((step, index) => {
-        const isLast = index === steps.length - 1;
-        const expandable = Boolean(step.detail);
-        const open = expandable && openId === step.id;
-        const nodeSize = compact ? "h-6 w-6" : "h-8 w-8";
-        const Icon = STATUS_ICON[step.status];
-        const showAvatar = showAvatars && Boolean(step.actor);
-
-        const node =
-          showAvatar ? (
-            <span className="relative inline-flex shrink-0 rounded-full">
-              {step.status === "current" && (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute -inset-1 animate-pulse rounded-full bg-brand-primary/15 motion-reduce:animate-none"
-                />
-              )}
-              <Avatar
-                name={step.actor!.name}
-                userId={step.actor!.id}
-                size={compact ? "sm" : "md"}
-                className={cn(
-                  "relative",
-                  step.status === "current" && "ring-2 ring-brand-primary",
-                  (step.status === "pending" ||
-                    step.status === "skipped" ||
-                    isTerminalProblem(step.status)) &&
-                    "opacity-80"
-                )}
-              />
-              {isTerminalProblem(step.status) && (
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 grid h-[18px] w-[18px] place-content-center rounded-full border-2 border-surface-card bg-status-rejected text-white"
+    <div className={cn("mx-auto w-full max-w-3xl", className)}>
+      <div className="relative">
+        <div
+          className="absolute top-5 h-0.5 bg-border"
+          style={{ left: "12.5%", right: "12.5%" }}
+        />
+        <motion.div
+          className="absolute top-5 h-0.5 bg-primary origin-left"
+          style={{ left: "12.5%", right: "12.5%" }}
+          initial={false}
+          animate={{ scaleX: progress }}
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+        />
+        <motion.span
+          className="absolute size-2 rounded-full bg-primary"
+          style={{ top: 21, x: "-50%", y: "-50%" }}
+          initial={{ left: "12.5%" }}
+          animate={{ left: `${12.5 + progress * 75}%` }}
+          transition={{ type: "spring", stiffness: 160, damping: 24 }}
+        />
+        <div className="relative flex items-start justify-between">
+          {steps.map((step, index) => {
+            const isActive = index === activeStep;
+            const isCompleted =
+              step.status === "completed" || index < activeStep;
+            return (
+              <div
+                key={step.id}
+                className="flex flex-1 flex-col items-center gap-2"
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveStep(index)}
+                  disabled={!interactive}
+                  aria-current={isActive ? "step" : undefined}
+                  aria-label={`${step.label} step`}
+                  className={cn(
+                    "group relative z-10 flex size-10 cursor-pointer items-center justify-center rounded-full transition-colors duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                    !interactive && "cursor-default"
+                  )}
                 >
-                  <Icon className="h-2.5 w-2.5" aria-hidden="true" />
+                  <span
+                    className={cn(
+                      "absolute inset-0 rounded-full transition-colors duration-300",
+                      isCompleted || isActive
+                        ? "bg-primary"
+                        : "bg-muted group-hover:bg-muted/80"
+                    )}
+                  />
+                  {isActive && !prefersReducedMotion && (
+                    <motion.span
+                      className="absolute inset-0 rounded-full ring-2 ring-primary/50"
+                      initial={{ scale: 1, opacity: 1 }}
+                      animate={{
+                        scale: [1, 1.45, 1],
+                        opacity: [1, 0.2, 1],
+                      }}
+                      transition={{
+                        duration: 2.2,
+                        repeat: Infinity,
+                        repeatType: "mirror",
+                        ease: "easeInOut",
+                      }}
+                    />
+                  )}
+                  <motion.div
+                    className="relative flex items-center justify-center"
+                    animate={{ scale: isActive ? 1.1 : 1 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 320,
+                      damping: 18,
+                    }}
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      {isCompleted ? (
+                        <motion.span
+                          key="check"
+                          initial={{ scale: 0, rotate: -90, opacity: 0 }}
+                          animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                          exit={{ scale: 0, rotate: 90, opacity: 0 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 400,
+                            damping: 22,
+                          }}
+                          className="flex items-center justify-center text-teal-400"
+                        >
+                          <Check className="size-5" strokeWidth={3} />
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="icon"
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 400,
+                            damping: 22,
+                          }}
+                          className="flex items-center justify-center"
+                        >
+                          <Clock
+                            className={cn(
+                              "size-5",
+                              isActive
+                                ? "text-primary-foreground"
+                                : "text-muted-foreground"
+                            )}
+                          />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                </button>
+                <span
+                  className={cn(
+                    "text-xs font-medium transition-colors duration-300",
+                    isActive || isCompleted
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {step.label}
                 </span>
-              )}
-            </span>
-          ) : (
-            <span
-              aria-hidden="true"
-              className={cn(
-                "grid shrink-0 place-content-center rounded-full",
-                nodeSize,
-                NODE_STYLE[step.status]
-              )}
-            >
-              <Icon className={compact ? "h-3 w-3" : "h-4 w-4"} />
-            </span>
-          );
-
-        return (
-          <li
-            key={step.id}
-            data-state={step.status}
-            aria-current={step.status === "current" ? "step" : undefined}
-            className={cn(
-              stepClass,
-              !isLast && "pb-8",
-              !isLast && (auto ? "md:pb-0" : horizontal && "pb-0")
-            )}
-          >
-            {!isLast && (
-              <>
-                {!horizontal && (
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "absolute bottom-0 left-[15px] w-0 border-l-2",
-                      compact && "left-[11px]",
-                      auto && "md:hidden",
-                      outgoingLine(step.status)
-                    )}
-                  />
-                )}
-                {(horizontal || auto) && (
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "absolute -right-1/2 left-1/2 top-[15px] h-0 border-t-2",
-                      compact && "top-[11px]",
-                      auto && "hidden md:block",
-                      outgoingLine(step.status)
-                    )}
-                  />
-                )}
-              </>
-            )}
-
-            {expandable ? (
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-label={`${step.label} details`}
-                onClick={() => setOpenId(open ? null : step.id)}
-                className={cn(
-                  "relative z-10 inline-flex shrink-0 cursor-pointer rounded-full transition-opacity hover:opacity-80 focus-ring",
-                  horizontal && "self-center",
-                  auto && "md:self-center"
-                )}
-              >
-                {node}
-              </button>
-            ) : (
-              <span
-                className={cn(
-                  "relative z-10 shrink-0",
-                  horizontal && "self-center",
-                  auto && "md:self-center"
-                )}
-              >
-                {node}
-              </span>
-            )}
-
-            <div
-              className={cn(
-                "min-w-0 flex-1",
-                !compact && "mt-2",
-                (horizontal || auto) && "md:mt-2 md:w-full md:flex-none"
-              )}
-            >
-              <h3
-                className={cn(
-                  "text-sm font-semibold",
-                  step.status === "pending" || step.status === "skipped"
-                    ? "text-text-muted"
-                    : "text-text-primary"
-                )}
-              >
-                {step.label}
-              </h3>
-
-              {!compact && step.actor && (
-                <p className="mt-0.5 text-sm text-text-secondary">
-                  {step.actor.name}
-                  {step.isActing && (
-                    <Badge
-                      size="sm"
-                      tone="neutral"
-                      className="ml-1.5 align-middle font-medium"
-                    >
-                      Acting
-                    </Badge>
-                  )}
-                </p>
-              )}
-
-              {!compact && step.sublabel && (
-                <p
-                  className={cn(
-                    "mt-0.5 text-xs",
-                    isTerminalProblem(step.status)
-                      ? STATUS_TEXT.rejected
-                      : "text-text-muted"
-                  )}
-                >
-                  {step.sublabel}
-                </p>
-              )}
-
-              {!compact && step.status === "current" && !step.sublabel && (
-                <p className="mt-0.5 text-xs text-text-muted">In progress</p>
-              )}
-
-              {!compact && step.status === "completed" && step.timestamp && (
-                <p className="mt-0.5 text-xs text-text-muted">
-                  {formatDateTime(step.timestamp)}
-                </p>
-              )}
-
-              {open && step.detail && (
-                <div
-                  className={cn(
-                    "mt-2 rounded-r-lg border-l-2 px-3 py-2 text-left text-sm break-words whitespace-pre-line",
-                    isTerminalProblem(step.status)
-                      ? cn(
-                          "border-status-rejected bg-status-rejected-subtle",
-                          STATUS_TEXT.rejected
-                        )
-                      : "border-border-strong bg-surface-subtle text-text-secondary"
-                  )}
-                >
-                  {step.detail}
-                </div>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

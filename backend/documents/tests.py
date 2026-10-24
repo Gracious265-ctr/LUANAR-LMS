@@ -295,7 +295,7 @@ from django.utils import timezone
 
 from audit.models import AuditEntry
 from leave.models import LeaveApplication
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 from leave.services.storage import upload_bytes, upload_document
 from storage3.exceptions import StorageApiError
 from users.models import User

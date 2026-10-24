@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('leave', '0013_leaveapplication_approved_on'),
         ('notifications', '0002_notificationoutbox_delegation_and_more'),
-        ('workflows', '0009_delegation_one_open_request_per_approver'),
+        ('chains', '0009_delegation_one_open_request_per_approver'),
     ]
 
     operations = [
@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='notificationoutbox',
             name='reassignment',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='notification_outbox_rows', to='workflows.reassignment'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='notification_outbox_rows', to='chains.reassignment'),
         ),
         migrations.AlterField(
             model_name='notificationoutbox',

@@ -1,21 +1,16 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
 import { MotionProvider } from "@/components/motion/motion-provider";
 import { THEME_BOOTSTRAP_SCRIPT, THEME_COOKIE, type Theme } from "@/lib/theme";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -57,8 +52,7 @@ export default async function RootLayout({
       // attributes and does not silence mismatches anywhere in the tree.
       suppressHydrationWarning
       className={[
-        geistSans.variable,
-        geistMono.variable,
+        inter.variable,
         "h-full",
         "antialiased",
         // Absent when there is no stored choice, so the inline script can tell
@@ -77,7 +71,7 @@ export default async function RootLayout({
         */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col font-sans">
         <MotionProvider>{children}</MotionProvider>
       </body>
     </html>

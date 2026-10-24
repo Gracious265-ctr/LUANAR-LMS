@@ -5,8 +5,8 @@ from datetime import date
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from leave_config.models import LeaveType
-from leave_config.services import (
+from leave_types.models import LeaveType
+from leave_types.services import (
     ANNUAL_LEAVE_CODE,
     ANNUAL_LEAVE_CODES,
     ANNUAL_LEAVE_NAME,
@@ -23,8 +23,8 @@ from ..models import (
     FinancialYear,
     GradeEntitlement,
     GradeLeaveEntitlement,
-    PublicHoliday,
 )
+
 
 
 def normalize_grade(grade: str) -> str | None:
@@ -189,7 +189,7 @@ def leave_types_available_to(
 
 # The reserved annual-leave identity (constants, the read lookup and the write
 # guard) and ``provision_annual_leave`` are re-exported from
-# ``leave_config.services`` above: they are rules about the leave-type registry,
+# ``leave_types.services`` above: they are rules about the leave-type registry,
 # so they live with it and are imported here to keep this module's public
 # surface stable for its callers.
 
@@ -247,11 +247,14 @@ def active_financial_year() -> FinancialYear | None:
 
 
 def public_holidays_between(start: date, end: date):
-    """Return public holidays on dates in the inclusive range ``[start, end]``.
+    """Resolved public holidays in the inclusive range ``[start, end]``.
 
-    This is the configuration boundary later working-day calculations consume.
+    Delegates to the calendar app so recurrence and observed shifts apply
+    everywhere the old concrete-date table was read (§3.5, §3.8).
     """
-    return PublicHoliday.objects.filter(date__gte=start, date__lte=end).order_by("date")
+    from calendar_app.services import get_holidays_for_range
+
+    return get_holidays_for_range(start, end)
 
 
 def get_entitlement(user, leave_type, financial_year) -> int | None:

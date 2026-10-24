@@ -55,7 +55,7 @@ export function RecentApplicationsSection({
         <EmptyState
           icon={<Inbox className="h-10 w-10 text-text-muted" />}
           title="No applications yet"
-          description="When you submit a leave application, it'll show up here."
+          description="Start by creating a draft or submitting your first leave application."
           action={
             <Button
               variant="primary"

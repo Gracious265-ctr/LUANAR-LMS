@@ -11,7 +11,7 @@ import { ClipboardCheck, UserCheck } from "lucide-react";
  * destinations live, so the approver never has to read past the HR folio and
  * their personal destinations to act on a request.
  *
- * Follows the shape the Leave, Plans, Leave-Configuration, Organisation, and
+ * Follows the shape the Leave, Plans, Leave-Configuration, Teams, and
  * Documents modules established — an item list plus a boundary predicate — so
  * the shell only learns one module-scoping pattern.
  */

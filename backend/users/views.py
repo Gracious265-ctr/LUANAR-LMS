@@ -39,7 +39,7 @@ from .throttles import (
 )
 
 from teams.models import Team
-from organisation.services import wide_approver_ids_for_team
+from roles.services import wide_approver_ids_for_team
 
 User = get_user_model()
 

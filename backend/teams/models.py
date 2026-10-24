@@ -2,7 +2,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from organisation.models import ApproverRole, Campus
+from campuses.models import Campus
+from roles.models import ApproverRole
 from users.models import User
 
 
@@ -108,7 +109,7 @@ class Team(models.Model):
         ),
     )
     workflow = models.OneToOneField(
-        "workflows.Workflow",
+        "chains.Workflow",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

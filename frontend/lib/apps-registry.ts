@@ -1,6 +1,7 @@
 import {
   Calendar,
   CalendarClock,
+  CalendarCog,
   ShieldCheck,
   Building2,
   FileStack,
@@ -26,7 +27,7 @@ export const APPS_REGISTRY = {
     icon: ShieldCheck,
     route: "/dashboard/approvals",
   },
-  org: {
+  teams: {
     name: "Teams",
     description: "Manage teams, campuses, approver roles, and their approval chains",
     icon: Building2,
@@ -43,6 +44,12 @@ export const APPS_REGISTRY = {
     description: "Manage leave types and their rules",
     icon: SlidersHorizontal,
     route: "/leave-config",
+  },
+  "calendar-app": {
+    name: "Calendar",
+    description: "Manage financial years, holidays, and institutional dates",
+    icon: CalendarCog,
+    route: "/dashboard/hr-admin/calendar",
   },
 } as const;
 

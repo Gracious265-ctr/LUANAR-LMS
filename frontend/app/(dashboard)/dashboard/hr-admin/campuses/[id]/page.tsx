@@ -17,7 +17,7 @@ import {
 import type { Employee } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
-import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
 import type { Campus, Team } from "@/lib/teams";
 import { getCampus, listTeams } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
@@ -53,7 +53,7 @@ export default async function CampusPage({
   if (!user) {
     redirect("/login");
   }
-  if (!isOrganisationAdministrator(user)) {
+  if (!isTeamsAdministrator(user)) {
     redirect("/dashboard");
   }
 

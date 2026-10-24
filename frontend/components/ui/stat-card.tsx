@@ -52,7 +52,7 @@ export function StatCard({
           {icon}
         </div>
       </div>
-      <div className="text-3xl font-semibold tracking-tight text-text-primary">
+      <div className="text-3xl font-semibold tracking-tight tabular-nums text-text-primary">
         {value}
       </div>
       <p className="mt-1 text-sm text-text-muted">{subtitle}</p>

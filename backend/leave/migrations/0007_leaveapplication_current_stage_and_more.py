@@ -8,14 +8,14 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('leave', '0006_leave_validation_submission'),
-        ('workflows', '0006_applicationstage_approvaldecision_and_more'),
+        ('chains', '0006_applicationstage_approvaldecision_and_more'),
     ]
 
     operations = [
         migrations.AddField(
             model_name='leaveapplication',
             name='current_stage',
-            field=models.ForeignKey(blank=True, help_text='The live workflow stage awaiting (or last acted on) this application.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='workflows.applicationstage'),
+            field=models.ForeignKey(blank=True, help_text='The live workflow stage awaiting (or last acted on) this application.', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='chains.applicationstage'),
         ),
         migrations.AddField(
             model_name='leaveapplication',

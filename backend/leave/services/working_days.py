@@ -46,6 +46,11 @@ def calculate_working_days(
         return 0
     if holidays is None:
         holidays = set(holidays_in_range(start_date, end_date, provider))
-    from leave.validation.working_days import count_working_days
+    from leave.validation.working_days import (
+        configured_weekdays,
+        count_working_days,
+    )
 
-    return count_working_days(start_date, end_date, holidays)
+    return count_working_days(
+        start_date, end_date, holidays, configured_weekdays()
+    )

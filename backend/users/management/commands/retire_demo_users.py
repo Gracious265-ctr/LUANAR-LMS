@@ -1,9 +1,10 @@
 """Retire the seeded demo accounts without touching their history.
 
 ``seed_dev_users`` creates seven people on ``@test.luanar`` with a published
-password. That is right for a test fixture and wrong for a database anyone else
-may point at: those accounts can sign in, and the addresses are undeliverable,
-so every notification to them fails on SMTP.
+password, and ``seed_test_profiles`` adds fourteen on ``@e2e.luanar`` for
+end-to-end testing. That is right for a test fixture and wrong for a database
+anyone else may point at: those accounts can sign in, and the addresses are
+undeliverable, so every notification to them fails on SMTP.
 
 They cannot simply be deleted, which is the more obvious answer. Roughly two
 dozen foreign keys point at ``users.User`` with ``PROTECT`` — audit entries,
@@ -24,21 +25,22 @@ afterwards will not revive them, because its ``defaults`` do not mention
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 
 from audit.models import AuditEntry
 from audit.services import record_audit
 
 User = get_user_model()
 
-DEMO_EMAIL_DOMAIN = "test.luanar"
+DEMO_EMAIL_DOMAINS = ("test.luanar", "e2e.luanar")
 DEMO_PASSWORD = "testpass123"
 
 
 class Command(BaseCommand):
     help = (
-        "Deactivate the seeded @test.luanar demo accounts and strip their "
-        "passwords, keeping every application, decision and audit row intact. "
-        "Use --undo to reactivate them."
+        "Deactivate the seeded @test.luanar and @e2e.luanar demo accounts and "
+        "strip their passwords, keeping every application, decision and audit "
+        "row intact. Use --undo to reactivate them."
     )
 
     def add_arguments(self, parser):
@@ -50,9 +52,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         undo = bool(options["undo"])
-        demo_users = list(
-            User.objects.filter(email__iendswith=f"@{DEMO_EMAIL_DOMAIN}").order_by("pk")
-        )
+        addresses = Q()
+        for domain in DEMO_EMAIL_DOMAINS:
+            addresses |= Q(email__iendswith=f"@{domain}")
+        demo_users = list(User.objects.filter(addresses).order_by("pk"))
 
         if not demo_users:
             self.stdout.write("No seeded demo accounts found; nothing to do.")

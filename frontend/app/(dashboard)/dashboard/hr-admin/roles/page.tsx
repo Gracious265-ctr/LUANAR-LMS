@@ -14,7 +14,7 @@ import {
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
-import { isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { FadeIn } from "@/components/motion/FadeIn";
 import { buttonVariants } from "@/components/ui/button";
@@ -29,7 +29,7 @@ async function RolesPage() {
   if (!user) {
     redirect("/login");
   }
-  if (!isOrganisationAdministrator(user)) {
+  if (!isTeamsAdministrator(user)) {
     redirect("/dashboard");
   }
 

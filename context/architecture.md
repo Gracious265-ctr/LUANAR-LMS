@@ -204,8 +204,8 @@ Examples:
 | Delegations                             | Database |
 | Reassignments                           | Database |
 | Cancellation requests/decisions         | Database |
-| Financial-year configuration            | Database |
-| Public-holiday references/configuration | Database |
+| Financial-year configuration (`calendar_app`) | Database |
+| Working-day pattern, holiday, and event configuration (`calendar_app`) | Database |
 | Notification records/status             | Database |
 | Audit records                           | Database |
 | Document metadata                       | Database |
@@ -469,8 +469,8 @@ Examples include:
 * Minimum notice periods.
 * Supporting-document requirements.
 * Approval workflows.
-* Financial-year dates.
-* Public-holiday configuration.
+* Financial-year dates, the working-day pattern, holidays, and institutional events (the `calendar_app`).
+* (Holidays were formerly `leave.PublicHoliday`; they now live in `calendar_app.Holiday`.)
 * Future-effective configuration changes.
 
 Configuration changes must have an effective date where historical behavior could otherwise be affected.
@@ -581,7 +581,7 @@ Annual leave is deducted only after final approval.
 
 Approved cancellation must restore the applicable deducted annual-leave days.
 
-**A charged leave day is a working day: weekends and configured public holidays are never charged.** There is one counting rule in the product — Saturdays, Sundays, and any date HR has configured as a public holiday are not working days — reached both by the validation pipeline at submission and by `leave/services/working_days.calculate_working_days()` for the draft preview and the `preview-days` endpoint. The resulting count is **frozen at submission** (invariant 12.5): holidays HR configures afterwards never re-cut an application that is already in flight, and cancellation restores exactly the days that were deducted rather than recounting. The one thing a holiday change *must* reach is an application still in the employee's hands: `calculated_days` is denormalized, so configuring a holiday re-counts the editable drafts it covers rather than waiting for the employee to re-save.
+**A charged leave day is a working day: days outside the configured working-day pattern and configured holidays are never charged.** There is one counting rule in the product — the days `calendar_app.WorkingDayPattern` marks non-working, and any date HR has configured as a `calendar_app.Holiday` (with recurrence expanded and `observed_shift` applied), are not working days — reached both by the validation pipeline at submission and by `leave/services/working_days.calculate_working_days()` for the draft preview and the `preview-days` endpoint. `leave/validation/working_days.configured_weekdays()` reads the single institution-wide pattern (defaulting to Mon–Fri), so the rule has one implementation; holidays resolve through `calendar_app.services.get_holidays_for_range`. The resulting count is **frozen at submission** (invariant 12.5): holidays or a pattern change made afterwards never re-cut an application that is already in flight, and cancellation restores exactly the days that were deducted rather than recounting. The one thing a calendar change *must* reach is an application still in the employee's hands: `calculated_days` is denormalized, so `leave/holiday_refresh.py` re-counts the editable drafts a holiday or working-day change covers rather than waiting for the employee to re-save.
 
 ---
 

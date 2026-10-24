@@ -6,13 +6,12 @@ from audit.models import AuditEntry
 from audit.serializers import AuditedModelSerializer
 from audit.services import current_actor, record_audit
 
-from leave_config.models import LeaveType
+from leave_types.models import LeaveType
 
 from ..models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
     SupportingDocument,
 )
 from ..services import (
@@ -141,7 +140,7 @@ class GradeEntitlementSerializer(AuditedModelSerializer):
 class EmployeeLeaveTypeSerializer(serializers.ModelSerializer):
     """Read-only, employee-facing view of leave types.
 
-    Every rule on here is read straight off ``leave_config.LeaveType`` — the
+    Every rule on here is read straight off ``leave_types.LeaveType`` — the
     registry that owns them (refinement unit 06) — so the catalog shows the live
     policy rather than a hard-coded list.
 
@@ -250,38 +249,6 @@ class FinancialYearSerializer(AuditedModelSerializer):
             self._settle_active_flag(instance)
             instance.refresh_from_db()
         return instance
-
-
-class PublicHolidaySerializer(AuditedModelSerializer):
-    """HR-facing serializer for configured public-holiday dates."""
-
-    target_type = AuditEntry.TargetType.PUBLIC_HOLIDAY
-    audit_fields = ["name", "date"]
-
-    class Meta:
-        model = PublicHoliday
-        fields = ["id", "name", "date"]
-
-    def validate(self, attrs: dict) -> dict:
-        name = self._value(attrs, "name")
-        name = (name or "").strip()
-        if not name:
-            raise serializers.ValidationError({"name": "Name is required."})
-        attrs["name"] = name
-
-        holiday_date = self._value(attrs, "date")
-        if holiday_date is None:
-            raise serializers.ValidationError({"date": "Date is required."})
-
-        queryset = PublicHoliday.objects.all()
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.filter(date=holiday_date).exists():
-            raise serializers.ValidationError(
-                {"date": "A public holiday on this date already exists."}
-            )
-
-        return attrs
 
 
 class SupportingDocumentSerializer(serializers.ModelSerializer):

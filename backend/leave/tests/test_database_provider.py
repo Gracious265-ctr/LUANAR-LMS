@@ -14,15 +14,15 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from calendar_app.models import Holiday
 from leave.cancellations.models import LeaveBalanceTransaction
 from leave.models import (
     FinancialYear,
     GradeEntitlement,
     LeaveApplication,
-    PublicHoliday,
 )
-from leave_config.models import LeaveType
-from workflows.testing import team_for
+from leave_types.models import LeaveType
+from chains.testing import team_for
 from leave.providers.database import DatabaseRulesProvider
 from users.models import EmployeeProfile
 
@@ -182,8 +182,12 @@ class GetFinancialYearTests(ProviderSetupMixin, TestCase):
 class GetPublicHolidaysTests(ProviderSetupMixin, TestCase):
     def setUp(self):
         super().setUp()
-        PublicHoliday.objects.create(name="In range", date=date(2026, 9, 30))
-        PublicHoliday.objects.create(name="Outside", date=date(2026, 12, 25))
+        Holiday.objects.create(
+            name="In range", date=date(2026, 9, 30), is_recurring=False, observed_shift=False
+        )
+        Holiday.objects.create(
+            name="Outside", date=date(2026, 12, 25), is_recurring=False, observed_shift=False
+        )
 
     def test_only_rows_in_range_are_returned(self):
         holidays = self.provider.get_public_holidays(

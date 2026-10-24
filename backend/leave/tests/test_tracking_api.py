@@ -29,7 +29,7 @@ from leave.models import LeaveApplication, SupportingDocument
 from leave.services.resubmission import resubmit_application
 from leave.services.submission import submit_application
 from approvals.models import ApprovalDecision
-from workflows.testing import create_user_with_role
+from chains.testing import create_user_with_role
 from approvals.services import decide
 
 from .stubs import EARLIEST_ANNUAL_START, StubProviderMixin, make_user

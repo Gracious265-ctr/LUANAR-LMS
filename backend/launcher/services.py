@@ -67,7 +67,7 @@ def can_access_org(user) -> bool:
         return True
     # Imported lazily: ``organisation`` imports the launcher's siblings, and the
     # rule itself lives with the team it is about rather than being copied here.
-    from organisation.services import managed_team_ids_for
+    from roles.services import managed_team_ids_for
 
     return bool(managed_team_ids_for(user))
 
@@ -89,15 +89,27 @@ def can_access_documents(user) -> bool:
     return bool(getattr(user, "is_authenticated", False))
 
 
-def can_access_leave_config(user) -> bool:
+def can_access_leave_types(user) -> bool:
     """Leave Configuration is an HR surface (spec 4.6).
 
-    Delegates to ``leave_config.services.can_access_leave_config`` rather than
-    restating the rule: the launcher card, the ``/leave-config`` page gate and
+    Delegates to ``leave_types.services.can_access_leave_types`` rather than
+    restating the rule: the launcher card, the ``/leave-types`` page gate and
     the viewset permission are three views of one decision, and a copy of the
     rule here is a copy that can drift.
     """
-    from leave_config.services import can_access_leave_config as gate
+    from leave_types.services import can_access_leave_types as gate
+
+    return gate(user)
+
+
+def can_access_calendar(user) -> bool:
+    """Calendar configuration is an HR surface (refinement unit 07 §2).
+
+    Delegates to ``calendar_app.services.can_access_calendar`` for the same
+    reason ``can_access_leave_types`` delegates: the launcher card, the page
+    gate and the viewset permission must be one decision, not three copies.
+    """
+    from calendar_app.services import can_access_calendar as gate
 
     return gate(user)
 
@@ -114,6 +126,8 @@ def get_launcher_apps(user) -> list[dict]:
         apps.append({"key": "org", "badge": _org_badge(user)})
     if can_access_documents(user):
         apps.append({"key": "documents", "badge": None})
-    if can_access_leave_config(user):
-        apps.append({"key": "leave-config", "badge": None})
+    if can_access_leave_types(user):
+        apps.append({"key": "leave-types", "badge": None})
+    if can_access_calendar(user):
+        apps.append({"key": "calendar-app", "badge": None})
     return apps

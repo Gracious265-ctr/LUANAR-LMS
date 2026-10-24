@@ -112,13 +112,13 @@ export function CancellationRequestsTable() {
           />
           <p className="mt-3 text-sm font-medium text-text-primary">
             {tab === "pending"
-              ? "No cancellation requests are waiting for you."
-              : "You haven't decided any cancellation requests yet."}
+              ? "No cancellation requests are waiting for you"
+              : "No decisions yet"}
           </p>
           <p className="mt-1 text-sm text-text-secondary">
             {tab === "pending"
-              ? "Requests will appear here when an employee asks to cancel approved leave."
-              : "Requests you have decided on will appear here."}
+              ? "You're all caught up. Requests will appear here when an employee asks to cancel approved leave."
+              : "Cancellation requests you have decided on will appear here."}
           </p>
         </Card>
       ) : (

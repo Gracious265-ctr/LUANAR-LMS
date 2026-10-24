@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-from organisation.models import ApproverRole
+from roles.models import ApproverRole
 from users.models import User
 
 
@@ -117,7 +117,7 @@ class ApplicationStage(models.Model):
         ),
     )
     section_ref = models.ForeignKey(
-        "workflows.Section",
+        "chains.Section",
         on_delete=models.PROTECT,
         null=True,
         blank=True,

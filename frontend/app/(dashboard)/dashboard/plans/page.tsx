@@ -14,11 +14,11 @@ export default function PlansPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text-primary">
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
             Leave Plans
           </h1>
-          <p className="text-text-muted">
-            Plan your leave ahead of time — nothing here is submitted until you apply.
+          <p className="text-text-secondary">
+            Plan your leave ahead of time — plans are drafts; you'll still need to apply when you're ready.
           </p>
         </div>
         <Button

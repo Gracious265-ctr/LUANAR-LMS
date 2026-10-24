@@ -336,7 +336,7 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
         <Card>
           {q ? (
             <EmptyState
-              icon={<SearchX className="h-10 w-10" />}
+              icon={<Inbox className="h-10 w-10" />}
               title={`No results for "${q}"`}
               description="Check the reference number or employee name and try again."
               action={
@@ -349,13 +349,13 @@ export function ApprovalsList({ headerless = false }: { headerless?: boolean }) 
             <EmptyState
               icon={<CheckCircle2 className="h-10 w-10" />}
               title="Nothing pending your review"
-              description="New applications will appear here as they are submitted."
+              description="You're all caught up. New applications will appear here when submitted."
             />
           ) : (
             <EmptyState
               icon={<Inbox className="h-10 w-10" />}
-              title="You have not decided on any applications yet"
-              description="Applications you have decided on will appear here."
+              title="No decisions yet"
+              description="Applications you have approved, rejected, or requested changes for will appear here."
             />
           )}
         </Card>

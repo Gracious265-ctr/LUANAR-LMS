@@ -59,22 +59,27 @@ database directly; it always goes through the Django API.
 | App | What it owns |
 |-----|--------------|
 | `backend/users` | User accounts, roles/permissions, login (JWT tokens) |
-| `backend/leave` | The core leave domain: employees, grade entitlements, financial years, holidays, applications, validation, submission, resubmission, cancellation, supporting documents, tracking, document storage |
-| `backend/leave_config` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_config/services.py` |
-| `backend/organisation` | The **approver registry and org scoping**: `ApproverRole`, `Campus`, and the institution-wide (`RoleAssignment`) and campus-wide (`CampusRoleAssignment`) role holdings. (Split out of `workflows`; the `workflows.models` re-export shim keeps historical imports working.) |
-| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping) and `TeamRoleAssignment` (team-wide role holders, including the designated team manager). (Split out of `workflows`.) |
-| `backend/approvals` | The **approval engine's data**: `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`, `Delegation`, `Reassignment`. (Split out of `workflows`.) |
-| `backend/workflows` | Approval **chains**: `Workflow`, `Section`, `SectionMember`, `WorkflowMember`. Teams are **active on creation** (no activation action), and a chain carries its own required name with an `effective_from`/`effective_to` window defaulting to the current academic year |
+| `backend/leave` | The core leave domain: employees, grade entitlements, financial years, applications, validation, submission, resubmission, cancellation, supporting documents, tracking, document storage. (Holidays were retired to `calendar_app`, but the shared `FinancialYear` still lives here.) |
+| `backend/calendar_app` | **The institution-wide calendar**: `FinancialYear` (re-exposed), the single `WorkingDayPattern`, `Holiday` (recurring + observed-shift, optionally FY-scoped), and `CalendarEvent`. Resolution (recurring expansion, observed-shift) lives in `calendar_app/services.py`; leave day-counting and notice periods read it. |
+| `backend/leave_types` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_types/services.py` |
+| `backend/roles` | The **approver role registry**: `ApproverRole` and institution-wide (`RoleAssignment`) role holdings. |
+| `backend/campuses` | **Campus scoping**: `Campus` and campus-wide (`CampusRoleAssignment`) role holdings. |
+| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping) and `TeamRoleAssignment` (team-wide role holders, including the designated team manager). **Team endpoints live here** (`TeamViewSet`, routes under `api/v1/teams/` via `teams.urls`). |
+| `backend/roles` | Approver roles and team/campus role assignments split out of `organisation/` (`ApproverRole`, `RoleAssignment`, `TeamRoleAssignmentViewSet`, role permissions/services). |
+| `backend/campuses` | Campus entities and campus role assignments split out of `organisation/` (`Campus`, `CampusRoleAssignment`, campus APIs). |
+| `backend/org_structure` | The mirrored organisation tree (`OrgUnit`): the provider sync that creates/updates units and appoints `designated_approver` from role holders (formerly `org/`). |
+| `backend/leave_types` | Leave type registry/configuration (formerly `leave_config/`). |
+| `backend/approvals` | The **approval engine's data**: `ApplicationStage`, `ApplicationStageApprover`, `ApprovalDecision`, `Delegation`, `Reassignment`. (Split out of `chains`.) |
+| `backend/chains` | Approval **chains**: `Workflow`, `Section`, `SectionMember`, `WorkflowMember` (formerly `workflows/`). Teams are **active on creation** (no activation action), and a chain carries its own required name with an `effective_from`/`effective_to` window defaulting to the current academic year. Team management endpoints were moved to `backend/teams`. |
 | `backend/documents` | The official approved-leave **PDF** generator + template |
-| `backend/notifications` | Notification outbox + email sending (composers write rows, `tasks.py` sends them via django-q2) |
+| `backend/notifications` | **In-app notifications** (`Notification` model, API under `/api/v1/notifications/`, wiring approvals/plans) + notification outbox + email sending (composers write rows, `tasks.py` sends them via django-q2) |
 | `backend/audit` | The immutable **AuditEvent** trail + HR audit view |
 | `backend/directory` | The **organisation data provider** seam: provider contract + dataclasses, the `ORG_DATA_BACKEND` factory, the placeholder fixture directory (employees, grades, org units, role holders) and the `sync_org_structure` command |
-| `backend/org` | The mirrored organisation tree (`OrgUnit`): the provider sync that creates/updates units and appoints `designated_approver` from role holders |
-
+| 
 ### The standard layout inside one app
-
+| 
 Every Django app uses the same pattern. Learn it once, use it everywhere:
-
+| 
 | File / folder | What it's for |
 |---------------|---------------|
 | `models.py` | Defines the **database tables** (the data). |
@@ -98,12 +103,16 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | The set-password link (request, resend, confirm) | `backend/users/services.py`, `backend/notifications/accounts.py`, `frontend/lib/password-set.ts` |
 | Changing a password from a live session (and the session eviction) | `backend/users/services.py` (`change_password`), `backend/users/authentication.py` |
 | Seed dev demo data (a routable team, its Supervisor→HOD→Registrar chain, approver + employee accounts, and baseline leave config) | `backend/users/management/commands/seed_demo_data.py` |
-| Employee/HR data serialisers (employees, entitlements, financial years, holidays, applications) | `backend/leave/serializers/__init__.py` |
-| The HR/employee API endpoints (entitlements, financial years, holidays, applications, documents) | `backend/leave/views/__init__.py` |
-| A leave type or any rule on it (name, eligibility, maximum duration, notice period, documents, plannability, registrar escalation) | `backend/leave_config/models.py`, `backend/leave_config/services.py`, `backend/leave_config/serializers.py`, `backend/leave_config/views.py` |
-| Stopping or restoring a leave type (deactivate/reactivate, never delete) | `backend/leave_config/services.py` (`deactivate_leave_type`/`reactivate_leave_type`), `backend/leave_config/views.py` |
-| Whether an employee may pick a leave type (branch/grade/gender eligibility) or how much notice it needs | `backend/leave_config/services.py` (`is_eligible`, `validate_notice`) |
-| The annual leave type's rules (notice period, maximum duration, eligibility …) | `backend/leave_config/services.py` (`provision_annual_leave` provisions the row; its rules are edited through the ordinary leave-type endpoint) |
+| Seed the end-to-end test profiles (14 accounts on `@e2e.luanar`: HR, DVC, Registrar, Supervisor, HOD, Dean, Campus Registrar, 7 employees; two routable teams + campus + wide holdings) | `backend/users/management/commands/seed_test_profiles.py` |
+| Retire/reactivate every published-password seed account (`@test.luanar`, `@e2e.luanar`) | `backend/users/management/commands/retire_demo_users.py` |
+| Employee/HR data serialisers (employees, entitlements, financial years, applications) | `backend/leave/serializers/__init__.py` |
+| The HR/employee API endpoints (entitlements, financial years, applications, documents) | `backend/leave/views/__init__.py` |
+| Financial years, holidays, working-day pattern, or calendar events | `backend/calendar_app/models.py`, `backend/calendar_app/services.py`, `backend/calendar_app/serializers.py`, `backend/calendar_app/views.py` |
+| How many working days a leave period has (excludes weekends/holidays from the configured pattern) | `backend/leave/validation/working_days.py` (`configured_weekdays`), `backend/calendar_app/services.py` (`get_holidays_for_range`/`working_weekdays`) |
+| A leave type or any rule on it (name, eligibility, maximum duration, notice period, documents, plannability, registrar escalation) | `backend/leave_types/models.py`, `backend/leave_types/services.py`, `backend/leave_types/serializers.py`, `backend/leave_types/views.py` |
+| Stopping or restoring a leave type (deactivate/reactivate, never delete) | `backend/leave_types/services.py` (`deactivate_leave_type`/`reactivate_leave_type`), `backend/leave_types/views.py` |
+| Whether an employee may pick a leave type (branch/grade/gender eligibility) or how much notice it needs | `backend/leave_types/services.py` (`is_eligible`, `validate_notice`) |
+| The annual leave type's rules (notice period, maximum duration, eligibility …) | `backend/leave_types/services.py` (`provision_annual_leave` provisions the row; its rules are edited through the ordinary leave-type endpoint) |
 | Employee "my leave" overview and history endpoints | `backend/leave/views/my_leave.py`, `backend/leave/views/history.py` |
 | The employee leave **dashboard** summary (balances + needs-attention + drafts + recent) | `backend/leave/services/dashboard.py`, `backend/leave/views/dashboard.py` |
 | Resubmission endpoint after a correction | `backend/leave/views/resubmission.py` |
@@ -113,7 +122,7 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | Entitlement/rules resolution helpers (which grade get which days) | `backend/leave/services/__init__.py` |
 | Per-type leave entitlement mapping (external grade + type + year → days) and `get_entitlement` | `backend/leave/models.py` (`GradeLeaveEntitlement`), `backend/leave/services/__init__.py` (`get_entitlement`) |
 | The organisation data source (employees, grades, org units, role holders) and its contract | `backend/directory/provider.py`, `backend/directory/fixtures/seed_data.json`, `backend/directory/factory.py` (`ORG_DATA_BACKEND` in `backend/config/settings/base.py`) |
-| Syncing the org tree / who a unit's designated approver is | `backend/org/services.py`, command `backend/directory/management/commands/sync_org_structure.py` |
+| Syncing the org tree / who a unit's designated approver is | `backend/org_structure/services.py`, command `backend/directory/management/commands/sync_org_structure.py` |
 | Working-day / weekend / holiday calculation | `backend/leave/services/working_days.py` |
 | Reference numbers (e.g. `LV-2026-27-…`) | `backend/leave/services/references.py` |
 | Supporting-document lifecycle (upload/replace/delete rules) | `backend/leave/services/documents.py` |
@@ -121,9 +130,9 @@ Every Django app uses the same pattern. Learn it once, use it everywhere:
 | Cancellation of approved leave | `backend/leave/cancellations/services.py` |
 | History/tracking provider used by the app | `backend/leave/tracking/` |
 | Where approved PDFs/documents are stored (local disk vs Supabase) | `backend/leave/storage/` |
-| The approval workflow engine (stage resolution, routing) | `backend/workflows/database_provider.py`, `backend/workflows/services.py` |
-| The **decision** rules (approve/reject/return, final approval) | `backend/workflows/approval.py` |
-| Who is allowed to see/decide what | `backend/workflows/policies.py` |
+| The approval workflow engine (stage resolution, routing) | `backend/chains/database_provider.py`, `backend/chains/services.py` |
+| The **decision** rules (approve/reject/return, final approval) | `backend/chains/approval.py` |
+| Who is allowed to see/decide what | `backend/chains/policies.py` |
 | The approved-leave **PDF** layout/content | `backend/documents/generator.py`, `backend/documents/models.py` (template) |
 | What the PDF template looks like in the UI | `frontend` HR "Document Template" page (see frontend map) |
 | When/what **emails and notifications** are sent | the composers in `backend/notifications/` (`services.py` decisions, `delegations.py`, `reassignments.py`, `plans.py`, `cancellations.py`) + the single send site `backend/notifications/tasks.py` |
@@ -149,6 +158,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | `frontend/app/(dashboard)/dashboard/…` | The pages you see inside the app (employee + HR) |
 | `frontend/app/(dashboard)/approvals/…` | Approvers' "pending approvals" pages |
 | `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit) |
+| `frontend/app/(dashboard)/dashboard/hr-admin/calendar/…` | The HR **Calendar** app (tabbed landing page: financial years, holidays & events, working days, with a month grid) |
 | `frontend/app/(auth)/login/` | The login page |
 | `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans, leave-config) |
 | `frontend/components/…` | Reusable UI pieces, grouped by area (hr, leave-config, approvals, applications, cancellation, tracking, dashboard) |
@@ -160,7 +170,8 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 
 | I want to change… | Open this |
 |-------------------|-----------|
-| The app's outer layout / **sidebar** / top bar / hide button | `frontend/components/dashboard/dashboard-shell.tsx` |
+| The app's outer layout / floating pill-shaped **sidebar** / top bar / hide button / **notification bell** | `frontend/components/dashboard/dashboard-shell.tsx` |
+| The responsive **launcher and dashboard** header, notifications, All Apps link, desktop profile popover, mobile avatar account menu, and password dialog | `frontend/components/ui/navbar-1.tsx`, used by `frontend/components/launcher/launcher-shell.tsx` and `frontend/components/dashboard/dashboard-shell.tsx`; password form in `frontend/components/account/password-change-form.tsx` |
 | Colors, fonts, global styles | `frontend/app/globals.css` (also see `context/ui-context.md`) |
 | Login page | `frontend/app/(auth)/login/` |
 | After-login access control (redirects by role) | `frontend/middleware.ts`, `frontend/lib/auth.ts` |
@@ -172,6 +183,9 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | Scheduled plan reminders / missed-plan sweep | `backend/plans/tasks.py` (`check_and_notify_plans`) + `backend/plans/migrations/0002_schedule_plan_check.py` |
 | Approvals list / approval detail for approvers | `frontend/app/(dashboard)/approvals/` + `frontend/components/approvals/` |
 | HR admin home and all HR pages (employees, entitlements, workflows, calendar, delegations, reassignments, audit, document template) | `frontend/app/(dashboard)/dashboard/hr-admin/…` |
+| The **Calendar** app (financial years, holidays & events, working-day pattern, month grid) | `frontend/app/(dashboard)/dashboard/hr-admin/calendar/…` + `frontend/components/hr/CalendarTabs.tsx`, `CalendarMonthGrid.tsx`, `HolidaysSection.tsx`, `EventsSection.tsx`, `WorkingDaysSection.tsx`, `frontend/lib/financial-years*.ts` and `frontend/lib/calendar-weekdays.ts` |
+| The **Calendar** app's own sidebar rail (only the launcher + one Calendar entry; the HR folio is hidden inside the app) | `frontend/lib/nav/calendar-nav.ts` (`isCalendarModule`, `CALENDAR_NAV_ITEMS`) |
+| Who may open the Calendar (the frontend access check) | `frontend/lib/financial-years.ts` (`canAccessCalendar`/`requireCalendarAccess`; backend twin in `backend/calendar_app/services.py`) |
 | The **Leave Configuration** app (list/create/edit leave types, deactivate & reactivate) | `frontend/app/(dashboard)/leave-config/…` + `frontend/components/leave-config/`, `frontend/lib/leave-config*.ts` |
 | Who may open Leave Configuration (the frontend access check) | `frontend/lib/leave-config-server.ts` (`canAccessLeaveConfig`; backend twin in `backend/leave_config/services.py`) |
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
@@ -234,10 +248,10 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    `dashboard/hr-admin/leave-document-template`.
 
 **I want to change the approval decision logic or the approver chain.**
-1. The chain/resolution: `backend/workflows/database_provider.py`.
-2. Approve/reject/return and final approval: `backend/workflows/approval.py`.
-3. Visibility/permission rules: `backend/workflows/policies.py`.
-4. Delegation + reassignment: `backend/workflows/services.py`.
+1. The chain/resolution: `backend/chains/database_provider.py`.
+2. Approve/reject/return and final approval: `backend/chains/approval.py`.
+3. Visibility/permission rules: `backend/chains/policies.py`.
+4. Delegation + reassignment: `backend/chains/services.py`.
 
 **I want mail to actually go out (or not go out in dev).**
 1. Transport comes from `backend/.env` (see `backend/.env.example`):
@@ -308,6 +322,46 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    paths is a check that can be walked around, and the refresh path is the way
    around it.
 
+**I want every capacity to sign in and walk the system end to end.**
+```bash
+uv run manage.py seed_test_profiles
+```
+Creates fourteen `@e2e.luanar` accounts (password `testpass123`) — HR, DVC,
+Registrar, Supervisor, HOD, Dean, Campus Registrar and seven employees — two
+routable teams (administration `Supervisor→HOD→Registrar→DVC`, academic
+`Dean→Campus Registrar` at Main Campus), the wide holdings that staff their
+unmanned steps, and baseline leave config. Run it **after** `seed_demo_data` if
+both are used: an office has one holder, so it moves the Registrar holding to the
+E2E account and re-points the chain step that named the previous holder.
+
+The seed also designates `hod@e2e.luanar` as **manager** of Registry Operations,
+so the team-manager path ships with a working fixture (sign in as that account to
+walk it).
+
+**I want to understand or change what a team manager may do.**
+A team manager is an ordinary employee holding a *team-wide* approver role whose
+`TeamRoleAssignment.is_team_manager` is set. One manager per team is a database
+constraint; HR designates them on the team's **Approvers** tab (Make manager) or
+at team creation (`manager={"role","user"}`). Authority is `is_hr_actor(actor) or
+is_team_manager(actor, team)` (`backend/chains/services/_shared.py::_require_can_manage_team`).
+
+| Surface | HR / superuser | Team manager |
+|---------|----------------|--------------|
+| Teams list | every team | only teams they manage (single team → redirect) |
+| Team identity (category, campus, name) & retire | yes | **no** (403) |
+| Team chains (create/edit/route a `Workflow`) | yes | yes, own team only |
+| Workflow steps | staff from the whole directory | staff from the team's own members |
+| Roster (add/remove members) | yes | yes, own team only |
+| Approvers tab (wide holders, Make manager) | read + write | **read-only** |
+| Approver roles (create/edit/retire) | yes | no (read-only active list) |
+
+The manager path reads through **manager-scoped endpoints**, never by loosening an
+HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and
+`GET /api/v1/teams/eligible-approver-roles/` (`backend/teams/views.py`).
+Writes are scoped too: `SectionMemberWriteSerializer.validate_section` refuses a
+manager staffing a step of a team they do not run, because a write names its
+section directly and the viewset queryset alone would not stop it.
+
 **I want the seeded demo accounts gone.**
 ```bash
 uv run manage.py retire_demo_users
@@ -315,9 +369,10 @@ uv run manage.py retire_demo_users
 They are deactivated, not deleted: audit entries, decisions, delegations, role
 assignments and balance transactions all point at `users.User` with `PROTECT`, so
 a demo account with any history cannot be deleted. The command writes a
-`DEACTIVATED` audit entry per account and is idempotent. `--undo` puts the demo
-state back. Leave `seed_dev_users` in place regardless — it also seeds the leave
-types, entitlements, rules and financial year.
+`DEACTIVATED` audit entry per account and is idempotent, and it covers both the
+`@test.luanar` demo seed and the `@e2e.luanar` test profiles. `--undo` puts the
+demo state back. Leave `seed_dev_users` in place regardless — it also seeds the
+leave types, entitlements, rules and financial year.
 
 **I want to run the tests.**
 - Backend (from `backend/`):
