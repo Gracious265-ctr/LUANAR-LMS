@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Team serializers moved from chains."""
 
 from __future__ import annotations
@@ -210,6 +211,29 @@ class WorkflowWriteSerializer(serializers.Serializer):
             actor=self.context["actor"],
             data=dict(validated_data),
         )
+=======
+"""Team serializers: team CRUD, membership, readiness, and role holdings.
+
+These were split out of ``workflows.serializers`` (and the team-wide holding out
+of ``organisation.serializers``) so the ``teams`` app owns the whole Team feature
+— its HTTP shapes included — rather than borrowing them from the apps it
+happens to route through. The workflow-configuration serializers
+(``WorkflowSerializer``, ``WorkflowWriteSerializer``, ``SectionMemberSerializer``)
+stay in ``workflows``; the service functions they and these call still live in
+``workflows.services`` and ``organisation.services``.
+"""
+
+from rest_framework import serializers
+
+from users.models import User
+
+from organisation.models import ApproverRole, Campus
+from organisation.serializers import WideRoleAssignmentSerializer
+from organisation.services import add_team_member, create_team_role_assignment
+from teams.models import Team, TeamRoleAssignment
+from workflows.models import Section
+from workflows.services import create_team, update_team, workflow_section_roles
+>>>>>>> features/team-base
 
 
 class TeamManagerInputSerializer(serializers.Serializer):
@@ -220,7 +244,11 @@ class TeamManagerInputSerializer(serializers.Serializer):
     required — a manager without a role could not approve, and a role without a
     holder names nobody. The role/person/team rules (active, team-scoped, and
     category-matching) are enforced where every other wide holding is, in
+<<<<<<< HEAD
     :func:`workflows.services.create_team_role_assignment`.
+=======
+    :func:`organisation.services.create_team_role_assignment`.
+>>>>>>> features/team-base
     """
 
     role = serializers.PrimaryKeyRelatedField(queryset=ApproverRole.objects.all())
@@ -261,6 +289,7 @@ class TeamSerializer(serializers.ModelSerializer):
             "an institution-wide approver may serve."
         ),
     )
+<<<<<<< HEAD
     # Read-only: routing is a decision of its own, made through the ``route``
     # action, so a generic PATCH can never re-route a team.
     workflow_name = serializers.CharField(source="workflow.name", read_only=True)
@@ -273,6 +302,17 @@ class TeamSerializer(serializers.ModelSerializer):
     # describing. On update it replaces the steps of the chain the team already
     # has. Either way it is the one and only way a chain is written.
     new_workflow = TeamWorkflowInputSerializer(write_only=True, required=False)
+=======
+    # Every chain the team owns, listed rather than resolved to one: a team has
+    # no single workflow of its own any more, because which chain an employee
+    # follows is decided by their membership. The chain itself is built by the
+    # manager through the workflow endpoints.
+    workflows = serializers.SerializerMethodField()
+    # The manager to designate, written on create (the second page of HR's
+    # flow) or reassigned on update. A team is handed to a manager; the manager
+    # then configures its chain and its members.
+    manager = TeamManagerInputSerializer(write_only=True, required=False)
+>>>>>>> features/team-base
     # A team no longer holds members itself — its workflow's sections do. These
     # are flattened for display so the team list can show who is on the team
     # without a second request, but they are derived from the sections, so there
@@ -293,11 +333,16 @@ class TeamSerializer(serializers.ModelSerializer):
             "category",
             "campus",
             "campus_name",
+<<<<<<< HEAD
             "workflow",
             "workflow_name",
             "workflows",
             "manager",
             "new_workflow",
+=======
+            "workflows",
+            "manager",
+>>>>>>> features/team-base
             "status",
             "effective_from",
             "effective_to",
@@ -311,6 +356,7 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "code",
+<<<<<<< HEAD
             # Lifecycle is not editable here: creating a team puts it in force,
             # and retiring it goes through its own audited action rather than a
             # PATCH, so neither can happen by accident or without an audit entry.
@@ -318,6 +364,13 @@ class TeamSerializer(serializers.ModelSerializer):
             "is_effective",
             # Routing is the ``route`` action's, never a field edit.
             "workflow",
+=======
+            # Lifecycle is not editable here: activating and retiring go through
+            # their own validated, audited actions rather than a PATCH, so
+            # neither can happen by accident or without a validation record.
+            "status",
+            "is_effective",
+>>>>>>> features/team-base
             "workflows",
             "stage_roles",
             "member_count",
@@ -328,25 +381,53 @@ class TeamSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs: dict) -> dict:
+<<<<<<< HEAD
         # Routing is the ``route`` action's, so a client still sending
         # ``workflow`` on a team write learns the boundary instead of believing
         # it pointed the team somewhere.
         initial = getattr(self, "initial_data", None) or {}
+=======
+        # Two fields HR used to write are now refused rather than ignored, so
+        # an old client that still sends one learns the boundary instead of
+        # believing it configured something. Chains are the manager's to build,
+        # and an employee's chain is their own membership, not a setting on the
+        # team.
+        initial = getattr(self, "initial_data", None) or {}
+        if "new_workflow" in initial:
+            raise serializers.ValidationError(
+                {
+                    "new_workflow": (
+                        "Approval chains are configured by the team's manager, "
+                        "not by HR. Create the team, assign its manager, and "
+                        "the manager builds the chain from their own portal."
+                    )
+                }
+            )
+>>>>>>> features/team-base
         if "workflow" in initial:
             raise serializers.ValidationError(
                 {
                     "workflow": (
+<<<<<<< HEAD
                         "Routing is a decision of its own. Create the workflow "
                         "under this team, then point the team at it with the "
                         "route action."
+=======
+                        "A team does not point at one chain. HR creates the team "
+                        "and assigns its manager; the manager builds the chains "
+                        "and puts each employee on the one they follow."
+>>>>>>> features/team-base
                     )
                 }
             )
 
+<<<<<<< HEAD
         supplied = attrs.pop("new_workflow", None)
         if supplied is not None:
             self._new_workflow = supplied
 
+=======
+>>>>>>> features/team-base
         manager = attrs.pop("manager", None)
         if manager is not None:
             self._manager = manager
@@ -407,11 +488,21 @@ class TeamSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_workflows(self, instance: Team) -> list[dict]:
+<<<<<<< HEAD
         """Every workflow this team owns, flagging the one it routes through.
 
         A team may hold several chains, so the team screen lists them rather
         than showing only the live one — otherwise a replacement HR is building
         would be invisible until somebody pointed the team at it.
+=======
+        """Every workflow this team owns.
+
+        All of them can be in force at once and each routes the employees who
+        are members of it, so the team screen lists them all rather than naming
+        one "live" chain — a replacement HR is building alongside the existing
+        one is a real, routable chain the moment it is written, and hiding it
+        behind a single headline would put that team's members out of view.
+>>>>>>> features/team-base
         """
         return [
             {
@@ -420,12 +511,33 @@ class TeamSerializer(serializers.ModelSerializer):
                 "state": workflow.state,
                 "is_active": workflow.is_active,
                 "effective_from": workflow.effective_from,
+<<<<<<< HEAD
                 "is_routing": workflow.pk == instance.workflow_id,
+=======
+>>>>>>> features/team-base
                 "section_count": workflow.sections.count(),
             }
             for workflow in instance.workflows.order_by("name")
         ]
 
+<<<<<<< HEAD
+=======
+    @staticmethod
+    def _sections_of(instance: Team):
+        """Every step of every chain the team owns, chains in name order.
+
+        One query rather than a loop over ``workflow.sections`` so a team that
+        owns several chains still costs one round trip, and so the order the
+        team screen shows steps in does not change when a second chain is
+        added — a single-chain team reads exactly the list it read before.
+        """
+        return (
+            Section.objects.filter(workflow__team=instance)
+            .select_related("approver", "approver_role", "workflow")
+            .order_by("workflow__name", "order")
+        )
+
+>>>>>>> features/team-base
     def get_members(self, instance: Team) -> list[dict]:
         """The people appointed on this team's chain, deduped across steps.
 
@@ -433,12 +545,19 @@ class TeamSerializer(serializers.ModelSerializer):
         legitimate — so the list is grouped by person with the steps and roles
         they serve in, rather than repeating them.
         """
+<<<<<<< HEAD
         if instance.workflow_id is None:
             return []
         seen: dict[int, dict] = {}
         for section in instance.workflow.sections.order_by("order").select_related(
             "approver", "approver_role"
         ):
+=======
+        if not instance.workflows.exists():
+            return []
+        seen: dict[int, dict] = {}
+        for section in self._sections_of(instance):
+>>>>>>> features/team-base
             if section.approver_id is None:
                 continue
             user = section.approver
@@ -466,6 +585,7 @@ class TeamSerializer(serializers.ModelSerializer):
         return [seen[key] for key in sorted(seen)]
 
     def get_member_count(self, instance: Team) -> int:
+<<<<<<< HEAD
         if instance.workflow_id is None:
             return 0
         return instance.workflow.sections.exclude(approver=None).count()
@@ -492,6 +612,50 @@ class TeamSerializer(serializers.ModelSerializer):
         return [
             {
                 "id": section.pk,
+=======
+        return Section.objects.filter(workflow__team=instance).exclude(
+            approver=None
+        ).count()
+
+    def get_stage_roles(self, instance: Team) -> list[dict]:
+        """The roles asked for across every chain, each once.
+
+        The picker only needs to know which roles are in play; a role serving
+        two of the team's chains is one role, not two entries, and the order
+        stays first-seen so a single-chain team reads unchanged.
+        """
+        roles: list[ApproverRole] = []
+        seen: set[int] = set()
+        for workflow in instance.workflows.order_by("name"):
+            for role in workflow_section_roles(workflow):
+                if role.pk in seen:
+                    continue
+                seen.add(role.pk)
+                roles.append(role)
+        return [
+            {"id": role.pk, "label": role.label, "code": role.code} for role in roles
+        ]
+
+    def get_sections(self, instance: Team) -> list[dict]:
+        """The steps of every chain the team owns, each with its one approver.
+
+        A team screen has to show what its employees are sent through and who
+        decides at each step, so the section summary is nested here rather than
+        left to the caller to reassemble from a second request — and because a
+        team owns several chains, all of them are listed: an employee is inside
+        one of them right now, so leaving one out is leaving a group of people
+        off the screen. A step with no approver reports ``approver: null`` rather
+        than being omitted — an unstaffed step is the thing HR most needs to see.
+
+        ``workflow`` names the chain a step belongs to so steps from two chains
+        (both of which start at 1) can be told apart.
+        """
+        return [
+            {
+                "id": section.pk,
+                "workflow": section.workflow_id,
+                "workflow_name": section.workflow.name,
+>>>>>>> features/team-base
                 "name": section.name,
                 "order": section.order,
                 "is_active": section.is_active,
@@ -508,16 +672,23 @@ class TeamSerializer(serializers.ModelSerializer):
                     else None
                 ),
             }
+<<<<<<< HEAD
             for section in instance.workflow.sections.order_by("order").select_related(
                 "approver", "approver_role"
             )
+=======
+            for section in self._sections_of(instance)
+>>>>>>> features/team-base
         ]
 
     def create(self, validated_data: dict) -> Team:
         return create_team(
             actor=self.context["actor"],
             data=dict(validated_data),
+<<<<<<< HEAD
             workflow_config=getattr(self, "_new_workflow", None),
+=======
+>>>>>>> features/team-base
             manager=getattr(self, "_manager", None),
         )
 
@@ -526,7 +697,10 @@ class TeamSerializer(serializers.ModelSerializer):
             team=instance,
             actor=self.context["actor"],
             data=dict(validated_data),
+<<<<<<< HEAD
             workflow_config=getattr(self, "_new_workflow", None),
+=======
+>>>>>>> features/team-base
             manager=getattr(self, "_manager", None),
         )
 
@@ -598,6 +772,7 @@ class TeamMemberAddSerializer(serializers.Serializer):
         )
 
 
+<<<<<<< HEAD
 
 class TeamSectionInputSerializer(serializers.Serializer):
     """One approval step written inline as part of a team.
@@ -1178,3 +1353,47 @@ class TeamMemberAddSerializer(serializers.Serializer):
             team=self.context["team"], user=user, actor=self.context["actor"]
         )
 
+=======
+class WorkflowMemberPoolSerializer(serializers.Serializer):
+    """The eligibility pool for a team's workflow memberships."""
+
+    team = serializers.DictField(read_only=True)
+    workflow = serializers.DictField(allow_null=True, read_only=True)
+    available = serializers.ListField(read_only=True)
+    current = serializers.ListField(read_only=True)
+    assigned_elsewhere = serializers.ListField(read_only=True)
+
+
+class TeamRoleAssignmentSerializer(WideRoleAssignmentSerializer):
+    """One team-wide holding: this role, on this team, held by this person.
+
+    ``is_team_manager`` designates the holder as the team's single designated
+    manager, the flag the team's members and chains are run under. It is read
+    here and written through the ``set-manager``/``clear-manager`` actions, which
+    clear it from any other holder on the team first — so the one-manager-per-team
+    rule is the service's, and this shape only reports it.
+    """
+
+    class Meta:
+        model = TeamRoleAssignment
+        fields = [
+            "id",
+            "team",
+            "role",
+            "user",
+            "user_name",
+            "role_label",
+            "is_team_manager",
+            "created_at",
+        ]
+        read_only_fields = ["id", "is_team_manager", "created_at"]
+        validators: list = []
+
+    def create(self, validated_data: dict) -> TeamRoleAssignment:
+        return create_team_role_assignment(
+            team=validated_data["team"],
+            role=validated_data["role"],
+            user=validated_data["user"],
+            actor=self.context["actor"],
+        )
+>>>>>>> features/team-base

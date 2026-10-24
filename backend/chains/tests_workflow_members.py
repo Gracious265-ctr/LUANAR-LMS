@@ -28,6 +28,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from users.models import EmployeeProfile
 
+<<<<<<< HEAD:backend/chains/tests_workflow_members.py
 from .models import (
     Workflow,
     WorkflowMember,
@@ -41,7 +42,19 @@ from roles.models import ApproverRole, RoleAssignment (
 from teams.models import (
     Team,
     TeamRoleAssignment,
+=======
+from organisation.models import CampusRoleAssignment, RoleAssignment
+from teams.models import Team, TeamRoleAssignment
+from workflows.models import Section, Workflow
+
+from .models import WorkflowMember
+from organisation.services import (
+    WorkflowMemberError,
+    add_team_member,
+    create_team_role_assignment,
+>>>>>>> features/team-base:backend/workflows/tests_workflow_members.py
 )
+
 from .services import (
     TeamActionError,
     assign_workflow_member,
@@ -52,10 +65,13 @@ from .services import (
     team_member_summaries,
     workflow_member_pool,
 )
+<<<<<<< HEAD:backend/chains/tests_workflow_members.py
 from roles.services import (
     WorkflowMemberError,
     add_team_member,
 )
+=======
+>>>>>>> features/team-base:backend/workflows/tests_workflow_members.py
 from .testing import (
     DEV_PASSWORD,
     appoint_approver_to_section,
@@ -74,7 +90,14 @@ WORKFLOWS_URL = "/api/v1/workflows/"
 
 
 class MemberAPIBase(TestCase):
-    """An HR client, one team, and ordinary employees on it."""
+    """A team manager, one team, and ordinary employees on it.
+
+    Membership and the normal-member pool follow the handover: HR creates the
+    team and designates its manager, and the manager then runs the roster and the
+    chains. The client is authenticated as that manager, which is who the
+    endpoints these tests exercise answer to. ``self.hr`` stays available for the
+    service-level fixtures that still admit HR.
+    """
 
     def setUp(self):
         self.client = APIClient()  # type: ignore[assignment]
@@ -91,15 +114,45 @@ class MemberAPIBase(TestCase):
             password=DEV_PASSWORD,
             role=User.Role.EMPLOYEE,
         )
-        self.client.force_authenticate(self.hr)
         self.team = make_team(
             "Members Team", ["supervisor"], employees=(self.employee,)
         )
+        self.manager = make_employee("manager@members.test", team=None)
+        create_team_role_assignment(
+            team=self.team,
+            role=ensure_roles("dvc")["dvc"],
+            user=self.manager,
+            actor=self.hr,
+            is_team_manager=True,
+        )
+        self.client.force_authenticate(self.manager)
         self.alice = make_employee("alice@members.test", team=self.team)
         self.bob = make_employee("bob@members.test", team=self.team)
 
     def member_url(self, user_id):
         return f"{TEAMS_URL}{self.team.pk}/members/{user_id}/"
+
+    def act_as_manager_of(self, team):
+        """Authenticate a fresh manager designated for ``team``.
+
+        A person may be the wide holder on only one team, so a test that builds
+        a second team and drives its member endpoints needs its own manager
+        rather than reusing :attr:`manager`.
+        """
+        manager = make_employee(
+            f"manager-{team.code}@members.test",
+            team=None,
+            category=team.category,
+        )
+        create_team_role_assignment(
+            team=team,
+            role=ensure_roles("dvc")["dvc"],
+            user=manager,
+            actor=self.hr,
+            is_team_manager=True,
+        )
+        self.client.force_authenticate(manager)
+        return manager
 
 
 class TeamMemberManagementTests(MemberAPIBase):
@@ -161,7 +214,9 @@ class TeamMemberManagementTests(MemberAPIBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         payload = response.json()
         self.assertIn("Academic employee", payload["user"][0])
-        self.assertIn("Administration team", payload["user"][0])
+        # The refusal names the category the roster is measured against — this
+        # team's manager's own — not merely the team's.
+        self.assertIn("takes only Administration employees", payload["user"][0])
         academic.employee_profile.refresh_from_db()
         self.assertIsNone(academic.employee_profile.team_id)
 
@@ -169,6 +224,7 @@ class TeamMemberManagementTests(MemberAPIBase):
         academic_team = make_team(
             "Academic Members Team", ["supervisor"], campus="Members Campus"
         )
+        self.act_as_manager_of(academic_team)
         academic = make_employee(
             "academic-ok@members.test",
             category=EmployeeProfile.Category.ACADEMIC,
@@ -201,6 +257,7 @@ class TeamMemberManagementTests(MemberAPIBase):
         academic_team = make_team(
             "Campus Members Team", ["supervisor"], campus="Members Campus"
         )
+        self.act_as_manager_of(academic_team)
         holder = make_employee(
             "campus-wide@members.test",
             category=EmployeeProfile.Category.ACADEMIC,
@@ -265,7 +322,7 @@ class TeamMemberManagementTests(MemberAPIBase):
     def test_removal_blocked_while_open_approver_period(self):
         workflow = list(Workflow.objects.filter(team=self.team))[0]
         section = workflow.sections.first()
-        from .models import SectionMember
+        from workflows.models import SectionMember
 
         SectionMember.objects.create(
             section=section,
@@ -611,13 +668,21 @@ class WorkflowMemberAPITests(MemberAPIBase):
             WorkflowMember.objects.filter(workflow=self.flow, user=self.alice).exists()
         )
 
-    def test_hr_only(self):
+    def test_non_manager_is_refused(self):
+        # Neither an ordinary employee nor HR reaches the manager's roster: the
+        # employee manages no team, and HR has handed the day-to-day over.
         self.client.force_authenticate(self.employee)
         response = self.client.get(
             f"{TEAMS_URL}{self.team.pk}/workflow-member-pool/"
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         response = self.client.delete(self.member_url(self.alice.pk))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(self.hr)
+        response = self.client.get(
+            f"{TEAMS_URL}{self.team.pk}/workflow-member-pool/"
+        )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
@@ -718,9 +783,19 @@ class WorkflowMemberScenarioTests(TestCase):
             role=User.Role.HR,
         )
         self.client = APIClient()
-        self.client.force_authenticate(self.hr)
         # 1. Create Team A.
         self.team = team_for("Scenario Team A")
+        # HR designates the manager, who then runs the team's chains; the client
+        # acts as that manager for the API step at the end.
+        self.manager = make_employee("manager@scenario.test", team=None)
+        create_team_role_assignment(
+            team=self.team,
+            role=ensure_roles("hod")["hod"],
+            user=self.manager,
+            actor=self.hr,
+            is_team_manager=True,
+        )
+        self.client.force_authenticate(self.manager)
         # 2. Add John, Mary, Peter, and Grace to Team A.
         self.john = make_employee("john@scenario.test", team=self.team)
         self.mary = make_employee("mary@scenario.test", team=self.team)
@@ -804,6 +879,42 @@ class WorkflowMemberScenarioTests(TestCase):
         )
 
 
+class WideHolderReadPermissionTests(MemberAPIBase):
+    """A team manager may read the wide holdings but not change them.
+
+    The chain builder is a manager's screen, and it scopes which roles it offers
+    — and fills in a holder — from the institution-, team-, and campus-wide
+    holdings. Reading them therefore has to answer to a manager; appointing or
+    removing a holder stays HR's call.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.urls = {
+            "team": "/api/v1/team-role-assignments/",
+            "campus": "/api/v1/campus-role-assignments/",
+            "institution": "/api/v1/role-assignments/",
+        }
+
+    def test_manager_may_list_every_wide_holding(self):
+        for scope, url in self.urls.items():
+            with self.subTest(scope=scope):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_manager_may_not_change_a_wide_holding(self):
+        role = ensure_roles("supervisor")["supervisor"]
+        response = self.client.post(
+            self.urls["team"],
+            {"team": self.team.pk, "role": role.pk, "user": self.alice.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(
+            TeamRoleAssignment.objects.filter(team=self.team, role=role).exists()
+        )
+
+
 class WideHolderCategoryTests(MemberAPIBase):
     """A wide approver belongs to the same half of the institution they cover.
 
@@ -817,6 +928,9 @@ class WideHolderCategoryTests(MemberAPIBase):
     def setUp(self):
         super().setUp()
         self.role = ensure_roles("supervisor")["supervisor"]
+        # Wide approver holdings are HR's to write, so these requests are made
+        # as HR rather than as the team manager the base class installs.
+        self.client.force_authenticate(self.hr)
 
     def test_academic_holder_team_wide_on_an_administration_team_is_refused(self):
         academic = make_employee(
@@ -836,7 +950,9 @@ class WideHolderCategoryTests(MemberAPIBase):
         payload = response.json()
         self.assertIn("Academic employee", payload["user"][0])
         self.assertIn("Administration team", payload["user"][0])
-        self.assertFalse(TeamRoleAssignment.objects.exists())
+        self.assertFalse(
+            TeamRoleAssignment.objects.filter(user=academic).exists()
+        )
 
     def test_team_wide_holder_of_matching_category_is_accepted(self):
         holder = make_employee("admin-match@members.test")
@@ -921,6 +1037,9 @@ class WideHolderSingleRoleTests(MemberAPIBase):
         self.registrar = roles["registrar"]
         self.registrar.is_institution_wide = True
         self.registrar.save(update_fields=["is_institution_wide"])
+        # Wide approver holdings are HR's to write, so these requests are made
+        # as HR rather than as the team manager the base class installs.
+        self.client.force_authenticate(self.hr)
 
     def team_wide_url(self):
         return "/api/v1/team-role-assignments/"
@@ -947,7 +1066,9 @@ class WideHolderSingleRoleTests(MemberAPIBase):
         message = response.json()["user"][0]
         self.assertIn("only one wide approver role", message)
         self.assertIn("institution-wide", message)
-        self.assertFalse(TeamRoleAssignment.objects.exists())
+        self.assertFalse(
+            TeamRoleAssignment.objects.filter(user=holder).exists()
+        )
 
     def test_team_wide_holder_cannot_also_be_institution_wide(self):
         holder = make_employee("team-inst@members.test")
@@ -1183,7 +1304,7 @@ class WorkflowDetailMembershipSerializationTests(TestCase):
         )
         self.client.force_authenticate(self.hr)
         self.team = make_team("Detail Team", ["supervisor", "hod"])
-        self.workflow = self.team.workflow
+        self.workflow = self.team.workflows.first()
 
     def test_every_section_emits_memberships(self):
         response = self.client.get(f"{WORKFLOWS_URL}{self.workflow.pk}/")

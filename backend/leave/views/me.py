@@ -1,6 +1,7 @@
 """Employee-facing leave views for the Unit 20 data integration."""
 
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db.models import Count, Sum
 from rest_framework import permissions
@@ -10,6 +11,7 @@ from rest_framework.views import APIView
 from ..models import LeaveApplication
 from ..providers import get_provider, get_today
 from ..services import active_financial_year, financial_year_label, resolved_annual_entitlement
+from ..services.carry_over import carry_over_days_for_year
 
 #: How far ahead the dashboard's "Upcoming Leave" card looks. A rolling window
 #: rather than the financial year, so the card answers "what is coming up" and
@@ -55,18 +57,29 @@ class LeaveSummaryView(APIView):
                 user.id, year_payload["label"]
             )
 
+        # Days carried into the active year from a rejected-leave rollover. The
+        # available balance already *includes* these (the provider adds them);
+        # this is the separate figure the dashboard shows as a "carried over"
+        # line, so the employee can tell carry-over from ordinary entitlement.
+        carry_over_days = Decimal(0)
+        if year_payload is not None:
+            carry_over_days = carry_over_days_for_year(
+                user.id, year_payload["label"]
+            )
+
         # Two counts for two dashboard cards. Both are scoped to this employee
         # by construction, so neither can surface anyone else's leave.
         #
-        # "Pending" is submitted plus correction-required: the two statuses in
-        # which the application is waiting on a person rather than finished.
-        # Drafts are excluded because nothing has been sent yet.
+        # "Pending" is submitted plus rejected: the two statuses in
+        # which the application is waiting on the employee or an approver
+        # rather than finished. Drafts are excluded because nothing has been
+        # sent yet.
         today = get_today()
         pending_applications = LeaveApplication.objects.filter(
             employee=user,
             status__in=[
                 LeaveApplication.Status.SUBMITTED,
-                LeaveApplication.Status.CORRECTION_REQUIRED,
+                LeaveApplication.Status.REJECTED,
             ],
         ).count()
 
@@ -111,6 +124,7 @@ class LeaveSummaryView(APIView):
                 "available_balance": (
                     str(available_balance) if available_balance is not None else None
                 ),
+                "carry_over_days": str(carry_over_days),
                 "pending_applications": pending_applications,
                 "upcoming_leave": {
                     "days": upcoming["days"] or 0,

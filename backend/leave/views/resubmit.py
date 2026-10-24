@@ -14,7 +14,7 @@ from .validation import _issue_payload, submit_payload
 
 
 class LeaveApplicationResubmitView(APIView):
-    """Resubmit a rejected / correction-required application (owner only)."""
+    """Resubmit a rejected application (owner only)."""
 
     permission_classes = [permissions.IsAuthenticated]
 

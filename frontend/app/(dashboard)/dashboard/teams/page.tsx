@@ -97,6 +97,12 @@ async function TeamsPage({
       : Promise.resolve([]),
   ]);
 
+  // The manager picker offers team-scoped roles only: an institution-wide role
+  // is held outside any one team, so it cannot be the role a manager holds.
+  const managerRoles = rolesResult.value.filter(
+    (role) => role.is_active && !role.is_institution_wide
+  );
+
   const wideHolderUserIds = Array.from(
     new Set(
       [
@@ -120,7 +126,7 @@ async function TeamsPage({
   }
 
   const filters = [
-    { label: "In force and draft", href: "/dashboard/teams", current: !showRetired },
+    { label: "In force", href: "/dashboard/teams", current: !showRetired },
     { label: "Including retired", href: "/dashboard/teams?retired=1", current: showRetired },
   ];
 
@@ -141,7 +147,7 @@ async function TeamsPage({
           <TeamsSection
             teams={teamsResult.value}
             campuses={campusesResult.value}
-            roles={rolesResult.value}
+            roles={managerRoles}
             rolesError={rolesResult.error}
             employees={employeesResult}
             wideHolderUserIds={wideHolderUserIds}

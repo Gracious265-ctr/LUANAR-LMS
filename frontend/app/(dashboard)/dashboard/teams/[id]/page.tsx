@@ -19,27 +19,37 @@ import {
 } from "@/lib/approver-roles";
 import { listActiveApproverRoles } from "@/lib/approver-roles-client";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
-import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
+<<<<<<< HEAD
 import {
   canAccessTeams,
   isTeamsAdministrator,
 } from "@/lib/nav/teams-nav";
+=======
+import { canAccessOrganisation, isOrganisationAdministrator } from "@/lib/nav/organisation-nav";
+>>>>>>> features/team-base
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
 import { listMemberCandidates } from "@/lib/teams-client";
 import {
+<<<<<<< HEAD
   teamCategoryBadgeTone,
+=======
+  getTeam,
+  listTeamMemberCandidates,
+  listTeamWorkflows,
+  teamCategoryBadgeClass,
+>>>>>>> features/team-base
   teamCategoryLabel,
-  teamStatusBadgeTone,
+  teamStatusBadgeClass,
   teamStatusLabel,
 } from "@/lib/teams";
+import type { TeamMemberCandidate } from "@/lib/team-members";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
 import { FadeIn } from "@/components/motion/FadeIn";
-import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import { RouteChainButton } from "@/components/hr/workflow-routing-actions";
+import { canConfigureChains, visibleTeamTabs } from "@/lib/team-access";
 
 /**
  * The tabs a team is read through.
@@ -49,6 +59,11 @@ import { RouteChainButton } from "@/components/hr/workflow-routing-actions";
  * routes — and stacking all four on one screen made the first answer the hard
  * one to find. Each is a page under the same URL, so the team stays one thing
  * and the question being asked is what the address says.
+ *
+ * Which of them a user sees is decided by `visibleTeamTabs`: staffing a step
+ * and holding the roster are the team manager's writes, the team-wide
+ * approvers are HR's, and showing a tab whose every action the server refuses
+ * would be a screen of 403s.
  */
 const TABS = [
   { value: "overview", label: "Overview" },
@@ -129,6 +144,7 @@ export default async function TeamPage({
   if (!canAccessTeams(user)) {
     redirect("/dashboard");
   }
+
   // Whether the viewer sees the HR-only controls on this team. A manager may
   // read and configure their team's chains and roster, but editing the team's
   // identity and retiring it stay HR's.
@@ -141,10 +157,19 @@ export default async function TeamPage({
     notFound();
   }
 
-  const tab = TABS.some((candidate) => candidate.value === tabParam)
+  // The tabs a user may open follow the handover: HR holds the team's wide
+  // roles, the manager staffs its steps and roster. A tab the server would
+  // refuse is not shown rather than opened into a wall of 403s.
+  const allowedTabs = visibleTeamTabs(isAdministrator);
+  const visibleTabs = TABS.filter((candidate) =>
+    allowedTabs.includes(candidate.value)
+  );
+
+  const tab = visibleTabs.some((candidate) => candidate.value === tabParam)
     ? (tabParam as TabValue)
     : "overview";
 
+<<<<<<< HEAD
   const [employeesResult, candidatesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
     await Promise.all([
       // A team-wide holder must be the same category as the team, so the
@@ -165,38 +190,83 @@ export default async function TeamPage({
       listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
       // Every team's holdings, so this team's own can be filtered out here and
       // the whole set still fed to the panel as the one-wide-approver pool.
+=======
+  // A team-wide holder must be the same category as the team, so the
+  // Approvers tab's feed is the whole directory's matching half, read as a
+  // server filter rather than by subtracting here. A holder need not be a
+  // member of the team.
+  //
+  // The member-candidate feed is the manager's — its endpoint refuses HR — so
+  // it is read only for a manager. The chain list is shared: HR reads it to
+  // decide which one routes.
+  const canConfigure = canConfigureChains(isAdministrator);
+  const [candidatesResult, workflowsResult] = await Promise.all([
+    canConfigure
+      ? listTeamMemberCandidates(id).catch((err: unknown) => {
+          // Swallowed to a bare `[]` is how a failing read became a picker
+          // that said "no employees" with nothing to trace it to. The page
+          // still renders, but the reason is no longer invisible.
+          console.error(
+            `member-candidates failed for team ${id}:`,
+            err instanceof Error ? err.message : err
+          );
+          return [] as TeamMemberCandidate[];
+        })
+      : Promise.resolve([] as TeamMemberCandidate[]),
+    listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
+  ]);
+
+  const candidates = candidatesResult;
+  const workflows = workflowsResult;
+
+  let employees: Employee[] = [];
+  let holdings: WideHolding[] = [];
+  let wideHolderUserIds: number[] = [];
+  let roles: ApproverRole[] = [];
+
+  if (isAdministrator) {
+    const [
+      employeesResult,
+      holdersResult,
+      rolesResult,
+      institutionHoldingsResult,
+      campusHoldingsResult,
+    ] = await Promise.all([
+      listAllEmployees(team.category as EmployeeCategory).catch(
+        () => [] as Employee[]
+      ),
+>>>>>>> features/team-base
       listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[]),
       loadScopedRoles(isAdministrator),
       listRoleAssignments().catch(() => [] as RoleAssignment[]),
       listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
     ]);
 
-  const candidates = candidatesResult;
-  const workflows = workflowsResult;
-  const holdings: WideHolding[] = holdersResult
-    .filter((assignment) => assignment.team === team.id)
-    .map((assignment) => ({
+    employees = employeesResult;
+    const teamHoldings = holdersResult.filter(
+      (assignment) => assignment.team === team.id
+    );
+    holdings = teamHoldings.map((assignment) => ({
       id: assignment.id,
       role: assignment.role,
       user: assignment.user,
       user_name: assignment.user_name,
       role_label: assignment.role_label,
+      is_team_manager: assignment.is_team_manager,
     }));
-  // A person holds one wide approver role, so everyone who already holds one
-  // anywhere (institution, any team, any campus) is offered nowhere.
-  const wideHolderUserIds = Array.from(
-    new Set(
-      [
-        ...institutionHoldingsResult,
-        ...holdersResult,
-        ...campusHoldingsResult,
-      ].map((assignment) => assignment.user)
-    )
-  );
-  const roles = rolesResult.filter(
-    (role) => role.is_active && !role.is_institution_wide
-  );
-  const employees = employeesResult;
+    wideHolderUserIds = Array.from(
+      new Set(
+        [
+          ...institutionHoldingsResult,
+          ...holdersResult,
+          ...campusHoldingsResult,
+        ].map((assignment) => assignment.user)
+      )
+    );
+    roles = rolesResult.filter(
+      (role) => role.is_active && !role.is_institution_wide
+    );
+  }
 
   return (
     <FadeIn>
@@ -215,12 +285,20 @@ export default async function TeamPage({
               <h2 className="text-2xl font-bold text-text-primary">
                 {team.name}
               </h2>
-              <Badge size="sm" tone={teamCategoryBadgeTone(team.category)}>
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamCategoryBadgeClass(
+                  team.category
+                )}`}
+              >
                 {teamCategoryLabel(team.category)}
-              </Badge>
-              <Badge size="sm" tone={teamStatusBadgeTone(team.status)}>
+              </span>
+              <span
+                className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
+                  team.status
+                )}`}
+              >
                 {teamStatusLabel(team.status)}
-              </Badge>
+              </span>
             </div>
             <p className="text-text-secondary">
               {[
@@ -234,14 +312,14 @@ export default async function TeamPage({
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/dashboard/teams/${team.id}/workflows`}
-              className={buttonVariants({ variant: "secondary" })}
+              className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
             >
               Workflows
             </Link>
             {isAdministrator && (
               <Link
                 href={`/dashboard/teams/${team.id}/edit`}
-                className={buttonVariants({ variant: "secondary" })}
+                className="inline-flex items-center gap-2 rounded-md border border-border-default bg-button-secondary px-4 py-2 text-sm font-medium text-text-secondary hover:bg-button-secondary-hover"
               >
                 <Pencil className="h-4 w-4" />
                 Edit team
@@ -256,7 +334,7 @@ export default async function TeamPage({
         role="navigation"
         aria-label="Team sections"
       >
-        {TABS.map((candidate) => (
+        {visibleTabs.map((candidate) => (
           <Link
             key={candidate.value}
             href={
@@ -295,15 +373,17 @@ export default async function TeamPage({
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-text-muted">
-                  Chain in force
+                  Chains
                 </span>
                 <p className="text-sm font-medium text-text-primary">
-                  {team.workflow_name || "None"}
+                  {workflows.length === 0
+                    ? "None"
+                    : `${workflows.length} chain${workflows.length === 1 ? "" : "s"}`}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
                   {workflows.length === 0
                     ? "This team owns no chains yet."
-                    : `Owns ${workflows.length} chain${workflows.length === 1 ? "" : "s"}; routes one.`}
+                    : "All of them route at once, each carrying its own members."}
                 </p>
               </div>
               <div>
@@ -322,9 +402,11 @@ export default async function TeamPage({
               </div>
             </div>
 
-            <div className="mt-4 border-t border-border-default pt-4">
-              <TeamLifecycleActions team={team} canRetire={isAdministrator} />
-            </div>
+            {isAdministrator && (
+              <div className="mt-4 border-t border-border-default pt-4">
+                <TeamLifecycleActions team={team} />
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
@@ -332,12 +414,14 @@ export default async function TeamPage({
               <h3 className="text-lg font-semibold text-text-primary">
                 Chains this team owns
               </h3>
-              <Link
-                href={`/dashboard/teams/${team.id}/workflows/new`}
-                className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                New workflow
-              </Link>
+              {canConfigureChains(isAdministrator) && (
+                <Link
+                  href={`/dashboard/teams/${team.id}/workflows/new`}
+                  className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  New workflow
+                </Link>
+              )}
             </div>
             {workflows.length === 0 ? (
               <p className="text-sm text-text-muted">
@@ -363,15 +447,15 @@ export default async function TeamPage({
                         {workflow.section_count === 1 ? "" : "s"}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-3">
-                      <Link
-                        href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-                        className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                      >
-                        Edit steps
-                      </Link>
-                      <RouteChainButton teamId={team.id} workflow={workflow} />
-                    </div>
+                    <span
+                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        workflow.is_active
+                          ? "bg-brand-secondary-subtle text-brand-secondary"
+                          : "bg-surface-muted text-text-muted"
+                      }`}
+                    >
+                      {workflow.is_active ? "In force" : "Not in force"}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -387,8 +471,8 @@ export default async function TeamPage({
           </h3>
           <p className="mt-1 text-sm text-text-secondary">
             The chain in force, and the one person who acts at each of its
-            steps. A step with nobody on it blocks activation — and blocks
-            submission, for the applications that would have reached it.
+            steps. A step with nobody on it stops the applications that would
+            have reached it, naming the step so it can be filled.
           </p>
           <div className="mt-4">
             <TeamMemberList team={team} />

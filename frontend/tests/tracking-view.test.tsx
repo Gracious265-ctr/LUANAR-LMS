@@ -15,14 +15,14 @@ vi.mock("@/lib/leave-api", () => ({
 
 import approved from "@/lib/tracking/__fixtures__/approved.json";
 import cancelled from "@/lib/tracking/__fixtures__/cancelled.json";
-import correction_required_at_stage_3 from "@/lib/tracking/__fixtures__/correction_required_at_stage_3.json";
+import rejected_at_stage_3 from "@/lib/tracking/__fixtures__/rejected_at_stage_3.json";
 import pending_first_stage from "@/lib/tracking/__fixtures__/pending_first_stage.json";
 import pending_mid_workflow from "@/lib/tracking/__fixtures__/pending_mid_workflow.json";
 import pending_with_applicant_excluded from "@/lib/tracking/__fixtures__/pending_with_applicant_excluded.json";
 import pending_with_skipped_stage from "@/lib/tracking/__fixtures__/pending_with_skipped_stage.json";
 import pending_with_delegate from "@/lib/tracking/__fixtures__/pending_with_delegate.json";
 import rejected_at_stage_2 from "@/lib/tracking/__fixtures__/rejected_at_stage_2.json";
-import resubmitted_after_correction from "@/lib/tracking/__fixtures__/resubmitted_after_correction.json";
+import resubmitted_after_stage_3_rejection from "@/lib/tracking/__fixtures__/resubmitted_after_stage_3_rejection.json";
 import resubmitted_after_rejection from "@/lib/tracking/__fixtures__/resubmitted_after_rejection.json";
 import { listDocuments } from "@/lib/leave-api";
 
@@ -36,10 +36,9 @@ const fixtures: Record<string, TrackingResponse> = {
     pending_with_skipped_stage as unknown as TrackingResponse,
   "approved": approved as unknown as TrackingResponse,
   "rejected_at_stage_2": rejected_at_stage_2 as unknown as TrackingResponse,
-  "correction_required_at_stage_3":
-    correction_required_at_stage_3 as unknown as TrackingResponse,
-  "resubmitted_after_correction":
-    resubmitted_after_correction as unknown as TrackingResponse,
+  "rejected_at_stage_3": rejected_at_stage_3 as unknown as TrackingResponse,
+  "resubmitted_after_stage_3_rejection":
+    resubmitted_after_stage_3_rejection as unknown as TrackingResponse,
   "resubmitted_after_rejection":
     resubmitted_after_rejection as unknown as TrackingResponse,
   "cancelled": cancelled as unknown as TrackingResponse,
@@ -109,8 +108,8 @@ describe("TrackingView · statuses", () => {
     ["pending_with_delegate", "Pending Approval"],
     ["approved", "Approved"],
     ["rejected_at_stage_2", "Rejected"],
-    ["correction_required_at_stage_3", "Correction Required"],
-    ["resubmitted_after_correction", "Pending Approval"],
+    ["rejected_at_stage_3", "Rejected"],
+    ["resubmitted_after_stage_3_rejection", "Pending Approval"],
     ["resubmitted_after_rejection", "Pending Approval"],
     ["cancelled", "Cancelled"],
   ] as const)("renders the %s status badge", async (name, label) => {
@@ -262,27 +261,27 @@ describe("TrackingView · rejected", () => {
   });
 });
 
-describe("TrackingView · correction", () => {
-  it("shows the correction panel and resubmit link", async () => {
-    mockOk(fixtures.correction_required_at_stage_3);
+describe("TrackingView · rejected at a later stage", () => {
+  it("shows the rejection panel and resubmit link", async () => {
+    mockOk(fixtures.rejected_at_stage_3);
     renderView();
-    await screen.findByText("Correction Required");
+    await screen.findByText("Rejected");
 
-    const panel = within(await screen.findByLabelText("Correction details"));
-    expect(panel.getByText("Comment")).toBeInTheDocument();
+    const panel = within(await screen.findByLabelText("Rejection details"));
+    expect(panel.getByText("Reason")).toBeInTheDocument();
     expect(
       screen.getAllByText(/Supporting documents must be uploaded/).length
     ).toBeGreaterThan(0);
     expect(panel.getByText("Stage 3 · Registrar")).toBeInTheDocument();
     expect(panel.getByText("Dr. Joyce Phiri")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Edit & resubmit" });
-    expect(link).toHaveAttribute("href", "/dashboard/leave/app-correction/edit");
+    expect(link).toHaveAttribute("href", "/dashboard/leave/app-rejected-3/edit");
   });
 });
 
 describe("TrackingView · resubmission", () => {
   it("shows the resubmission note and keeps the reference number", async () => {
-    mockOk(fixtures.resubmitted_after_correction);
+    mockOk(fixtures.resubmitted_after_stage_3_rejection);
     renderView();
     await screen.findByText("Pending Approval");
 
@@ -294,9 +293,6 @@ describe("TrackingView · resubmission", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByLabelText("Rejection details")
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Correction details")
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Workflow stopped.")).not.toBeInTheDocument();
   });
@@ -332,7 +328,7 @@ describe("TrackingView · activity timeline", () => {
   });
 
   it("renders the resubmitted event with its number", async () => {
-    mockOk(fixtures.resubmitted_after_correction);
+    mockOk(fixtures.resubmitted_after_stage_3_rejection);
     renderView();
     await screen.findByText("Pending Approval");
     expect(screen.getByText("You resubmitted (#1)")).toBeInTheDocument();
@@ -366,7 +362,7 @@ describe("TrackingView · supporting documents", () => {
   });
 
   it("renders active documents with an Open button", async () => {
-    mockOk(fixtures.resubmitted_after_correction);
+    mockOk(fixtures.resubmitted_after_stage_3_rejection);
     renderView();
 
     const card = within(await screen.findByLabelText("Supporting documents"));
@@ -385,7 +381,7 @@ describe("TrackingView · supporting documents", () => {
   });
 
   it("renders replaced and removed rows in the collapsed archive section", async () => {
-    mockOk(fixtures.correction_required_at_stage_3);
+    mockOk(fixtures.rejected_at_stage_3);
     vi.mocked(listDocuments).mockResolvedValue([
       {
         id: "doc-old-replaced",
@@ -398,7 +394,7 @@ describe("TrackingView · supporting documents", () => {
         retired_at: "2026-10-18T08:45:00Z",
         retire_reason: "replaced",
         retired_by: { id: 8, name: "Test Employee" },
-        replaced_by: { id: "doc-correction-active", file_name: "medical-certificate-v2.pdf" },
+        replaced_by: { id: "doc-rejected-active", file_name: "medical-certificate-v2.pdf" },
       },
       {
         id: "doc-old-removed",
@@ -435,7 +431,7 @@ describe("TrackingView · supporting documents", () => {
   });
 
   it("offers no Open button for removed (intentionally deleted) rows", async () => {
-    mockOk(fixtures.correction_required_at_stage_3);
+    mockOk(fixtures.rejected_at_stage_3);
     vi.mocked(listDocuments).mockResolvedValue([
       {
         id: "doc-old-removed",

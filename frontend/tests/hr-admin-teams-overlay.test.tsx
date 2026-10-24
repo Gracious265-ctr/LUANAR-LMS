@@ -2,10 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApproverRole } from "@/lib/approver-roles";
-import { makeEmployee } from "@/lib/employees/__fixtures__";
+import type { Employee } from "@/lib/employees";
 
 import { makeCampus, makeTeam } from "@/lib/teams/__fixtures__";
-import { createTeam, listEligibleApprovers } from "@/lib/teams-client";
+import { createTeam } from "@/lib/teams-client";
 
 import { TeamsSection } from "@/components/hr/TeamsSection";
 
@@ -32,13 +32,9 @@ vi.mock("@/lib/teams-client", async (importOriginal) => {
     ...actual,
     createTeam: vi.fn(),
     updateTeam: vi.fn(),
-    listEligibleApprovers: vi.fn(),
   };
 });
 
-// `code` rather than `key`: the chain seeds a new step with `roles[0].code`,
-// so a role fixture without one leaves the select on no value and the submit
-// never gets past the "every step needs a role" check.
 const roles: ApproverRole[] = [
   {
     id: 1,
@@ -56,14 +52,25 @@ const roles: ApproverRole[] = [
   },
 ];
 
-const campusList = [makeCampus()];
-
-/** An active employee the create form may name as the team's manager. */
-const manager = makeEmployee({
-  user_id: 21,
-  full_name: "Mary Manager",
+const manager: Employee = {
+  id: 3,
+  user_id: 3,
+  email: "jane.dean@luanar.ac.mw",
+  first_name: "Jane",
+  last_name: "Dean",
+  full_name: "Jane Dean",
+  role: "employee",
+  approver_roles: [],
+  designation: "Dean",
   category: "administration",
-});
+  grade: "",
+  appointment_date: null,
+  team: null,
+  team_name: "",
+  is_active: true,
+};
+
+const campusList = [makeCampus()];
 
 function renderSection(
   props: Partial<Parameters<typeof TeamsSection>[0]> = {},
@@ -75,28 +82,26 @@ function renderSection(
       roles={roles}
       rolesError=""
       employees={[manager]}
+      wideHolderUserIds={[]}
       {...props}
     />,
   );
 }
 
 /**
- * A create records what the team is and who runs it: name, category, campus,
- * and a manager. The approval chain is built afterwards from the team's own
- * page, so the overlay's second step names a manager rather than a chain.
+ * Walks the two-step create: the details, then the manager the team is handed
+ * to. Only after both does the team get written.
  */
-function fillCreateForm() {
+function completeCreateForm() {
   fireEvent.change(screen.getByLabelText("Name"), {
     target: { value: "Physics" },
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Continue to the manager" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.change(screen.getByLabelText("Manager role"), {
     target: { value: "1" },
   });
   fireEvent.change(screen.getByLabelText("Manager"), {
-    target: { value: "21" },
+    target: { value: "3" },
   });
 }
 
@@ -104,14 +109,6 @@ describe("TeamsSection — wave 2", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsRef.current = new URLSearchParams();
-    vi.mocked(listEligibleApprovers).mockResolvedValue([
-      {
-        id: 3,
-        full_name: "Jane Dean",
-        email: "jane.dean@luanar.ac.mw",
-        designation: "Dean",
-      },
-    ]);
     vi.stubGlobal("history", { ...window.history, length: 2 });
     // Stands in for the browser: stepping back drops the overlay param. Without
     // it the dialog never unmounts and Radix leaves the page `aria-hidden`.
@@ -151,7 +148,7 @@ describe("TeamsSection — wave 2", () => {
     renderSection({
       filters: [
         {
-          label: "In force and draft",
+          label: "In force",
           href: "/dashboard/teams",
           current: false,
         },
@@ -168,7 +165,7 @@ describe("TeamsSection — wave 2", () => {
     ).getAllByRole("link");
 
     expect(links.map((link) => link.textContent)).toEqual([
-      "In force and draft",
+      "In force",
       "Including retired",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
@@ -213,40 +210,38 @@ describe("TeamsSection — wave 2", () => {
   it("refreshes without navigating once a draft is saved", async () => {
     searchParamsRef.current = new URLSearchParams("team=new");
     vi.mocked(createTeam).mockResolvedValue(
-      makeTeam({ id: 7, name: "Physics", status: "draft" }),
+      makeTeam({ id: 7, name: "Physics" }),
     );
     renderSection({
       teams: [
         makeTeam(),
-        makeTeam({ id: 7, name: "Physics", status: "draft" }),
+        makeTeam({ id: 7, name: "Physics" }),
       ],
     });
 
-    fillCreateForm();
-    fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
+    completeCreateForm();
+    fireEvent.click(screen.getByRole("button", { name: /^Save team$/ }));
 
     await waitFor(() => expect(createTeam).toHaveBeenCalled());
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
     expect(routerMock.push).not.toHaveBeenCalled();
   });
 
-  it("raises no 'not in this table' warning for a saved draft", async () => {
-    // A new team is a draft and the list read excludes only retired teams, so a
-    // draft shows under both filters. Unlike delegations and employees there is
-    // no state the save could hide it from, so the warning would be dead code.
+  it("raises no 'not in this table' warning for a newly saved team", async () => {
+    // A new team is active immediately and the list read excludes only retired
+    // teams, so it is in the table under both filters. Unlike delegations and
+    // employees there is no state the save could hide it from, so the warning
+    // would be dead code.
     searchParamsRef.current = new URLSearchParams("team=new");
     vi.mocked(createTeam).mockResolvedValue(
-      makeTeam({ id: 7, name: "Physics", status: "draft" }),
+      makeTeam({ id: 7, name: "Physics" }),
     );
     renderSection({
-      teams: [
-        makeTeam(),
-        makeTeam({ id: 7, name: "Physics", status: "draft" }),
-      ],
+      teams: [makeTeam(), makeTeam({ id: 7, name: "Physics" })],
     });
 
-    fillCreateForm();
-    fireEvent.click(screen.getByRole("button", { name: /^Create team$/ }));
+    completeCreateForm();
+    fireEvent.click(screen.getByRole("button", { name: /^Save team$/ }));
 
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
     expect(screen.queryByText(/not in this table/i)).toBeNull();
@@ -282,17 +277,21 @@ describe("TeamsSection — wave 2", () => {
     ).toBeNull();
   });
 
-  it("hides the create trigger and its form from a manager", () => {
-    // A team manager configures the team they are flagged for; minting a new
-    // team is HR's, so the button and the overlay behind it are both absent.
+  it("hides the create trigger from a caller who cannot create teams", () => {
+    // A manager reads and operates their team but does not create teams, so the
+    // list is still theirs while the one action the server would refuse is not.
     renderSection({ canCreate: false });
 
     expect(screen.queryByRole("button", { name: /New team/ })).toBeNull();
+    expect(screen.getByText("Bunda College Faculty")).toBeInTheDocument();
+  });
 
-    // Even naming the overlay param must not conjure the form: a manager could
-    // otherwise deep-link straight to a create they are not allowed to make.
+  it("does not open the create form for a manager even with the overlay param", () => {
+    // `?team=new` is a URL a manager could type; gating only the button would
+    // still let them open a form whose submit the server rejects.
     searchParamsRef.current = new URLSearchParams("team=new");
-    renderSection({ canCreate: false, teams: [] });
+    renderSection({ canCreate: false });
+
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

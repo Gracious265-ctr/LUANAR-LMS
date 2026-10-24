@@ -22,8 +22,7 @@ import type { Campus, Team } from "@/lib/teams";
 import { getCampus, listTeams } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
-import { teamStatusBadgeTone, teamStatusLabel } from "@/lib/teams";
-import { Badge } from "@/components/ui/badge";
+import { teamStatusBadgeClass, teamStatusLabel } from "@/lib/teams";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 
@@ -196,12 +195,20 @@ export default async function CampusPage({
                     {team.name}
                   </Link>
                   <p className="text-xs text-text-muted">
-                    {team.workflow_name || "No chain yet"}
+                    {team.workflows.length === 0
+                      ? "No chain yet"
+                      : team.workflows
+                          .map((workflow) => workflow.name)
+                          .join(", ")}
                   </p>
                 </div>
-                <Badge size="sm" tone={teamStatusBadgeTone(team.status)}>
+                <span
+                  className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${teamStatusBadgeClass(
+                    team.status
+                  )}`}
+                >
                   {teamStatusLabel(team.status)}
-                </Badge>
+                </span>
               </li>
             ))}
           </ul>

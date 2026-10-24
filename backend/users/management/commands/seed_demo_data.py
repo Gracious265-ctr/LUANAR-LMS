@@ -291,6 +291,10 @@ class Command(BaseCommand):
     def _staff_team(self, *, team, employees, actor) -> None:
         workflow = team.workflow
         if workflow is None:
+            # Seed uses single workflow per team now
+            workflows_list = list(team.workflows.all())
+            workflow = workflows_list[0] if workflows_list else None
+        if workflow is None:
             raise CommandError(f"Team {team.name} has no workflow to staff.")
 
         for employee in employees:

@@ -8,7 +8,7 @@ import { STATUS_SOLID } from "@/lib/status-styles";
 
 const TOAST_TONES = {
   success: { surface: STATUS_SOLID.approved, icon: CheckCircle2 },
-  warning: { surface: STATUS_SOLID.correction_required, icon: TriangleAlert },
+  warning: { surface: STATUS_SOLID.notice, icon: TriangleAlert },
   error: { surface: STATUS_SOLID.rejected, icon: TriangleAlert },
   info: { surface: "bg-surface-card text-text-primary", icon: Info },
 } as const;

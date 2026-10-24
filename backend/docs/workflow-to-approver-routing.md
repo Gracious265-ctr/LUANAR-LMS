@@ -60,8 +60,8 @@ spine when no category/department definition applies.
 
 ## [D9] — Resubmit contract
 
-`resubmit_application` is the sole path that returns a rejected or
-correction-required application to workflow as a fresh pending approval:
+`resubmit_application` is the sole path that returns a rejected application
+to workflow as a fresh pending approval:
 
 - re-validates current content against the rules effective on the
   resubmission date (same reference number);
@@ -84,14 +84,14 @@ The tracking payload's `events` block is a newest-first vocabulary owned by
 the frontend's `EVENT_ICONS`:
 
 - `submitted` — from `submitted_at`; owner/initiator.
-- `approved` / `rejected` / `correction_requested` — from the
+- `approved` / `rejected` — from the
   `ApprovalDecision` at a stage (verboten: tracking vocabulary keeps human
   readable `role_label` + `approver_name`, never raw role codes).
 - `resubmitted` — from the resubmit audit / cycle deltas (D9).
 - `reassigned` — from the reassignment rows (initiator = HR).
 
 Each event carries the actor's full name and role label; stage `state`
-vocabulary stays `pending | approved | rejected | returned | upcoming`.
+vocabulary stays `pending | approved | rejected | upcoming`.
 `current_stage` reflects the spine's *configured* approver regardless of any
 active delegation/reassignment, which the tracking view re-applies at query
 time (D3).

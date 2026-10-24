@@ -1,83 +1,39 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
-import { createApproverRole } from "@/lib/approver-roles-client";
 import type { ApproverRole } from "@/lib/approver-roles";
 import type { TeamCategory } from "@/lib/team-category";
 import { TEAM_CATEGORY_LABELS } from "@/lib/team-category";
 import type { Employee } from "@/lib/employees";
-import type {
-  Campus,
-  EligibleApprover,
-  Team,
-  TeamInput,
-  TeamSectionInput,
-} from "@/lib/teams";
-import { createTeam, listEligibleApprovers, updateTeam } from "@/lib/teams-client";
-import { buttonVariants, Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Alert } from "@/components/ui/states";
-
-interface DraftSection {
-  /**
-   * The role this step needs, by code. The step's name is derived from the
-   * role's label on save, so there is nothing typed here beyond the two picks.
-   */
-  approver_role: string;
-  approver: number | null;
-}
+import type { Campus, Team, TeamInput } from "@/lib/teams";
+import { createTeam, updateTeam } from "@/lib/teams-client";
 
 /**
- * Two questions, but not two pages for every team.
+ * Creating a team is two questions, in order.
  *
- * Creating a team asks only what the team *is* — its kind, academic or
- * administration, its campus when it is academic, its name, and its window —
- * and writes it as a chainless draft. The next screen is the new team's
- * Members tab: an approver is one of the team's employees, so the roster has
- * to exist before the picker can be honest about who is on it. Only once
- * employees are on it does the team get its workflow, added from its Overview.
+ * First what the team *is* — its kind, academic or administration, its campus
+ * when it is academic, its name, and its window. Then who runs it: a manager,
+ * named as a team-scoped approver role and the person who holds it. The manager
+ * is the only person who configures the team's members, its chains, and which
+ * chain routes, so HR's job ends at naming them; there is no chain builder here
+ * for HR to visit, and the manager step is a required half of creation rather
+ * than an optional extra.
  *
- * Editing keeps the two-page shape. Page one is the same details; page two is
- * who decides for the team, one named person per step. Eligibility is answered
- * by the team itself, so the picker is scoped by `?team=` and offers only
- * people already on the team.
+ * Editing keeps the details only. The manager is changed from the team's
+ * Approvers tab, where the wide-holder panel already offers "Make manager", and
+ * the chain is the manager's own screen.
  *
- * A team with no steps can still be saved. It becomes a draft, routes nothing,
- * and the chain is added from its own page when HR is ready. That is why on an
- * edit "Save as draft" sits beside "Save changes" rather than behind an extra
- * screen.
- */
-/**
- * Two pages for every team, but not the same two.
- *
- * Creating a team asks what the team *is* — its kind, academic or
- * administration, its campus when it is academic, its name, and its window —
- * and then who runs it: the manager, named as a team-scoped approver role and
- * the category-matching person who holds it. The team is written as a chainless
- * draft, and the manager is the only one who configures its members, its chains,
- * and which chain routes, so HR's part ends at naming them; the next screen is
- * the new team's Members tab, where its roster is built.
- *
- * Editing keeps the two-page shape. Page one is the same details; page two is
- * who decides for the team, one named person per step. Eligibility is answered
- * by the team itself, so the picker is scoped by `?team=` and offers only
- * people already on the team. The manager is not set here — a team's manager is
- * changed from its Approvers tab, where the wide-holder panel offers "Make
- * manager".
- *
- * A team with no steps can still be saved. It becomes a draft, routes nothing,
- * and the chain is added from its own page when HR is ready. That is why on an
- * edit "Save as draft" sits beside "Save changes" rather than behind an extra
- * screen.
+ * A team with no steps can still be saved: it is created active and routes
+ * nothing until its manager builds and routes a chain.
  */
 export function TeamForm({
   team,
   campuses,
-  roles: initialRoles,
+  roles = [],
   rolesError = "",
   employees = [],
   wideHolderUserIds = [],
@@ -86,19 +42,24 @@ export function TeamForm({
 }: {
   team?: Team;
   campuses: Campus[];
-  roles: ApproverRole[];
-  /** Set when the roles fetch failed; the chain builder needs its options. */
+  /**
+   * The team-scoped roles a manager may hold: active roles that are not
+   * institution-wide. Filtered by the page so the picker cannot offer a role
+   * the backend would refuse at team scope.
+   */
+  roles?: ApproverRole[];
+  /** Set when the roles fetch failed; the manager picker needs its options. */
   rolesError?: string;
   /**
-   * Everyone the create form's manager picker may offer: the manager is named
-   * when the team is created, so the people who may hold team-scoped roles have
-   * to be known before the save.
+   * Everyone the manager picker may offer. Scoped to the team's category in the
+   * picker rather than here, because on create the category is chosen on the
+   * first page and is not known until the second one renders.
    */
   employees?: Employee[];
   /**
    * Every current wide approver, whatever their scope. A person holds only one
-   * wide approver role, so somebody who already holds one anywhere is not
-   * offered as a team's manager.
+   * wide approver role, so somebody who already holds one is left out of the
+   * manager picker — the same rule the wide-holder panel enforces.
    */
   wideHolderUserIds?: number[];
   /**
@@ -111,20 +72,13 @@ export function TeamForm({
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  // The server-loaded roles are the starting point, not the final word: HR can
-  // create a role from this form, and the one they just made must appear in
-  // the picker without leaving the page.
-  const [roles, setRoles] = useState<ApproverRole[]>(initialRoles);
-  const [showNewRole, setShowNewRole] = useState(false);
-  const [newRoleLabel, setNewRoleLabel] = useState("");
-  const [roleCreateError, setRoleCreateError] = useState("");
-  const [creatingRole, setCreatingRole] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState<1 | 2>(team ? 2 : 1);
+  const [page, setPage] = useState<1 | 2>(1);
+  const [managerRoleId, setManagerRoleId] = useState("");
+  const [managerUserId, setManagerUserId] = useState("");
   // The details form is unmounted while page two is shown, so its values have to
-  // outlive it. Read once when the second page mounts; page two only ever reads
-  // them, so nothing can go stale behind the user's back.
+  // outlive it. Page two only ever reads them, so nothing can go stale.
   const [details, setDetails] = useState<TeamDetails>({
     name: team?.name ?? "",
     description: team?.description ?? "",
@@ -133,32 +87,11 @@ export function TeamForm({
     effective_from: team?.effective_from ?? "",
     effective_to: team?.effective_to ?? "",
   });
-  const [sections, setSections] = useState<DraftSection[]>(() =>
-    team
-      ? team.sections.map((section) => ({
-          approver_role: section.approver_role,
-          approver: section.approver?.id ?? null,
-        }))
-      : []
-  );
-  // The manager is named on the create form's second page. It is a create-only
-  // decision: an existing team's manager is changed from its Approvers tab.
-  const [managerRoleId, setManagerRoleId] = useState("");
-  const [managerUserId, setManagerUserId] = useState("");
 
   const rolesUnavailable = rolesError !== "" || roles.length === 0;
-
-  /**
-   * The team-scoped roles a manager may hold.
-   *
-   * The page passes every role, because the edit form's chain builder needs
-   * them all. A manager is a *team-wide* approver, so an institution-wide role
-   * — held outside any one team — is filtered out here rather than excluded
-   * from the page and taken away from the chain builder.
-   */
-  const managerRoles = useMemo(
-    () => roles.filter((role) => role.is_active && !role.is_institution_wide),
-    [roles]
+  const excludedWideHolders = useMemo(
+    () => new Set(wideHolderUserIds),
+    [wideHolderUserIds]
   );
 
   /**
@@ -169,10 +102,6 @@ export function TeamForm({
    * and they cannot already hold a wide approver role anywhere — a person holds
    * only one, so offering them would be a save that can only fail.
    */
-  const excludedWideHolders = useMemo(
-    () => new Set(wideHolderUserIds),
-    [wideHolderUserIds]
-  );
   const managerCandidates = useMemo(
     () =>
       employees.filter(
@@ -185,245 +114,30 @@ export function TeamForm({
   );
 
   /**
-   * Eligibility is answered by the team, so a team that does not exist yet has
-   * nobody to offer: the picker stays closed until there is a team id to scope
-   * it by.
-   */
-  const teamId = team?.id ?? null;
-
-  /** Roles carry an id the eligibility endpoint filters on; sections carry a code. */
-  const roleIdByCode = useMemo(() => {
-    const ids = new Map<string, number>();
-    roles.forEach((role) => ids.set(role.code, role.id));
-    return ids;
-  }, [roles]);
-
-  /** The full role, so a step can tell whether it is institution-wide. */
-  const roleByCode = useMemo(() => {
-    const byCode = new Map<string, ApproverRole>();
-    roles.forEach((role) => byCode.set(role.code, role));
-    return byCode;
-  }, [roles]);
-
-  /**
-   * A step's name is its role's label.
+   * Where page one goes.
    *
-   * HR picks the role and nothing else, so the label is what the step is called:
-   * the chain then reads the way the Roles page does, and two people configuring
-   * the same team cannot end up with "Supervisor review" and "Supervisor
-   * approval" sitting on the same step.
+   * An edit saves the details and stops — there is no manager step and no chain
+   * builder. A create advances to the manager step, but only once the academic
+   * campus rule is satisfied, so the second page cannot be reached with a team
+   * the save would refuse.
    */
-  const roleLabelByCode = useMemo(() => {
-    const labels = new Map<string, string>();
-    roles.forEach((role) => labels.set(role.code, role.label));
-    return labels;
-  }, [roles]);
-
-  /**
-   * One picker per step, and each one asks the backend who may act at *that*
-   * step. Fetching per step rather than once for the team is deliberate: the
-   * eligible people differ per role, and a shared list would either offer
-   * somebody who cannot hold this step or hide somebody who can.
-   */
-  const [candidates, setCandidates] = useState<Record<string, EligibleApprover[]>>(
-    {}
-  );
-  const [candidateError, setCandidateError] = useState("");
-
-  // The team and roles a fetch is needed for, as a stable string so that adding,
-  // reordering or re-picking a step's role does not re-ask the same question on
-  // every change.
-  const candidateKeys = useMemo(() => {
-    if (teamId === null) return "";
-    const roleIds = new Set<number>();
-    sections.forEach((section) => {
-      const roleId = roleIdByCode.get(section.approver_role);
-      if (roleId !== undefined) roleIds.add(roleId);
-    });
-    return [...roleIds].map((roleId) => `${teamId}:${roleId}`).join(",");
-  }, [teamId, sections, roleIdByCode]);
-
-  useEffect(() => {
-    if (candidateKeys === "") {
+  async function handleDetailsSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    if (details.category === "academic" && details.campus === null) {
+      setError(
+        "An academic team sits at a campus. Choose one, or create it first — the campus is what makes campus-wide approvers reachable for this team's stages."
+      );
       return;
     }
-    let cancelled = false;
-    Promise.all(
-      candidateKeys.split(",").map(async (key) => {
-        const [teamPart, rolePart] = key.split(":");
-        const people = await listEligibleApprovers(
-          Number(teamPart),
-          Number(rolePart)
-        );
-        return [key, people] as const;
-      })
-    )
-      .then((entries) => {
-        if (cancelled) return;
-        setCandidates(Object.fromEntries(entries));
-        setCandidateError("");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setCandidateError(
-          "Unable to load the people who may approve on this team."
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [candidateKeys]);
-
-  /**
-   * The steps as they will be written: an institution-wide step with one holder
-   * *is* that holder, whether or not HR picked them from a list.
-   *
-   * A role that approves across the whole institution is held outside any one
-   * team, so its holder could never be found by browsing this team's employees,
-   * and choosing the role is the whole instruction — the backend appoints the
-   * holder on save as well, so this only decides what the form shows. Resolved
-   * while rendering rather than written into state, so a step is appointed the
-   * moment its role and its single holder are both known — including when that
-   * holder was already loaded for another step, where no new fetch would ever
-   * arrive to notice it. Several holders stay a real choice and are left to HR.
-   */
-  const resolvedSections: DraftSection[] = useMemo(
-    () =>
-      sections.map((section) => {
-        if (section.approver !== null) return section;
-        if (roleByCode.get(section.approver_role)?.is_institution_wide !== true) {
-          return section;
-        }
-        const roleId = roleIdByCode.get(section.approver_role);
-        if (roleId === undefined || teamId === null) return section;
-        const holders = candidates[`${teamId}:${roleId}`] ?? [];
-        if (holders.length !== 1) return section;
-        return { ...section, approver: holders[0].id };
-      }),
-    [candidates, teamId, roleIdByCode, roleByCode, sections]
-  );
-
-  /**
-   * Everyone the eligible-approver lookups have returned, by id.
-   *
-   * Only used to name a person in a validation message. A step can be appointed
-   * from a lookup that is no longer on screen, so the error names them from the
-   * loaded set rather than guessing from the id.
-   */
-  const candidateNames = useMemo(() => {
-    const byId = new Map<number, string>();
-    for (const list of Object.values(candidates)) {
-      for (const person of list) byId.set(person.id, person.full_name);
+    if (team) {
+      await save();
+      return;
     }
-    return byId;
-  }, [candidates]);
-
-  function move(index: number, direction: -1 | 1) {
-    setSections((current) => {
-      const target = index + direction;
-      if (target < 0 || target >= current.length) {
-        return current;
-      }
-      const next = [...current];
-      const [moved] = next.splice(index, 1);
-      next.splice(target, 0, moved);
-      return next;
-    });
+    setPage(2);
   }
 
-  function update(index: number, patch: Partial<DraftSection>) {
-    setSections((current) =>
-      current.map((section, i) => (i === index ? { ...section, ...patch } : section))
-    );
-  }
-
-  /**
-   * Re-reads the people for one step when its role changes, because the person
-   * chosen for the previous role is very likely not eligible for the new one.
-   * Clearing rather than keeping it: sending an ineligible id would only earn a
-   * refusal on save.
-   */
-  function changeRole(index: number, approverRole: string) {
-    update(index, { approver_role: approverRole, approver: null });
-  }
-
-  /**
-   * Create an approver role while describing a stage.
-   *
-   * A stage needs a role, and a role is just a name. Requiring HR to abandon a
-   * half-written chain to go and make one would be the missing-UI problem the
-   * seed used to paper over; making it here keeps the configuration in one
-   * place.
-   */
-  async function handleCreateRole() {
-    const label = newRoleLabel.trim();
-    if (label === "") return;
-    setRoleCreateError("");
-    setCreatingRole(true);
-    try {
-      const created = await createApproverRole({ label });
-      setRoles((current) => [...current, created]);
-      setNewRoleLabel("");
-      setShowNewRole(false);
-    } catch (err) {
-      setRoleCreateError(
-        err instanceof Error ? err.message : "Could not create the role."
-      );
-    } finally {
-      setCreatingRole(false);
-    }
-  }
-
-  /**
-   * The steps as the backend stores them: the role picked, and the person.
-   *
-   * The name is derived rather than typed, so the only thing HR has to get right
-   * per step is the role and who acts for it. Every step has a role by
-   * construction — "Add step" starts from the first role and is disabled when
-   * there are no roles to choose from — so nothing here has to be filtered out.
-   */
-  /**
-   * The value that appears twice across ``sections``, or null.
-   *
-   * Uniqueness is a workflow-level rule (one role, one person, one stage each), so
-   * this compares the whole list rather than a pair at a time and names the repeat
-   * rather than the two steps holding it: the steps are rendered as a numbered
-   * list already, and the repeated role or person is the thing HR has to change.
-   */
-  function repeatOf<T>(sections: T[], key: (section: T) => string | null | undefined) {
-    const seen = new Set<string>();
-    for (const section of sections) {
-      const value = key(section);
-      if (value == null) continue;
-      if (seen.has(value)) return value;
-      seen.add(value);
-    }
-    return null;
-  }
-
-  function describeSteps(): TeamSectionInput[] {
-    return resolvedSections.map((section) => ({
-      name: roleLabelByCode.get(section.approver_role) ?? section.approver_role,
-      approver_role: section.approver_role,
-      ...(section.approver === null ? {} : { approver: section.approver }),
-    }));
-  }
-
-interface TeamDetails {
-  name: string;
-  description: string;
-  /**
-   * Academic or administration, and the campus is the visible half of the
-   * rule: an academic team sits at a campus, an administration team is
-   * institution-wide and does not.
-   */
-  category: TeamCategory;
-  campus: number | null;
-  effective_from: string;
-  effective_to: string;
-}
-
-  async function save(draft: boolean) {
+  async function save() {
     setError("");
     setLoading(true);
 
@@ -449,96 +163,24 @@ interface TeamDetails {
       return;
     }
 
-    // A team is handed to a manager the moment it exists: the role they hold is
-    // what they approve with, and the person is who approves. Both are required,
-    // and the manager is a create-only decision — an existing team's manager is
-    // changed from its Approvers tab.
     if (!team) {
-      const managerRole = Number(managerRoleId) || 0;
-      const managerUser = Number(managerUserId) || 0;
-      if (!managerRole) {
+      const role = Number(managerRoleId) || 0;
+      const user = Number(managerUserId) || 0;
+      if (!role) {
         setError(
           "Choose the team-scoped role the manager will hold, so the backend knows what they may decide."
         );
         setLoading(false);
         return;
       }
-      if (!managerUser) {
+      if (!user) {
         setError(
           "Choose who will manage this team. Only an active employee of this team's category who holds no wide approver role is offered."
         );
         setLoading(false);
         return;
       }
-      input.manager = { role: managerRole, user: managerUser };
-    }
-
-    const named = describeSteps();
-
-    // Uniqueness is checked before anything else because the backend enforces it
-    // as a constraint on the workflow: catching it here names the two steps, where
-    // a database error naming a constraint would not. Runs on a draft too --
-    // otherwise HR finds out about a repeated role only when they activate it.
-    const repeatedRole = repeatOf(named, (section) => section.approver_role);
-    if (repeatedRole) {
-      setError(
-        `Two steps both use the ${roleLabelByCode.get(repeatedRole) ?? repeatedRole} role. ` +
-          "Give each step its own role, so one office cannot sign off twice on the same application."
-      );
-      setLoading(false);
-      return;
-    }
-    const repeatedApprover = repeatOf(
-      named.filter((section) => section.approver != null),
-      (section) => String(section.approver)
-    );
-    if (repeatedApprover) {
-      setError(
-        `${candidateNames.get(Number(repeatedApprover)) ?? "The same person"} decides more than one step. ` +
-          "Each step needs its own approver, so it is clear who signs at each point."
-      );
-      setLoading(false);
-      return;
-    }
-
-    if (!draft) {
-      if (named.length === 0) {
-        setError(
-          team
-            ? "This team has no approval steps. Add at least one."
-            : "Describe at least one approval step, or save the team as a draft."
-        );
-        setLoading(false);
-        return;
-      }
-      // An institution-wide step needs no pick: selecting its role appoints the
-      // holder, and the backend writes them on save. Every other step is scoped
-      // by the team, so a step nobody is named for blocks the save.
-      //
-      // A team that does not exist yet is the exception: it has no employees, so
-      // there is nobody this form could offer. Naming somebody an approver as
-      // the team is created does place them on it, but doing it from here would
-      // mean listing the whole staff as if they were all eligible, which is the
-      // thing the team-scoped picker exists to prevent. The steps are described
-      // here and the people are appointed on the team's own page.
-      const unstaffed = team
-        ? resolvedSections.filter(
-            (section) =>
-              section.approver === null &&
-              roleByCode.get(section.approver_role)?.is_institution_wide !== true
-          )
-        : [];
-      if (unstaffed.length > 0) {
-        setError(
-          "Name the one person who decides at every step, or save the team as a draft."
-        );
-        setLoading(false);
-        return;
-      }
-      // No chain name is sent: the backend names a new chain after the team and
-      // keeps the existing one on an edit, so there is nothing for HR to decide
-      // and nothing that can disagree between two people configuring one team.
-      input.new_workflow = { sections: named };
+      input.manager = { role, user };
     }
 
     try {
@@ -548,12 +190,11 @@ interface TeamDetails {
       if (onSuccess) {
         onSuccess(saved);
       } else {
-        // The next screen is the roster, not the list: a team is people before
-        // it is a chain, so a new team's workflow is configured from its page.
+        // A new team is now the manager's to run: HR's part is describing the
+        // team and naming who runs it, and the team's own page is where the
+        // manager takes over.
         router.push(
-          team
-            ? `/dashboard/teams/${team.id}`
-            : `/dashboard/teams/${saved.id}?tab=members`
+          team ? `/dashboard/teams/${team.id}` : `/dashboard/teams/${saved.id}`
         );
         router.refresh();
       }
@@ -561,37 +202,19 @@ interface TeamDetails {
       setError(
         err instanceof Error ? err.message : "An error occurred. Please try again."
       );
+      if (!team) {
+        setPage(2);
+      }
     } finally {
       setLoading(false);
     }
-  }
-
-  /**
-   * Page one is two different moves depending on the shape. On an edit it hands
-   * over to page two without saving: the team already exists, so this page only
-   * corrects it and the chain follows. A create also advances to page two, but
-   * that page names the manager rather than describing a chain: the team does
-   * not exist yet, so it has no chain to describe. The save happens there, and
-   * writes a chainless draft whose Members tab is the next screen — the roster
-   * has to exist before a step can be staffed from it.
-   */
-  function handleDetailsSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    if (details.category === "academic" && details.campus === null) {
-      setError(
-        "An academic team sits at a campus. Choose one, or create it first — the campus is what makes campus-wide approvers reachable for this team's stages."
-      );
-      return;
-    }
-    setPage(2);
   }
 
   const backHref = team
     ? `/dashboard/teams/${team.id}`
     : "/dashboard/teams";
 
-  if (page === 1) {
+  if (page === 1 || team) {
     return (
       <form
         id="team-details"
@@ -605,7 +228,7 @@ interface TeamDetails {
           >
             Name
           </label>
-          <Input
+          <input
             id="name"
             name="name"
             required
@@ -613,6 +236,7 @@ interface TeamDetails {
             onChange={(event) =>
               setDetails((current) => ({ ...current, name: event.target.value }))
             }
+            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
             placeholder="e.g. Bunda College Faculty"
           />
         </div>
@@ -740,7 +364,7 @@ interface TeamDetails {
           >
             Description
           </label>
-          <Input
+          <input
             id="description"
             name="description"
             value={details.description}
@@ -750,6 +374,7 @@ interface TeamDetails {
                 description: event.target.value,
               }))
             }
+            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
             placeholder="Who belongs on this team"
           />
         </div>
@@ -761,7 +386,7 @@ interface TeamDetails {
           >
             In force from
           </label>
-          <Input
+          <input
             id="effective_from"
             name="effective_from"
             type="date"
@@ -772,6 +397,7 @@ interface TeamDetails {
                 effective_from: event.target.value,
               }))
             }
+            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
           <p className="mt-1 text-xs text-text-muted">
             Blank means from the day the team is activated.
@@ -785,7 +411,7 @@ interface TeamDetails {
           >
             In force until
           </label>
-          <Input
+          <input
             id="effective_to"
             name="effective_to"
             type="date"
@@ -796,6 +422,7 @@ interface TeamDetails {
                 effective_to: event.target.value,
               }))
             }
+            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           />
           <p className="mt-1 text-xs text-text-muted">
             Optional. A dated end is how a team is handed over without a gap.
@@ -803,162 +430,46 @@ interface TeamDetails {
         </div>
 
         {error && (
-          <Alert tone="error" className="md:col-span-2">
+          <div
+            role="alert"
+            className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
+          >
             {error}
-          </Alert>
+          </div>
         )}
 
         <div className="flex items-center gap-3 md:col-span-2">
-          <Button type="submit" disabled={loading} loading={loading}>
-            {team ? "Continue to approval steps" : "Continue to the manager"}
-          </Button>
-        {onCancel ? (
-          <Button variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-        ) : (
-          <Link
-            href={backHref}
-            className={buttonVariants({ variant: "secondary" })}
-          >
-            Cancel
-          </Link>
-        )}
-        </div>
-        {!team ? (
-          <p className="text-xs text-text-muted md:col-span-2">
-            Next, name the manager who runs this team. They build its approval
-            chain and staff each step, and they are the only person who can
-            configure the team&apos;s members.
-          </p>
-        ) : null}
-      </form>
-    );
-  }
-
-  if (!team) {
-    return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <p className="text-xs text-text-muted">
-            <span className="font-medium text-text-secondary">
-              {details.name || "This team"}
-            </span>
-            {details.campus === null
-              ? ""
-              : " — " +
-                (campuses.find((campus) => campus.id === details.campus)?.name ??
-                  "campus")}
-          </p>
-          <h3 className="mt-1 text-sm font-semibold text-text-primary">
-            Assign team manager
-          </h3>
-          <p className="mt-1 text-xs text-text-muted">
-            The manager is a team-wide approver who runs this team: they add its
-            members, build its approval chains, staff each step, and decide which
-            chain routes. They hold one of the team-scoped roles, and must be an
-            active employee of the team&apos;s own category. A person may hold
-            only one wide approver role, so anyone who already holds one anywhere
-            is not offered here.
-          </p>
-        </div>
-
-        {rolesError ? (
-          <Alert tone="error" className="md:col-span-2">
-            {rolesError}
-          </Alert>
-        ) : null}
-
-        <div>
-          <label
-            htmlFor="manager-role"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Manager role
-          </label>
-          <select
-            id="manager-role"
-            name="manager_role"
-            value={managerRoleId}
-            disabled={managerRoles.length === 0}
-            onChange={(event) => setManagerRoleId(event.target.value)}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="">Choose a team-scoped role…</option>
-            {managerRoles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-text-muted">
-            {managerRoles.length === 0
-              ? "No team-scoped roles are available. Create one on the Roles page first."
-              : "Only active, team-scoped roles are offered — an institution-wide role is held outside a single team."}
-          </p>
-        </div>
-
-        <div>
-          <label
-            htmlFor="manager-user"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Manager
-          </label>
-          <select
-            id="manager-user"
-            name="manager_user"
-            value={managerUserId}
-            disabled={managerCandidates.length === 0}
-            onChange={(event) => setManagerUserId(event.target.value)}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="">Choose a person…</option>
-            {managerCandidates.map((employee) => (
-              <option key={employee.user_id} value={employee.user_id}>
-                {employee.full_name || employee.email}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-text-muted">
-            {managerCandidates.length === 0
-              ? "Nobody matching this team's category is free to manage it. Everyone who does already holds a wide approver role, or is not an active employee of this category."
-              : `Only active ${TEAM_CATEGORY_LABELS[details.category].toLowerCase()} employees who hold no wide approver role are offered.`}
-          </p>
-        </div>
-
-        {error && (
-          <Alert tone="error" className="md:col-span-2">
-            {error}
-          </Alert>
-        )}
-
-        <div className="flex flex-wrap items-center gap-3 md:col-span-2">
-          <Button
-            onClick={() => void save(true)}
+          <button
+            type="submit"
             disabled={loading}
-            loading={loading}
+            className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Create team
-          </Button>
-          <Button variant="secondary" onClick={() => setPage(1)}>
-            <ArrowLeft className="h-4 w-4" />
-            Back to details
-          </Button>
+            {loading ? "Saving..." : team ? "Save changes" : "Next"}
+          </button>
           {onCancel ? (
-            <Button variant="secondary" onClick={onCancel}>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+            >
               Cancel
-            </Button>
+            </button>
           ) : (
             <Link
               href={backHref}
-              className={buttonVariants({ variant: "secondary" })}
+              className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
             >
               Cancel
             </Link>
           )}
         </div>
-      </div>
+        {!team ? (
+          <p className="text-xs text-text-muted md:col-span-2">
+            Next, assign the team&apos;s manager. The manager alone configures
+            the team&apos;s members, approval chains, and which chain routes.
+          </p>
+        ) : null}
+      </form>
     );
   }
 
@@ -969,250 +480,130 @@ interface TeamDetails {
           <span className="font-medium text-text-secondary">
             {details.name || "This team"}
           </span>
-          {details.campus === null ? "" : " — " + (campuses.find((campus) => campus.id === details.campus)?.name ?? "campus")}
+          {details.campus === null
+            ? ""
+            : " — " +
+              (campuses.find((campus) => campus.id === details.campus)?.name ??
+                "campus")}
         </p>
         <h3 className="mt-1 text-sm font-semibold text-text-primary">
-          Who approves for this team
+          Assign team manager
         </h3>
         <p className="mt-1 text-xs text-text-muted">
-          The steps this team&apos;s applications follow, in order. A step is
-          named by the role it uses, so the role and the one person who acts for
-          it are all there is to choose: an application is routed to a named
-          approver, not to whichever of several people happens to act first.
-          Candidates are the employees already on this team.
+          The manager is a team-wide approver who runs this team: they add its
+          members, build its approval chains, staff each step, and decide which
+          chain routes. They hold one of the team-scoped roles, and must be an
+          active employee of the team&apos;s own category. A person may hold only
+          one wide approver role, so anyone who already holds one anywhere is not
+          offered here.
         </p>
       </div>
 
       {rolesError ? (
-        <Alert tone="error" className="md:col-span-2">
+        <p
+          role="alert"
+          className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
+        >
           {rolesError}
-        </Alert>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
-        <span className="text-sm font-medium text-text-primary">Approval steps</span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => setShowNewRole((current) => !current)}
-          >
-            <Plus className="h-4 w-4" />
-            New role
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() =>
-              setSections((current) => [
-                ...current,
-                { approver_role: roles[0]?.code ?? "", approver: null },
-              ])
-            }
-            disabled={rolesUnavailable}
-          >
-            <Plus className="h-4 w-4" />
-            Add step
-          </Button>
-        </div>
-      </div>
-
-      {showNewRole ? (
-        <div className="rounded-md border border-border-default bg-surface-muted p-3 md:col-span-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              aria-label="New role name"
-              value={newRoleLabel}
-              onChange={(event) => setNewRoleLabel(event.target.value)}
-              placeholder="e.g. Team Supervisor"
-              className="min-w-40 flex-1"
-            />
-            <Button
-              onClick={() => void handleCreateRole()}
-              disabled={creatingRole || newRoleLabel.trim() === ""}
-              loading={creatingRole}
-            >
-              Save role
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setShowNewRole(false);
-                setRoleCreateError("");
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-          <p className="mt-1 text-xs text-text-muted">
-            The new role appears in every step&apos;s role picker. Behaviour such
-            as history scope and cancellation handling is set on the Roles page.
-          </p>
-          {roleCreateError ? (
-            <p className="mt-1 text-xs text-status-rejected">{roleCreateError}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {candidateError ? (
-        <Alert tone="error" className="md:col-span-2">
-          {candidateError}
-        </Alert>
-      ) : null}
-
-      {sections.length === 0 ? (
-        <p className="text-sm text-text-muted md:col-span-2">
-          No approval steps yet. A team with no steps is a draft and routes
-          nothing, which is a legitimate way to save it and finish later.
         </p>
       ) : null}
 
-      {resolvedSections.map((section, index) => {
-        const roleId = roleIdByCode.get(section.approver_role);
-        const isInstitutionWide =
-          roleByCode.get(section.approver_role)?.is_institution_wide === true;
-        const options =
-          teamId !== null && roleId ? candidates[`${teamId}:${roleId}`] ?? [] : [];
-        return (
-          <div
-            key={index}
-            role="group"
-            aria-label={`Step ${index + 1}`}
-            className="rounded-md border border-border-default bg-surface-card p-3 md:col-span-2"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="grid size-8 shrink-0 place-content-center rounded-full bg-brand-primary-subtle text-sm font-semibold text-brand-primary">
-                {index + 1}
-              </span>
-              <select
-                aria-label={`Step ${index + 1} role`}
-                value={section.approver_role}
-                disabled={rolesUnavailable}
-                onChange={(event) => changeRole(index, event.target.value)}
-                className="min-w-44 flex-1 rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {section.approver_role === "" && (
-                  <option value="">Choose a role…</option>
-                )}
-                {roles.map((role) => (
-                  <option key={role.code} value={role.code}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label={`Move step ${index + 1} up`}
-                  disabled={index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label={`Move step ${index + 1} down`}
-                  disabled={index === sections.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label={`Remove step ${index + 1}`}
-                  onClick={() =>
-                    setSections((current) =>
-                      current.filter((_, i) => i !== index)
-                    )
-                  }
-                  className="text-status-rejected"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+      <div>
+        <label
+          htmlFor="manager-role"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Manager role
+        </label>
+        <select
+          id="manager-role"
+          name="manager_role"
+          value={managerRoleId}
+          disabled={rolesUnavailable}
+          onChange={(event) => setManagerRoleId(event.target.value)}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">Choose a team-scoped role…</option>
+          {roles.map((role) => (
+            <option key={role.id} value={role.id}>
+              {role.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          {rolesUnavailable
+            ? "No team-scoped roles are available. Create one on the Roles page first."
+            : "Only active, team-scoped roles are offered — an institution-wide role is held outside a single team."}
+        </p>
+      </div>
 
-            <div className="mt-2 pl-10">
-              <label
-                htmlFor={`approver-${index}`}
-                className="mb-1 block text-xs font-medium text-text-secondary"
-              >
-                Approver
-              </label>
-              <select
-                id={`approver-${index}`}
-                aria-label={`Step ${index + 1} approver`}
-                value={section.approver === null ? "" : String(section.approver)}
-                onChange={(event) =>
-                  update(index, {
-                    approver: event.target.value ? Number(event.target.value) : null,
-                  })
-                }
-                disabled={options.length === 0}
-                className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Choose an approver…</option>
-                {options.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.full_name}
-                    {person.designation ? ` — ${person.designation}` : ""}
-                  </option>
-                ))}
-              </select>
-              {isInstitutionWide ? (
-                <p className="mt-1 text-xs text-text-muted">
-                  Institution-wide role.{" "}
-                  {options.length === 1
-                    ? "Its holder approves automatically, wherever they sit."
-                    : options.length === 0
-                      ? "No active holder yet — appoint one on the Roles page."
-                      : "Choose which holder decides at this step."}
-                </p>
-              ) : options.length === 0 ? (
-                <p className="mt-1 text-xs text-text-muted">
-                  Nobody on this team can hold this role yet. Put somebody on the
-                  team below, or appoint a holder on the Roles page.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
+      <div>
+        <label
+          htmlFor="manager-user"
+          className="mb-1 block text-sm font-medium text-text-primary"
+        >
+          Manager
+        </label>
+        <select
+          id="manager-user"
+          name="manager_user"
+          value={managerUserId}
+          disabled={managerCandidates.length === 0}
+          onChange={(event) => setManagerUserId(event.target.value)}
+          className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">Choose a person…</option>
+          {managerCandidates.map((employee) => (
+            <option key={employee.user_id} value={employee.user_id}>
+              {employee.full_name || employee.email}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-text-muted">
+          {managerCandidates.length === 0
+            ? "Nobody matching this team's category is free to manage it. Everyone who does already holds a wide approver role, or is not an active employee of this category."
+            : `Only active ${TEAM_CATEGORY_LABELS[details.category].toLowerCase()} employees who hold no wide approver role are offered.`}
+        </p>
+      </div>
 
       {error && (
-        <Alert tone="error" className="md:col-span-2">
+        <div
+          role="alert"
+          className="rounded-md bg-status-rejected-subtle p-3 text-sm text-status-rejected md:col-span-2"
+        >
           {error}
-        </Alert>
+        </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3 md:col-span-2">
-        <Button
-          onClick={() => void save(false)}
+        <button
+          type="button"
+          onClick={() => void save()}
           disabled={loading}
-          loading={loading}
+          className="rounded-md bg-button-primary px-4 py-2 font-medium text-button-primary-foreground hover:bg-button-primary-hover focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {team ? "Save changes" : "Create team"}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => void save(true)}
-          disabled={loading}
+          {loading ? "Saving..." : "Save team"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPage(1)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
         >
-          Save as draft
-        </Button>
-        <Button variant="secondary" onClick={() => setPage(1)}>
           <ArrowLeft className="h-4 w-4" />
-          Back to details
-        </Button>
+          Back
+        </button>
         {onCancel ? (
-          <Button variant="secondary" onClick={onCancel}>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
+          >
             Cancel
-          </Button>
+          </button>
         ) : (
           <Link
             href={backHref}
-            className={buttonVariants({ variant: "secondary" })}
+            className="rounded-md border border-border-default bg-button-secondary px-4 py-2 font-medium text-text-secondary hover:bg-button-secondary-hover"
           >
             Cancel
           </Link>
@@ -1220,4 +611,18 @@ interface TeamDetails {
       </div>
     </div>
   );
+}
+
+interface TeamDetails {
+  name: string;
+  description: string;
+  /**
+   * Academic or administration, and the campus is the visible half of the
+   * rule: an academic team sits at a campus, an administration team is
+   * institution-wide and does not.
+   */
+  category: TeamCategory;
+  campus: number | null;
+  effective_from: string;
+  effective_to: string;
 }

@@ -26,7 +26,6 @@ export interface LeaveApplication {
     | "submitted"
     | "approved"
     | "rejected"
-    | "correction_required"
     | "cancelled";
   reference_number: string | null;
   created_at: string;
@@ -46,7 +45,7 @@ export interface LeaveApplication {
  */
 const DOCUMENT_ERRORS: Record<string, string> = {
   application_not_editable:
-    "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
+    "This application is no longer editable. Documents can only be changed on a draft or while it is rejected.",
   document_not_active:
     "This document has already been removed or replaced.",
 };
@@ -89,6 +88,7 @@ async function request<T>(
   return res.json();
 }
 
+<<<<<<< HEAD
 const API = "/api/leave/leave-applications";
 
 export async function getLeaveApplications(status?: string): Promise<{
@@ -97,6 +97,21 @@ export async function getLeaveApplications(status?: string): Promise<{
 }> {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   return request(`${API}/${query}`, {
+=======
+export async function getLeaveApplications(
+  {
+    status,
+    excludeStatus,
+  }: { status?: string; excludeStatus?: string } = {}
+): Promise<{
+  count: number;
+  results: LeaveApplication[];
+}> {
+  const url = new URL("/api/leave/leave-applications/", window.location.origin);
+  if (status) url.searchParams.set("status", status);
+  if (excludeStatus) url.searchParams.set("exclude_status", excludeStatus);
+  const res = await fetch(url.toString(), {
+>>>>>>> features/team-base
     credentials: "include",
     fallback: "Failed to fetch applications",
   });

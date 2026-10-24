@@ -1,7 +1,11 @@
 import { apiErrorMessage } from "./utils";
 import type {
+<<<<<<< HEAD
   CalendarEvent,
   CalendarEventInput,
+=======
+  CarryOverResult,
+>>>>>>> features/team-base
   FinancialYear,
   FinancialYearInput,
   Holiday,
@@ -27,6 +31,7 @@ export async function updateFinancialYear(
 }
 
 /**
+<<<<<<< HEAD
  * Delete a financial year.
  *
  * The backend refuses with 409 while a leave entitlement or plan still
@@ -35,6 +40,32 @@ export async function updateFinancialYear(
  */
 export async function deleteFinancialYear(id: number | string): Promise<void> {
   await proxyWrite<void>(`/api/hr/financial-years/${id}`, "DELETE");
+=======
+ * Rolls rejected-leave days from a financial year into the next one.
+ *
+ * Idempotent server-side: running it twice grants nothing the second time. The
+ * result reports each employee's carried days, so the caller can show a summary.
+ */
+export async function runCarryOver(
+  id: number | string
+): Promise<CarryOverResult> {
+  const response = await fetch(`/api/hr/financial-years/${id}/carry-over`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(apiErrorMessage(data));
+  }
+  return response.json();
+}
+
+export async function createPublicHoliday(
+  input: PublicHolidayInput
+): Promise<PublicHoliday> {
+  return proxyPost<PublicHoliday>("/api/hr/public-holidays", input);
+>>>>>>> features/team-base
 }
 
 export async function createHoliday(input: HolidayInput): Promise<Holiday> {

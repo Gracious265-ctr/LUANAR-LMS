@@ -16,6 +16,7 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User
+<<<<<<< HEAD
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment (
     CampusRoleAssignment,
@@ -24,6 +25,11 @@ from teams.models import (
     TeamRoleAssignment,
 )
 from chains.testing import (
+=======
+from organisation.models import CampusRoleAssignment
+from teams.models import TeamRoleAssignment
+from workflows.testing import (
+>>>>>>> features/team-base
     create_user_with_role,
     grant_approver_role,
     make_approver,
@@ -89,6 +95,37 @@ class AuthEndpointTests(TestCase):
         response = self.client.get("/api/v1/auth/me/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["role"], User.Role.HR)  # type: ignore[index]
+
+    def test_me_reports_manages_teams_for_a_designated_manager(self):
+        # The navigation reads this flag to offer a team manager their team. It
+        # is a designation held as data, not a system role: the account's own
+        # role stays `employee`.
+        from organisation.services import create_team_role_assignment
+        from workflows.testing import ensure_roles
+
+        hr = create_user_with_role("manager-test-hr@test.luanar", role=User.Role.HR)
+        team = make_team("Manager Test Team", ["hod"])
+        role = ensure_roles("hod")["hod"]
+        manager = make_employee("manager-manages@test.luanar")
+
+        create_team_role_assignment(
+            team=team,
+            role=role,
+            user=manager,
+            actor=hr,
+            is_team_manager=True,
+        )
+
+        self.client.force_authenticate(user=manager)
+        response = self.client.get("/api/v1/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["manages_teams"])  # type: ignore[index]
+
+    def test_me_reports_no_manages_teams_for_an_ordinary_employee(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/auth/me/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["manages_teams"])  # type: ignore[index]
 
     def test_refresh_token(self):
         login_response = self.client.post(
@@ -219,7 +256,7 @@ class EmployeeEndpointTests(TestCase):
                 "last_name": "Employee",
                 "designation": "Lecturer",
                 "team": bunda.pk,
-                "category": "academic",
+                "category": "administration",
                 "grade": "C",
                 "appointment_date": "2023-05-01",
             },
@@ -449,6 +486,7 @@ class EmployeeEndpointTests(TestCase):
                 "first_name": "Placed",
                 "last_name": "Employee",
                 "password": "initial-pass-123",
+                "category": "administration",
                 "team": team.pk,
             },
         )
@@ -457,6 +495,40 @@ class EmployeeEndpointTests(TestCase):
         self.assertEqual(profile.team, team)
         self.assertEqual(response.data["team"], team.pk)  # type: ignore[index]
         self.assertEqual(response.data["team_name"], "Science team")  # type: ignore[index]
+
+    def test_placing_an_employee_on_a_mismatched_team_is_refused(self):
+        # The directory used to write the team straight onto the record, so an
+        # academic employee could sit on an administration team and break the
+        # routing the category is meant to protect. The placement now goes
+        # through the membership service, which refuses the mismatch.
+        team = make_team("Refused team", ("supervisor",))
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.post(
+            self.list_url,
+            {
+                "email": "mismatch@test.luanar",
+                "first_name": "Mismatch",
+                "last_name": "Employee",
+                "category": "academic",
+                "team": team.pk,
+            },
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("user", response.data)  # type: ignore[arg-type]
+        self.assertFalse(
+            User.objects.filter(email="mismatch@test.luanar").exists()
+        )
+
+    def test_moving_an_employee_to_another_team(self):
+        # One employee belongs to one team, so a move is a removal and a
+        # placement, both through the services. The record ends on the new team
+        # and never briefly sits on two.
+        other = make_team("Other team", ("supervisor",))
+        self.client.force_authenticate(user=self.hr_user)
+        response = self.client.patch(self.detail_url, {"team": other.pk})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.employee_profile.refresh_from_db()
+        self.assertEqual(self.employee_profile.team, other)
 
     def test_approver_roles_reports_the_positions_a_person_holds(self):
         """The employee list answers "who can approve for this person".
@@ -520,12 +592,17 @@ class EmployeeEndpointTests(TestCase):
         team = make_team("Audit team", ("supervisor",))
         self.client.force_authenticate(user=self.hr_user)
         self.client.patch(self.detail_url, {"team": team.pk})
+        # The placement is written by the membership service, which records the
+        # change against the employee's account with its own reason. A move off
+        # one team onto another writes a removal and a placement, so the assertion
+        # names the placement.
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.EMPLOYEE,
-            target_id=str(self.employee_profile.id),
+            target_id=str(self.employee_user.id),
             action=AuditEntry.Action.UPDATED,
+            detail__after__team_id=team.pk,
         )
-        self.assertEqual(entry.detail["after"]["team"], team.pk)
+        self.assertEqual(entry.detail["after"]["team_id"], team.pk)
 
     def test_create_without_role_defaults_to_employee(self):
         self.client.force_authenticate(user=self.hr_user)

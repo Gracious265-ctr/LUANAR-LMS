@@ -7,10 +7,13 @@ import type { ApproverRole } from "@/lib/approver-roles";
 import { listActiveApproverRoles } from "@/lib/approver-roles-client";
 import { listApproverRoles } from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
+<<<<<<< HEAD
 import {
   canAccessTeams,
   isTeamsAdministrator,
 } from "@/lib/nav/teams-nav";
+=======
+>>>>>>> features/team-base
 import { getWorkflow } from "@/lib/workflows";
 import { getTeam } from "@/lib/teams";
 
@@ -36,8 +39,21 @@ export default async function EditWorkflowPage({
   if (!user) {
     redirect("/login");
   }
+<<<<<<< HEAD
   if (!canAccessTeams(user)) {
     redirect("/dashboard");
+=======
+  // A manager configures their own team's chains; the standalone chain write
+  // refuses HR after the handover. Both reads are scoped to the teams they
+  // manage, and the ownership check below closes the gap between them, so
+  // another team's chain is never editable here. HR is sent back to the chain.
+  if (user.manages_teams !== true) {
+    redirect(
+      user.role === "hr"
+        ? `/dashboard/teams/${id}/workflows/${workflowId}`
+        : "/"
+    );
+>>>>>>> features/team-base
   }
 
   let team;

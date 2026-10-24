@@ -1,7 +1,4 @@
-import type {
-  TeamMemberSummary,
-  WorkflowMemberPool,
-} from "./team-members";
+import type { TeamMemberSummary, WorkflowMemberPool } from "./team-members";
 import { apiErrorMessage } from "./utils";
 
 /**
@@ -61,6 +58,14 @@ export async function removeTeamMember(
     throw new Error(apiErrorMessage(await response.json().catch(() => ({}))));
   }
 }
+
+/**
+ * Who may be added to a team's roster lives in `lib/teams.ts` instead: it is
+ * the team *page's* server read, and a bare `/api/hr/...` fetch from a Server
+ * Component carries no Authorization header, so the proxy answered 401 and the
+ * caller's `catch` turned that into an empty picker. Only the writes below —
+ * which run in the browser, where cookies travel — stay here.
+ */
 
 /**
  * The eligibility pool for a team's workflow memberships.

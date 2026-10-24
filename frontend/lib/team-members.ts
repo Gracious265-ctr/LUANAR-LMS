@@ -33,6 +33,15 @@ export interface TeamMemberSummary {
   workflow_count: number;
 }
 
+/** One employee the roster's add picker may offer, as the backend scopes it. */
+export interface TeamMemberCandidate {
+  /** The user id the add writes. */
+  id: number;
+  full_name: string;
+  email: string;
+  designation: string;
+}
+
 /** One candidate for a workflow's normal-member pool. */
 export interface PoolPerson {
   id: number;
@@ -67,7 +76,6 @@ export interface WorkflowMemberPool {
     name: string;
     state: string;
     is_active: boolean;
-    is_routing: boolean;
   } | null;
   available: PoolPerson[];
   current: PoolPerson[];
@@ -86,5 +94,23 @@ export interface WorkflowMember {
   team: number;
   team_name: string;
   added_by: number;
+  created_at: string;
+}
+
+/**
+ * A normal member as the *workflow* payload embeds it.
+ *
+ * Lighter than :class:`WorkflowMember`: the workflow detail carries each member
+ * as the person and the team, without the membership row's own id, the
+ * ``added_by`` audit, or the flattened ``user_name``/``designation`` fields the
+ * dedicated members endpoint builds. The two are kept apart so a screen cannot
+ * read a field the embedded shape never sends.
+ */
+export interface WorkflowMemberRef {
+  id: number;
+  user: number;
+  full_name: string;
+  email: string;
+  team: number;
   created_at: string;
 }

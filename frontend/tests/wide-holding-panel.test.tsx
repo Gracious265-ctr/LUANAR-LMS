@@ -16,6 +16,7 @@ import {
   removeCampusRoleAssignment,
   removeRoleAssignment,
   removeTeamRoleAssignment,
+  replaceRoleAssignment,
   setTeamManager,
 } from "@/lib/approver-roles-client";
 
@@ -33,6 +34,7 @@ vi.mock("@/lib/approver-roles-client", async (importOriginal) => {
     ...actual,
     createRoleAssignment: vi.fn(),
     removeRoleAssignment: vi.fn(),
+    replaceRoleAssignment: vi.fn(),
     createTeamRoleAssignment: vi.fn(),
     removeTeamRoleAssignment: vi.fn(),
     createCampusRoleAssignment: vi.fn(),
@@ -498,40 +500,50 @@ describe("WideHoldingPanel", () => {
     expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
   });
 
-  it("does not offer an institution role that already has its one holder", () => {
+  it("offers an institution role that already has its holder, to replace it", async () => {
+    vi.mocked(replaceRoleAssignment).mockResolvedValue({
+      id: 77,
+      role: 9,
+      user: 5,
+    } as never);
     renderPanel("institution", {
       roles: ALL_ROLES,
       holdings: [institutionHolding],
+      excludedUserIds: [3],
     });
 
     const roleOptions = Array.from(
       screen.getByLabelText("Role").querySelectorAll("option")
     ).map((option) => option.textContent);
-    // Registrar is held institution-wide, so it is not offered again...
-    expect(roleOptions).not.toContain("Registrar");
-    expect(roleOptions).toContain("Supervisor");
-    // ...and the holder stays listed, with the Remove that changes it.
-    expect(
-      screen.getByText(
-        (_, node) => node?.textContent === "Registrar · Jane Dean"
-      )
-    ).toBeInTheDocument();
+    // Registrar already has its one holder, but it is still offered: choosing a
+    // new person replaces the holder rather than failing.
+    expect(roleOptions).toContain("Registrar");
+    // The holder stays listed, with the Remove that also clears it.
     expect(
       screen.getByRole("button", { name: "Remove Jane Dean from Registrar" })
     ).toBeInTheDocument();
+
+    choose("Role", "9");
+    // The current holder (Jane) is not a candidate to replace herself.
+    expect(personOptions()).not.toContain("Jane Dean");
+    choose("Person", "5");
+    fireEvent.click(screen.getByRole("button", { name: "Replace holder" }));
+
+    await waitFor(() =>
+      expect(replaceRoleAssignment).toHaveBeenCalledWith(77, { user: 5 })
+    );
+    expect(createRoleAssignment).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
   });
 
-  it("says to remove the holder when every institution role already has one", () => {
+  it("still offers the role when its institution holder is the only one", () => {
     renderPanel("institution", {
       roles: [registrar],
       holdings: [institutionHolding],
     });
 
-    expect(
-      screen.getByText(/Remove a holder first/i)
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Role")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
+    // A held institution role is a replace, not a dead end, so the form stays.
+    expect(screen.getByLabelText("Role")).toBeInTheDocument();
   });
 
   it("does not offer an inactive employee", () => {

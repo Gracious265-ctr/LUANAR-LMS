@@ -1,21 +1,20 @@
-"""Configuring a team end to end: create it, validate it, put it in force.
+"""Configuring a team end to end: create it, validate it, let it route.
 
 A team is the object HR actually works with, and these tests exercise it the way
-the product now asks HR to work: name it, describe the chain it needs, check the
-configuration, and only then let it route anything.
+the product now asks HR to work: name it, hand it to a manager, who describes and
+staffs the chain it needs, with validation reporting anything left wrong.
 
 The three properties worth stating up front, because the rest of the file is
 mostly about them:
 
-**A team that is being built does not route.** ``DRAFT`` is the state a team
-spends most of its life in, and it is invisible to the routing engine. The old
-boolean could not express it, so a half-staffed team looked live and only failed
-at submission — from the employee's side, at the worst moment.
+**Creating a team puts it in force.** There is no separate "activate" step for
+HR to forget, so what is left to check is the configuration rather than the
+lifecycle. A team with no chain routes nothing, because there is nothing to route
+through — not because it has yet been switched on.
 
 **Every problem is reported, and the team is left alone.** Validation returns the
-whole list rather than the first failure, and a refused activation keeps the team
-in draft with the configuration HR wrote intact, so a refusal is a to-do list and
-not a dead end.
+whole list rather than the first failure and never changes the team, so a refusal
+is a to-do list and not a dead end.
 
 **What an application was submitted against does not change.** These tests also
 cover the membership history and the stage snapshots that make that true: a
@@ -34,11 +33,12 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
-from leave.models import LeaveApplication
+from leave.models import FinancialYear, LeaveApplication
 from leave.services.submission import ValidationFailedError, submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
 from users.models import EmployeeProfile
 
+<<<<<<< HEAD:backend/chains/tests_team_configuration.py
 from .models import (
     Section,
     SectionMember,
@@ -48,14 +48,21 @@ from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment (
     ApproverRole,
 )
+=======
+>>>>>>> features/team-base:backend/workflows/tests_team_configuration.py
 from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from teams.models import (
-    Team,
-)
+from organisation.models import ApproverRole
+from teams.models import Team
+from workflows.models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import DatabaseWorkflowProvider, WorkflowConfigError
+from approvals.services import (
+    decide,
+)
+from organisation.services import is_approver_user, create_team_role_assignment
+
 from .services import (
     TeamActionError,
     add_section_member,
@@ -64,17 +71,21 @@ from .services import (
     remove_section_member,
     validate_team,
 )
+<<<<<<< HEAD:backend/chains/tests_team_configuration.py
 from roles.services import (
     is_approver_user,
 )
 from approvals.services import (
     decide,
 )
+=======
+>>>>>>> features/team-base:backend/workflows/tests_team_configuration.py
 from .testing import (
     DEV_PASSWORD,
     campus_for,
     ensure_roles,
     make_approver,
+    make_employee,
     make_workflow,
     team_for,
 )
@@ -87,6 +98,7 @@ ANNUAL_START = EARLIEST_ANNUAL_START
 
 TEAMS_URL = "/api/v1/teams/"
 MEMBERS_URL = "/api/v1/section-members/"
+WORKFLOWS_URL = "/api/v1/workflows/"
 
 
 class TeamConfigurationBase(TestCase):
@@ -176,25 +188,105 @@ class TeamConfigurationBase(TestCase):
         ]
 
     def create_team(self, name="Administration team", approvers=None, **extra) -> dict:
+        """Create a team as HR, then let its manager place the approvers and
+        write the chain — the handover the product now makes, exercised through
+        the real API rather than built behind it."""
         chain = self.chain if approvers is None else self.chain_for(approvers)
+        team = self.bare_team(name, **extra)
+        self.place_on_team(
+            team,
+            *[User.objects.get(pk=step["approver"]) for step in chain if step.get("approver")],
+        )
+        response = self.build_chain(team, chain)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        return self.read(team.pk)
+
+    def activate(self, team_id: int) -> dict:
+        """Assert the team is in force, which creating it already made true.
+
+        Kept as a named step so a test that needs a live team still says so,
+        while making it obvious there is no action left for anyone to perform.
+        """
+        row = self.read(team_id)
+        self.assertEqual(row["status"], Team.Status.ACTIVE, row)
+        return row
+
+    def manager_client(self, team) -> APIClient:
+        """An authenticated client for ``team``'s designated manager.
+
+        Staffing a team's steps follows the handover: HR creates the team and
+        names its manager, who then runs the roster. Tests that appoint or clear
+        a step approver therefore act as the manager, built to match the team's
+        category so the designation itself is valid.
+        """
+        if not hasattr(self, "_manager_clients"):
+            self._manager_clients: dict[int, APIClient] = {}
+        if team.pk not in self._manager_clients:
+            manager = make_employee(
+                f"manager-{team.pk}@teamflow.test", team=None, category=team.category
+            )
+            create_team_role_assignment(
+                team=team,
+                role=ensure_roles("dvc")["dvc"],
+                user=manager,
+                actor=self.hr,
+                is_team_manager=True,
+            )
+            client = APIClient()
+            client.force_authenticate(manager)
+            self._manager_clients[team.pk] = client
+        return self._manager_clients[team.pk]
+
+    def appoint(self, section, user, **extra):
+        """POST a section appointment as ``section``'s team manager."""
+        payload = {"section": section.pk, "user": getattr(user, "pk", user), **extra}
+        return self.manager_client(section.workflow.team).post(
+            MEMBERS_URL, payload, format="json"
+        )
+
+    def unappoint(self, membership):
+        """DELETE a section membership as its team's manager."""
+        return self.manager_client(membership.section.workflow.team).delete(
+            f"{MEMBERS_URL}{membership.pk}/"
+        )
+
+    def place_on_team(self, team: Team, *people) -> None:
+        """Put people on a team, the way its manager places members.
+
+        A team-scoped approver must be a member of the team they approve for, so
+        a chain that names somebody is only written after they are on the team.
+        """
+        for person in people:
+            profile = EmployeeProfile.objects.get(user=person)
+            profile.team = team
+            profile.save(update_fields=["team"])
+
+    def bare_team(self, name: str = "Administration team", **extra) -> Team:
+        """A team with no chain, as HR saves it before the manager writes one."""
         payload: dict = {
             "name": name,
             "description": "Administration approval chain",
-            "new_workflow": {"sections": chain},
         }
         payload.update(extra)
         response = self.client.post(TEAMS_URL, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        return response.data
+        return Team.objects.get(pk=response.data["id"])
 
-    def activate(self, team_id: int) -> dict:
-        """Return the team, which is in force from creation.
+    def build_chain(self, team: Team, sections: list, *, name: str | None = None):
+        """The team's manager writes its chain through the workflow endpoint."""
+        payload: dict = {"team": team.pk, "sections": sections, "name": name or f"{team.name} chain"}
+        return self.manager_client(team).post(WORKFLOWS_URL, payload, format="json")
 
-        A team is put in force by creating it, so there is no activation step to
-        take. Kept as a named helper because the routing tests read as "the team
-        is live" at this point, and that is still true.
-        """
-        return self.read(team_id)
+    def edit_chain(self, team: Team, sections: list, *, name: str | None = None):
+        """The team's manager rewrites the team's chain in place."""
+        payload: dict = {"sections": sections}
+        if name is not None:
+            payload["name"] = name
+        else:
+            payload["name"] = f"{(team.workflows.first().name if team.workflows.first() else team.name)} chain"
+        return self.manager_client(team).patch(
+            f"{WORKFLOWS_URL}{team.workflows.first().id}/", payload, format="json"
+        )
 
     def read(self, team_id: int) -> dict:
         response = self.client.get(f"{TEAMS_URL}{team_id}/")
@@ -206,11 +298,19 @@ class TeamConfigurationBase(TestCase):
             user=self.employee,
             defaults={"team": team},
         )
-        # Writing the profile caches it on the user instance, holding on to the
+        # Routing follows membership, not merely being on the team: an employee
+        # with no workflow membership is refused at submission. A test that
+        # places an employee to watch them route therefore enrolls them in the
+        # team's chain as well.
+        chain = team.workflows.first()
+        if chain is not None:
+            WorkflowMember.objects.get_or_create(
+                workflow=chain, user=self.employee, defaults={"team": team}
+            )
+        # Writing the profile caches the user instance, holding on to the
         # Team object the caller passed — which may be a read taken before the
-        # team's chain was written. Dropping the cache means the routing
-        # assertions below are reading what is in the database, not what the
-        # test remembers.
+        # team was activated. Dropping the cache means the routing assertions
+        # below are reading what is in the database, not what the test remembers.
         self.employee.refresh_from_db()
 
     def use_real_workflow_provider(self):
@@ -234,22 +334,22 @@ class TeamCreationTests(TeamConfigurationBase):
     def test_a_team_is_created_with_its_workflow_sections_and_approvers(self):
         team = self.create_team()
         self.assertEqual(team["status"], Team.Status.ACTIVE)
-        self.assertTrue(team["workflow_name"])
+        self.assertTrue(team["workflows"])
 
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["supervisor", "hod"],
         )
         self.assertEqual(
-            stored.workflow.sections.get(approver_role__code="supervisor").approver_id,
+            stored.workflows.first().sections.get(approver_role__code="supervisor").approver_id,
             self.supervisor.pk,
         )
         # Each appointment is also an effective-dated period, so the history of
         # who held the step is a record rather than a snapshot.
         self.assertEqual(
             SectionMember.objects.get(
-                section=stored.workflow.sections.get(approver_role__code="supervisor"),
+                section=stored.workflows.first().sections.get(approver_role__code="supervisor"),
                 user=self.supervisor,
             ).effective_to,
             None,
@@ -261,21 +361,24 @@ class TeamCreationTests(TeamConfigurationBase):
         A chain whose order depended on submission order would let a client
         silently reshuffle a live approval sequence by re-sending the same steps.
         """
-        team = self.create_team(
-            name="Reversed team",
-            new_workflow={"sections": list(reversed(self.chain))},
-        )
-        stored = Team.objects.get(pk=team["id"])
+        team = self.bare_team("Reversed team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(team, list(reversed(self.chain)))
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [
+                s.approver_role.code
+                for s in Team.objects.get(pk=team.pk).workflows.first().sections.order_by("order")
+            ],
             ["hod", "supervisor"],
         )
 
     def test_a_named_chain_is_used_verbatim(self):
-        team = self.create_team(
-            new_workflow={"name": "ICT leave chain", "sections": self.chain}
-        )
-        self.assertEqual(Team.objects.get(pk=team["id"]).workflow.name, "ICT leave chain")
+        team = self.bare_team("Named chain team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(team, self.chain, name="ICT leave chain")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Team.objects.get(pk=team.pk).workflows.first().name, "ICT leave chain")
 
     def test_a_clashing_chain_name_is_suffixed_rather_than_rejected(self):
         """The team name is what HR typed; a chain name collision is our problem.
@@ -287,7 +390,7 @@ class TeamCreationTests(TeamConfigurationBase):
         Workflow.objects.create(name="Administration workflow")
         team = self.create_team()
         self.assertNotEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, "Administration workflow"
+            Team.objects.get(pk=team["id"]).workflows.first().name, "Administration workflow"
         )
 
     def test_a_team_owns_its_chain(self):
@@ -301,7 +404,7 @@ class TeamCreationTests(TeamConfigurationBase):
         second = self.create_team(
             name="Second team", approvers=self.approvers_for("second")
         )
-        self.assertNotEqual(first["workflow"], second["workflow"])
+        self.assertNotEqual(first["workflows"][0]["id"], second["workflows"][0]["id"])
         self.assertEqual(
             Workflow.objects.filter(team__isnull=False).count(),
             Team.objects.count(),
@@ -312,9 +415,8 @@ class TeamCreationTests(TeamConfigurationBase):
 
         A team is named before anybody knows which posts it needs to route
         through, so refusing a team with no chain would force HR to know the
-        answer up front. It is saved in force but chainless, routing nothing
-        until it owns a chain \u2014 validation names the gap, which lives in
-        TeamValidationTests.
+        answer up front. It is saved as a draft, and activation is what refuses a
+        chainless team \u2014 that check lives in TeamValidationTests.
         """
         response = self.client.post(
             TEAMS_URL,
@@ -323,29 +425,22 @@ class TeamCreationTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(response.data["status"], Team.Status.ACTIVE)
-        self.assertIsNone(response.data["workflow"])
+        self.assertEqual(response.data["workflows"], [])
         self.assertEqual(response.data["sections"], [])
         self.assertEqual(response.data["members"], [])
 
     def test_a_workflow_sent_on_create_is_refused(self):
         """A new team cannot adopt a chain that already exists.
 
-        ``workflow`` is the pointer a team routes through, and it only ever
-        names a chain the team owns. A chain built for another team is exactly
-        that — somebody else's steps — so the request is refused outright
-        rather than half-honoured, and the team is not created without a chain
-        the caller thought it had attached.
+        ``workflow`` used to be the pointer a team routed through, written by
+        HR. Routing is the manager's decision now, so the field is refused
+        outright rather than half-honoured, and the team is not created with a
+        chain the caller thought it had attached.
         """
         other = self.create_team(name="Other team", approvers=self.approvers_for("other"))
         response = self.client.post(
             TEAMS_URL,
-            {
-                "name": "Copying team",
-                "workflow": other["workflow"],
-                "new_workflow": {
-                    "sections": self.chain_for(self.approvers_for("copying")),
-                },
-            },
+            {"name": "Copying team", "workflow": other["workflows"][0]["id"]},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -434,26 +529,19 @@ class TeamCreationTests(TeamConfigurationBase):
         roster is ignored, and the test says so explicitly: what matters is that
         the resulting step has no approver, not that a key was rejected.
         """
-        response = self.client.post(
-            TEAMS_URL,
-            {
-                "name": "Roster team",
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Supervisor step",
-                            "approver_role": "supervisor",
-                            "members": [self.supervisor.pk],
-                        }
-                    ]
-                },
-            },
-            format="json",
+        team = self.bare_team("Roster team")
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "Supervisor step",
+                    "approver_role": "supervisor",
+                    "members": [self.supervisor.pk],
+                }
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        section = Team.objects.get(pk=response.data["id"]).workflow.sections.get(
-            order=1
-        )
+        section = Team.objects.get(pk=team.pk).workflows.first().sections.get(order=1)
         self.assertIsNone(section.approver_id)
 
     def test_one_may_not_hold_two_stages_of_one_chain(self):
@@ -464,30 +552,26 @@ class TeamCreationTests(TeamConfigurationBase):
         with two different roles, so the per-team role rule does not fire
         first and the refusal is unambiguously the per-workflow one.
         """
-        response = self.client.post(
-            TEAMS_URL,
-            {
-                "name": "Two step team",
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "First look",
-                            "approver_role": "supervisor",
-                            "approver": self.supervisor.pk,
-                        },
-                        {
-                            "name": "Second look",
-                            "approver_role": "hod",
-                            "approver": self.supervisor.pk,
-                        },
-                    ]
+        team = self.bare_team("Two step team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "First look",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
                 },
-            },
-            format="json",
+                {
+                    "name": "Second look",
+                    "approver_role": "hod",
+                    "approver": self.supervisor.pk,
+                },
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already assigned to step 1", str(response.data))
-        self.assertEqual(Team.objects.filter(name="Two step team").count(), 0)
+        self.assertIsNone(Team.objects.get(pk=team.pk).workflows.first())
 
     def test_a_role_may_not_repeat_across_stages_of_one_chain(self):
         """The other leg: a role is on one stage per workflow too (Unit 30).
@@ -496,30 +580,26 @@ class TeamCreationTests(TeamConfigurationBase):
         this payload — the employee on both steps is a second problem that HR
         only reaches once the roles are distinct.
         """
-        response = self.client.post(
-            TEAMS_URL,
-            {
-                "name": "Two step team",
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "First look",
-                            "approver_role": "supervisor",
-                            "approver": self.supervisor.pk,
-                        },
-                        {
-                            "name": "Second look",
-                            "approver_role": "supervisor",
-                            "approver": self.hod.pk,
-                        },
-                    ]
+        team = self.bare_team("Two step team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "First look",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
                 },
-            },
-            format="json",
+                {
+                    "name": "Second look",
+                    "approver_role": "supervisor",
+                    "approver": self.hod.pk,
+                },
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("already assigned to another stage", str(response.data))
-        self.assertEqual(Team.objects.filter(name="Two step team").count(), 0)
+        self.assertIsNone(Team.objects.get(pk=team.pk).workflows.first())
 
     def test_the_one_role_rule_does_not_reach_across_teams(self):
         """The restriction is scoped to a team, not global.
@@ -551,7 +631,7 @@ class TeamCreationTests(TeamConfigurationBase):
             Section.objects.filter(
                 approver_role__code="supervisor",
                 approver=records_supervisor,
-                workflow_id=second["workflow"],
+                workflow_id=second["workflows"][0]["id"],
             ).count(),
             1,
         )
@@ -567,20 +647,18 @@ class TeamCreationTests(TeamConfigurationBase):
             ).exists()
         )
         # The chain's own creation, as opposed to the appointments written with
-        # it \u2014 both are audited, so this asks for the one that names the team.
+        # it — both are audited, so this asks for the one that names the team.
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.WORKFLOW,
             action=AuditEntry.Action.CREATED,
-            detail__after__created_with_team="Administration team",
+            target_id=str(team["workflows"][0]["id"]),
+            reason__startswith="Created for the",
         )
-        self.assertEqual(entry.detail["after"]["created_with_team"], "Administration team")
         self.assertEqual(
-            [
-                s["approver_role"]
-                for s in entry.detail["after"]["workflow"]["sections"]
-            ],
+            [s["approver_role"] for s in entry.detail["after"]["sections"]],
             ["supervisor", "hod"],
         )
+        self.assertIn("Administration team", entry.reason)
 
     def test_non_hr_cannot_configure_a_team(self):
         self.client.force_authenticate(self.employee)
@@ -605,33 +683,28 @@ class TeamCreationTests(TeamConfigurationBase):
 
 
 class TeamChainEditingTests(TeamConfigurationBase):
-    """Editing a team's chain, which happens on the team and nowhere else.
+    """Editing a team's chain, which is the manager's job and nowhere else.
 
-    A chain is written in the same request as the team, so its steps are edited
-    in the same request as the team. The team form is the only writer, which
-    means these tests are the only place the "edit the steps" path is covered —
-    and they are what stops a later change from quietly re-introducing a second
-    place to edit a chain.
+    HR creates the team and names its manager; the manager writes and rewrites
+    the chain through the workflow endpoint. The manager's edit is the only
+    writer, which means these tests are the only place the "edit the steps"
+    path is covered — and they are what stops a later change from quietly
+    re-introducing HR as a second place to edit a chain.
     """
 
-    def test_the_steps_can_be_rewritten_by_saving_the_team(self):
+    def test_the_steps_can_be_rewritten_by_the_manager(self):
         team = self.create_team()
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {"name": "Supervisor", "approver_role": "supervisor"},
-                        {"name": "Dean", "approver_role": "dean"},
-                    ]
-                }
-            },
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [
+                {"name": "Supervisor", "approver_role": "supervisor"},
+                {"name": "Dean", "approver_role": "dean"},
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["supervisor", "dean"],
         )
 
@@ -642,20 +715,17 @@ class TeamChainEditingTests(TeamConfigurationBase):
         their stages point at the sections the team used to have.
         """
         team = self.create_team()
-        original_chain = team["workflow"]
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "name": "Renamed team",
-                "new_workflow": {
-                    "sections": [{"name": "Only step", "approver_role": "supervisor"}]
-                },
-            },
-            format="json",
+        original_chain = team["workflows"][0]["id"]
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Only step", "approver_role": "supervisor"}],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.client.patch(
+            f"{TEAMS_URL}{team['id']}/", {"name": "Renamed team"}, format="json"
+        )
         stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.workflow_id, original_chain)
+        self.assertEqual(stored.workflows.first().id, original_chain)
         self.assertEqual(stored.name, "Renamed team")
 
     def test_reordering_keeps_each_step_and_its_approver(self):
@@ -667,32 +737,27 @@ class TeamChainEditingTests(TeamConfigurationBase):
         """
         team = self.create_team()
         sections = list(
-            Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+            Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
         )
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": s.name,
-                            "approver_role": s.approver_role.code,
-                            "approver": s.approver_id,
-                        }
-                        for s in reversed(sections)
-                    ]
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [
+                {
+                    "name": s.name,
+                    "approver_role": s.approver_role.code,
+                    "approver": s.approver_id,
                 }
-            },
-            format="json",
+                for s in reversed(sections)
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         stored = Team.objects.get(pk=team["id"])
         self.assertEqual(
-            [s.approver_role.code for s in stored.workflow.sections.order_by("order")],
+            [s.approver_role.code for s in stored.workflows.first().sections.order_by("order")],
             ["hod", "supervisor"],
         )
         self.assertEqual(
-            stored.workflow.sections.get(approver_role__code="hod").approver_id,
+            stored.workflows.first().sections.get(approver_role__code="hod").approver_id,
             self.hod.pk,
         )
 
@@ -704,23 +769,18 @@ class TeamChainEditingTests(TeamConfigurationBase):
         check is what says so.
         """
         team = self.create_team()
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {"name": "Renamed supervisor step", "approver_role": "supervisor"},
-                        {
-                            "name": "Head of Department approval",
-                            "approver_role": "hod",
-                        },
-                    ]
-                }
-            },
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [
+                {"name": "Renamed supervisor step", "approver_role": "supervisor"},
+                {
+                    "name": "Head of Department approval",
+                    "approver_role": "hod",
+                },
+            ],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        chain = Team.objects.get(pk=team["id"]).workflow
+        chain = Team.objects.get(pk=team["id"]).workflows.first()
         renamed = chain.sections.get(name="Renamed supervisor step")
         self.assertIsNone(renamed.approver_id)
         # The step that did not change kept its approver, so renaming one step is
@@ -732,31 +792,25 @@ class TeamChainEditingTests(TeamConfigurationBase):
 
     def test_editing_the_steps_is_audited_against_the_chain(self):
         team = self.create_team()
-        self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [{"name": "Single step", "approver_role": "supervisor"}]
-                }
-            },
-            format="json",
+        self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Single step", "approver_role": "supervisor"}],
         )
         entry = AuditEntry.objects.get(
             target_type=AuditEntry.TargetType.WORKFLOW,
             action=AuditEntry.Action.UPDATED,
-            target_id=str(team["workflow"]),
+            target_id=str(team["workflows"][0]["id"]),
         )
         self.assertEqual(entry.detail["team"], "Administration team")
 
-    def test_the_chain_can_be_renamed_with_the_team(self):
+    def test_the_chain_can_be_renamed_by_the_manager(self):
         team = self.create_team()
-        self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {"new_workflow": {"name": "ICT leave chain", "sections": self.chain}},
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]), self.chain, name="ICT leave chain"
         )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, "ICT leave chain"
+            Team.objects.get(pk=team["id"]).workflows.first().name, "ICT leave chain"
         )
 
     def test_renaming_a_team_does_not_alter_its_chain_name(self):
@@ -767,118 +821,81 @@ class TeamChainEditingTests(TeamConfigurationBase):
         changes nobody made.
         """
         team = self.create_team()
-        chain_name = team["workflow_name"]
+        chain_name = team["workflows"][0]["name"]
         self.client.patch(
             f"{TEAMS_URL}{team['id']}/", {"name": "Better name"}, format="json"
         )
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.name, chain_name
+            Team.objects.get(pk=team["id"]).workflows.first().name, chain_name
         )
 
     def test_editing_the_steps_does_not_change_the_status(self):
         """Chain edits are configuration, not lifecycle.
 
-        A team is put in force by creating it and retired only through its own
-        action, so a form save that happens to include a steps change must not
-        quietly retire or revive the team.
+        A team is in force from creation, so a chain save must not quietly take
+        it out of service — or bring a retired one back.
         """
         team = self.create_team()
-        self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [{"name": "Step", "approver_role": "supervisor"}]
-                },
-                "status": Team.Status.INACTIVE,
-            },
-            format="json",
+        self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Step", "approver_role": "supervisor"}],
         )
         self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.ACTIVE)
 
     def test_an_empty_step_list_is_refused_on_edit(self):
         """A team whose steps were all deleted would route nothing."""
         team = self.create_team()
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {"new_workflow": {"sections": []}},
-            format="json",
-        )
+        response = self.edit_chain(Team.objects.get(pk=team["id"]), [])
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.sections.count(), 2
+            Team.objects.get(pk=team["id"]).workflows.first().sections.count(), 2
         )
 
     def test_a_bad_role_is_refused_on_edit_and_leaves_the_steps_alone(self):
         team = self.create_team()
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [{"name": "Step", "approver_role": "not-a-role"}]
-                }
-            },
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Step", "approver_role": "not-a-role"}],
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            Team.objects.get(pk=team["id"]).workflow.sections.count(), 2
+            Team.objects.get(pk=team["id"]).workflows.first().sections.count(), 2
         )
 
-    def test_a_form_save_can_appoint_one_approver_to_a_step(self):
-        """The form names each step's approver, so staffing is part of writing it.
-
-        One person per step, written with the chain: there is no separate roster
-        to keep in step with the steps themselves. A *change* of approver is
-        still audited as its own fact by the membership record, so the handover
-        stays answerable after it.
+    def test_a_chain_can_appoint_one_approver_to_a_step(self):
+        """The manager names each step's approver, so staffing is part of writing
+        the chain. One person per step: there is no separate roster to keep in
+        step with the steps themselves. A *change* of approver is still audited
+        as its own fact by the membership record, so the handover stays
+        answerable after it.
         """
-        team = self.create_team(
-            name="Unstaffed team",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor", "approver_role": "supervisor"},
-                    {"name": "Hod", "approver_role": "hod"},
-                ]
-            },
+        team = self.bare_team("Unstaffed team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "Supervisor",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
+                },
+                {
+                    "name": "Hod",
+                    "approver_role": "hod",
+                    "approver": self.hod.pk,
+                },
+            ],
         )
-        # Re-pointing a step does not move people between teams: an existing
-        # team's approver has to be one of its members already, so HR puts them
-        # on the team first and only then names them to the step.
-        for person in (self.supervisor, self.hod):
-            profile = person.employee_profile
-            profile.team = Team.objects.get(pk=team["id"])
-            profile.save(update_fields=["team"])
-            person.refresh_from_db()
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Supervisor",
-                            "approver_role": "supervisor",
-                            "approver": self.supervisor.pk,
-                        },
-                        {
-                            "name": "Hod",
-                            "approver_role": "hod",
-                            "approver": self.hod.pk,
-                        },
-                    ]
-                }
-            },
-            format="json",
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        stored = Team.objects.get(pk=team["id"])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        stored = Team.objects.get(pk=team.pk)
         self.assertEqual(
             [
-                s.approver_id for s in stored.workflow.sections.order_by("order")
+                s.approver_id for s in stored.workflows.first().sections.order_by("order")
             ],
             [self.supervisor.pk, self.hod.pk],
         )
         self.assertEqual(
-            SectionMember.objects.filter(section__workflow=stored.workflow).count(), 2
+            SectionMember.objects.filter(section__workflow=stored.workflows.first()).count(), 2
         )
 
 
@@ -901,21 +918,22 @@ class TeamValidationTests(TeamConfigurationBase):
         self.assertEqual(response.data["issues"], [])
 
     def test_a_step_nobody_can_act_for_is_named(self):
-        team = self.create_team(
-            name="Gap team",
-            new_workflow={
-                "sections": [
-                    {
-                        "name": "Supervisor step",
-                        "approver_role": "supervisor",
-                        "approver": self.supervisor.pk,
-                    },
-                    {"name": "Head of Department step", "approver_role": "hod"},
-                ]
-            },
+        team = self.bare_team("Gap team")
+        self.place_on_team(team, self.supervisor)
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "Supervisor step",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
+                },
+                {"name": "Head of Department step", "approver_role": "hod"},
+            ],
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/validate/", format="json"
+            f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
         self.assertFalse(response.data["ready"])
         issue = response.data["issues"][0]
@@ -929,18 +947,18 @@ class TeamValidationTests(TeamConfigurationBase):
         Reporting only the first would make a long, tedious loop of fixing one
         step, re-submitting, and discovering the next.
         """
-        team = self.create_team(
-            name="Three gaps",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"},
-                    {"name": "Head step", "approver_role": "hod"},
-                    {"name": "Dean step", "approver_role": "dean"},
-                ]
-            },
+        team = self.bare_team("Three gaps")
+        response = self.build_chain(
+            team,
+            [
+                {"name": "Supervisor step", "approver_role": "supervisor"},
+                {"name": "Head step", "approver_role": "hod"},
+                {"name": "Dean step", "approver_role": "dean"},
+            ],
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/validate/", format="json"
+            f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
         self.assertEqual(
             sorted(issue["section"] for issue in response.data["issues"]), [1, 2, 3]
@@ -976,7 +994,7 @@ class TeamValidationTests(TeamConfigurationBase):
 
     def test_a_chain_with_no_active_steps_is_reported(self):
         team = Team.objects.get(pk=self.create_team()["id"])
-        team.workflow.sections.update(is_active=False)
+        team.workflows.first().sections.update(is_active=False)
         response = self.client.post(
             f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
@@ -985,8 +1003,9 @@ class TeamValidationTests(TeamConfigurationBase):
 
     def test_a_retired_workflow_is_reported(self):
         team = Team.objects.get(pk=self.create_team()["id"])
-        team.workflow.is_active = False
-        team.workflow.save(update_fields=["is_active"])
+        chain = team.workflows.first()
+        chain.is_active = False
+        chain.save(update_fields=["is_active"])
         response = self.client.post(
             f"{TEAMS_URL}{team.pk}/validate/", format="json"
         )
@@ -1049,40 +1068,46 @@ class TeamValidationTests(TeamConfigurationBase):
         application is materialised with their own team's step.
         """
         self.use_real_workflow_provider()
-        registry_chain = [
-            {
-                "name": "Supervisor approval",
-                "approver_role": "supervisor",
-                "approver": self.supervisor.pk,
-            }
-        ]
-        records_chain = [
-            {
-                "name": "Head of Department approval",
-                "approver_role": "hod",
-                "approver": self.hod.pk,
-            }
-        ]
-        registry = self.create_team(
-            name="Registry team", new_workflow={"sections": registry_chain}
+        registry = self.bare_team("Registry team")
+        self.place_on_team(registry, self.supervisor)
+        created = self.build_chain(
+            registry,
+            [
+                {
+                    "name": "Supervisor approval",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
+                }
+            ],
         )
-        records = self.create_team(
-            name="Records team", new_workflow={"sections": records_chain}
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        records = self.bare_team("Records team")
+        self.place_on_team(records, self.hod)
+        created = self.build_chain(
+            records,
+            [
+                {
+                    "name": "Head of Department approval",
+                    "approver_role": "hod",
+                    "approver": self.hod.pk,
+                }
+            ],
         )
-        registry_row = Team.objects.get(pk=registry["id"])
-        records_row = Team.objects.get(pk=records["id"])
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        registry_row = Team.objects.get(pk=registry.pk)
+        records_row = Team.objects.get(pk=records.pk)
         self.activate(registry_row.pk)
         self.activate(records_row.pk)
         # Two active teams, two distinct chains.
-        self.assertNotEqual(registry_row.workflow_id, records_row.workflow_id)
+        self.assertNotEqual(registry_row.workflows.first().id, records_row.workflows.first().id)
 
         registry_stages = self.stages_for(registry_row)
         records_stages = self.stages_for(records_row)
         self.assertEqual([s.role for s in registry_stages], ["supervisor"])
         self.assertEqual([s.role for s in records_stages], ["hod"])
         # And the steps are the two chains' own sections, not one shared chain.
-        registry_sections = set(registry_row.workflow.sections.values_list("pk", flat=True))
-        records_sections = set(records_row.workflow.sections.values_list("pk", flat=True))
+        registry_sections = set(registry_row.workflows.first().sections.values_list("pk", flat=True))
+        records_sections = set(records_row.workflows.first().sections.values_list("pk", flat=True))
         self.assertEqual({s.section_id for s in registry_stages}, registry_sections)
         self.assertEqual({s.section_id for s in records_stages}, records_sections)
         self.assertFalse(registry_sections & records_sections)
@@ -1107,41 +1132,37 @@ class TeamValidationTests(TeamConfigurationBase):
         registry = self.create_team(name="Registry team")
         # The same role again on the same chain: already appointed, so it is a
         # no-op rather than a second appointment.
-        same_role = self.client.patch(
-            f"{TEAMS_URL}{registry['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Supervisor approval",
-                            "approver_role": "supervisor",
-                            "approver": self.supervisor.pk,
-                        }
-                    ]
+        same_role = self.edit_chain(
+            Team.objects.get(pk=registry["id"]),
+            [
+                {
+                    "name": "Supervisor approval",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
                 }
-            },
-            format="json",
+            ],
         )
         self.assertEqual(same_role.status_code, status.HTTP_200_OK, same_role.data)
 
         # A second team may hold the same office through a different person: the
         # scope is the team, so nothing is compared across them.
         records_supervisor, _ = self.approvers_for("records")
-        elsewhere = self.create_team(
-            name="Records team",
-            new_workflow={
-                "sections": [
-                    {
-                        "name": "Dean approval",
-                        "approver_role": "dean",
-                        "approver": records_supervisor.pk,
-                    }
-                ]
-            },
+        elsewhere = self.bare_team("Records team")
+        self.place_on_team(elsewhere, records_supervisor)
+        response = self.build_chain(
+            elsewhere,
+            [
+                {
+                    "name": "Dean approval",
+                    "approver_role": "dean",
+                    "approver": records_supervisor.pk,
+                }
+            ],
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(
-            Team.objects.get(pk=elsewhere["id"])
-            .workflow.sections.get(approver_role__code="dean")
+            Team.objects.get(pk=elsewhere.pk)
+            .workflows.first().sections.get(approver_role__code="dean")
             .approver_id,
             records_supervisor.pk,
         )
@@ -1149,25 +1170,20 @@ class TeamValidationTests(TeamConfigurationBase):
         # On its own team, though, self.supervisor cannot take a second step in
         # another role while still holding the first.
         ensure_roles("dean")
-        refused = self.client.patch(
-            f"{TEAMS_URL}{registry['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Supervisor approval",
-                            "approver_role": "supervisor",
-                            "approver": self.supervisor.pk,
-                        },
-                        {
-                            "name": "Dean approval",
-                            "approver_role": "dean",
-                            "approver": self.supervisor.pk,
-                        },
-                    ]
-                }
-            },
-            format="json",
+        refused = self.edit_chain(
+            Team.objects.get(pk=registry["id"]),
+            [
+                {
+                    "name": "Supervisor approval",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
+                },
+                {
+                    "name": "Dean approval",
+                    "approver_role": "dean",
+                    "approver": self.supervisor.pk,
+                },
+            ],
         )
         self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST, refused.data)
         self.assertIn("one stage per workflow", str(refused.data).lower())
@@ -1185,11 +1201,11 @@ class TeamValidationTests(TeamConfigurationBase):
             .exists()
         )
 
-    def test_an_approver_cannot_validate_or_retire(self):
+    def test_an_approver_cannot_validate_or_activate(self):
         """Approver status is not administrative authority.
 
-        Somebody who can act on a step is not thereby allowed to inspect a
-        team's readiness or take it out of service; only HR is.
+        Somebody who can act on a step is not thereby allowed to put teams in
+        force; only HR is.
         """
         team = self.create_team()
         self.client.force_authenticate(self.supervisor)
@@ -1198,111 +1214,81 @@ class TeamValidationTests(TeamConfigurationBase):
             self.assertEqual(
                 response.status_code, status.HTTP_403_FORBIDDEN, url
             )
+        response = self.client.post(f"{TEAMS_URL}{team['id']}/activate/", format="json")
+        self.assertIn(response.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
 
 
-class TeamLifecycleTests(TeamConfigurationBase):
-    """A team is in force from creation; retiring takes it back out."""
+class TeamActivationTests(TeamConfigurationBase):
+    """Teams are in force from the moment HR creates them.
 
-    def test_a_created_team_is_in_force(self):
-        team = self.create_team()
-        stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.status, Team.Status.ACTIVE)
+    Creation *is* the act of putting a team into force, so there is no second
+    confirmation for HR to give and no action left to call. What remains of the
+    lifecycle is what a team in force does, how it is dated, and the one move
+    that takes it back out.
+    """
 
-    def test_creating_a_team_dates_the_workflow_it_routes_through(self):
-        """A chain is dated when it is written, so it agrees with the team.
+    def test_a_team_is_in_force_the_moment_it_is_created(self):
+        team = self.bare_team("Fresh team")
+        self.assertEqual(Team.objects.get(pk=team.pk).status, Team.Status.ACTIVE)
 
-        The team is in force the moment it is created; dating the chain it owns
-        in the same transaction is what stops the two disagreeing about whether
-        this approval path applies.
-        """
-        team = self.create_team()
-        stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.workflow.effective_from, timezone.localdate())
-
-    def test_a_draft_team_does_not_route(self):
-        """A legacy draft team routes nothing.
-
-        Teams are in force from creation, so a draft is only reachable as a
-        legacy row. The provider still refuses to route one, which is what keeps
-        an older half-configured team from stranding an application.
-        """
-        team = Team.objects.get(pk=self.create_team()["id"])
-        Team.objects.filter(pk=team.pk).update(status=Team.Status.DRAFT)
-        team.refresh_from_db()
-        self.place_employee(team)
-        with self.assertRaises(WorkflowConfigError) as ctx:
-            DatabaseWorkflowProvider().get_stage_definitions(
-                LeaveApplication(employee=self.employee)
-            )
-        self.assertIn("still being set up", str(ctx.exception))
-
-    def test_an_unstaffed_team_is_reported_unready(self):
-        team = self.create_team(
-            name="Unstaffed team",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"}
-                ]
-            },
-        )
-        stored = Team.objects.get(pk=team["id"])
-        readiness = validate_team(stored)
-        self.assertFalse(readiness.ready)
-        self.assertEqual(readiness.issues[0].code, "no_approver")
-
-    def test_validation_returns_every_problem(self):
-        team = self.create_team(
-            name="Two gaps",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"},
-                    {"name": "Head step", "approver_role": "hod"},
-                ]
-            },
-        )
-        response = self.client.post(
-            f"{TEAMS_URL}{team['id']}/validate/", format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["issues"]), 2)
-        self.assertFalse(response.data["ready"])
-
-    def test_an_unready_team_keeps_its_configuration(self):
-        """Readiness is a to-do list, not a reason to discard what HR wrote.
-
-        The team is in force and its chain is intact; validation names the gap
-        rather than throwing the configuration away.
-        """
-        team = self.create_team(
-            name="Unstaffed team",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"}
-                ]
-            },
-        )
-        self.client.post(f"{TEAMS_URL}{team['id']}/validate/", format="json")
-        stored = Team.objects.get(pk=team["id"])
-        self.assertEqual(stored.workflow.sections.count(), 1)
-        self.assertEqual(stored.status, Team.Status.ACTIVE)
-
-    def test_creating_a_team_is_audited(self):
-        team = self.create_team()
-        entry = AuditEntry.objects.get(
-            target_type=AuditEntry.TargetType.TEAM,
-            target_id=str(team["id"]),
-            action=AuditEntry.Action.CREATED,
-        )
-        self.assertEqual(entry.actor, self.hr)
-        self.assertEqual(entry.detail["after"]["status"], Team.Status.ACTIVE)
-
-    def test_there_is_no_activation_action(self):
-        """Putting a team in force is creating it; there is no second step."""
+    def test_there_is_no_activation_action_left_to_call(self):
+        """A second confirmation of something that already happened."""
         team = self.create_team()
         response = self.client.post(
             f"{TEAMS_URL}{team['id']}/activate/", format="json"
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.ACTIVE)
+
+    def test_creating_a_chain_dates_it_to_the_academic_year(self):
+        """A chain starts today and closes at the end of the academic calendar.
+
+        A chain is a statement about a term, so it is written against the year
+        the team is configured in rather than left open-ended: without a closing
+        date it would still read as in force years after the year it was written
+        for has ended.
+        """
+        today = timezone.localdate()
+        year = FinancialYear.objects.create(
+            start_date=today.replace(month=1, day=1),
+            end_date=today.replace(month=12, day=31),
+            is_active=True,
+        )
+        team = self.create_team()
+        stored = Team.objects.get(pk=team["id"])
+        self.assertEqual(stored.workflows.first().effective_from, today)
+        self.assertEqual(stored.workflows.first().effective_to, year.end_date)
+        self.assertEqual(stored.workflows.first().state, "active")
+
+    def test_a_chain_written_without_an_academic_year_has_no_end_date(self):
+        """Nothing configured means no boundary at all, rather than a guess."""
+        self.assertFalse(FinancialYear.objects.filter(is_active=True).exists())
+        team = self.create_team()
+        stored = Team.objects.get(pk=team["id"])
+        self.assertIsNone(stored.workflows.first().effective_to)
+        self.assertEqual(stored.workflows.first().state, "active")
+
+    def test_editing_the_chain_keeps_the_date_it_was_given(self):
+        team = self.create_team()
+        stored = Team.objects.get(pk=team["id"])
+        chain = stored.workflows.first()
+        chain.effective_from = timezone.localdate() - timedelta(days=5)
+        chain.save(update_fields=["effective_from"])
+        self.edit_chain(stored, [{"name": "Step", "approver_role": "supervisor"}])
+        self.assertEqual(
+            Team.objects.get(pk=team["id"]).workflows.first().effective_from,
+            timezone.localdate() - timedelta(days=5),
+        )
+
+    def test_a_team_in_force_without_a_chain_routes_nothing(self):
+        """There is nothing to route through, rather than something not switched on."""
+        team = self.bare_team("No chain yet")
+        self.place_employee(team)
+        with self.assertRaises(WorkflowConfigError) as ctx:
+            DatabaseWorkflowProvider().get_stage_definitions(
+                LeaveApplication(employee=self.employee)
+            )
+        self.assertIn("no approval workflow", str(ctx.exception))
 
     def test_retiring_stops_new_submissions(self):
         team = self.create_team()
@@ -1311,6 +1297,29 @@ class TeamLifecycleTests(TeamConfigurationBase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["status"], Team.Status.INACTIVE)
+
+    def test_a_retired_team_has_no_way_back(self):
+        """Retiring ends the team; bringing it back means creating it again.
+
+        A configuration that was abandoned — a chain half-swapped, people moved
+        elsewhere — should not be able to come back into service, because nothing
+        has re-checked it since.
+        """
+        team = self.create_team()
+        self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
+        response = self.client.post(
+            f"{TEAMS_URL}{team['id']}/activate/", format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Team.objects.get(pk=team["id"]).status, Team.Status.INACTIVE)
+
+    def test_a_draft_team_cannot_be_retired(self):
+        """A team that was never in force has nothing to retire.
+
+        No endpoint writes that state any more, so the row is built here the way
+        an older installation would have one.
+        """
+# draft status removed - no such state exists
 
     def test_retiring_is_audited(self):
         team = self.create_team()
@@ -1327,35 +1336,7 @@ class TeamLifecycleTests(TeamConfigurationBase):
         self.client.post(f"{TEAMS_URL}{team['id']}/deactivate/", format="json")
         self.assertTrue(Team.objects.filter(pk=team["id"]).exists())
 
-    def test_the_service_reports_an_unready_team_too(self):
-        """Readiness is decided in the service, not only at the API edge.
-
-        Otherwise a caller reaching the service directly — the admin, a future
-        caller, a management command — would have to reconstruct the rule by
-        hand instead of asking :func:`validate_team` the same question.
-        """
-        team = self.create_team(
-            name="Unstaffed team",
-            new_workflow={
-                "sections": [
-                    {"name": "Supervisor step", "approver_role": "supervisor"}
-                ]
-            },
-        )
-        stored = Team.objects.get(pk=team["id"])
-        readiness = validate_team(stored)
-        self.assertFalse(readiness.ready)
-        self.assertEqual(readiness.issues[0].code, "no_approver")
-
-    def test_retiring_a_retired_team_is_a_no_op(self):
-        team = Team.objects.get(pk=self.create_team()["id"])
-        deactivate_team(team=team, actor=self.hr)
-        team.refresh_from_db()
-        self.assertEqual(team.status, Team.Status.INACTIVE)
-        again = deactivate_team(team=team, actor=self.hr)
-        self.assertEqual(again.status, Team.Status.INACTIVE)
-
-    def test_a_live_team_routes_its_employees(self):
+    def test_a_team_in_force_routes_its_employees(self):
         team = self.create_team()
         stored = Team.objects.get(pk=team["id"])
         self.place_employee(stored)
@@ -1407,7 +1388,7 @@ class TeamDetailsTests(TeamConfigurationBase):
         appeal eventually asks.
         """
         team = self.create_team()
-        step_one = Team.objects.get(pk=team["id"]).workflow.sections.get(order=1)
+        step_one = Team.objects.get(pk=team["id"]).workflows.first().sections.get(order=1)
         response = self.client.get(f"{MEMBERS_URL}?section={step_one.pk}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         first = next(
@@ -1418,19 +1399,21 @@ class TeamDetailsTests(TeamConfigurationBase):
 
     def test_an_unstaffed_step_says_so_rather_than_being_omitted(self):
         """The thing HR most needs on this screen is the step with nobody on it."""
-        team = self.create_team(
-            new_workflow={
-                "sections": [
-                    {
-                        "name": "Supervisor step",
-                        "approver_role": "supervisor",
-                        "approver": self.supervisor.pk,
-                    },
-                    {"name": "Head step", "approver_role": "hod"},
-                ]
-            }
+        team = self.bare_team("Gap team")
+        self.place_on_team(team, self.supervisor)
+        response = self.build_chain(
+            team,
+            [
+                {
+                    "name": "Supervisor step",
+                    "approver_role": "supervisor",
+                    "approver": self.supervisor.pk,
+                },
+                {"name": "Head step", "approver_role": "hod"},
+            ],
         )
-        row = self.read(team["id"])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        row = self.read(team.pk)
         self.assertIsNone(row["sections"][1]["approver"])
         self.assertEqual(row["member_count"], 1)
 
@@ -1498,20 +1481,18 @@ class MembershipHistoryTests(TeamConfigurationBase):
             "hod", username="repl@teamflow.test", institution_wide=False
         )
         self.team = Team.objects.get(pk=self.create_team()["id"])
-        self.step_one = self.team.workflow.sections.get(order=1)
-        self.step_two = self.team.workflow.sections.get(order=2)
+        self.step_one = self.team.workflows.first().sections.get(order=1)
+        self.step_two = self.team.workflows.first().sections.get(order=2)
 
     def staff_and_get(self, section: Section, user) -> SectionMember:
         # Appointment is only open to the team's own members, so put them on it
-        # first — as HR would, on the employee record. The add-member action
-        # refusing a non-member is covered by its own test.
+        # first — as HR would, on the employee record. The write itself is the
+        # team manager's, who runs the roster after the handover.
         profile = user.employee_profile
         profile.team = self.team
         profile.save(update_fields=["team"])
         user.refresh_from_db()
-        response = self.client.post(
-            MEMBERS_URL, {"section": section.pk, "user": user.pk}, format="json"
-        )
+        response = self.appoint(section, user)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         return SectionMember.objects.get(section=section, user=user)
 
@@ -1536,14 +1517,10 @@ class MembershipHistoryTests(TeamConfigurationBase):
         refused and HR makes the change on the day it happens.
         """
         start = timezone.localdate() + timedelta(days=7)
-        response = self.client.post(
-            MEMBERS_URL,
-            {
-                "section": self.step_one.pk,
-                "user": self.newcomer.pk,
-                "effective_from": start.isoformat(),
-            },
-            format="json",
+        response = self.appoint(
+            self.step_one,
+            self.newcomer,
+            effective_from=start.isoformat(),
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn("effective_from", response.data)
@@ -1559,7 +1536,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
         approved with a decision nobody can explain.
         """
         membership = self.staff_and_get(self.step_one, self.newcomer)
-        response = self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        response = self.unappoint(membership)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         self.assertTrue(
@@ -1577,7 +1554,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
 
     def test_a_closed_membership_is_out_of_the_working_set(self):
         membership = self.staff_and_get(self.step_one, self.newcomer)
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         self.assertFalse(
             SectionMember.objects.filter(section=self.step_one, user=self.newcomer).exists()
         )
@@ -1589,7 +1566,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
         membership = SectionMember.objects.get(
             section=self.step_two, user=self.hod
         )
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         with self.assertRaises(WorkflowConfigError) as ctx:
             DatabaseWorkflowProvider().get_stage_definitions(
                 LeaveApplication(employee=self.employee)
@@ -1604,7 +1581,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
         normal thing to be able to do.
         """
         first = self.staff_and_get(self.step_one, self.newcomer)
-        self.client.delete(f"{MEMBERS_URL}{first.pk}/")
+        self.unappoint(first)
         second = self.staff_and_get(self.step_one, self.newcomer)
         self.assertNotEqual(first.pk, second.pk)
         self.assertEqual(
@@ -1625,11 +1602,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
         made and closing the outgoing one for no reason.
         """
         first = self.staff_and_get(self.step_one, self.newcomer)
-        response = self.client.post(
-            MEMBERS_URL,
-            {"section": self.step_one.pk, "user": self.newcomer.pk},
-            format="json",
-        )
+        response = self.appoint(self.step_one, self.newcomer)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(
             SectionMember.all_objects.filter(
@@ -1682,7 +1655,7 @@ class MembershipHistoryTests(TeamConfigurationBase):
         question the record has to be able to answer.
         """
         first = self.staff_and_get(self.step_one, self.newcomer)
-        self.client.delete(f"{MEMBERS_URL}{first.pk}/")
+        self.unappoint(first)
         self.staff_and_get(self.step_one, self.newcomer)
 
         response = self.client.get(
@@ -1757,7 +1730,7 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
 
         An application already sitting at a step has that step snapshotted onto
         its stage, and the stage still points at the section. Dropping the step
-        in the team form would leave that application with nowhere to go, so the
+        from the chain would leave that application with nowhere to go, so the
         database refuses and the edit comes back as a validation error rather
         than as an application that can never advance.
         """
@@ -1767,25 +1740,15 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         app = self.submit()
         pending = app.stages.get(status=ApplicationStage.Status.PENDING)
 
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Head of Department approval",
-                            "approver_role": "hod",
-                        }
-                    ]
-                }
-            },
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Head of Department approval", "approver_role": "hod"}],
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
@@ -1812,26 +1775,16 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
             action=ApprovalDecision.Action.APPROVE,
             expected_version=1,
         )
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {
-                "new_workflow": {
-                    "sections": [
-                        {
-                            "name": "Head of Department approval",
-                            "approver_role": "hod",
-                        }
-                    ]
-                }
-            },
-            format="json",
+        response = self.edit_chain(
+            Team.objects.get(pk=team["id"]),
+            [{"name": "Head of Department approval", "approver_role": "hod"}],
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn("Supervisor approval", str(response.data))
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team["id"]).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
@@ -1840,42 +1793,39 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         """Refusing forever would make the form unable to tidy up a chain.
 
         A step that nothing was ever submitted against has no history to lose,
-        so removing it is the HR correcting their own configuration, and the
-        team form has to allow it.
+        so removing it is the manager correcting their own configuration, and
+        the chain edit has to allow it.
         """
-        team = self.create_team(
-            new_workflow={
-                "sections": [
-                    *self.chain,
-                    {"name": "Registrar step", "approver_role": "registrar"},
-                ]
-            }
+        team = self.bare_team("Registrar team")
+        self.place_on_team(team, self.supervisor, self.hod)
+        response = self.build_chain(
+            team,
+            [
+                *self.chain,
+                {"name": "Registrar step", "approver_role": "registrar"},
+            ],
         )
-        response = self.client.patch(
-            f"{TEAMS_URL}{team['id']}/",
-            {"new_workflow": {"sections": self.chain}},
-            format="json",
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        response = self.edit_chain(
+            Team.objects.get(pk=team.pk), self.chain
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
             [
                 s.approver_role.code
-                for s in Team.objects.get(pk=team["id"]).workflow.sections.order_by("order")
+                for s in Team.objects.get(pk=team.pk).workflows.first().sections.order_by("order")
             ],
             ["supervisor", "hod"],
         )
 
-    def test_a_draft_team_refuses_the_submission_and_names_the_team(self):
+    def test_a_team_without_a_chain_refuses_the_submission_and_names_the_team(self):
         """The failure arrives before the employee loses anything.
 
-        ``workflow_unavailable`` at submission is the whole reason a draft team
-        is harmless: the employee is told to ask HR, not handed a chain that
-        stalls at a step with nobody on it. Teams are in force from creation, so
-        a draft is only reachable as a legacy row.
+        ``workflow_unavailable`` at submission is the whole reason a team
+        without a chain is harmless: the employee is told to ask HR, not handed
+        a chain that stalls at a step with nobody on it.
         """
-        team = Team.objects.get(pk=self.create_team()["id"])
-        Team.objects.filter(pk=team.pk).update(status=Team.Status.DRAFT)
-        team.refresh_from_db()
+        team = self.bare_team("Administration team")
         self.place_employee(team)
         with self.assertRaises(ValidationFailedError) as ctx:
             self.submit()
@@ -1897,9 +1847,9 @@ class TeamRoutingTests(TeamConfigurationBase, StubProviderMixin):
         stored = Team.objects.get(pk=team["id"])
         self.place_employee(stored)
         membership = SectionMember.objects.get(
-            section=stored.workflow.sections.get(order=2), user=self.hod
+            section=stored.workflows.first().sections.get(order=2), user=self.hod
         )
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         with self.assertRaises(ValidationFailedError) as ctx:
             self.submit()
         self.assertIn("Head of Department", str(ctx.exception))
@@ -1963,10 +1913,10 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         that later.
         """
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         self.assertFalse(is_approver_user(self.supervisor))
         self.assertEqual(
             set(
@@ -1980,10 +1930,10 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
     def test_the_removed_approver_can_still_decide_the_live_application(self):
         """The end of a membership is not a retraction of what came before."""
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         decide(
             application_id=self.app.pk,
             actor=self.supervisor,
@@ -2007,18 +1957,13 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         profile.save(update_fields=["team"])
         replacement.refresh_from_db()
         membership = SectionMember.objects.get(
-            section=self.stored.workflow.sections.get(order=1),
+            section=self.stored.workflows.first().sections.get(order=1),
             user=self.supervisor,
         )
-        self.client.delete(f"{MEMBERS_URL}{membership.pk}/")
+        self.unappoint(membership)
         self.assertEqual(
-            self.client.post(
-                MEMBERS_URL,
-                {
-                    "section": self.stored.workflow.sections.get(order=1).pk,
-                    "user": replacement.pk,
-                },
-                format="json",
+            self.appoint(
+                self.stored.workflows.first().sections.get(order=1), replacement
             ).status_code,
             status.HTTP_201_CREATED,
         )
@@ -2053,7 +1998,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         self.assertEqual(stage.role_label, "Supervisor")
         self.assertEqual(
             stage.section_ref_id,
-            self.stored.workflow.sections.get(order=1).pk,
+            self.stored.workflows.first().sections.get(order=1).pk,
         )
 
     def test_a_section_a_live_stage_points_at_cannot_be_deleted(self):
@@ -2064,7 +2009,7 @@ class HistoricalIntegrityTests(TeamConfigurationBase, StubProviderMixin):
         out from under it, and the stage keeps its own copy of the step's meaning
         rather than having to go and look it up.
         """
-        section = self.stored.workflow.sections.get(order=1)
+        section = self.stored.workflows.first().sections.get(order=1)
         with self.assertRaises(ProtectedError):
             section.delete()
 
