@@ -162,7 +162,7 @@ function AppNavbar({
           </Link>
         </div>
 
-        <nav aria-label="Main navigation" className="flex shrink-0 items-center">
+        <div className="flex shrink-0 items-center">
           {showAllApps && (
             <Link
               href={ALL_APPS_HREF}
@@ -173,7 +173,7 @@ function AppNavbar({
               <span className="hidden sm:inline">All Apps</span>
             </Link>
           )}
-        </nav>
+        </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
           {user && (
@@ -234,9 +234,7 @@ function AppNavbar({
 
           {showNotifications && <NotificationBell />}
 
-          <div className="hidden sm:block">
-            <ThemeToggle />
-          </div>
+          <ThemeToggle />
 
           {onLogout && (
             <Button

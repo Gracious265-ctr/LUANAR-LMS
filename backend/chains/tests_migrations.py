@@ -346,7 +346,7 @@ class ForeignKeySwapTests(MigrationTestCase):
             return {
                 column.name
                 for column in connection.introspection.get_table_description(
-                    cursor, "workflows_workflowstage"
+                    cursor, "chains_workflowstage"
                 )
             }
 
@@ -387,7 +387,7 @@ class ForeignKeySwapTests(MigrationTestCase):
         self.assertEqual(field.get_internal_type(), "CharField")
         with connection.cursor() as cursor:
             cursor.execute(
-                'SELECT "approver_role" FROM workflows_workflowstage ORDER BY "order"'
+                'SELECT "approver_role" FROM chains_workflowstage ORDER BY "order"'
             )
             self.assertEqual([row[0] for row in cursor.fetchall()], ["dean"])
 

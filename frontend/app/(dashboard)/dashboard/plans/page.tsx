@@ -18,7 +18,7 @@ export default function PlansPage() {
             Leave Plans
           </h1>
           <p className="text-text-secondary">
-            Plan your leave ahead of time — plans are drafts; you'll still need to apply when you're ready.
+            Plan your leave ahead of time — plans are drafts; you&apos;ll still need to apply when you&apos;re ready.
           </p>
         </div>
         <Button

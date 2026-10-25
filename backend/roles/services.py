@@ -1135,7 +1135,6 @@ def _campus_snapshot(campus: Campus) -> dict:
     return {
         "name": campus.name,
         "code": campus.code,
-        "description": campus.description,
         "is_active": campus.is_active,
     }
 

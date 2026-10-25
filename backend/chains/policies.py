@@ -309,7 +309,7 @@ def can_manage_team(user, team) -> bool:
 
     HR and superusers may manage every team. A team manager may manage only the
     one team they hold the manager designation on (see
-    :func:`organisation.services.is_team_manager`). This is the object-level
+    :func:`roles.services.is_team_manager`). This is the object-level
     companion to the coarse ``IsHROrTeamManager`` permission: it answers "…and it
     is *your* team" for a specific team.
     """
@@ -317,7 +317,7 @@ def can_manage_team(user, team) -> bool:
         return False
     if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
         return True
-    from organisation.services import is_team_manager  # noqa: PLC0415
+    from roles.services import is_team_manager  # noqa: PLC0415
 
     return is_team_manager(user, team)
 
