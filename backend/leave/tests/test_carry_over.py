@@ -28,7 +28,7 @@ from leave.cancellations.models import LeaveBalanceTransaction
 from leave.providers.database import DatabaseRulesProvider
 from leave.services.carry_over import carry_over_amount, carry_over_financial_year
 from users.models import EmployeeProfile
-from workflows.testing import team_for
+from chains.testing import team_for
 
 User = get_user_model()
 

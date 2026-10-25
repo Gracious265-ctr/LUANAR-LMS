@@ -1,60 +1,12 @@
-<<<<<<< HEAD
-<<<<<<<< HEAD:backend/teams/views.py
-"""Team management endpoints (moved from chains)."""
-
-========
 """Workflow and section-membership HTTP API."""
 
 from django.db import IntegrityError
 from django.core.exceptions import ValidationError
->>>>>>>> features/team-base:backend/workflows/views.py
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-<<<<<<<< HEAD:backend/teams/views.py
-from audit.models import AuditEntry
-from audit.services import record_audit
-from campuses.models import Campus
-from chains.models import SectionMember, Workflow, WorkflowMember
-from chains.services import (
-    assign_workflow_member,
-    create_team,
-    deactivate_team,
-    remove_workflow_member,
-    update_team,
-)
-from chains.services._shared import _require_can_manage_team
-from chains.services.lifecycle import validate_team as validate_team_configuration
-from roles.models import ApproverRole
-from roles.permissions import IsHROnly, IsHROrTeamManager, is_hr
-from roles.services import is_team_manager, managed_team_ids_for
-
-
-class TeamActionError(Exception):
-    pass
-
-
-can_manage_team = _require_can_manage_team
-
-from teams.models import Team, TeamRoleAssignment
-from teams.serializers import TeamSerializer
-from roles.serializers import TeamRoleAssignmentSerializer
-from users.models import EmployeeProfile, User
-
-from .permissions import IsHROrTeamManager as TeamsIsHROrTeamManager
-
-
-def _positive_int(value, field_name):
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValidationError({field_name: "Must be an integer."}) from exc
-    if parsed < 1:
-        raise ValidationError({field_name: "Must be a positive integer."})
-    return parsed
-=======
 """HTTP API for teams: CRUD/lifecycle, membership, and holdings.
 
 ``TeamViewSet`` was split out of ``workflows.views`` and
@@ -73,43 +25,48 @@ from rest_framework import serializers as drf_serializers
 from audit.validation import positive_int
 from users.models import EmployeeProfile, User
 
-from organisation.models import (
-    ApproverRole,
-    CampusRoleAssignment,
-    RoleAssignment,
-)
-from organisation.permissions import IsHROnly, IsHROrTeamManager
-from organisation.services import (
+from roles.models import ApproverRole, RoleAssignment
+from campuses.models import CampusRoleAssignment
+from roles.permissions import IsHROnly, IsHROrTeamManager
+from roles.serializers import TeamRoleAssignmentSerializer
+from roles.services import (
     RoleActionError,
-    WorkflowMemberError,
     clear_team_manager,
-    managed_team_ids,
+    managed_team_ids_for,
     remove_team_role_assignment,
     set_team_manager,
-    team_manager_profile,
     wide_approver_ids_for_team,
 )
 from teams.models import Team, TeamRoleAssignment
-from teams.serializers import (
+from chains.models import Section, SectionMember, Workflow, WorkflowMember
+from chains.policies import can_manage_team
+from chains.services import (
+    WorkflowMemberError,
+    assign_workflow_member,
+    create_workflow,
+    replace_workflow_sections,
+    remove_section_member,
+    remove_workflow_member,
+    update_workflow,
+    workflow_member_pool,
+)
+from chains.services.configuration import StageSequenceError
+from chains.services.lifecycle import TeamActionError, WorkflowActionError
+from chains.serializers import (
+    SectionMemberSerializer,
+    SectionMemberWriteSerializer,
+    WorkflowMemberSerializer,
+    WorkflowMemberWriteSerializer,
+    WorkflowSerializer,
+    WorkflowWriteSerializer,
+)
+from chains.serializers import (
     TeamMemberAddSerializer,
     TeamMemberSummarySerializer,
     TeamReadinessSerializer,
-    TeamRoleAssignmentSerializer,
     TeamSerializer,
     WorkflowMemberPoolSerializer,
 )
-from workflows.models import Section, Workflow, WorkflowMember
-from workflows.permissions import IsTeamManagerOnly
-from workflows.policies import can_manage_team
-from workflows.services import (
-    TeamActionError,
-    deactivate_team,
-    remove_team_member,
-    team_member_summaries,
-    validate_team,
-    workflow_member_pool,
-)
->>>>>>> features/team-base
 
 
 class TeamViewSet(
@@ -119,21 +76,6 @@ class TeamViewSet(
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet
 ):
-<<<<<<< HEAD
-    """HR-only CRUD for teams, plus their routing and retirement actions.
-
-    A team is created in one pass, optionally with its whole approval chain, and
-    is in force the moment it is created — there is no separate activation step.
-    Members are edited through :class:`SectionMemberViewSet` (approver periods),
-    the members actions on this viewset (normal team membership), and the
-    workflow member actions — each add/remove is its own atomic, audited action
-    instead of a whole-team overwrite.
-
-    ``status`` is a three-state lifecycle, not a flag, so the list defaults to
-    the teams that are actually in force (``?status=active``, ``?status=draft``,
-    or ``?include_inactive=1`` for everything) rather than hiding the retired
-    ones.
-=======
     """HR-only CRUD for teams, plus their lifecycle actions (no hard delete).
 
     A team is created in force in one pass and retired by a separate validated
@@ -146,7 +88,6 @@ class TeamViewSet(
     teams that are actually in force (``?status=active``, or ``?include_inactive=1``
     for everything, retired teams included) rather than hiding the retired ones
     HR may still need to see.
->>>>>>> features/team-base
     """
 
     serializer_class = TeamSerializer
@@ -157,76 +98,6 @@ class TeamViewSet(
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
-<<<<<<< HEAD
-        """HR keeps a team's identity and lifecycle; a manager keeps its people.
-
-        Creating a team, and editing its category, campus, or details, are HR
-        decisions: a manager inherits a team, they do not decide what it is.
-        Everything else — reading, listing members, adding and removing members,
-        shaping the workflow pool, and choosing which chain the team routes
-        through — is shared, and the scoped queryset keeps a manager on their own
-        team.
-        """
-        if self.action in ("create", "update", "partial_update", "deactivate"):
-            return [permissions.IsAuthenticated(), IsHROnly()]
-        return super().get_permissions()
-
-    @action(detail=True, methods=["get"], url_path="member-candidates")
-    def member_candidates(self, request, *args, **kwargs):
-        """The people a manager may place on this team's roster.
-
-        The roster's candidate list is "unassigned employees of the team's own
-        half of the institution, who are not already wide approvers for it", and
-        the HR employee directory answers it with ``?team=none&category=…``. That
-        directory is HR-only, so a team manager building their roster had no way
-        to read who was available and could only remove people, never add them.
-
-        This proposes the same list through a route a manager may reach — the
-        team is ``self.get_object()``, so the scoped queryset has already
-        refused a team that is not theirs — and returns the employee shape the
-        picker already renders. It is the read half of ``members`` and nothing
-        more: placing somebody still goes through the write path's own guards.
-        """
-        team = self.get_object()
-        queryset = (
-            EmployeeProfile.objects.filter(
-                team__isnull=True,
-                category=team.category,
-                user__is_active=True,
-            )
-            .exclude(user_id__in=wide_approver_ids_for_team(team))
-            .select_related("user", "team")
-            .order_by("user__first_name", "user__last_name")
-        )
-        return Response(
-            [EmployeeSerializer(profile).data for profile in queryset]
-        )
-
-    @action(detail=False, methods=["get"], url_path="eligible-approver-roles")
-    def eligible_approver_roles(self, request):
-        """The approver roles a manager may pick from when describing a chain.
-
-        The workflow form's role list is the same one HR reads, but that route is
-        HR-only, so a manager opening "New workflow" saw no roles and the Add-step
-        and Create-workflow buttons were disabled — a form they could not operate.
-        A role is not secret configuration (a manager names steps with it), so the
-        list is exposed read-only here: active roles only, and only to a caller
-        who manages at least one team, which ``IsHROrTeamManager`` already gates.
-        Writing roles stays on the HR-only role endpoint.
-        """
-        roles = ApproverRole.objects.filter(is_active=True).order_by("label")
-        return Response(ApproverRoleSerializer(roles, many=True).data)
-
-    def get_queryset(self):
-        base = Team.objects.select_related(
-            "workflow", "campus"
-        ).prefetch_related(
-            "workflow__sections__approver_role",
-            "workflow__sections__approver",
-            "workflows",
-        )
-        managed = _managed_team_ids(self.request.user)
-=======
         """HR keeps the team's identity and lifecycle; a manager keeps its people.
 
         Creating a team, editing its category/campus/details, assigning its
@@ -251,10 +122,10 @@ class TeamViewSet(
             # chain — are the manager's calls once HR has created the team and
             # designated them. HR stays out of it rather than merely scoping the
             # manager to their own team, so the handover is the whole boundary.
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
+            return [permissions.IsAuthenticated(), IsHROrTeamManager()]
         # Remove-member is a detail action on members (DELETE)
         if self.action == "remove_member":
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
+            return [permissions.IsAuthenticated(), IsHROrTeamManager()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -266,7 +137,6 @@ class TeamViewSet(
             "workflows",
         )
         managed = managed_team_ids(self.request.user)
->>>>>>> features/team-base
         if managed is not None:
             base = base.filter(pk__in=managed)
         # Filters are for the *list*. A detail or action route must be able to
@@ -352,17 +222,9 @@ class TeamViewSet(
             raise drf_serializers.ValidationError(
                 {"team": "That team is missing."}
             )
-<<<<<<< HEAD
-        # A detail=False action answers for the team named on the query rather
-        # than through ``get_object``, so the manager scoping the rest of the
-        # viewset gets from ``get_queryset`` has to be applied by hand here.
-        managed = _managed_team_ids(request.user)
-        if managed is not None and team.pk not in managed:
-=======
         if not can_manage_team(request.user, team):
             # A manager may only shape the pool of their own team; naming another
             # team's id must not leak its roster.
->>>>>>> features/team-base
             raise drf_serializers.ValidationError(
                 {"team": "That team is missing."}
             )
@@ -481,15 +343,11 @@ class TeamViewSet(
                 ],
             }
         )
-<<<<<<< HEAD
-========
 from audit.validation import positive_int
-from organisation.permissions import IsHROrTeamManager
-from workflows.models import SectionMember, Workflow, WorkflowMember
+from roles.permissions import IsHROrTeamManager
 
-from .permissions import IsTeamManagerOnly
 
-from .serializers import (
+from chains.serializers import (
     SectionMemberSerializer,
     SectionMemberWriteSerializer,
     WorkflowMemberSerializer,
@@ -497,14 +355,7 @@ from .serializers import (
     WorkflowSerializer,
     WorkflowWriteSerializer,
 )
-from organisation.services import WorkflowMemberError, managed_team_ids
-from .services import (
-    StageSequenceError,
-    TeamActionError,
-    WorkflowActionError,
-    remove_section_member,
-    remove_workflow_member,
-)
+from chains.services._shared import StageSequenceError, TeamActionError, WorkflowActionError
 
 
 class WorkflowViewSet(
@@ -538,19 +389,17 @@ class WorkflowViewSet(
         # shape a chain — create it, rewrite its steps — belong to the manager,
         # who owns the chain once HR has created the team and designated them.
         if self.action in ("create", "update", "partial_update"):
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
+            return [permissions.IsAuthenticated(), IsHROrTeamManager()]
         if self.action == "remove_member":
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
+            return [permissions.IsAuthenticated(), IsHROrTeamManager()]
         if self.action == "members":
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
+            return [permissions.IsAuthenticated(), IsHROrTeamManager()]
         return [permissions.IsAuthenticated(), IsHROrTeamManager()]
 
     def get_serializer_class(self):
         if self.action in ("create", "partial_update", "update"):
             return WorkflowWriteSerializer
         return WorkflowSerializer
-=======
->>>>>>> features/team-base
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -559,213 +408,6 @@ class WorkflowViewSet(
 
     @action(detail=True, methods=["get", "post"], url_path="members")
     def members(self, request, *args, **kwargs):
-<<<<<<< HEAD
-        """List this workflow's normal members, or add one team member to it.
-
-        Membership is written through the eligibility service, so a person who
-        is not on the workflow's team is refused here with the same message the
-        pool screen would show — the picker and the write agree because they
-        read the same rule.
-        """
-        workflow = self.get_object()
-        if request.method == "POST":
-            serializer = WorkflowMemberWriteSerializer(
-                data=request.data,
-                context={**self.get_serializer_context(), "workflow": workflow},
-            )
-            serializer.is_valid(raise_exception=True)
-            try:
-                member = serializer.save()
-            except WorkflowMemberError as exc:
-                return Response(
-                    {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
-                )
-            except IntegrityError as exc:
-                # Concurrent assign of the same person: the unique constraints
-                # on (workflow, user) and (team, user) are the backstop behind
-                # the service-level eligibility check.
-                return Response(
-                    {"user": [str(exc)]}, status=status.HTTP_400_BAD_REQUEST
-                )
-            return Response(
-                WorkflowMemberSerializer(member).data,
-                status=status.HTTP_201_CREATED,
-            )
-        members = workflow.workflow_members.select_related(
-            "user", "team", "added_by"
-        ).order_by("user__first_name", "user__last_name", "user_id")
-        return Response(WorkflowMemberSerializer(members, many=True).data)
-
-    @action(
-        detail=True,
-        methods=["delete"],
-        url_path="members/(?P<user_id>[^/.]+)",
-    )
-    def remove_member(self, request, *args, **kwargs):
-        """Remove one normal member from this workflow's pool."""
-        workflow = self.get_object()
-        user_id = positive_int(kwargs["user_id"], "user_id")
-        member = WorkflowMember.objects.filter(
-            workflow=workflow, user_id=user_id
-        ).first()
-        if member is None:
-            return Response(
-                {"user": ["That person is not a normal member of this workflow."]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            remove_workflow_member(member=member, actor=request.user)
-        except WorkflowMemberError as exc:
-            return Response(
-                {exc.field: [exc.message]}, status=status.HTTP_409_CONFLICT
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def get_queryset(self):
-        queryset = Workflow.objects.select_related("team").prefetch_related(
-            "sections__approver_role", "sections__members__user"
-        )
-        managed = managed_team_ids(self.request.user)
-        if managed is not None:
-            queryset = queryset.filter(team_id__in=managed)
-        if self.action != "list":
-            return queryset.order_by("name")
-        team = self.request.query_params.get("team")
-        if team:
-            queryset = queryset.filter(team_id=positive_int(team, "team"))
-        return queryset.order_by("name")
-
-    def _write_response(self, workflow):
-        return Response(
-            WorkflowSerializer(
-                workflow, context=self.get_serializer_context()
-            ).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            workflow = serializer.save()
-        except (
-            WorkflowActionError,
-            StageSequenceError,
-            WorkflowMemberError,
-            TeamActionError,
-        ) as exc:
-            field = getattr(exc, "field", "detail")
-            message = getattr(exc, "message", str(exc))
-            return Response(
-                {field: [message]}, status=status.HTTP_400_BAD_REQUEST
-            )
-        return self._write_response(workflow)
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", True)
-        instance = self.get_object()
-        serializer = self.get_serializer(
-            instance, data=request.data, partial=partial
-        )
-        serializer.is_valid(raise_exception=True)
-        try:
-            workflow = serializer.save()
-        except (
-            WorkflowActionError,
-            StageSequenceError,
-            WorkflowMemberError,
-            TeamActionError,
-        ) as exc:
-            field = getattr(exc, "field", "detail")
-            message = getattr(exc, "message", str(exc))
-            return Response(
-                {field: [message]}, status=status.HTTP_400_BAD_REQUEST
-            )
-        return Response(
-            WorkflowSerializer(
-                workflow, context=self.get_serializer_context()
-            ).data
-        )
-
-
-class SectionMemberViewSet(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    viewsets.GenericViewSet,
-):
-    """Who has acted for a section, and the appointment of its approver.
-
-    Appointing somebody is its own atomic, audited action rather than part of a
-    whole-workflow write, so changing one step's approver cannot silently rewrite
-    the rest of the chain. ``POST`` appoints the one person a step routes to —
-    setting :attr:`Section.approver` and opening the effective-dated period that
-    records it — and ``DELETE`` closes that period and leaves the step
-    unstaffed.
-
-    A step has exactly one approver, so appointing somebody new closes the
-    outgoing person's period in the same transaction. Two open periods on one
-    step would make "who holds this step" answerable two ways.
-
-    The default view is the people who can act *now*. ``?history=1`` widens it to
-    every period, closed ones included, because a membership row is a record of
-    who was entitled to act and when — and a chain that once had an approver must
-    still be explainable after they have gone.
-    """
-
-    serializer_class = SectionMemberSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHROrTeamManager]
-    http_method_names = ["get", "post", "delete", "head", "options"]
-
-    def get_permissions(self):
-        # Reads are shared between the team's manager and HR; appointing and
-        # clearing the person a step routes to is the manager's call, because it
-        # is the chain being run rather than the organisation's shape.
-        if self.action in ("create", "destroy"):
-            return [permissions.IsAuthenticated(), IsTeamManagerOnly()]
-        return [permissions.IsAuthenticated(), IsHROrTeamManager()]
-
-    def get_serializer_class(self):
-        # Reads want the dates and the "is this in force right now" flag; writes
-        # are the smaller payload the service actually takes.
-        if self.action == "create":
-            return SectionMemberWriteSerializer
-        return SectionMemberSerializer
-
-    def get_queryset(self):
-        params = self.request.query_params
-        queryset = (
-            SectionMember.all_objects
-            if params.get("history") == "1"
-            else SectionMember.objects
-        ).select_related("section", "section__workflow", "user")
-        managed = managed_team_ids(self.request.user)
-        if managed is not None:
-            queryset = queryset.filter(section__workflow__team_id__in=managed)
-        section = params.get("section")
-        if section:
-            queryset = queryset.filter(section_id=positive_int(section, "section"))
-        workflow = params.get("workflow")
-        if workflow:
-            queryset = queryset.filter(
-                section__workflow_id=positive_int(workflow, "workflow")
-            )
-        user = params.get("user")
-        if user:
-            queryset = queryset.filter(user_id=positive_int(user, "user"))
-        return queryset.order_by("section__order", "user__last_name")
->>>>>>>> features/team-base:backend/workflows/views.py
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context["actor"] = self.request.user
-        return context
-
-<<<<<<<< HEAD:backend/teams/views.py
-    @action(detail=True, methods=["get", "post"], url_path="members")
-    def members(self, request, *args, **kwargs):
-=======
->>>>>>> features/team-base
         """List this team's normal members, or place one employee on it.
 
         GET is the team members screen's roster: every employee whose
@@ -828,8 +470,6 @@ class SectionMemberViewSet(
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-<<<<<<< HEAD
-=======
     @action(detail=True, methods=["get"], url_path="member-candidates")
     def member_candidates(self, request, *args, **kwargs):
         """Employees who may be added to this team's roster.
@@ -870,7 +510,6 @@ class SectionMemberViewSet(
             ]
         )
 
->>>>>>> features/team-base
     @action(detail=True, methods=["get"], url_path="workflow-member-pool")
     def workflow_members_pool(self, request, *args, **kwargs):
         """Who may be assigned to a workflow as a normal member of this team.
@@ -899,19 +538,10 @@ class SectionMemberViewSet(
             ).data
         )
 
-<<<<<<< HEAD
-========
->>>>>>>> features/team-base:backend/workflows/views.py
-=======
->>>>>>> features/team-base
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-<<<<<<< HEAD
-<<<<<<<< HEAD:backend/teams/views.py
-=======
->>>>>>> features/team-base
             team = serializer.save()
         except (TeamActionError, RoleActionError) as exc:
             return Response(
@@ -942,93 +572,37 @@ class SectionMemberViewSet(
             TeamSerializer(team, context=self.get_serializer_context()).data
         )
 
-<<<<<<< HEAD
-    @action(detail=True, methods=["post"], url_path="route")
-    def route(self, request, *args, **kwargs):
-        """Point this team at one of the chains it owns.
-
-        Routing is a decision about *which* of the team's chains is in force. The
-        workflow named must be one the team already owns, so this can only choose
-        among the team's own chains — never borrow another team's.
-        """
-        team = self.get_object()
-        workflow_id = request.data.get("workflow")
-        workflow = None
-        if workflow_id not in (None, ""):
-            try:
-                workflow_pk = positive_int(workflow_id, "workflow")
-            except ValidationError:
-                return Response(
-                    {"workflow": ["That workflow is missing or is not this team's."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            workflow = Workflow.objects.filter(pk=workflow_pk, team=team).first()
-        try:
-            routed = route_team(team=team, actor=request.user, workflow=workflow)
-========
-            membership = serializer.save()
-        except TeamActionError as exc:
-            return Response(
-                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
-            )
-        except ValidationError as exc:
-            return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
-        return Response(
-            SectionMemberSerializer(
-                membership, context=self.get_serializer_context()
-            ).data,
-            status=status.HTTP_201_CREATED,
-        )
-
     def destroy(self, request, *args, **kwargs):
         # Closing a membership can legitimately be refused — a period that has
         # not started yet has to be removed outright instead of "ended", and a
         # caller may pass an end date before the start.
         try:
             remove_section_member(membership=self.get_object(), actor=request.user)
->>>>>>>> features/team-base:backend/workflows/views.py
         except TeamActionError as exc:
             return Response(
                 {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
             )
-<<<<<<<< HEAD:backend/teams/views.py
-        return Response(
-            TeamSerializer(routed, context=self.get_serializer_context()).data
-        )
-
-=======
->>>>>>> features/team-base
     @action(detail=True, methods=["post"], url_path="validate")
     def validate_configuration(self, request, *args, **kwargs):
         """Report whether this team's configuration can route, without changing it.
 
         Side-effect free and available at any status, so HR can check a team that
-<<<<<<< HEAD
-        is in force and find out which step has lost its approver — the question
-        that otherwise only surfaces as a refused submission from the employee.
-        A chainless team reports its missing workflow here rather than failing
-        silently at submission.
-=======
         is already in force and find out which step has lost its approver — the
         question that otherwise only surfaces as a refused submission from the
         employee. Teams are in force from creation now, so this is not a gate
         before activation; it is the standing answer to "can this chain carry an
         application", naming every problem rather than only the first.
->>>>>>> features/team-base
         """
         team = self.get_object()
         readiness = validate_team(team)
         return Response(TeamReadinessSerializer(readiness).data)
 
-<<<<<<< HEAD
-=======
     # There is deliberately no ``activate``: creating a team puts it in force,
     # so a "put into force now" button would be a second confirmation of
     # something that already happened. Only the way back out — deactivation —
     # remains an action, because retiring a team is a decision that still has to
     # be taken.
 
->>>>>>> features/team-base
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, *args, **kwargs):
         """Retire a team from routing, keeping its configuration and history.
@@ -1047,13 +621,9 @@ class SectionMemberViewSet(
         return Response(
             TeamSerializer(retired, context=self.get_serializer_context()).data
         )
-<<<<<<< HEAD
-========
         return Response(status=status.HTTP_204_NO_CONTENT)
 
->>>>>>>> features/team-base:backend/workflows/views.py
 
-=======
 
 
 class TeamRoleAssignmentViewSet(
@@ -1148,4 +718,3 @@ class TeamRoleAssignmentViewSet(
                 {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
             )
         return Response(self.get_serializer(assignment).data)
->>>>>>> features/team-base

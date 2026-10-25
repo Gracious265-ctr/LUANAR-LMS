@@ -13,14 +13,14 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from organisation.models import ApproverRole, RoleAssignment
-from organisation.services import (
+from roles.models import ApproverRole, RoleAssignment
+from roles.services import (
     RoleActionError,
     create_campus_role_assignment,
     create_team_role_assignment,
     replace_role_assignment,
 )
-from workflows.models import SectionMember, WorkflowMember
+from chains.models import SectionMember, WorkflowMember
 
 from .testing import (
     DEV_PASSWORD,

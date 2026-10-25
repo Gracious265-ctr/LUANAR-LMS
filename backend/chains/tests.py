@@ -35,38 +35,12 @@ from .testing import (
     make_team,
     make_workflow,
 )
-<<<<<<< HEAD:backend/chains/tests.py
-from .models import (
-    Section,
-    Workflow,
-)
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-)
-from approvals.models import (
-    Delegation,
-    Reassignment,
-)
-from teams.models import (
-    Team,
-)
-from .services import (
-    StageSequenceError,
-    missing_approver_roles,
-    normalize_section_sequence,
-)
-from roles.services import (
-    is_approver_user,
-)
-=======
-from organisation.models import ApproverRole
+from roles.models import ApproverRole
 from teams.models import Team
 from .models import Section, Workflow
 from approvals.models import Delegation
 
 from approvals.models import Reassignment
->>>>>>> features/team-base:backend/workflows/tests.py
 from approvals.services import (
     DelegationActionError,
     ReassignmentError,
@@ -79,7 +53,7 @@ from approvals.services import (
     reject_delegation,
     resolve_delegate_user,
 )
-from organisation.services import create_team_role_assignment, is_approver_user
+from roles.services import create_team_role_assignment, is_approver_user
 
 from .services import (
     StageSequenceError,
@@ -1210,11 +1184,7 @@ class DelegationConcurrencyTests(TestCase):
         # clock is the only way to age a row the constraint would otherwise
         # forbid (ends_on may never precede starts_on).
         with mock.patch(
-<<<<<<< HEAD:backend/chains/tests.py
-            "approvals.services.delegation.timezone.localdate",
-=======
             "workflows.services.timezone.localdate",
->>>>>>> features/team-base:backend/workflows/tests.py
             return_value=self.today + timedelta(days=1),
         ):
             with self.assertRaises(DelegationActionError) as ctx:

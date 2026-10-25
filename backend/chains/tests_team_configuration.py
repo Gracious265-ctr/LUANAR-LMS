@@ -38,30 +38,18 @@ from leave.services.submission import ValidationFailedError, submit_application
 from leave.tests.stubs import EARLIEST_ANNUAL_START, StubProviderMixin
 from users.models import EmployeeProfile
 
-<<<<<<< HEAD:backend/chains/tests_team_configuration.py
-from .models import (
-    Section,
-    SectionMember,
-    Workflow,
-)
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-)
-=======
->>>>>>> features/team-base:backend/workflows/tests_team_configuration.py
 from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from organisation.models import ApproverRole
+from roles.models import ApproverRole
 from teams.models import Team
-from workflows.models import Section, SectionMember, Workflow, WorkflowMember
+from chains.models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import DatabaseWorkflowProvider, WorkflowConfigError
 from approvals.services import (
     decide,
 )
-from organisation.services import is_approver_user, create_team_role_assignment
+from roles.services import is_approver_user, create_team_role_assignment
 
 from .services import (
     TeamActionError,
@@ -71,15 +59,6 @@ from .services import (
     remove_section_member,
     validate_team,
 )
-<<<<<<< HEAD:backend/chains/tests_team_configuration.py
-from roles.services import (
-    is_approver_user,
-)
-from approvals.services import (
-    decide,
-)
-=======
->>>>>>> features/team-base:backend/workflows/tests_team_configuration.py
 from .testing import (
     DEV_PASSWORD,
     campus_for,

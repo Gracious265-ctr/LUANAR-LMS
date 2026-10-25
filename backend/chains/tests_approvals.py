@@ -35,23 +35,11 @@ from .testing import (
     make_section,
     make_team,
 )
-<<<<<<< HEAD:backend/chains/tests_approvals.py
-from .models import (
-    Section,
-    SectionMember,
-    Workflow,
-)
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-)
-=======
->>>>>>> features/team-base:backend/workflows/tests_approvals.py
 from approvals.models import (
     ApplicationStage,
     ApprovalDecision,
 )
-from organisation.models import ApproverRole
+from roles.models import ApproverRole
 from teams.models import Team
 from .models import Section, SectionMember, Workflow, WorkflowMember
 from .providers import (

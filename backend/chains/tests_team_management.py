@@ -13,7 +13,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from teams.models import Team, TeamRoleAssignment
-from organisation.services import (
+from roles.services import (
     WorkflowMemberError,
     add_team_member,
     clear_team_manager,
@@ -22,7 +22,7 @@ from organisation.services import (
     set_team_manager,
     team_manager_profile,
 )
-from workflows.models import Workflow
+from chains.models import Workflow
 
 from .testing import DEV_PASSWORD, ensure_roles, make_employee, make_team
 

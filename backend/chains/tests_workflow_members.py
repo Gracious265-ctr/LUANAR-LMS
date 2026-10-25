@@ -28,31 +28,15 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from users.models import EmployeeProfile
 
-<<<<<<< HEAD:backend/chains/tests_workflow_members.py
-from .models import (
-    Workflow,
-    WorkflowMember,
-    Section,
-)
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    CampusRoleAssignment,
-    RoleAssignment,
-)
-from teams.models import (
-    Team,
-    TeamRoleAssignment,
-=======
-from organisation.models import CampusRoleAssignment, RoleAssignment
+from campuses.models import CampusRoleAssignment, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
-from workflows.models import Section, Workflow
+from chains.models import Section, Workflow
 
 from .models import WorkflowMember
-from organisation.services import (
+from roles.services import (
     WorkflowMemberError,
     add_team_member,
     create_team_role_assignment,
->>>>>>> features/team-base:backend/workflows/tests_workflow_members.py
 )
 
 from .services import (
@@ -65,13 +49,6 @@ from .services import (
     team_member_summaries,
     workflow_member_pool,
 )
-<<<<<<< HEAD:backend/chains/tests_workflow_members.py
-from roles.services import (
-    WorkflowMemberError,
-    add_team_member,
-)
-=======
->>>>>>> features/team-base:backend/workflows/tests_workflow_members.py
 from .testing import (
     DEV_PASSWORD,
     appoint_approver_to_section,
@@ -322,7 +299,7 @@ class TeamMemberManagementTests(MemberAPIBase):
     def test_removal_blocked_while_open_approver_period(self):
         workflow = list(Workflow.objects.filter(team=self.team))[0]
         section = workflow.sections.first()
-        from workflows.models import SectionMember
+        from chains.models import SectionMember
 
         SectionMember.objects.create(
             section=section,

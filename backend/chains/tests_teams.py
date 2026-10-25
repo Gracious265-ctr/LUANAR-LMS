@@ -24,34 +24,10 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 
-<<<<<<< HEAD:backend/chains/tests_teams.py
-from .models import (
-    Section,
-    SectionMember,
-    Workflow,
-)
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-    Campus,
-    RoleAssignment,
-)
-from teams.models import (
-    Team,
-    TeamRoleAssignment,
-)
-from .services import (
-    TeamActionError,
-    add_section_member,
-    remove_section_member,
-)
-from roles.services import (
-=======
-from organisation.models import ApproverRole, Campus, RoleAssignment
+from roles.models import ApproverRole, Campus, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
-from workflows.models import Section, SectionMember, Workflow
-from organisation.services import (
->>>>>>> features/team-base:backend/workflows/tests_teams.py
+from chains.models import Section, SectionMember, Workflow
+from roles.services import (
     RoleActionError,
     approver_role_codes_for,
     create_role_assignment,

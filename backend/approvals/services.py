@@ -13,14 +13,14 @@ from audit.services import changed_fields, record_audit
 from leave.models import LeaveApplication
 from leave.services import date_ranges_overlap
 from users.models import User
-from workflows.policies import is_self_application
-from workflows.providers import WorkflowConfigError
+from chains.policies import is_self_application
+from chains.providers import WorkflowConfigError
 from approvals.models import (ApplicationStage, ApplicationStageApprover, ApprovalDecision, Delegation, Reassignment,)
-from workflows.models import Workflow
-from organisation.services import (
+from chains.models import Workflow
+from roles.services import (
     is_approver_user,
 )
-from workflows.services import WorkflowAssignmentError, _active_delegation_for_id, _current_stage, acting_approver_ids, eligible_approver_ids, user_may_act
+from chains.services import WorkflowAssignmentError, _active_delegation_for_id, _current_stage, acting_approver_ids, eligible_approver_ids, user_may_act
 
 
 class DelegationActionError(ValueError):
@@ -655,7 +655,7 @@ def assign_workflow(application):
     than the applicant.
     Returns the first (pending) stage.
     """
-    from workflows.providers import WorkflowConfigError, get_workflow_provider
+    from chains.providers import WorkflowConfigError, get_workflow_provider
 
     with transaction.atomic():
         cycle = application.submission_cycle
@@ -912,13 +912,13 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
     ``ApprovalNotAllowedError`` (403) or ``ApprovalStageChangedError`` (409).
     Returns the persisted application.
     """
-    from workflows.events import (
+    from chains.events import (
         APPLICATION_FINALISED,
         DECISION_RECORDED,
         ApprovalEvent,
         emit_approval_event,
     )
-    from workflows.policies import get_decision_authority
+    from chains.policies import get_decision_authority
 
     if action not in ApprovalDecision.Action.values:
         raise ApprovalValidationError({"action": "Must be approve or reject."})
@@ -931,7 +931,7 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             {"comment": "A comment is required when rejecting."}
         )
 
-    from workflows.policies import get_decision_authority as _authority
+    from chains.policies import get_decision_authority as _authority
 
     app = None
     with transaction.atomic():

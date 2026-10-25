@@ -29,12 +29,12 @@ from rest_framework.test import APIClient
 
 from users.models import EmployeeProfile
 
-from organisation.services import (
+from roles.services import (
     WorkflowMemberError,
     add_team_member,
     create_team_role_assignment,
 )
-from workflows.models import SectionMember, Workflow
+from chains.models import SectionMember, Workflow
 
 from .testing import (
     DEV_PASSWORD,

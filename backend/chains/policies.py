@@ -317,7 +317,7 @@ def can_manage_team(user, team) -> bool:
         return False
     if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
         return True
-    from organisation.services import is_team_manager  # noqa: PLC0415
+    from roles.services import is_team_manager  # noqa: PLC0415
 
     return is_team_manager(user, team)
 

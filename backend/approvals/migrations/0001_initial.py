@@ -11,7 +11,6 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('leave', '0022_delete_leavetype_state_only'),
         ('roles', '0001_initial'),
         ('chains', '0030_remove_workflowmember_workflow_member_team_user_unique_and_more'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

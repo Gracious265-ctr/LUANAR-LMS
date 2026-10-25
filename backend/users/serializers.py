@@ -6,11 +6,8 @@ from rest_framework import serializers
 from audit.models import AuditEntry
 from audit.services import changed_fields, current_actor, record_audit
 from teams.models import Team
-<<<<<<< HEAD
+from roles.services import add_team_member
 from roles.services import approver_role_codes_for
-=======
-from organisation.services import WorkflowMemberError, approver_role_codes_for, add_team_member
->>>>>>> features/team-base
 
 from .models import EmployeeProfile
 from .services import request_password_set
@@ -477,7 +474,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         another team, or a removal while responsibilities remain — and the
         services are the single source of those rules.
         """
-        from workflows.services import remove_team_member
+        from chains.services import remove_team_member
 
         old_team = instance.team
         if new_team is not None and old_team is not None and new_team.pk == old_team.pk:

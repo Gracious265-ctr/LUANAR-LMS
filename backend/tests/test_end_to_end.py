@@ -41,24 +41,6 @@ from chains.events import (
     _reset_consumers_for_tests,
     register_consumer,
 )
-<<<<<<< HEAD
-from chains.models import (
-    Workflow,
-)
-from approvals.models import (
-    ApplicationStage,
-    ApprovalDecision,
-    Delegation,
-    Reassignment,
-)
-from chains.providers import DatabaseWorkflowProvider
-=======
-from approvals.models import ApplicationStage, ApprovalDecision
-from workflows.models import Workflow
-from approvals.models import Delegation
-from approvals.models import Reassignment
-from workflows.providers import DatabaseWorkflowProvider
->>>>>>> features/team-base
 from approvals.services import decide, reassign_application
 
 User = get_user_model()

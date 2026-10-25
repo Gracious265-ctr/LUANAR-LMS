@@ -16,20 +16,6 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User
-<<<<<<< HEAD
-from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    CampusRoleAssignment,
-)
-from teams.models import (
-    TeamRoleAssignment,
-)
-from chains.testing import (
-=======
-from organisation.models import CampusRoleAssignment
-from teams.models import TeamRoleAssignment
-from workflows.testing import (
->>>>>>> features/team-base
     create_user_with_role,
     grant_approver_role,
     make_approver,
@@ -101,7 +87,7 @@ class AuthEndpointTests(TestCase):
         # is a designation held as data, not a system role: the account's own
         # role stays `employee`.
         from organisation.services import create_team_role_assignment
-        from workflows.testing import ensure_roles
+        from chains.testing import ensure_roles
 
         hr = create_user_with_role("manager-test-hr@test.luanar", role=User.Role.HR)
         team = make_team("Manager Test Team", ["hod"])

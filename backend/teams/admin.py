@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from organisation.models import ApproverRole
+from roles.models import ApproverRole
 
 from .models import Team, TeamRoleAssignment
 
