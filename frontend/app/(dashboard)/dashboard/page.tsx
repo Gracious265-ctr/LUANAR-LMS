@@ -94,9 +94,7 @@ export default async function DashboardPage() {
               subtitle="awaiting review"
               icon={<Clock className="h-5 w-5" />}
               variant="pending"
-              onClick={() => {
-                window.location.href = "/dashboard/leave";
-              }}
+              href="/dashboard/leave"
             />
           </StaggerItem>
           {showApprovals && (
@@ -107,9 +105,7 @@ export default async function DashboardPage() {
                 subtitle="applications"
                 icon={<ShieldCheck className="h-5 w-5" />}
                 variant="info"
-                onClick={() => {
-                  window.location.href = "/dashboard/approvals";
-                }}
+                href="/dashboard/approvals"
               />
             </StaggerItem>
           )}
