@@ -16,12 +16,7 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    RoleAssignment,
-)
+from roles.models import ApproverRole, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
 from users.management.commands.seed_test_profiles import (
     ACCOUNT_DOMAIN,

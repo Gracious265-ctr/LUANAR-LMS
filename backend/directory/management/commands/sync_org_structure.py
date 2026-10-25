@@ -7,7 +7,7 @@ the mirrored org tree without a shell. Idempotent: safe to re-run.
 from django.core.management.base import BaseCommand
 
 from directory.factory import get_organization_provider
-from org.services import sync_org_structure_from_provider
+from org_structure.services import sync_org_structure_from_provider
 
 
 class Command(BaseCommand):

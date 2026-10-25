@@ -3,7 +3,6 @@ export type LeaveApplicationStatus =
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_required"
   | "cancelled";
 
 /** One row of a dashboard list (needs-attention, drafts or recent). */

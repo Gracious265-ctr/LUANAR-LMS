@@ -1,7 +1,7 @@
 {
   "application": {
-    "id": "app-resubmitted-correction",
-    "reference_number": "LV-2026-27-900007",
+    "id": "app-rejected-3",
+    "reference_number": "LV-2026-27-900006",
     "leave_type": {
       "id": 3,
       "name": "Paternity Leave"
@@ -11,17 +11,9 @@
     "working_days": 5,
     "submitted_at": "2026-10-12T07:15:03Z"
   },
-  "status": "pending",
+  "status": "rejected",
   "approved_at": null,
-  "current_stage": {
-    "order": 3,
-    "role": "registrar",
-    "role_label": "Registrar",
-    "approver_name": "Dr. Joyce Phiri",
-    "is_delegate": false,
-    "on_behalf_of": null,
-    "assigned_at": "2026-10-19T09:00:00Z"
-  },
+  "current_stage": null,
   "stages": [
     {
       "order": 1,
@@ -59,16 +51,16 @@
       "order": 3,
       "role": "registrar",
       "role_label": "Registrar",
-      "state": "awaiting",
+      "state": "rejected",
       "approver": {
         "name": "Dr. Joyce Phiri",
         "designation": "University Registrar",
         "is_delegate": false,
         "on_behalf_of": null
       },
-      "assigned_at": "2026-10-19T09:00:00Z",
-      "decided_at": null,
-      "comment": null,
+      "assigned_at": "2026-10-15T16:00:00Z",
+      "decided_at": "2026-10-17T10:00:00Z",
+      "comment": "Supporting documents must be uploaded before approval.",
       "skip_reason": null
     },
     {
@@ -85,20 +77,8 @@
   ],
   "events": [
     {
-      "id": "evt-resubmitted_after_correction-resubmitted",
-      "type": "resubmitted",
-      "occurred_at": "2026-10-19T09:00:00Z",
-      "stage_order": null,
-      "actor": {
-        "name": "Test Employee",
-        "role_label": "Employee"
-      },
-      "comment": null,
-      "resubmission_number": 1
-    },
-    {
-      "id": "evt-resubmitted_after_correction-corrected",
-      "type": "correction_requested",
+      "id": "evt-rejected_at_stage_3-rejected",
+      "type": "rejected",
       "occurred_at": "2026-10-17T10:00:00Z",
       "stage_order": 3,
       "actor": {
@@ -109,7 +89,7 @@
       "resubmission_number": null
     },
     {
-      "id": "evt-resubmitted_after_correction-approved-2",
+      "id": "evt-rejected_at_stage_3-approved-2",
       "type": "approved",
       "occurred_at": "2026-10-15T14:22:19Z",
       "stage_order": 2,
@@ -121,7 +101,7 @@
       "resubmission_number": null
     },
     {
-      "id": "evt-resubmitted_after_correction-approved-1",
+      "id": "evt-rejected_at_stage_3-approved-1",
       "type": "approved",
       "occurred_at": "2026-10-14T07:15:03Z",
       "stage_order": 1,
@@ -133,7 +113,7 @@
       "resubmission_number": null
     },
     {
-      "id": "evt-resubmitted_after_correction-submitted",
+      "id": "evt-rejected_at_stage_3-submitted",
       "type": "submitted",
       "occurred_at": "2026-10-12T07:15:03Z",
       "stage_order": null,
@@ -145,17 +125,25 @@
       "resubmission_number": null
     }
   ],
-  "rejection": null,
-  "correction": null,
+  "rejection": {
+    "stage_order": 3,
+    "role_label": "Registrar",
+    "approver_name": "Dr. Joyce Phiri",
+    "decided_at": "2026-10-17T10:00:00Z",
+    "reason": "Supporting documents must be uploaded before approval."
+  },
   "resubmission": {
-    "count": 1,
-    "last_resubmitted_at": "2026-10-19T09:00:00Z",
-    "can_resubmit": false,
-    "returns_to_stage": null
+    "count": 0,
+    "last_resubmitted_at": null,
+    "can_resubmit": true,
+    "returns_to_stage": {
+      "order": 3,
+      "role_label": "Registrar"
+    }
   },
   "documents": [
     {
-      "id": "doc-resubmitted-active",
+      "id": "doc-rejected-active",
       "file_name": "medical-certificate-v2.pdf",
       "file_size": 51200,
       "content_type": "application/pdf",

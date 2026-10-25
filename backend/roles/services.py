@@ -9,6 +9,7 @@ workflow builder and the launcher.
 from dataclasses import dataclass
 from django.db import transaction
 from django.db.models import Count
+from django.utils import timezone
 from django.utils.text import slugify
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
@@ -16,7 +17,7 @@ from users.models import EmployeeProfile, User
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
-from chains.models import Section, SectionMember
+from chains.models import Section, SectionMember, WorkflowMember
 
 
 def _resolve_stage_role(value) -> ApproverRole | None:
@@ -474,6 +475,137 @@ def _role_snapshot(role: ApproverRole) -> dict:
     }
 
 
+def _repoint_wide_positions(
+    *,
+    role: ApproverRole,
+    previous_user: User,
+    new_user: User,
+    team: Team | None = None,
+    campus: Campus | None = None,
+) -> None:
+    """Move the positions a replaced wide approver held onto their successor.
+
+    A wide approver's holding staffs chains within its scope — the steps that
+    name the role, and the chains they were placed on as a normal member. When
+    the holding is re-pointed at a new person, the successor inherits those
+    positions rather than leaving every step and membership pointing at somebody
+    who no longer holds the role.
+
+    Only the positions the outgoing holder actually had are moved, and only
+    within the holding's scope:
+
+    * ``team`` scopes the move to that team's chains (a team-wide holding);
+    * ``campus`` scopes it to the teams at that campus (a campus-wide holding);
+    * neither scopes it to every team (an institution-wide holding).
+
+    A step is moved only when it names this role *and* pointed at the outgoing
+    holder, so a step HR gave to somebody else by hand is left alone. Each
+    handover closes the outgoing holder's :class:`SectionMember` period and opens
+    the successor's, exactly as :func:`chains.services.add_section_member`
+    does, so "who held the step in March" stays answerable. A wide membership the
+    successor already has on the same workflow is not duplicated — the outgoing
+    row is simply dropped.
+    """
+    sections = Section.objects.filter(approver_role=role, approver=previous_user)
+    if team is not None:
+        sections = sections.filter(workflow__team=team)
+    if campus is not None:
+        sections = sections.filter(workflow__team__campus=campus)
+
+    today = timezone.localdate()
+    for section in sections:
+        SectionMember.objects.filter(
+            section=section, user=previous_user, effective_to__isnull=True
+        ).update(effective_to=today)
+        section.approver = new_user
+        section.save(update_fields=["approver"])
+        membership = SectionMember(
+            section=section, user=new_user, effective_from=today
+        )
+        membership.full_clean()
+        membership.save()
+
+    memberships = WorkflowMember.objects.filter(
+        user=previous_user, is_wide_approver=True
+    )
+    if team is not None:
+        memberships = memberships.filter(team=team)
+    if campus is not None:
+        memberships = memberships.filter(team__campus=campus)
+    for membership in memberships:
+        clash = WorkflowMember.objects.filter(
+            workflow=membership.workflow, user=new_user
+        ).exists()
+        if clash:
+            membership.delete()
+        else:
+            membership.user = new_user
+            membership.save(update_fields=["user"])
+
+
+def replace_role_assignment(
+    *, assignment: RoleAssignment, user: User, actor
+) -> RoleAssignment:
+    """Hand an institution-wide holding to a new person, positions and all.
+
+    A role has exactly one institution-wide holder, so changing it is a replace
+    rather than a remove-then-assign: this re-points the holding at ``user`` and
+    moves every step and wide membership the outgoing holder staffed under the
+    role onto them in the same atomic step. Without it a chain written while the
+    old holder was in post would keep routing to somebody who no longer holds
+    the role.
+
+    Refuses an inactive user, and refuses the holder they already are.
+    """
+    with transaction.atomic():
+        assignment = RoleAssignment.objects.select_for_update().get(pk=assignment.pk)
+        role = assignment.role
+        if not user.is_active:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} is not an active user. "
+                "Activate the account before assigning a role.",
+            )
+        if assignment.user_id == user.pk:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} already holds the "
+                f"{role.label} role institution-wide.",
+            )
+        outgoing = assignment.user
+        before = {
+            "user_id": outgoing.pk,
+            "user": outgoing.get_full_name() or outgoing.username,
+            "assignment_id": assignment.pk,
+        }
+        assignment.user = user
+        assignment.save(update_fields=["user"])
+        _repoint_wide_positions(
+            role=role, previous_user=outgoing, new_user=user
+        )
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=changed_fields(
+                before,
+                {
+                    "user_id": user.pk,
+                    "user": user.get_full_name() or user.username,
+                    "assignment_id": assignment.pk,
+                },
+            ),
+            reason=(
+                f"{user.get_full_name() or user.username} now holds the "
+                f"{role.label} role institution-wide, replacing "
+                f"{outgoing.get_full_name() or outgoing.username}."
+            ),
+        )
+    return assignment
+
+
 def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssignment:
     """Assign an institution-wide role to a user and audit it.
 
@@ -666,10 +798,17 @@ def create_team_role_assignment(
                     f"{role.label} role on {team.name}.",
                 )
             before = _team_assignment_snapshot(previous)
+            outgoing = previous.user
             previous.user = user
             previous.is_team_manager = is_team_manager
             previous.save(update_fields=["user", "is_team_manager"])
             assignment = previous
+            _repoint_wide_positions(
+                role=role,
+                previous_user=outgoing,
+                new_user=user,
+                team=team,
+            )
         else:
             assignment = TeamRoleAssignment.objects.create(
                 team=team, role=role, user=user, is_team_manager=is_team_manager
@@ -822,9 +961,16 @@ def create_campus_role_assignment(
                     f"{role.label} role at {campus.name}.",
                 )
             before = _campus_assignment_snapshot(previous)
+            outgoing = previous.user
             previous.user = user
             previous.save(update_fields=["user"])
             assignment = previous
+            _repoint_wide_positions(
+                role=role,
+                previous_user=outgoing,
+                new_user=user,
+                campus=campus,
+            )
         else:
             assignment = CampusRoleAssignment.objects.create(
                 campus=campus, role=role, user=user
@@ -989,7 +1135,6 @@ def _campus_snapshot(campus: Campus) -> dict:
     return {
         "name": campus.name,
         "code": campus.code,
-        "description": campus.description,
         "is_active": campus.is_active,
     }
 

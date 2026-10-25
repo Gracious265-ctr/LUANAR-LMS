@@ -29,11 +29,7 @@ from .models import (
     Workflow,
 )
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-    Campus,
-    RoleAssignment,
-)
+from roles.models import ApproverRole, RoleAssignment
 from teams.models import (
     Team,
     TeamRoleAssignment,

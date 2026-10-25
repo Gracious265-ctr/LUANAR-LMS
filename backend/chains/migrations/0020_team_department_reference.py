@@ -70,6 +70,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("teams", "0001_initial"),
         ("chains", "0019_team_owns_its_workflow"),
+        ("users", "0008_employee_department_reference"),
     ]
 
     operations = [

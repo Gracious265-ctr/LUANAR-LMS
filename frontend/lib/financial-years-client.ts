@@ -1,5 +1,6 @@
 import { apiErrorMessage } from "./utils";
 import type {
+  CarryOverResult,
   CalendarEvent,
   CalendarEventInput,
   FinancialYear,
@@ -35,6 +36,22 @@ export async function updateFinancialYear(
  */
 export async function deleteFinancialYear(id: number | string): Promise<void> {
   await proxyWrite<void>(`/api/hr/financial-years/${id}`, "DELETE");
+}
+
+/**
+ * Rolls rejected-leave days from a financial year into the next one.
+ *
+ * Idempotent server-side: running it twice grants nothing the second time. The
+ * result reports each employee's carried days, so the caller can show a summary.
+ */
+export async function runCarryOver(
+  id: number | string
+): Promise<CarryOverResult> {
+  return proxyWrite<CarryOverResult>(
+    `/api/hr/financial-years/${id}/carry-over`,
+    "POST",
+    {}
+  );
 }
 
 export async function createHoliday(input: HolidayInput): Promise<Holiday> {

@@ -291,12 +291,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
 
         <div className="space-y-6">
           <div className="pb-4 border-b border-border-default">
-            <Stepper
-              steps={steps}
-              orientation="horizontal"
-              activeStep={["basics", "eligibility", "rules"].indexOf(currentStep)}
-              interactive={false}
-            />
+            <Stepper steps={steps} orientation="horizontal" />
           </div>
 
           {currentStep === "basics" && (

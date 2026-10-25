@@ -1,12 +1,11 @@
 /** Payload types matching the Unit 16 approvals API (backend/workflows). */
 
-export type ApprovalAction = "approve" | "reject" | "return_for_correction";
+export type ApprovalAction = "approve" | "reject";
 
 export type ApprovalStatus =
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_required"
   | "cancelled"
   | "draft"
   | "submitted";
@@ -23,7 +22,6 @@ export type StageStatus =
   | "pending"
   | "approved"
   | "rejected"
-  | "correction_requested"
   | "skipped";
 
 export interface ApprovalCapabilities {

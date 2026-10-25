@@ -7,7 +7,17 @@ import {
   getLeaveApplications,
 } from "@/lib/leave-api";
 
-export function useLeaveApplications(statusFilter?: string) {
+export interface UseLeaveApplicationsOptions {
+  /** Narrows the list to one status (e.g. the dashboard's `status=submitted`). */
+  status?: string;
+  /** Drops statuses from the list — "My Applications" passes `draft`. */
+  excludeStatus?: string;
+}
+
+export function useLeaveApplications({
+  status,
+  excludeStatus,
+}: UseLeaveApplicationsOptions = {}) {
   const [applications, setApplications] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +31,7 @@ export function useLeaveApplications(statusFilter?: string) {
     let cancelled = false;
     async function load() {
       try {
-        const data = await getLeaveApplications(statusFilter);
+        const data = await getLeaveApplications({ status, excludeStatus });
         if (cancelled) return;
         setApplications(data.results);
         setError(null);
@@ -36,7 +46,7 @@ export function useLeaveApplications(statusFilter?: string) {
     return () => {
       cancelled = true;
     };
-  }, [statusFilter]);
+  }, [status, excludeStatus]);
 
   /**
    * Optimistically drop one application from the list without entering the
@@ -78,7 +88,7 @@ export function useLeaveApplications(statusFilter?: string) {
   const refetch = useCallback(
     (options?: { silent?: boolean }) => {
       if (!options?.silent) setLoading(true);
-      getLeaveApplications(statusFilter)
+      getLeaveApplications({ status, excludeStatus })
         .then((data) => {
           setApplications(data.results);
           setError(null);
@@ -88,7 +98,7 @@ export function useLeaveApplications(statusFilter?: string) {
         )
         .finally(() => setLoading(false));
     },
-    [statusFilter]
+    [status, excludeStatus]
   );
 
   return { applications, loading, error, refetch, removeLocal, restoreLocal };

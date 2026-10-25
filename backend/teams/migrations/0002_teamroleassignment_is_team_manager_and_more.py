@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('campuses', '0001_initial'),
+        ('chains', '0027_team_category_workflow_team_alter_team_campus_and_more'),
         ('teams', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]

@@ -43,7 +43,7 @@ export function RecentApplicationsSection({
           Recent Applications
         </h2>
         <Link
-          href="/dashboard/leave/drafts"
+          href="/dashboard/leave/applications"
           className="inline-flex items-center gap-1 text-sm font-medium text-brand-primary hover:underline focus-ring"
         >
           View all

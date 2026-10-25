@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from audit.models import AuditEntry
 from leave.services import active_financial_year
-from campuses.models import Campus
+from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
 from roles.services import (
     _require_hr_actor,

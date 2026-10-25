@@ -18,9 +18,9 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 WORKFLOWS = [
-    ("workflows", "0010_approverrole_campus_team_structure"),
-    ("workflows", "0011_backfill_approver_roles"),
-    ("workflows", "0012_role_foreign_keys"),
+    ("chains", "0010_approverrole_campus_team_structure"),
+    ("chains", "0011_backfill_approver_roles"),
+    ("chains", "0012_role_foreign_keys"),
 ]
 USERS = [
     ("users", "0005_employeeprofile_team"),
@@ -38,7 +38,7 @@ AUDIT = [("audit", "0011_alter_auditentry_target_type")]
 PRE_USER_ROLE = ("users", "0004_employeeprofile_gender")
 PRE_ROLE_TARGETS = [
     PRE_USER_ROLE,
-    ("workflows", "0009_delegation_one_open_request_per_approver"),
+    ("chains", "0009_delegation_one_open_request_per_approver"),
 ]
 
 SEED_CHAIN = [
@@ -166,7 +166,7 @@ class BackfillMigrationTests(MigrationTestCase):
         self.build_legacy_state()
         self.migrate(WORKFLOWS[1])
         ApproverRole = self.state(WORKFLOWS[1]).get_model(
-            "workflows", "ApproverRole"
+            "chains", "ApproverRole"
         )
         codes = set(ApproverRole.objects.values_list("code", flat=True))
         for _, _, roles in SEED_CHAIN:
@@ -197,7 +197,7 @@ class BackfillMigrationTests(MigrationTestCase):
         # Read the model out of the migrated state, not ``workflows.models``:
         # ``WorkflowStage`` is a historical model and no longer exists in the
         # live schema.
-        WorkflowStage = self.state(WORKFLOWS[2]).get_model("workflows", "WorkflowStage")
+        WorkflowStage = self.state(WORKFLOWS[2]).get_model("chains", "WorkflowStage")
 
         stage = WorkflowStage.objects.get(workflow__name="Faculty chain", order=2)
         self.assertEqual(stage.approver_role.code, "dean")
@@ -218,7 +218,7 @@ class BackfillMigrationTests(MigrationTestCase):
         self.build_legacy_state()
         self.migrate(WORKFLOWS[1])
         ApplicationStage = self.state(WORKFLOWS[1]).get_model(
-            "workflows", "ApplicationStage"
+            "chains", "ApplicationStage"
         )
         stages = ApplicationStage.objects.order_by("stage_order")
         self.assertEqual([s.role for s in stages], ["supervisor", "hod"])
@@ -231,7 +231,7 @@ class BackfillMigrationTests(MigrationTestCase):
         self.build_legacy_state()
         self.migrate(WORKFLOWS[1])
         ApproverRole = self.state(WORKFLOWS[1]).get_model(
-            "workflows", "ApproverRole"
+            "chains", "ApproverRole"
         )
         self.assertFalse(ApproverRole.objects.get(code="hod").is_institution_wide)
         self.assertTrue(ApproverRole.objects.get(code="registrar").is_institution_wide)
@@ -268,7 +268,7 @@ class BackfillMigrationTests(MigrationTestCase):
         # Unapplying 0011 means targeting 0010, its predecessor: the role tables
         # are dropped on the way through.
         self.migrate(WORKFLOWS[0])
-        ApproverRole = self.state(WORKFLOWS[0]).get_model("workflows", "ApproverRole")
+        ApproverRole = self.state(WORKFLOWS[0]).get_model("chains", "ApproverRole")
         self.assertEqual(ApproverRole.objects.count(), 0)
 
         self.migrate(WORKFLOWS[1])
@@ -346,7 +346,7 @@ class ForeignKeySwapTests(MigrationTestCase):
             return {
                 column.name
                 for column in connection.introspection.get_table_description(
-                    cursor, "workflows_workflowstage"
+                    cursor, "chains_workflowstage"
                 )
             }
 
@@ -359,7 +359,7 @@ class ForeignKeySwapTests(MigrationTestCase):
         self.assertEqual(
             stage.approver_role_id,
             self.state(WORKFLOWS[2])
-            .get_model("workflows", "ApproverRole")
+            .get_model("chains", "ApproverRole")
             .objects.get(code="dean")
             .pk,
         )
@@ -382,12 +382,12 @@ class ForeignKeySwapTests(MigrationTestCase):
         self.migrate(WORKFLOWS[1])
         self.assertIn("approver_role", self.stage_columns())
         field = self.state(WORKFLOWS[1]).get_model(
-            "workflows", "WorkflowStage"
+            "chains", "WorkflowStage"
         )._meta.get_field("approver_role")
         self.assertEqual(field.get_internal_type(), "CharField")
         with connection.cursor() as cursor:
             cursor.execute(
-                'SELECT "approver_role" FROM workflows_workflowstage ORDER BY "order"'
+                'SELECT "approver_role" FROM chains_workflowstage ORDER BY "order"'
             )
             self.assertEqual([row[0] for row in cursor.fetchall()], ["dean"])
 
@@ -439,10 +439,7 @@ class ModelConstraintTests(MigrationTestCase):
             Workflow,
         )
         from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-            ApproverRole,
-            Campus,
-        )
+        from roles.models import ApproverRole, RoleAssignment
         from teams.models import (
             Team,
         )
@@ -522,9 +519,7 @@ from roles.models import ApproverRole, RoleAssignment (
             Workflow,  # noqa: PLC0415
         )
         from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-            Campus,
-        )
+        from roles.models import ApproverRole, RoleAssignment
         from teams.models import (
             Team,
         )
@@ -562,9 +557,7 @@ from roles.models import ApproverRole, RoleAssignment (
             Workflow,  # noqa: PLC0415
         )
         from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-            ApproverRole,
-        )
+        from roles.models import ApproverRole, RoleAssignment
 
         role = ApproverRole.objects.create(code="dean", label="Dean")
         workflow = Workflow.objects.create(name="Chain", is_active=True)
@@ -662,14 +655,14 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
 
     def setUp(self):
         super().setUp()
-        self.migrate(("workflows", "0022_team_workflow_optional"))
+        self.migrate(("chains", "0022_team_workflow_optional"))
 
     def _legacy_state(self):
         """A department-scoped DVC: flagged off, appointed, holding nothing."""
-        state = self.state(("workflows", "0022_team_workflow_optional"))
-        ApproverRole = state.get_model("workflows", "ApproverRole")
-        Workflow = state.get_model("workflows", "Workflow")
-        Section = state.get_model("workflows", "Section")
+        state = self.state(("chains", "0022_team_workflow_optional"))
+        ApproverRole = state.get_model("chains", "ApproverRole")
+        Workflow = state.get_model("chains", "Workflow")
+        Section = state.get_model("chains", "Section")
         User = state.get_model("users", "User")
 
         role = ApproverRole.objects.create(code="dvc", label="Deputy Vice-Chancellor")
@@ -687,10 +680,7 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
             Section  # noqa: PLC0415,
         )
         from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-            ApproverRole,
-            RoleAssignment,
-        )
+        from roles.models import ApproverRole, RoleAssignment
 
         role = ApproverRole.objects.get(code="dvc")
         return {
@@ -737,7 +727,7 @@ from roles.models import ApproverRole, RoleAssignment (
         module = import_module(
             "chains.migrations.0023_institution_wide_final_approval"
         )
-        historical_apps = self.state(("workflows", "0022_team_workflow_optional"))
+        historical_apps = self.state(("chains", "0022_team_workflow_optional"))
         module.flag_institution_wide_roles(historical_apps, None)
 
         self.assertEqual(self._read()["holdings"], 1)
@@ -755,7 +745,7 @@ from roles.models import ApproverRole, RoleAssignment (
         """Deleting the row would revoke a real approval right on rollback."""
         self._legacy_state()
         self.latest()
-        self.migrate(("workflows", "0022_team_workflow_optional"))
+        self.migrate(("chains", "0022_team_workflow_optional"))
 
         result = self._read()
         self.assertFalse(result["is_institution_wide"])

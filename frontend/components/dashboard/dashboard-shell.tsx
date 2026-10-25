@@ -378,7 +378,7 @@ const NavLinks = memo(function NavLinks({
       <Option
         Icon={FileText}
         title="My Applications"
-        href="/dashboard/leave/drafts"
+        href="/dashboard/leave/applications"
         currentPath={currentPath}
         open={open}
       />
@@ -576,6 +576,13 @@ const ModuleNavLinks = memo(function ModuleNavLinks({
 }) {
   return (
     <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pb-2">
+      <Option
+        Icon={LayoutGrid}
+        title="All apps"
+        href={ALL_APPS_HREF}
+        currentPath={currentPath}
+        open={open}
+      />
       {items.map((item) => (
         <Option
           key={item.href}

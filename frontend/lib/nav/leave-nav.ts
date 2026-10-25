@@ -1,9 +1,9 @@
 import type { ComponentType } from "react";
 
-import { Calendar, FileText, Home } from "lucide-react";
+import { Calendar, FilePen, FileText, Home } from "lucide-react";
 
 /**
- * The Leave module's own navigation, kept in one place so the sidebar's three
+ * The Leave module's own navigation, kept in one place so the sidebar's
  * destinations cannot drift from the routes they point at.
  *
  * This is the first module to be scoped out of the shared rail. The shape here
@@ -37,20 +37,31 @@ export function isLeaveModule(pathname: string): boolean {
 
 const isLeaveIndex = (pathname: string) => pathname === "/dashboard/leave";
 
-// Everything under the module except the bare index and the `/new` redirect
-// shim belongs to "My Applications": the list, a draft's edit/review/submitted
-// overlays, and the `/applications/[id]` tracking page.
+// Everything that has left the employee's hands: the list (which excludes
+// drafts) and any application's tracking page.
 const isMyApplications = (pathname: string) =>
-  pathname.startsWith("/applications/") ||
-  (pathname.startsWith("/dashboard/leave/") && pathname !== "/dashboard/leave/new");
+  pathname === "/dashboard/leave/applications" ||
+  pathname.startsWith("/dashboard/leave/applications/") ||
+  pathname.startsWith("/applications/");
+
+// In-progress applications, continued from the Drafts list.
+const isDrafts = (pathname: string) =>
+  pathname === "/dashboard/leave/drafts" ||
+  pathname.startsWith("/dashboard/leave/drafts/");
 
 export const LEAVE_NAV_ITEMS: LeaveNavItem[] = [
   { label: "Dashboard", href: "/dashboard/leave", icon: Home, match: isLeaveIndex },
   {
     label: "My Applications",
-    href: "/dashboard/leave/drafts",
+    href: "/dashboard/leave/applications",
     icon: FileText,
     match: isMyApplications,
+  },
+  {
+    label: "Drafts",
+    href: "/dashboard/leave/drafts",
+    icon: FilePen,
+    match: isDrafts,
   },
   {
     // `/dashboard/leave/new` is a redirect shim to the compose overlay, so this

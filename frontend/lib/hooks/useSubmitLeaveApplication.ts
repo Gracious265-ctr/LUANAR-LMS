@@ -24,7 +24,7 @@ export interface UseSubmitLeaveApplicationOptions {
 }
 
 export interface UseSubmitLeaveApplicationResult {
-  submit: (applicationId: string) => Promise<void>;
+  submit: (applicationId: string, options?: { resubmit?: boolean }) => Promise<void>;
   isSubmitting: boolean;
   /** Issues surfaced by a 422 response, to be rendered above the form. */
   issues: ValidationIssue[];
@@ -43,6 +43,10 @@ export interface UseSubmitLeaveApplicationResult {
  * and a 409 means the application is already submitted, which is a success
  * state rather than an error. Keeping that in one hook stops the two callers
  * from drifting.
+ *
+ * A rejected application is edited and then *resubmitted* (`options.resubmit`),
+ * which hits the resubmit endpoint rather than submit — the backend only
+ * accepts the submit endpoint for drafts.
  */
 export function useSubmitLeaveApplication({
   onSubmitted,
@@ -54,17 +58,19 @@ export function useSubmitLeaveApplication({
   const inFlightRef = useRef(false);
 
   const submit = useCallback(
-    async (applicationId: string) => {
+    async (applicationId: string, options?: { resubmit?: boolean }) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       setIsSubmitting(true);
       setFailure(null);
       setIssues([]);
       try {
-        await submitApplication(applicationId);
+        await submitApplication(applicationId, options);
         // Fired before the caller so the confirmation is queued even if the
         // callback navigates away from the screen that triggered it.
-        pushToast("Application submitted.");
+        pushToast(
+          options?.resubmit ? "Application resubmitted." : "Application submitted."
+        );
         onSubmitted();
       } catch (error) {
         if (error instanceof SubmitError) {

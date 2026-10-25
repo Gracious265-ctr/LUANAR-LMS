@@ -38,9 +38,7 @@ from .models import (
     Workflow,
 )
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-)
+from roles.models import ApproverRole, RoleAssignment
 from approvals.models import (
     Delegation,
     Reassignment,

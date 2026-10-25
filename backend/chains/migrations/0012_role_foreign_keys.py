@@ -27,7 +27,7 @@ The two swaps are structurally different and handled differently:
 import django.db.models.deletion
 from django.db import migrations, models
 
-STAGE_TABLE = "workflows_workflowstage"
+STAGE_TABLE = "chains_workflowstage"
 LEGACY_COLUMN = "approver_role"
 FK_COLUMN = "approver_role_id"
 

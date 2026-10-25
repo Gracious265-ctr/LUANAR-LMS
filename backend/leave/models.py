@@ -98,6 +98,52 @@ class FinancialYear(models.Model):
         return f"{self.start_date} – {self.end_date}{status}"
 
 
+class LeaveCarryOver(models.Model):
+    """Days carried from one financial year into the next (rejected leave only).
+
+    LUANAR carries forward *only* days that a rejection left unused: a rejected
+    application never deducts (Invariant 12.4), so its days remain available, but
+    ordinary unused entitlement is deliberately **not** carried (project-overview
+    "No normal unused-leave carry-forward"). A row here is granted when a year
+    rolls over and the carried days are added on top of the next year's grade
+    entitlement when the balance provider is asked for that year.
+
+    ``from_financial_year``/``to_financial_year`` are label strings (``2026-27``),
+    matching ``LeaveBalanceTransaction.financial_year`` and
+    ``LeaveApplication.financial_year_label``. One row per employee per rollover,
+    so the writer is idempotent and a re-run cannot double-grant.
+    """
+
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="leave_carry_overs",
+    )
+    from_financial_year = models.CharField(max_length=16)
+    to_financial_year = models.CharField(max_length=16)
+    days = models.DecimalField(max_digits=6, decimal_places=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(days__gte=0),
+                name="leavecarryover_days_gte_0",
+            ),
+            models.UniqueConstraint(
+                fields=["employee", "from_financial_year", "to_financial_year"],
+                name="leavecarryover_employee_from_to_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.employee}: {self.days} days "
+            f"({self.from_financial_year} → {self.to_financial_year})"
+        )
+
+
 class GradeLeaveEntitlement(models.Model):
     """Days of one leave type granted to one external grade in one year.
 
@@ -151,7 +197,6 @@ class LeaveApplication(models.Model):
         SUBMITTED = "submitted", "Submitted"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
-        CORRECTION_REQUIRED = "correction_required", "Correction required"
         CANCELLED = "cancelled", "Cancelled"
 
     # The set of statuses where the employee can no longer submit/edit (Unit 17).

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
   const meta = STATUS_META[data.status];
   const Icon = meta.icon;
-  const { current_stage, rejection, correction } = data;
+  const { current_stage, rejection } = data;
 
   const headline = statusHeadline(data);
   const sublines = statusSublines(data);
@@ -61,23 +61,13 @@ export function CurrentStatusCard({ data }: { data: TrackingResponse }) {
             {rejection.reason}
           </p>
         )}
-        {correction && (
-          <p
-            className={cn(
-              "sm:ml-auto max-w-md break-words rounded-lg px-3 py-2 text-sm",
-              STATUS_STYLES.correction_required
-            )}
-          >
-            {correction.comment}
-          </p>
-        )}
       </div>
     </section>
   );
 }
 
 function statusHeadline(data: TrackingResponse): ReactNode {
-  const { status, current_stage, rejection, correction, approved_at } = data;
+  const { status, current_stage, rejection, approved_at } = data;
   switch (status) {
     case "pending":
       return (
@@ -93,13 +83,6 @@ function statusHeadline(data: TrackingResponse): ReactNode {
           Rejected at the{" "}
           <strong>{rejection?.role_label}</strong> stage on{" "}
           {formatDateTime(rejection?.decided_at)}
-        </>
-      );
-    case "correction_required":
-      return (
-        <>
-          Returned for correction by{" "}
-          <strong>{correction?.role_label}</strong> — action needed from you
         </>
       );
     case "cancelled":
