@@ -32,6 +32,7 @@ class Migration(migrations.Migration):
                 ('assigned_approver', models.ForeignKey(help_text='The specific user responsible for this stage.', on_delete=django.db.models.deletion.PROTECT, related_name='application_stages', to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                         "db_table": "workflows_applicationstage",
                 'ordering': ['application', 'submission_cycle', 'stage_order'],
             },
         ),
@@ -50,6 +51,7 @@ class Migration(migrations.Migration):
                 ('stage', models.ForeignKey(help_text='The stage this decision was recorded against.', on_delete=django.db.models.deletion.PROTECT, related_name='decisions', to='chains.applicationstage')),
             ],
             options={
+                         "db_table": "workflows_approvaldecision",
                 'ordering': ['-decided_at'],
             },
         ),

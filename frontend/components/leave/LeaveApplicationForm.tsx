@@ -46,7 +46,7 @@ export interface LeaveApplicationFormHandle {
   getDraftId: () => string | null;
 }
 
-const READ_ONLY_STATUSES = ["submitted", "approved", "rejected", "cancelled"];
+const READ_ONLY_STATUSES = ["submitted", "approved", "cancelled"];
 
 export const LeaveApplicationForm = forwardRef<
   LeaveApplicationFormHandle,
@@ -210,7 +210,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
           read-only record. View its current details in your applications list.
         </p>
         <Link
-          href="/dashboard/leave/drafts"
+          href="/dashboard/leave/applications"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"
         >
           Back to Applications
@@ -292,8 +292,8 @@ const [loadError, setLoadError] = useState<string | null>(null);
         <SupportingDocumentsUploader
           applicationId={currentId}
           documents={documents}
-          editable={mode === "create" || status === "draft" || status === "correction_required"}
-          canReplace={status === "correction_required"}
+          editable={mode === "create" || status === "draft" || status === "rejected"}
+          canReplace={status === "rejected"}
           onDocumentsChange={setDocuments}
           onEnsureDraft={ensureDraftCreated}
         />

@@ -34,10 +34,7 @@ from .models import (
     Section,
 )
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    CampusRoleAssignment,
-    RoleAssignment,
-)
+from roles.models import RoleAssignment
 from teams.models import (
     Team,
     TeamRoleAssignment,

@@ -11,7 +11,7 @@ import { Button, type ButtonProps } from "@/components/ui/button";
  * click lands on the destructive button. This is the confirm step the app owes
  * every irreversible action, kept inline (rather than a dialog that has to be
  * portalled, focused and dismissed) so it reads in the same place the action
- * lives — the pattern `WorkflowRoutingActions` already uses for switching chains.
+ * lives.
  *
  * The caller keeps owning the work: `onConfirm` is the same handler a bare
  * button would call, and `loading` is the caller's own busy flag, so a slow

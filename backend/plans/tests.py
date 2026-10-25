@@ -27,11 +27,7 @@ from plans.services import resolve_scopes
 from plans.tasks import FOLLOW_UP_AFTER_DAYS, check_and_notify_plans
 from users.models import EmployeeProfile
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    Campus,
-    CampusRoleAssignment,
-    RoleAssignment,
-)
+from roles.models import RoleAssignment
 from teams.models import (
     Team,
     TeamRoleAssignment,

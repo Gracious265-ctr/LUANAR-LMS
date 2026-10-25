@@ -43,7 +43,7 @@ export function DashboardStatCards({
         subtitle="awaiting review"
         icon={<Clock className="h-5 w-5" />}
         variant="pending"
-        onClick={() => router.push("/dashboard/leave/drafts?status=submitted")}
+        onClick={() => router.push("/dashboard/leave/applications?status=submitted")}
       />
       <StatCard
         title="Upcoming Leave"

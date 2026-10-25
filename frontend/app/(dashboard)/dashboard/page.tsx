@@ -26,6 +26,12 @@ export default async function DashboardPage() {
   const balance = summary?.available_balance ?? null;
   const fiscalPeriod = summary?.financial_year?.label;
   const profile = summary?.profile;
+  // Days carried into this year by a rejected-leave rollover. The available
+  // balance already includes them; this line tells the employee how much of it
+  // is carry-over rather than ordinary entitlement.
+  const carryOverDays = Number(summary?.carry_over_days ?? 0);
+  // Applicant-side, unlike ``pendingApprovals`` above: this is what the signed-in
+  // person has sent, that is what they are being asked to decide.
   const pendingApplications = summary?.pending_applications ?? 0;
   const upcomingDays = summary?.upcoming_leave?.days ?? 0;
 
@@ -63,9 +69,19 @@ export default async function DashboardPage() {
               title="Available Balance"
               value={balance ?? "—"}
               subtitle={
-                profile && fiscalPeriod
-                  ? `${fiscalPeriod} · days remaining`
-                  : "no financial year set"
+                <>
+                  <span className="block">
+                    {profile && fiscalPeriod
+                      ? `${fiscalPeriod} · days remaining`
+                      : "no financial year set"}
+                  </span>
+                  {carryOverDays > 0 && (
+                    <span className="block text-text-secondary">
+                      Includes {carryOverDays} carried-over day
+                      {carryOverDays === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </>
               }
               icon={<Calendar className="h-5 w-5" />}
               variant="primary"

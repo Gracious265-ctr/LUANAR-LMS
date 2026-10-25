@@ -77,8 +77,8 @@
   --status-approved-subtle: #EFFBF1;
   --status-rejected: #DC2626;
   --status-rejected-subtle: #FEF2F2;
-  --status-correction: #7C3AED;
-  --status-correction-subtle: #F5F3FF;
+  --status-notice: #7C3AED;
+  --status-notice-subtle: #F5F3FF;
   --status-cancelled: #64748B;
   --status-cancelled-subtle: #F1F5F9;
   --status-info: #0097F0;
@@ -316,8 +316,8 @@
   --status-approved-subtle: #1C6537;
   --status-rejected: #FEE1E1;
   --status-rejected-subtle: #7E2323;
-  --status-correction: #C4B5FD;
-  --status-correction-subtle: #3B2A63;
+  --status-notice: #C4B5FD;
+  --status-notice-subtle: #3B2A63;
   --status-cancelled: #9BA2AE;
   --status-cancelled-subtle: #242D3A;
   --status-info: #85C7EE;
@@ -329,7 +329,7 @@
   --status-pending-on: #0F172A;
   --status-approved-on: #0F172A;
   --status-rejected-on: #0F172A;
-  --status-correction-on: #0F172A;
+  --status-notice-on: #0F172A;
   --status-cancelled-on: #0F172A;
   --status-info-on: #0F172A;
 
@@ -470,8 +470,8 @@
   --color-status-approved-subtle: var(--status-approved-subtle);
   --color-status-rejected: var(--status-rejected);
   --color-status-rejected-subtle: var(--status-rejected-subtle);
-  --color-status-correction: var(--status-correction);
-  --color-status-correction-subtle: var(--status-correction-subtle);
+  --color-status-notice: var(--status-notice);
+  --color-status-notice-subtle: var(--status-notice-subtle);
   --color-status-cancelled: var(--status-cancelled);
   --color-status-cancelled-subtle: var(--status-cancelled-subtle);
   --color-status-info: var(--status-info);

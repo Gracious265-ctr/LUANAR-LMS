@@ -17,9 +17,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditEntry
 from .models import EmployeeProfile, User
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    CampusRoleAssignment,
-)
+from roles.models import RoleAssignment
 from teams.models import (
     TeamRoleAssignment,
 )

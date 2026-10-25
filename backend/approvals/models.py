@@ -22,7 +22,7 @@ class ApplicationStage(models.Model):
     cycle, i.e. usually 1), never ``submission_cycle``.
 
     ``decision_version`` starts at ``1`` and is optimistically incremented every
-    time the stage is acted upon (approve/reject/correction/resubmission).
+    time the stage is acted upon (approve/reject/resubmission).
     Decision requests carry the version they read; a mismatch aborts with a
     stale/conflict (409).
     """
@@ -32,7 +32,6 @@ class ApplicationStage(models.Model):
         PENDING = "pending", "Pending action"
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
-        CORRECTION_REQUESTED = "correction_requested", "Correction requested"
         SUPERSEDED = "superseded", "Superseded by resubmission"
         # A stage the applicant's own position made unnecessary (Unit 30). An
         # approver applicant does not approve their own leave, and may not
@@ -292,7 +291,6 @@ class ApprovalDecision(models.Model):
     class Action(models.TextChoices):
         APPROVE = "approve", "Approve"
         REJECT = "reject", "Reject"
-        RETURN_FOR_CORRECTION = "return_for_correction", "Return for correction"
 
     application = models.ForeignKey(
         "leave.LeaveApplication",
@@ -327,7 +325,7 @@ class ApprovalDecision(models.Model):
     comment = models.TextField(
         blank=True,
         default="",
-        help_text="Mandatory for reject and return-for-correction.",
+        help_text="Mandatory for reject.",
     )
     submission_cycle = models.PositiveIntegerField(
         default=1,
@@ -345,9 +343,8 @@ class ApprovalDecision(models.Model):
         ordering = ["-decided_at"]
         constraints = [
             models.CheckConstraint(
-                condition=~models.Q(action__in=("reject", "return_for_correction"))
-                | ~models.Q(comment=""),
-                name="comment_required_for_reject_or_return",
+                condition=~models.Q(action="reject") | ~models.Q(comment=""),
+                name="comment_required_for_reject",
             )
         ]
         indexes = [

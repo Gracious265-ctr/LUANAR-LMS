@@ -1,38 +1,48 @@
 """Team management endpoints (moved from chains)."""
 
-from rest_framework import mixins, permissions, status, viewsets
+from django.db import IntegrityError
+from rest_framework import mixins, permissions, serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from audit.models import AuditEntry
 from audit.services import record_audit
-from campuses.models import Campus
-from chains.models import SectionMember, Workflow, WorkflowMember
+from campuses.models import Campus, CampusRoleAssignment
+from chains.models import Section, SectionMember, Workflow, WorkflowMember
 from chains.services import (
+    StageSequenceError,
     assign_workflow_member,
+    remove_team_member,
     create_team,
     deactivate_team,
+    normalize_section_sequence,
     remove_workflow_member,
+    team_member_summaries,
     update_team,
+    validate_team,
+    wide_approver_ids_for_team,
+    workflow_member_pool,
 )
-from chains.services._shared import _require_can_manage_team
-from chains.services.lifecycle import validate_team as validate_team_configuration
-from roles.models import ApproverRole
+from chains.serializers import TeamReadinessSerializer, WorkflowMemberPoolSerializer
+from chains.services._shared import TeamActionError, _require_can_manage_team
+from roles.models import ApproverRole, RoleAssignment
 from roles.permissions import IsHROnly, IsHROrTeamManager, is_hr
-from roles.services import is_team_manager, managed_team_ids_for
-
-
-class TeamActionError(Exception):
-    pass
+from roles.services import RoleActionError, WorkflowMemberError, is_team_manager
+from chains.views import _managed_team_ids
 
 
 can_manage_team = _require_can_manage_team
 
 from teams.models import Team, TeamRoleAssignment
-from teams.serializers import TeamSerializer
-from roles.serializers import TeamRoleAssignmentSerializer
+from teams.serializers import (
+    TeamMemberAddSerializer,
+    TeamMemberSummarySerializer,
+    TeamSerializer,
+)
+from roles.serializers import ApproverRoleSerializer, TeamRoleAssignmentSerializer
 from users.models import EmployeeProfile, User
+from users.serializers import EmployeeSerializer
 
 from .permissions import IsHROrTeamManager as TeamsIsHROrTeamManager
 
@@ -176,7 +186,7 @@ class TeamViewSet(
             base = base.exclude(status=Team.Status.INACTIVE)
         campus = params.get("campus")
         if campus:
-            base = base.filter(campus_id=positive_int(campus, "campus"))
+            base = base.filter(campus_id=_positive_int(campus, "campus"))
         category = params.get("category")
         if category:
             if category not in Team.Category.values:
@@ -225,7 +235,7 @@ class TeamViewSet(
                     )
                 }
             )
-        team = Team.objects.filter(pk=positive_int(team_id, "team")).first()
+        team = Team.objects.filter(pk=_positive_int(team_id, "team")).first()
         if team is None:
             raise drf_serializers.ValidationError(
                 {"team": "That team is missing."}
@@ -248,7 +258,7 @@ class TeamViewSet(
             if workflow_filter == "new":
                 excluded_workflow_ids: set[int] = set()
             else:
-                excluded_workflow_ids = {positive_int(workflow_filter, "workflow")}
+                excluded_workflow_ids = {_positive_int(workflow_filter, "workflow")}
             assigned_ids = set(
                 WorkflowMember.objects.filter(team=team)
                 .exclude(workflow_id__in=excluded_workflow_ids)
@@ -285,7 +295,7 @@ class TeamViewSet(
         role_id = params.get("role")
         if role_id:
             role = ApproverRole.objects.filter(
-                pk=positive_int(role_id, "role")
+                pk=_positive_int(role_id, "role")
             ).first()
             if role is None:
                 raise drf_serializers.ValidationError(
@@ -338,7 +348,7 @@ class TeamViewSet(
                 .select_related("user", "team")
             )
 
-        return response.Response(
+        return Response(
             {
                 "team": {"id": team.pk, "name": team.name},
                 "candidates": [
@@ -408,7 +418,7 @@ class TeamViewSet(
         sent back with a single "cannot remove".
         """
         team = self.get_object()
-        user_id = positive_int(kwargs["user_id"], "user_id")
+        user_id = _positive_int(kwargs["user_id"], "user_id")
         user = User.objects.filter(pk=user_id).first()
         if user is None:
             return Response(
@@ -438,7 +448,7 @@ class TeamViewSet(
         workflow_id = request.query_params.get("workflow")
         if workflow_id:
             workflow = Workflow.objects.filter(
-                pk=positive_int(workflow_id, "workflow"), team=team
+                pk=_positive_int(workflow_id, "workflow"), team=team
             ).first()
             if workflow is None:
                 return Response(
@@ -498,7 +508,7 @@ class TeamViewSet(
         workflow = None
         if workflow_id not in (None, ""):
             try:
-                workflow_pk = positive_int(workflow_id, "workflow")
+                workflow_pk = _positive_int(workflow_id, "workflow")
             except ValidationError:
                 return Response(
                     {"workflow": ["That workflow is missing or is not this team's."]},

@@ -197,10 +197,7 @@ def _active_user_id_for_role(role: str, exclude: int | None = None) -> int | Non
         SectionMember,
     )
     from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-        ApproverRole,
-        RoleAssignment,
-    )
+    from roles.models import ApproverRole, RoleAssignment
 
     role_obj = ApproverRole.objects.filter(code=role, is_active=True).first()
     if role_obj is None:

@@ -9,8 +9,8 @@ import type { LeaveApplicationSummary } from "@/lib/leave-dashboard";
 import { cn } from "@/lib/utils";
 
 /**
- * Applications the employee has to act on (rejected or sent back for
- * correction). Cards route straight into the edit overlay — the whole point of
+ * Applications the employee has to act on (rejected back to them). Cards route
+ * straight into the edit overlay — the whole point of
  * the section is getting the employee back to a place they can resubmit, so
  * this is the one card that must not detour through the read-only tracking
  * page first.
@@ -36,7 +36,7 @@ export function NeedsAttentionSection({
             key={app.id}
             type="button"
             onClick={() =>
-              router.push(`/dashboard/leave/drafts?edit=${app.id}`)
+              router.push(`/dashboard/leave/applications?edit=${app.id}`)
             }
             className={cn(cardStyles, "hover-float focus-ring w-full p-4 text-left")}
           >

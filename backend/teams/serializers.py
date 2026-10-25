@@ -5,9 +5,21 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from campuses.models import Campus
+from chains.services import (
+    StageSequenceError,
+    create_team,
+    deactivate_team,
+    normalize_section_sequence,
+    update_team,
+    workflow_section_roles,
+)
 from chains.models import Section, SectionMember, Workflow, WorkflowMember
 from roles.models import ApproverRole
-from roles.services import approver_role_codes_for
+from roles.services import (
+    _resolve_stage_role,
+    add_team_member,
+    approver_role_codes_for,
+)
 from teams.models import Team, TeamRoleAssignment
 from users.models import EmployeeProfile, User
 

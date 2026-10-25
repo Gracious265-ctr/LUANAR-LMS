@@ -24,8 +24,8 @@ const alertVariants = cva(
         info: "bg-brand-primary-subtle text-brand-primary",
         pending: STATUS_STYLES.pending,
         approved: STATUS_STYLES.approved,
-        rejected: "bg-status-rejected-subtle text-status-rejected border border-status-rejected/30",
-        correction: STATUS_STYLES.correction_required,
+        rejected: STATUS_STYLES.rejected,
+        notice: STATUS_STYLES.notice,
       },
     },
     defaultVariants: {

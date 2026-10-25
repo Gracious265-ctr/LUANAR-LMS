@@ -23,7 +23,7 @@ from .models import LeaveApplication
 #: Mirrors ``LeaveApplicationViewSet.EDITABLE_STATUSES``.
 LIVE_PREVIEW_STATUSES = (
     LeaveApplication.Status.DRAFT,
-    LeaveApplication.Status.CORRECTION_REQUIRED,
+    LeaveApplication.Status.REJECTED,
 )
 
 

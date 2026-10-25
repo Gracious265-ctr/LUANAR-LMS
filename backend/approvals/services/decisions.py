@@ -130,14 +130,14 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
     )
 
     if action not in ApprovalDecision.Action.values:
-        raise ApprovalValidationError({"action": "Must be approve, reject or return_for_correction."})
+        raise ApprovalValidationError({"action": "Must be approve or reject."})
 
     comment = (comment or "").strip()
     if len(comment) > 1000:
         raise ApprovalValidationError({"comment": "Must be at most 1000 characters."})
-    if action in (ApprovalDecision.Action.REJECT, ApprovalDecision.Action.RETURN_FOR_CORRECTION) and not comment:
+    if action == ApprovalDecision.Action.REJECT and not comment:
         raise ApprovalValidationError(
-            {"comment": "A comment is required when rejecting or returning for correction."}
+            {"comment": "A comment is required when rejecting."}
         )
 
     from chains.policies import get_decision_authority as _authority
@@ -230,8 +230,8 @@ def decide(*, application_id, actor, action: str, comment: str = "", expected_ve
             stage.status = ApplicationStage.Status.REJECTED
             app.status = LeaveApplication.Status.REJECTED
         else:
-            stage.status = ApplicationStage.Status.CORRECTION_REQUESTED
-            app.status = LeaveApplication.Status.CORRECTION_REQUIRED
+            # Only approve/reject remain (validated above).
+            raise ApprovalValidationError({"action": "Must be approve or reject."})
 
         # Persist the decided stage first so a single ``pending`` stage always
         # exists at any one moment (enforced by the partial unique constraint).
@@ -330,6 +330,5 @@ def _audit_action(action: str) -> str:
     mapping = {
         ApprovalDecision.Action.APPROVE: AuditEntry.Action.APPROVED,
         ApprovalDecision.Action.REJECT: AuditEntry.Action.REJECTED,
-        ApprovalDecision.Action.RETURN_FOR_CORRECTION: AuditEntry.Action.CORRECTION_REQUESTED,
     }
     return mapping[action]

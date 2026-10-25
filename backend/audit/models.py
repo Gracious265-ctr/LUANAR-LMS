@@ -46,7 +46,6 @@ class AuditEntry(models.Model):
         REASSIGNED = "reassigned", "Reassigned"
         STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
         SUBMITTED = "submitted", "Submitted"
-        CORRECTION_REQUESTED = "correction_requested", "Returned for correction"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
         DOCUMENT_ADDED = "document_added", "Document added"
         DOCUMENT_REPLACED = "document_replaced", "Document replaced"

@@ -67,6 +67,23 @@ export interface FinancialYearListResponse {
   results: FinancialYear[];
 }
 
+/** One employee's carry-over outcome from a rejected-leave rollover. */
+export interface CarryOverEmployee {
+  employee_id: number;
+  days: string;
+  /** True when this rollover created the row; false when it already existed. */
+  created: boolean;
+}
+
+/** The result of running (or previewing) a rejected-leave rollover. */
+export interface CarryOverResult {
+  from_financial_year: string;
+  to_financial_year: string;
+  dry_run: boolean;
+  employees: CarryOverEmployee[];
+  total_days: string;
+}
+
 export interface Holiday {
   id: number;
   name: string;
@@ -77,9 +94,7 @@ export interface Holiday {
   /** `null` for an institution-wide holiday not scoped to a financial year. */
   financial_year: number | null;
 }
-
-export interface HolidayInput {
-  name: string;
+export interface HolidayInput {  name: string;
   date: string;
   is_recurring: boolean;
   observed_shift: boolean;

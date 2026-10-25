@@ -154,7 +154,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-            options={"ordering": ["stage", "user"]},
+            options={"db_table": "workflows_applicationstageapprover", "ordering": ["stage", "user"]},
         ),
         migrations.AddIndex(
             model_name="applicationstageapprover",

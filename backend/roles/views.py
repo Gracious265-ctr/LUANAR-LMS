@@ -1,4 +1,4 @@
-from rest_framework import mixins, permissions, viewsets
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -14,6 +14,15 @@ from .serializers import (
     TeamRoleAssignmentSerializer,
 )
 from .permissions import IsHROnly, is_hr
+from .services import (
+    RoleActionError,
+    clear_team_manager,
+    deactivate_approver_role,
+    remove_campus_role_assignment,
+    remove_role_assignment,
+    replace_role_assignment,
+    set_team_manager,
+)
 
 from users.models import User
 
@@ -130,10 +139,10 @@ class RoleAssignmentViewSet(
         queryset = RoleAssignment.objects.select_related("user", "role")
         role = self.request.query_params.get("role")
         if role:
-            queryset = queryset.filter(role_id=positive_int(role, "role"))
+            queryset = queryset.filter(role_id=_positive_int(role, "role"))
         user = self.request.query_params.get("user")
         if user:
-            queryset = queryset.filter(user_id=positive_int(user, "user"))
+            queryset = queryset.filter(user_id=_positive_int(user, "user"))
         return queryset.order_by("role__label", "user_id")
 
     def get_serializer_context(self):
@@ -160,6 +169,35 @@ class RoleAssignmentViewSet(
     def destroy(self, request, *args, **kwargs):
         remove_role_assignment(assignment=self.get_object(), actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"], url_path="replace")
+    def replace(self, request, *args, **kwargs):
+        """Hand this institution-wide holding to another person (HR only).
+
+        The holder a role has is replaced rather than removed and re-added, so
+        the steps and wide memberships the outgoing holder staffed move onto
+        their successor in the same step.
+        """
+        user_id = _positive_int(request.data.get("user"), "user")
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"user": ["No such user."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            assignment = replace_role_assignment(
+                assignment=self.get_object(), user=user, actor=request.user
+            )
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            RoleAssignmentSerializer(
+                assignment, context=self.get_serializer_context()
+            ).data
+        )
 
 
 class TeamRoleAssignmentViewSet(
@@ -189,10 +227,10 @@ class TeamRoleAssignmentViewSet(
             queryset = queryset.filter(team_id=positive_int(team, "team"))
         role = self.request.query_params.get("role")
         if role:
-            queryset = queryset.filter(role_id=positive_int(role, "role"))
+            queryset = queryset.filter(role_id=_positive_int(role, "role"))
         user = self.request.query_params.get("user")
         if user:
-            queryset = queryset.filter(user_id=positive_int(user, "user"))
+            queryset = queryset.filter(user_id=_positive_int(user, "user"))
         return queryset.order_by("role__label")
 
     def get_serializer_context(self):
@@ -277,10 +315,10 @@ class CampusRoleAssignmentViewSet(
             queryset = queryset.filter(campus_id=positive_int(campus, "campus"))
         role = self.request.query_params.get("role")
         if role:
-            queryset = queryset.filter(role_id=positive_int(role, "role"))
+            queryset = queryset.filter(role_id=_positive_int(role, "role"))
         user = self.request.query_params.get("user")
         if user:
-            queryset = queryset.filter(user_id=positive_int(user, "user"))
+            queryset = queryset.filter(user_id=_positive_int(user, "user"))
         return queryset.order_by("role__label")
 
     def get_serializer_context(self):

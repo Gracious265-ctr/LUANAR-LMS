@@ -158,7 +158,7 @@ describe("SupportingDocumentsUploader", () => {
     expect(deleteDocument).not.toHaveBeenCalled();
   });
 
-  it("warns that a correction document is archived rather than deleted", async () => {
+  it("warns that a replaced document is archived rather than deleted", async () => {
     render(
       <SupportingDocumentsUploader
         applicationId="draft-1"
@@ -196,7 +196,7 @@ describe("SupportingDocumentsUploader", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the replaces-hint and calls replaceDocument on a correction application", async () => {
+  it("shows the replaces-hint and calls replaceDocument on a rejected application", async () => {
     vi.mocked(replaceDocument).mockResolvedValue(doc);
     const replacement = { ...doc, id: "doc-2", file_name: "letter-v2.pdf" };
     vi.mocked(listDocuments).mockResolvedValue([replacement]);
@@ -211,7 +211,7 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    expect(screen.getByText(/returned for correction/i)).toBeInTheDocument();
+    expect(screen.getByText(/was rejected/i)).toBeInTheDocument();
 
     const picker = screen.getByLabelText("Replace document letter.pdf");
     fireEvent.change(picker, {

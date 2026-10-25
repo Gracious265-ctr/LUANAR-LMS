@@ -183,7 +183,7 @@ class RoleCreationTests(RoleAPIBase):
 
     def test_a_failing_audit_rolls_the_role_back(self):
         with mock.patch(
-            "organisation.services.record_audit", side_effect=RuntimeError("audit down")
+            "roles.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 self.client.post(LIST_URL, self.payload(), format="json")
@@ -396,7 +396,7 @@ class RoleCodeImmutabilityTests(RoleAPIBase):
 
     def test_a_failing_audit_rolls_the_edit_back(self):
         with mock.patch(
-            "organisation.services.record_audit", side_effect=RuntimeError("audit down")
+            "roles.services.record_audit", side_effect=RuntimeError("audit down")
         ):
             with self.assertRaises(RuntimeError):
                 self.client.patch(

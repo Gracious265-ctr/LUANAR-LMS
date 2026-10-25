@@ -31,6 +31,7 @@ class Migration(migrations.Migration):
                 ('requested_by', models.ForeignKey(help_text='Who submitted the request (the approver or HR on their behalf).', on_delete=django.db.models.deletion.CASCADE, related_name='delegations_requested', to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                         "db_table": "workflows_delegation",
                 'ordering': ['-created_at'],
                 'constraints': [models.CheckConstraint(condition=models.Q(('ends_on__isnull', True), ('ends_on__gte', models.F('starts_on')), _connector='OR'), name='delegation_ends_on_gte_starts_on')],
             },

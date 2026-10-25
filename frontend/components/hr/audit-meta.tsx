@@ -68,7 +68,6 @@ const STATUS_LABELS: Record<string, string> = {
   approved: "Approved",
   rejected: "Rejected",
   pending: "Pending",
-  correction_required: "Correction required",
   cancelled: "Cancelled",
   not_required: "Not required",
   reserved: "Reserved",

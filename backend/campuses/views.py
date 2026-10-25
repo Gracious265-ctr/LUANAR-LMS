@@ -5,6 +5,7 @@ from .models import Campus, CampusRoleAssignment
 from .serializers import CampusRoleAssignmentSerializer, CampusSerializer
 from .permissions import IsHROnly
 
+from roles.services import CampusActionError
 from users.models import User
 
 

@@ -304,6 +304,38 @@ def _profile_value(profile, field: str) -> str:
     return (value or "").strip().lower()
 
 
+def can_manage_team(user, team) -> bool:
+    """Whether ``user`` may manage ``team``'s members and workflows.
+
+    HR and superusers may manage every team. A team manager may manage only the
+    one team they hold the manager designation on (see
+    :func:`organisation.services.is_team_manager`). This is the object-level
+    companion to the coarse ``IsHROrTeamManager`` permission: it answers "…and it
+    is *your* team" for a specific team.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False) or getattr(user, "role", None) == User.Role.HR:
+        return True
+    from organisation.services import is_team_manager  # noqa: PLC0415
+
+    return is_team_manager(user, team)
+
+
+def can_manage_workflow(user, workflow) -> bool:
+    """Whether ``user`` may manage ``workflow``: true for its owning team's manager."""
+    if workflow is None:
+        return False
+    return can_manage_team(user, workflow.team)
+
+
+def can_manage_section(user, section) -> bool:
+    """Whether ``user`` may manage ``section``: true for its owning team's manager."""
+    if section is None:
+        return False
+    return can_manage_team(user, section.workflow.team)
+
+
 def _decided_this_cycle(user, application) -> bool:
     return ApprovalDecision.objects.filter(
         application_id=application.pk,

@@ -106,9 +106,11 @@ export async function validateLeave(
 }
 
 export async function submitApplication(
-  id: string
+  id: string,
+  { resubmit = false }: { resubmit?: boolean } = {}
 ): Promise<SubmittedApplication> {
-  const res = await fetch(`/api/leave/leave-applications/${id}/submit/`, {
+  const action = resubmit ? "resubmit" : "submit";
+  const res = await fetch(`/api/leave/leave-applications/${id}/${action}/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -116,7 +118,11 @@ export async function submitApplication(
   const body: Record<string, unknown> = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message =
-      typeof body.detail === "string" ? body.detail : "Failed to submit application";
+      typeof body.detail === "string"
+        ? body.detail
+        : resubmit
+          ? "Failed to resubmit application"
+          : "Failed to submit application";
     throw new SubmitError(message, res.status, body);
   }
   return body as unknown as SubmittedApplication;
