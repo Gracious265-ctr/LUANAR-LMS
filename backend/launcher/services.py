@@ -123,7 +123,7 @@ def get_launcher_apps(user) -> list[dict]:
     if can_access_approvals(user):
         apps.append({"key": "approvals", "badge": _approvals_badge(user)})
     if can_access_org(user):
-        apps.append({"key": "org", "badge": _org_badge(user)})
+        apps.append({"key": "teams", "badge": _org_badge(user)})
     if can_access_documents(user):
         apps.append({"key": "documents", "badge": None})
     if can_access_leave_types(user):
