@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
+import { AdvanceCard } from "@/components/hr/advance-card";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessTeams } from "@/lib/nav/teams-nav";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
@@ -98,68 +99,56 @@ export default async function WorkflowDetailPage({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="text-lg font-semibold text-text-primary">Steps</h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          In order, from the first decision to the last. Resolution is what the
-          backend would do today, not an instruction: an unstaffed step falls
-          back to the next holding rather than guessing at a person.
-        </p>
+      <div className="rounded-lg border border-border-default bg-surface-card p-4">
+        <h3 className="text-sm font-semibold text-text-primary">Steps</h3>
         {workflow.sections.length === 0 ? (
-          <p className="mt-3 text-sm text-text-muted">
-            No steps yet. A chain with no steps cannot be routed through, and
-            the team cannot route applications while it owns only this.
-          </p>
+          <p className="mt-2 text-xs text-text-muted">No steps yet.</p>
         ) : (
-          <ol className="mt-4 space-y-3">
-            {workflow.sections.map((section) => (
-              <li
+          <dl className="mt-3 space-y-2">
+            {workflow.sections.map((section) => {
+              const approver = section.approver;
+              const approver_name = section.approver_name;
+              return (              <div
                 key={section.id}
-                className="rounded-lg border border-border-default bg-surface-page p-4"
+                className="rounded border border-border-default bg-surface-page p-3"
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-medium text-text-muted">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <dt className="text-xs font-medium text-text-muted">
                       Step {section.order}
-                    </span>
-                    <h4 className="text-sm font-semibold text-text-primary">
+                    </dt>
+                    <dd className="text-sm font-semibold text-text-primary truncate">
                       {section.name}
-                    </h4>
-                    <p className="text-xs text-text-secondary">
+                    </dd>
+                    <dd className="text-xs text-text-secondary truncate">
                       {section.approver_role_label}
-                    </p>
+                    </dd>
                   </div>
-                  <span className="inline-block rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                  <span className="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-xs font-medium text-text-secondary">
                     {section.resolution.label}
                     {section.resolution.user_name
                       ? ` — ${section.resolution.user_name}`
                       : ""}
+                    {approver && approver_name && !section.resolution.user_name
+                      ? ` — ${approver_name}`
+                      : ""}
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-text-muted">
-                  {section.memberships.filter((m) => m.is_effective).length > 0
-                    ? section.memberships
-                        .filter((m) => m.is_effective)
-                        .map((m) => m.user_name)
-                        .join(", ")
-                    : "No member appointed on this step."}
-                </div>
-              </li>
-            ))}
-          </ol>
+              </div>
+              );
+            })}
+          </dl>
         )}
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Which chain routes
+          The smallest gap<span className="text-text-muted">.</span>
         </h3>
         <p className="mb-3 text-sm text-text-secondary">
-          {workflow.is_routing
-            ? "This is the chain new applications go through."
-            : "This chain is owned but not routing. Point the team at it when its steps are ready."}
+          This chain as it is today — the smallest gap to the answer.
         </p>
-        <WorkflowRoutingActions team={team} workflows={workflows} />
+        <AdvanceCard workflow={workflow} />
       </div>
     </div>
   );

@@ -117,9 +117,10 @@ export interface TeamStageRole {
 
 /**
  * A chain the team owns, named so a screen can show every one of them without
- * reading them all. `is_routing` is the one the team is currently pointed at —
- * a team may own several and route exactly one, and switching between them is
- * a decision rather than an edit to whichever one happens to be first.
+ * reading them all. `is_routing` is the team's default chain — a team routes
+ * every chain its people are enrolled on, and the default is where the
+ * unenrolled (and a wide approver holding several) route. Changing it is a
+ * decision rather than an edit to whichever chain happens to be first.
  */
 export interface WorkflowRef {
   id: number;

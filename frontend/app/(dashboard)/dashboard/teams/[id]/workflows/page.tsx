@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 
 import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
+import { WorkflowCompactCard } from "@/components/hr/workflow-compact-card";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessTeams } from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
@@ -13,13 +14,14 @@ const WORKFLOWS_ERROR =
   "Unable to load this team's workflows, so the list may be incomplete.";
 
 /**
- * Every chain a team owns, and which one it routes through.
+ * Every chain a team owns, and which one is its default.
  *
- * A team may own several — a replacement chain is built alongside the live one
- * — and exactly one of them is in force. This is the screen that says which,
- * and the one that builds the next: the team form creates a chain with the
- * team, and this is where a second one is created for a team that already
- * exists.
+ * A team routes all of them at the same time — each employee goes through the
+ * chain they are enrolled on — so "default" is where the unenrolled route, not
+ * the only chain in force. This screen lists them, marks the default, and
+ * builds the next: the team form creates a chain with the team, and this is
+ * where a second one is created for a team that already exists. The routing
+ * starts once the chain has steps and its members are enrolled.
  */
 export default async function TeamWorkflowsPage({
   params,
@@ -66,11 +68,7 @@ export default async function TeamWorkflowsPage({
             <h2 className="text-2xl font-bold text-text-primary">
               Workflows
             </h2>
-            <p className="text-text-secondary">
-              The approval chains {team.name} owns. One of them routes — the
-              rest are held ready, and switching between them is a recorded
-              decision rather than an edit to whichever happens to be open.
-            </p>
+            <p className="text-text-secondary">The approval chains {team.name} owns.</p>
           </div>
           <Link
             href={`/dashboard/teams/${team.id}/workflows/new`}
@@ -93,49 +91,19 @@ export default async function TeamWorkflowsPage({
           Chains
         </h3>
         {workflows.length === 0 ? (
-          <p className="text-sm text-text-muted">
-            None yet. A team routes nothing until it owns a chain with steps —
-            build the first one, or add it when the team was created.
-          </p>
+          <p className="text-sm text-text-muted">None yet.</p>
         ) : (
           <ul className="divide-y divide-border-default">
             {workflows.map((workflow) => (
               <li
                 key={workflow.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-3"
+                className="rounded-lg border border-border-default bg-surface-page p-4"
               >
-                <div>
-                  <Link
-                    href={`/dashboard/teams/${team.id}/workflows/${workflow.id}`}
-                    className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    {workflow.name}
-                  </Link>
-                  <p className="text-xs text-text-muted">
-                    {workflow.section_count} step
-                    {workflow.section_count === 1 ? "" : "s"}
-                    {workflow.effective_from
-                      ? ` · from ${workflow.effective_from}`
-                      : ""}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      workflow.is_routing
-                        ? "bg-brand-secondary-subtle text-brand-secondary"
-                        : "bg-surface-muted text-text-muted"
-                    }`}
-                  >
-                    {workflow.is_routing ? "Routing" : "Standby"}
-                  </span>
-                  <Link
-                    href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-                    className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                  >
-                    Edit steps
-                  </Link>
-                </div>
+                <WorkflowCompactCard
+                  workflow={workflow}
+                  teamId={team.id}
+                  readOnly={true}
+                />
               </li>
             ))}
           </ul>
@@ -144,15 +112,8 @@ export default async function TeamWorkflowsPage({
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Which chain routes
+          Default chain
         </h3>
-        <p className="mb-3 text-sm text-text-secondary">
-          {team.workflow_name
-            ? `New applications currently go through "${team.workflow_name}".`
-            : "This team routes nothing yet."}{" "}
-          The applications already inside the current chain keep it, whatever
-          happens here.
-        </p>
         <WorkflowRoutingActions team={team} workflows={workflows} />
       </div>
     </div>

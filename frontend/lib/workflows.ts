@@ -6,10 +6,10 @@ import type { WorkflowMember } from "./team-members";
  *
  * A team may own several chains, so a chain is read on its own — the team's
  * workflow screen needs its steps, how each one resolves its approver, and who
- * is a member of each. It is also written on its own now, for the same reason:
- * HR builds the replacement chain alongside the live one rather than swapping
- * the live chain's steps out from under the applications already inside it.
- * What never changes is that the chain belongs to the team it was created for.
+ * is a member of each. It is also written on its own, for the same reason: HR
+ * builds a second chain beside the first rather than swapping the first one's
+ * steps out from under the applications already inside it. What never changes
+ * is that the chain belongs to the team it was created for.
  */
 
 /**
@@ -127,9 +127,9 @@ export interface WorkflowSectionInput {
  * A chain, as configured.
  *
  * `team` is the team that *owns* it — the team it was built for, which is the
- * team that may edit it. `is_routing` says whether that team currently routes
- * through it, which is a separate question: a team may own several chains and
- * route exactly one.
+ * team that may edit it. `is_routing` says whether it is that team's default
+ * chain, which is a separate question: a team routes every chain its people
+ * are enrolled on, and the default is the fallback for the rest.
  */
 export interface Workflow {
   id: number;

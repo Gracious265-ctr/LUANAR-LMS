@@ -9,17 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 /**
- * Point a team at one chain, from wherever that chain is listed.
+ * Make one of a team's chains its default, from wherever that chain is listed.
  *
- * Switching is a decision rather than an edit: the chain being left keeps its
- * steps, and the applications already inside it keep the chain they were
- * submitted against. That is why it is a button with a confirmation sentence
- * rather than a dropdown on the team form — the person pressing it is saying
- * which chain is live, not which row to save.
- *
- * Extracted from the list so the same control can sit on the team overview's
- * chain rows, which is what keeps "route this team through that chain" within
- * the three-click budget instead of hiding behind the Workflows page.
+ * A team routes every chain its people are enrolled on, all at once, so this
+ * does not switch a live chain off: it sets the default fallback for employees
+ * who are not enrolled on any chain, and the chain a wide approver uses when
+ * they are looking at several of the team's chains at once. A chain only routes
+ * applications after it is created with its steps and its members are enrolled;
+ * a team member who is not in that chain never submits through it. That is why
+ * it is a button with a confirmation sentence rather than a dropdown on the team
+ * form — the person pressing it is changing a routing fallback for a group of
+ * employees, not saving a row.
  */
 export function RouteChainButton({
   teamId,
@@ -36,7 +36,7 @@ export function RouteChainButton({
   if (workflow.is_routing) {
     return (
       <Badge size="sm" tone="info">
-        Routing now
+        Default
       </Badge>
     );
   }
@@ -63,8 +63,7 @@ export function RouteChainButton({
     return (
       <span className="flex flex-wrap items-center justify-end gap-2 text-xs">
         <span className="text-text-secondary">
-          New applications will go through this chain. Those already inside the
-          current one keep it.
+          This chain only starts routing once it is created with its steps and its members are enrolled. Everyone already enrolled keeps their chain — employees not on another chain will route through this one.
         </span>
         <Button
           size="sm"
@@ -72,7 +71,7 @@ export function RouteChainButton({
           loading={busy}
           onClick={() => void routeThrough()}
         >
-          Yes, route through this
+          Yes, make it default
         </Button>
         <Button
           variant="secondary"
@@ -80,7 +79,7 @@ export function RouteChainButton({
           disabled={busy}
           onClick={() => setConfirming(false)}
         >
-          Keep the current chain
+          Keep the current default
         </Button>
         {error && <span className="text-xs text-status-rejected">{error}</span>}
       </span>
@@ -95,16 +94,17 @@ export function RouteChainButton({
         size="sm"
         onClick={() => setConfirming(true)}
       >
-        Route through this
+        Make default
       </Button>
     </span>
   );
 }
 
 /**
- * Which of the team's chains new applications go through.
+ * The team's default chain, and the others it routes by enrolment.
  *
- * The list of chains a team may route through, one `RouteChainButton` per row.
+ * Every chain with steps is listed, one `RouteChainButton` per row: the team
+ * routes all of them, and only one is the default.
  */
 export function WorkflowRoutingActions({
   team,
@@ -118,8 +118,8 @@ export function WorkflowRoutingActions({
   if (routable.length === 0) {
     return (
       <p className="text-sm text-text-muted">
-        This team owns no chain with steps yet, so there is nothing it can
-        route through. Build the chain first.
+        This team owns no chain with steps yet, so it routes nothing. Build the
+        chain first.
       </p>
     );
   }
