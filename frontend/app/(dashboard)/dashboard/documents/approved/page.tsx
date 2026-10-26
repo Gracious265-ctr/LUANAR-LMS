@@ -49,11 +49,7 @@ async function ApprovedDocumentsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">
             Approved Documents
           </h1>
-          <p className="mt-1 text-text-secondary">
-            The leave documents generated once an application is approved. A
-            document still being prepared stays on this list rather than
-            disappearing until it is ready.
-          </p>
+          <p className="mt-1 text-text-secondary">Leave documents generated for approved applications.</p>
         </div>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
@@ -63,7 +59,7 @@ async function ApprovedDocumentsPage() {
             <EmptyState
               icon={<FileCheck2 className="h-6 w-6" />}
               title="No approved documents yet"
-              description="Once an application is approved, its generated leave document is filed here."
+              description="Generated documents are filed here once an application is approved."
             />
           ) : (
             <Table>

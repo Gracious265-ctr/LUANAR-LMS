@@ -74,7 +74,7 @@ export function ReassignmentsSection({
             ? `Reassign ${editing.reference_number || editing.employee_name}`
             : "Reassign application"
         }
-        description="Transfer a pending application to a replacement approver and record the mandatory reassignment reason."
+        description="Transfer a pending application to a replacement approver."
         onOpenChange={(open) => {
           if (!open) overlay.close();
         }}

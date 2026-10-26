@@ -216,7 +216,7 @@ describe("WideHoldingPanel", () => {
     renderPanel("team", { scopeOptions: teams });
 
     expect(
-      screen.getByText(/No holders here\. A stage whose role is unheld falls back/i)
+      screen.getByText(/^No holders here\.$/)
     ).toBeInTheDocument();
   });
 
@@ -495,7 +495,7 @@ describe("WideHoldingPanel", () => {
     choose("Role", "1");
 
     expect(
-      screen.getByText(/Every active matching employee already holds/i)
+      screen.getByText(/Every matching employee already holds/i)
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
   });
@@ -577,7 +577,7 @@ describe("WideHoldingPanel", () => {
     choose("Role", "1");
 
     expect(
-      screen.getByText(/Every active matching employee already holds/i)
+      screen.getByText(/Every matching employee already holds/i)
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Person")).not.toBeInTheDocument();
   });

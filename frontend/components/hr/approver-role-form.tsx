@@ -175,11 +175,7 @@ export function ApproverRoleForm({
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-text-muted">
-              How much of an applicant&apos;s leave history this role sees when
-              deciding. It is narrowed further when the applicant is outside the
-              approver&apos;s own team.
-            </p>
+            <p className="mt-1 text-xs text-text-muted">How much of an applicant&apos;s leave history this role sees.</p>
           </div>
 
           <label className="flex items-start gap-2 md:col-span-2">

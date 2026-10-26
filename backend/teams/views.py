@@ -24,6 +24,7 @@ from chains.services import (
     wide_approver_ids_for_team,
     workflow_member_pool,
 )
+from chains.services.lifecycle import route_team
 from chains.serializers import TeamReadinessSerializer, WorkflowMemberPoolSerializer
 from chains.services._shared import TeamActionError, _require_can_manage_team
 from roles.models import ApproverRole, RoleAssignment
@@ -110,6 +111,11 @@ class TeamViewSet(
         directory is HR-only, so a team manager building their roster had no way
         to read who was available and could only remove people, never add them.
 
+        The team's own designated manager is offered even though they are a wide
+        approver: joining the roster is how their own leave routes through the
+        team they run. Once they join, "unassigned employees" excludes them from
+        every other team's list.
+
         This proposes the same list through a route a manager may reach — the
         team is ``self.get_object()``, so the scoped queryset has already
         refused a team that is not theirs — and returns the employee shape the
@@ -141,7 +147,8 @@ class TeamViewSet(
         A role is not secret configuration (a manager names steps with it), so the
         list is exposed read-only here: active roles only, and only to a caller
         who manages at least one team, which ``IsHROrTeamManager`` already gates.
-        Writing roles stays on the HR-only role endpoint.
+        A manager may also *create* a role by name on the role endpoint, deduped
+        by name; editing and retiring one stay HR's.
         """
         roles = ApproverRole.objects.filter(is_active=True).order_by("label")
         return Response(ApproverRoleSerializer(roles, many=True).data)
@@ -273,22 +280,15 @@ class TeamViewSet(
                 .exclude(workflow_id__in=excluded_workflow_ids)
                 .values_list("approver_id", flat=True)
             )
-            wide_ids = set(
-                RoleAssignment.objects.filter(
-                    role__is_institution_wide=True, user__is_active=True
-                ).values_list("user_id", flat=True)
-            )
-            wide_ids.update(
+            # A team-wide holder staffs the steps of every chain — including the
+            # team's designated manager, whose holding is a post rather than an
+            # enrolment — so they stay offered even after staffing another
+            # chain, exactly as the write path now accepts them.
+            wide_ids = wide_approver_ids_for_team(team) | set(
                 TeamRoleAssignment.objects.filter(
                     team=team, user__is_active=True
                 ).values_list("user_id", flat=True)
             )
-            if team.campus_id is not None:
-                wide_ids.update(
-                    CampusRoleAssignment.objects.filter(
-                        campus_id=team.campus_id, user__is_active=True
-                    ).values_list("user_id", flat=True)
-                )
             queryset = queryset.exclude(user_id__in=assigned_ids - wide_ids)
 
         role = None
@@ -330,16 +330,40 @@ class TeamViewSet(
         candidates = list(
             queryset.order_by("user__first_name", "user__last_name")
         )
-        if role is not None and role.is_institution_wide:
-            # An institution-wide role is held outside any one team, so the holder
-            # is absent from the team-scoped queryset above. Offer them anyway:
-            # selecting this role *is* how the holder is put on the step, and a
-            # picker that could not show them would leave HR with a step no team
-            # member is allowed to fill.
+        if role is not None:
+            # A wide holding staffs this role's steps from outside the team
+            # roster, so its holder is absent from the team-scoped queryset
+            # above. Offer them anyway: selecting the role is how the holder is
+            # put on a step, and a picker that could not show them would leave
+            # the step unfillable.
+            #
+            # The scope is the same one routing applies: the team's own holder,
+            # the holder at the campus of an *academic* team, and — for an
+            # *administration* team only — the institution-wide holder. A
+            # campus-wide approver never reaches a team at another campus, and
+            # an institution-wide approver never reaches an academic team.
+            wide_holder_ids = set(
+                TeamRoleAssignment.objects.filter(
+                    team=team, role=role, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            if team.category == Team.Category.ACADEMIC and team.campus_id is not None:
+                wide_holder_ids.update(
+                    CampusRoleAssignment.objects.filter(
+                        campus_id=team.campus_id, role=role, user__is_active=True
+                    ).values_list("user_id", flat=True)
+                )
+            if (
+                role.is_institution_wide
+                and team.category == Team.Category.ADMINISTRATION
+            ):
+                wide_holder_ids.update(
+                    RoleAssignment.objects.filter(
+                        role=role, user__is_active=True
+                    ).values_list("user_id", flat=True)
+                )
             already_offered = {profile.user_id for profile in candidates}
-            holder_ids = RoleAssignment.objects.filter(
-                role=role, user__is_active=True
-            ).values_list("user_id", flat=True)
+            holder_ids = wide_holder_ids - conflicting_ids
             candidates.extend(
                 EmployeeProfile.objects.filter(
                     user_id__in=holder_ids, user__is_active=True

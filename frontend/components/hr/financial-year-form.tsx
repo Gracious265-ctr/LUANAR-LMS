@@ -105,11 +105,7 @@ export function FinancialYearForm({
           Active financial year
         </label>
       </div>
-      <p className="text-xs text-text-muted md:col-span-2">
-        Exactly one financial year is active at a time. Checking this deactivates
-        the currently active period. Unchecking it leaves no active period; the
-        system uses the active financial year when validating leave applications.
-      </p>
+      <p className="text-xs text-text-muted md:col-span-2">Exactly one financial year is active at a time.</p>
 
       {error && (
         <FormError className="md:col-span-2">{error}</FormError>

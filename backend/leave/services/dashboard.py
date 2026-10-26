@@ -201,6 +201,7 @@ def get_dashboard_data(user) -> dict:
     needs_attention = list(
         applications.filter(
             status=LeaveApplication.Status.REJECTED,
+            rejection_accepted_at__isnull=True,
         ).order_by("-updated_at")[:NEEDS_ATTENTION_LIMIT]
     )
     drafts = list(

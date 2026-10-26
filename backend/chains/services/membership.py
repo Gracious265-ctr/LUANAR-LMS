@@ -15,6 +15,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from audit.models import AuditEntry
+from campuses.models import CampusRoleAssignment
+from roles.models import ApproverRole
 from roles.services import (
     WorkflowMemberError,
     _employee_profile_for,
@@ -45,6 +47,50 @@ def team_for_section(section: Section) -> Team | None:
         return None
     return section.workflow.team
 
+
+def holds_role_wide_for_team(
+    *, team: Team | None, role: ApproverRole, user: User
+) -> bool:
+    """Whether ``user`` staffs ``role`` for ``team`` through a wide holding.
+
+    The narrowly-scoped siblings of the institution-wide holding: the holder of
+    the role on this team, or the holder of the role at the team's campus. A
+    wide holder may approve for a team they are not a member of — that is the
+    point of the holding — so this is what exempts them from the membership rule
+    when a chain names them at a step. An institution-wide holder is exempt
+    separately, because such a role may only serve an administration team and is
+    refused elsewhere.
+    """
+    if team is None:
+        return False
+    if TeamRoleAssignment.objects.filter(
+        team=team, role=role, user=user, user__is_active=True
+    ).exists():
+        return True
+    if team.campus_id is None or team.category != Team.Category.ACADEMIC:
+        return False
+    return CampusRoleAssignment.objects.filter(
+        campus_id=team.campus_id, role=role, user=user, user__is_active=True
+    ).exists()
+
+
+def holds_team_wide_role(*, team: Team | None, user: User) -> bool:
+    """Whether ``user`` holds any approver role team-wide on ``team``.
+
+    Broader than :func:`~roles.services.wide_approver_ids_for_team` in exactly
+    one way: it includes the team's **designated manager**. That set leaves the
+    manager out because a *membership* would re-route their own leave through
+    the chain they joined; a **step appointment** is not a membership and does
+    not change where their leave routes, so for staffing steps the manager is a
+    team-wide holder like any other.
+    """
+    if team is None:
+        return False
+    return TeamRoleAssignment.objects.filter(
+        team=team, user=user, user__is_active=True
+    ).exists()
+
+
 def ensure_team_eligibility(section: Section, user: User) -> None:
     """Refuse an approver who is not a member of the owning team.
 
@@ -56,9 +102,10 @@ def ensure_team_eligibility(section: Section, user: User) -> None:
       appointed without the membership rule. It is also an *administration*
       office: an academic team may not use one at all, and that is refused
       here rather than silently resolved at submission.
-    * a **team-wide or campus-wide** holder never reaches this check, because
-      those resolve a stage without being appointed to it. What is written on a
-      section is always somebody the team itself holds.
+    * a **team-wide or campus-wide** holder may be named on a step of the role
+      they hold. They approve for the team without belonging to it, and the
+      chain form writes them onto the step when it locks it, so refusing them
+      here would make a locked step unsaveable.
 
     Every other role is scoped, and the scoping is the rule rather than a
     suggestion: somebody approving for a team they are not a member of would be
@@ -90,6 +137,11 @@ def ensure_team_eligibility(section: Section, user: User) -> None:
             "appoint. Attach the chain to its team first, then appoint an "
             "approver.",
         )
+
+    if holds_role_wide_for_team(team=team, role=role, user=user):
+        # The step names the very person who holds this role across the team or
+        # its campus. Their post is the appointment; they need no roster row.
+        return
 
     profile = getattr(user, "employee_profile", None)
     if profile is None:
@@ -263,6 +315,14 @@ def ensure_not_assigned_elsewhere(section: Section, user: User) -> None:
     office off the first one, and :func:`workflow_member_pool` and the
     approver picker keep offering them to every chain.
 
+    The team's **designated manager** is included, because this rule is about
+    staffing steps rather than enrolment: a manager joins the roster to route
+    their own leave and stays an ordinary member of one chain
+    (:func:`_ensure_member_not_assigned_elsewhere`), but their team-wide post
+    staffs the steps of every chain just as any other holder's does. Excluding
+    them here would leave the step the chain form locks to them unsaveable on
+    the team's second chain.
+
     The section's own workflow is excluded from the comparison, so re-saving
     a step that already appoints this person is not a conflict with itself —
     the same convention as :func:`ensure_single_stage_per_workflow`.
@@ -270,7 +330,9 @@ def ensure_not_assigned_elsewhere(section: Section, user: User) -> None:
     team = team_for_section(section)
     if team is None:
         return
-    if user.pk in wide_approver_ids_for_team(team):
+    if user.pk in wide_approver_ids_for_team(team) or holds_team_wide_role(
+        team=team, user=user
+    ):
         return
 
     others = list(
@@ -381,12 +443,15 @@ def add_section_member(
         membership.full_clean()
         membership.save()
         # When an employee is assigned as a workflow approver, they automatically
-        # become a team member. The institution-wide holder is the deliberate
-        # exception: their post approves *across* teams, and placing them on this
-        # one would re-route their own leave through it and take them off whatever
-        # team actually holds them.
+        # become a team member. A wide holder is the deliberate exception: their
+        # post approves *across* teams (or across the teams of a campus), and
+        # placing them on this one would re-route their own leave through it and
+        # take them off whatever team actually holds them.
         team = team_for_section(section)
-        if not section.approver_role.is_institution_wide:
+        is_wide = section.approver_role.is_institution_wide or (
+            holds_role_wide_for_team(team=team, role=section.approver_role, user=user)
+        )
+        if not is_wide:
             try:
                 profile = user.employee_profile
             except Exception:
@@ -647,7 +712,9 @@ def assign_workflow_member(
     deliberate exception (see :func:`ensure_not_assigned_elsewhere`): their
     holdings staff chains automatically, so they may sit on several, and the
     row is marked with :attr:`~workflows.models.WorkflowMember.is_wide_approver`
-    so the database's conditional uniqueness lets them through.
+    so the database's conditional uniqueness lets them through. The team's
+    manager is not exempt: they joined the roster to route their own leave and
+    serves one chain like any other member.
     """
     team = _workflow_team_or_error(workflow)
     if not user.is_active:
@@ -816,8 +883,10 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
     or as the single approver staffing a step of one. A **wide approver** is
     the exception and stays available: their holdings staff another chain
     automatically, and a team reuses its registrar or bursar on a second chain
-    rather than moving them off the first. When ``workflow`` is given, its own
-    members are included in ``available`` (they are already selected) and
+    rather than moving them off the first. The team's manager is not part of
+    that exception: once placed on a chain they are an ordinary member of it,
+    and disappear from the other chains' pools. When ``workflow`` is given, its
+    own members are included in ``available`` (they are already selected) and
     listed separately under ``current`` so a client can render them as checked
     rather than as a second assignment.
 

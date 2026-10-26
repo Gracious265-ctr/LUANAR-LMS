@@ -184,13 +184,7 @@ export default async function ApproversPage({
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-text-primary">Approvers</h2>
-        <p className="text-text-secondary">
-          Every role, every scope, every holder. A stage resolves its approver
-          from the person appointed to it first, then from a team-wide holding,
-          then from a campus-wide one, and only an administration team may fall
-          back to an institution-wide holder — so where a role is held decides
-          which teams it reaches.
-        </p>
+        <p className="text-text-secondary">Every role and its holder at each scope.</p>
       </div>
 
       <div
@@ -262,7 +256,7 @@ export default async function ApproversPage({
       {activeRoles.length === 0 ? (
         <EmptyPanel
           title="No active approver roles"
-          description="Create a role first — a holding is always a person holding a role somewhere, so there is nothing to hold until the role exists."
+          description="Create a role first."
           action={
             <Link
               href="/dashboard/hr-admin/roles/new"
@@ -311,15 +305,7 @@ export default async function ApproversPage({
               />
             )}
           </div>
-          <p className="mt-3 text-xs text-text-muted">
-            A person holds one wide approver role, so a saved holder disappears
-            from the other sections. A team or campus role replaces its holder at
-            the same team or campus, and stays available at other teams. An
-            institution-wide role has exactly one approver — it is not offered
-            again once it has a holder, so change the holder by removing the
-            current one first. Assigning a role its first institution-wide
-            holder is also what makes the role institution-wide.
-          </p>
+          <p className="mt-3 text-xs text-text-muted">A saved wide holder replaces the previous one at the same scope.</p>
         </section>
       )}
 

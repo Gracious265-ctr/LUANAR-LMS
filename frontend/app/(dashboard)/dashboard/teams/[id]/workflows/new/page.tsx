@@ -4,8 +4,10 @@ import { ArrowLeft } from "lucide-react";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { ApproverRole } from "@/lib/approver-roles";
-import { listActiveApproverRoles } from "@/lib/approver-roles-client";
-import { listApproverRoles } from "@/lib/approver-roles";
+import {
+  listApproverRoles,
+  listEligibleApproverRoles,
+} from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
 import {
   canAccessTeams,
@@ -20,10 +22,11 @@ const ROLES_ERROR =
 /**
  * A new chain for a team that already exists.
  *
- * The usual reason to be here is a replacement: the live chain is in force and
- * being edited would change the routing of applications already inside it, so
- * the new steps are built beside it and the team is pointed at them when they
- * are ready.
+ * A team routes every chain its people are enrolled on, so a second chain is
+ * how part of a team's staff gets different approval steps — not a switch that
+ * stops the first one. Building it here leaves the existing chain and the
+ * applications inside it untouched; enrol the people who should use it when
+ * its steps are ready.
  */
 export default async function NewWorkflowPage({
   params,
@@ -55,7 +58,7 @@ export default async function NewWorkflowPage({
     // otherwise the form opens with no roles and cannot describe a step.
     roles = isTeamsAdministrator(user)
       ? await listApproverRoles()
-      : await listActiveApproverRoles();
+      : await listEligibleApproverRoles();
   } catch {
     rolesError = ROLES_ERROR;
   }
@@ -73,11 +76,7 @@ export default async function NewWorkflowPage({
         <h2 className="mt-2 text-2xl font-bold text-text-primary">
           New workflow for {team.name}
         </h2>
-        <p className="text-text-secondary">
-          Describe the steps in order. The chain is created owned by this team
-          and routes nothing until you point the team at it — so a chain being
-          built never changes who is approving today.
-        </p>
+        <p className="text-text-secondary">Describe the steps in order.</p>
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

@@ -73,6 +73,9 @@ class TrackedOutcome:
     approver_name: str
     decided_at: datetime
     reason: str
+    #: When the employee accepted the rejection instead of resubmitting it.
+    #: Null while the rejection is still open.
+    accepted_at: datetime | None = None
 
 
 @dataclass(frozen=True)

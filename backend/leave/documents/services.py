@@ -44,10 +44,13 @@ class DocumentNotActiveError(Exception):
 def ensure_editable(application) -> None:
     """Raise ``DocumentNotEditableError`` unless the application is editable.
 
-    Editable statuses are exactly ``draft`` and ``rejected``; this
-    is the single source of "read-only while under review / after approval".
+    Editable statuses are exactly ``draft`` and a still-open ``rejected``
+    application; this is the single source of "read-only while under review /
+    after approval / once the rejection is accepted".
     """
     if application.status not in EDITABLE_STATUSES:
+        raise DocumentNotEditableError()
+    if application.rejection_accepted_at is not None:
         raise DocumentNotEditableError()
 
 

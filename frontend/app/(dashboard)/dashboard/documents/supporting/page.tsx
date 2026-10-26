@@ -75,10 +75,7 @@ async function SupportingDocumentsPage({
             <h1 className="text-2xl font-bold tracking-tight text-text-primary">
               Supporting Documents
             </h1>
-            <p className="mt-1 text-text-secondary">
-              Every file uploaded alongside a leave application. Retirement
-              keeps the record of what was replaced instead of deleting it.
-            </p>
+            <p className="mt-1 text-text-secondary">Every file uploaded alongside a leave application.</p>
           </div>
 
           <div
@@ -110,7 +107,7 @@ async function SupportingDocumentsPage({
             <EmptyState
               icon={<FileText className="h-6 w-6" />}
               title="No supporting documents yet"
-              description="A file uploaded with an application appears here, along with the application it belongs to."
+              description="Files uploaded with an application appear here."
             />
           ) : (
             <Table>

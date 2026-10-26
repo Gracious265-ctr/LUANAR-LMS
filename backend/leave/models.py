@@ -251,6 +251,13 @@ class LeaveApplication(models.Model):
     # cancellation was finally approved. Null for every other status.
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
+    # Set when the employee accepts a rejection rather than editing and
+    # resubmitting. The status stays ``rejected`` (it was rejected, and that is
+    # history), but the rejection is now closed: the application is no longer
+    # editable, cannot be resubmitted, and stops asking the employee for
+    # attention on the dashboard. Null while the rejection is still open.
+    rejection_accepted_at = models.DateTimeField(null=True, blank=True)
+
     # Set once, inside the approval transaction, when the application reaches
     # its final ``APPROVED`` state (Unit 23b). The generated approved document
     # states when the leave was approved, so the date has to be recorded rather

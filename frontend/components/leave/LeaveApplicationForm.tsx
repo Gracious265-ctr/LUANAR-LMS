@@ -108,7 +108,10 @@ const [loadError, setLoadError] = useState<string | null>(null);
         });
         if (res.ok) {
           const data = await res.json();
-          if (READ_ONLY_STATUSES.includes(data.status)) {
+          if (
+            READ_ONLY_STATUSES.includes(data.status) ||
+            (data.status === "rejected" && data.rejection_accepted_at)
+          ) {
             setSubmitted(true);
             return;
           }
@@ -205,10 +208,7 @@ const [loadError, setLoadError] = useState<string | null>(null);
         <div className="text-lg font-semibold text-text-primary mb-2">
           Application No Longer Editable
         </div>
-        <p className="text-sm text-text-secondary mb-6">
-          This leave application has left the editable stage and is now a
-          read-only record. View its current details in your applications list.
-        </p>
+        <p className="text-sm text-text-secondary mb-6">This application is read-only now.</p>
         <Link
           href="/dashboard/leave/applications"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-button-primary text-button-primary-foreground font-medium text-sm hover:bg-button-primary-hover transition-colors"

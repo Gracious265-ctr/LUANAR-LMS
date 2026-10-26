@@ -138,7 +138,12 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
         <div className="space-y-6 lg:w-1/3">
           {(showAttention || data.resubmission.count > 0) && (
             <div className="space-y-6">
-              {showAttention && <OutcomePanel data={data} />}
+              {showAttention && (
+                <OutcomePanel
+                  data={data}
+                  onAccepted={() => load("refresh")}
+                />
+              )}
               {data.resubmission.count > 0 && (
                 <ResubmissionNote resubmission={data.resubmission} />
               )}

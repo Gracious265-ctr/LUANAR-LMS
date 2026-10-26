@@ -2,10 +2,20 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowUp, Lock, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Lock, Plus, X } from "lucide-react";
 
-import type { ApproverRole, RoleAssignment } from "@/lib/approver-roles";
-import { listRoleAssignments } from "@/lib/approver-roles-client";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
+import {
+  createOrReuseApproverRole,
+  listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
+} from "@/lib/approver-roles-client";
 import { getWorkflowMemberPool } from "@/lib/team-members-client";
 import type { WorkflowMemberPool } from "@/lib/team-members";
 import type { EligibleApprover } from "@/lib/teams";
@@ -13,16 +23,59 @@ import { listEligibleApprovers } from "@/lib/teams-client";
 import type { Workflow, WorkflowInput, WorkflowSectionInput } from "@/lib/workflows";
 import { createWorkflow, updateWorkflow } from "@/lib/workflows-client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 
 interface DraftStep {
   /** The role this step needs, by code. Open-ended, like every role code. */
   approver_role: string;
-  /** Only set when HR has overridden the step's name from the role's label. */
-  name?: string;
   /** The one person appointed to the step, by user id. Null leaves it unstaffed. */
   approver: number | null;
+}
+
+/** The single person a wide holding places on a step, name and all. */
+interface WideHolder {
+  id: number;
+  name: string;
+}
+
+/**
+ * One holder per role, dropping any role that somehow has more.
+ *
+ * Every wide holding is unique per (scope, role), so more than one is not
+ * reachable today. Mapping it to nothing is still the right answer: naming one
+ * of several people as the automatic approver is the ambiguity the backend
+ * leaves unstaffed rather than guess at.
+ */
+function loneHolderByRole(
+  assignments: {
+    role: number;
+    user: number;
+    user_name: string;
+  }[]
+): Map<number, WideHolder> {
+  const lone = new Map<number, WideHolder>();
+  const seen = new Set<number>();
+  for (const assignment of assignments) {
+    if (seen.has(assignment.role)) {
+      lone.delete(assignment.role);
+      continue;
+    }
+    seen.add(assignment.role);
+    lone.set(assignment.role, {
+      id: assignment.user,
+      name: assignment.user_name,
+    });
+  }
+  return lone;
 }
 
 /**
@@ -46,7 +99,7 @@ export function WorkflowForm({
   rolesError = "",
 }: {
   workflow?: Workflow;
-  team: { id: number; name: string; category?: string };
+  team: { id: number; name: string; category?: string; campus?: number | null };
   roles: ApproverRole[];
   rolesError?: string;
 }) {
@@ -56,11 +109,19 @@ export function WorkflowForm({
     workflow
       ? workflow.sections.map((section) => ({
           approver_role: section.approver_role,
-          name: section.name,
           approver: section.approver,
         }))
       : []
   );
+  // Seeded once from the page's list; roles created from the "New role" card
+  // are folded in below, so a manager who adds a role can put it on a step
+  // without reloading the form. The prop itself is fixed for the form's life.
+  const [availableRoles, setAvailableRoles] = useState<ApproverRole[]>(roles);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [roleDialogError, setRoleDialogError] = useState("");
+  const [roleNotice, setRoleNotice] = useState("");
+  const [creatingRole, setCreatingRole] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pool, setPool] = useState<WorkflowMemberPool | null>(null);
@@ -72,41 +133,61 @@ export function WorkflowForm({
     {}
   );
   const [candidateError, setCandidateError] = useState("");
-  const [wideHolders, setWideHolders] = useState<RoleAssignment[]>([]);
+  const [institutionHolders, setInstitutionHolders] = useState<RoleAssignment[]>(
+    []
+  );
+  const [teamHolders, setTeamHolders] = useState<TeamRoleAssignment[]>([]);
+  const [campusHolders, setCampusHolders] = useState<CampusRoleAssignment[]>([]);
 
   const roleByCode = useMemo(
-    () => new Map(roles.map((role) => [role.code, role])),
-    [roles]
+    () => new Map(availableRoles.map((role) => [role.code, role])),
+    [availableRoles]
+  );
+  const roleById = useMemo(
+    () => new Map(availableRoles.map((role) => [role.id, role])),
+    [availableRoles]
   );
   const roleIdByCode = useMemo(
-    () => new Map(roles.map((role) => [role.code, role.id])),
-    [roles]
+    () => new Map(availableRoles.map((role) => [role.code, role.id])),
+    [availableRoles]
   );
 
   /**
-   * The single institution-wide holder of each role, name and all, by role id.
-   * A role with no holder — or more than one — maps to nothing, because naming
-   * one of several people as the automatic answer is exactly the ambiguity the
-   * backend leaves unstaffed rather than guess at. The name is here because a
-   * locked approver field shows it read-only; it is not a candidate to pick
-   * from.
+   * The single holder of each role at each scope, narrowest first.
+   *
+   * A step is staffed by the narrowest wide holding that applies — the team's
+   * own holder, then the holder at the team's campus, then the institution-wide
+   * holder for an administration team — which is the same precedence the
+   * backend resolves by at submission (``chains.providers``). Merging widest
+   * first (institution, campus, team) leaves the narrowest holding in place, so
+   * the field shows the one person the backend would route to rather than any
+   * of the people who could theoretically staff it.
+   *
+   * The name is here because a locked approver field shows it read-only; it is
+   * not a candidate to pick from.
    */
   const wideHolderByRoleId = useMemo(() => {
-    const lone = new Map<number, { id: number; name: string }>();
-    const seen = new Set<number>();
-    for (const assignment of wideHolders) {
-      if (seen.has(assignment.role)) {
-        lone.delete(assignment.role);
-        continue;
+    const merged = new Map<number, WideHolder>();
+    for (const [roleId, holder] of loneHolderByRole(institutionHolders)) {
+      const role = roleById.get(roleId);
+      // An institution-wide approver is an administration office: an academic
+      // team may not use one at all, so its holder never staffs that step.
+      if (role?.is_institution_wide && team.category === "administration") {
+        merged.set(roleId, holder);
       }
-      seen.add(assignment.role);
-      lone.set(assignment.role, {
-        id: assignment.user,
-        name: assignment.user_name,
-      });
     }
-    return lone;
-  }, [wideHolders]);
+    for (const [roleId, holder] of loneHolderByRole(campusHolders)) {
+      // A campus-wide holding reaches only the academic teams at its own
+      // campus, so an administration team never staffs a step from it.
+      if (team.category === "academic") {
+        merged.set(roleId, holder);
+      }
+    }
+    for (const [roleId, holder] of loneHolderByRole(teamHolders)) {
+      merged.set(roleId, holder);
+    }
+    return merged;
+  }, [teamHolders, campusHolders, institutionHolders, roleById, team.category]);
 
   /**
    * The chain this form is shaping, as the eligible-approver question needs it:
@@ -162,64 +243,44 @@ export function WorkflowForm({
   }, [candidateKeys, workflowScope]);
 
   /**
-   * Read who already holds each role institution-wide. The backend appoints
-   * that holder at save, so the form needs the same answer on first draw.
-   * Unreadable holdings are treated as "none": the field is then left to HR,
-   * which is precisely what the save path does when it cannot appoint either.
+   * Read who holds each role wide, at every scope that can staff this team.
    *
-   * The fill when the list arrives mirrors the backend's rule exactly and is
-   * deliberately as narrow: only an institution-wide role, only an
-   * administration team (an academic team may not use an institution-wide
-   * approver at all), and only when there is exactly one holder. That answer is
-   * the one true approver of the step — the field is locked to it and another
-   * name may not be selected — so the fill also corrects a person appointed
-   * before this rule existed: the wide holder wins.
+   * The backend resolves a step to the narrowest holding, so the form needs all
+   * three lists to show the same answer. A manager may read each of them
+   * (granting or moving a holding stays HR's), so the lock below is the same one
+   * HR sees rather than a manager-only gap. An unreadable list is treated as
+   * "none": that step is left to the picker, which is what the save path does
+   * when it cannot resolve a holder either.
    */
   useEffect(() => {
     let cancelled = false;
-    listRoleAssignments()
-      .then((assignments) => {
-        if (cancelled) return;
-        setWideHolders(assignments);
-        const lone = new Map<number, { id: number; name: string }>();
-        const seen = new Set<number>();
-        for (const assignment of assignments) {
-          if (seen.has(assignment.role)) {
-            lone.delete(assignment.role);
-            continue;
-          }
-          seen.add(assignment.role);
-          lone.set(assignment.role, {
-            id: assignment.user,
-            name: assignment.user_name,
-          });
-        }
-        setSteps((current) => {
-          let changed = false;
-          const next = current.map((step) => {
-            const role = step.approver_role
-              ? roleByCode.get(step.approver_role)
-              : undefined;
-            if (role === undefined || !role.is_institution_wide) return step;
-            if (team.category !== "administration") return step;
-            const holder = lone.get(role.id);
-            if (holder === undefined) return step;
-            if (step.approver === holder.id) return step;
-            changed = true;
-            return { ...step, approver: holder.id };
-          });
-          return changed ? next : current;
-        });
+    listTeamRoleAssignments(team.id)
+      .then((rows) => {
+        if (!cancelled) setTeamHolders(rows);
       })
       .catch(() => {
-        // No visible holders means no auto-appointment; HR still picks by hand.
+        // No visible team-wide holders means no lock from this scope.
       });
+    listRoleAssignments()
+      .then((rows) => {
+        if (!cancelled) setInstitutionHolders(rows);
+      })
+      .catch(() => {
+        // No visible institution-wide holders means no lock from this scope.
+      });
+    if (team.campus != null) {
+      listCampusRoleAssignments(team.campus)
+        .then((rows) => {
+          if (!cancelled) setCampusHolders(rows);
+        })
+        .catch(() => {
+          // No visible campus-wide holders means no lock from this scope.
+        });
+    }
     return () => {
       cancelled = true;
     };
-    // Roles and the team's category are constant for the form's life, so the
-    // effect runs only once; they are listed for the linter, not to re-run it.
-  }, [roleByCode, team.category]);
+  }, [team.id, team.campus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,9 +368,9 @@ function toggleMember(userId: number) {
    * and sending an ineligible id would earn a refusal on save. The picker
    * refetches through the role-based candidate keys above.
    *
-   * An institution-wide role also staffs its own step the moment it is
-   * chosen: it is the single holder who will be appointed at save, so the
-   * field shows that answer now rather than a step that looks undecided.
+   * A role with a wide holder also staffs its own step the moment it is chosen:
+   * that is the single person who will be written at save, so the field shows
+   * the answer now rather than a step that looks undecided.
    */
   function changeRole(index: number, approverRole: string) {
     setSteps((current) =>
@@ -321,7 +382,7 @@ function toggleMember(userId: number) {
           approver: null,
         };
         const role = roleByCode.get(approverRole);
-        if (role?.is_institution_wide && team.category === "administration") {
+        if (role !== undefined) {
           const holder = wideHolderByRoleId.get(role.id);
           if (holder !== undefined) {
             return { ...next, approver: holder.id };
@@ -334,14 +395,55 @@ function toggleMember(userId: number) {
 
   function addStep() {
     setSteps((current) => {
-      const approverRole = roles[0]?.code ?? "";
+      const approverRole = availableRoles[0]?.code ?? "";
       const role = roleByCode.get(approverRole);
       const approver =
-        role?.is_institution_wide && team.category === "administration"
+        role !== undefined
           ? (wideHolderByRoleId.get(role.id)?.id ?? null)
           : null;
       return [...current, { approver_role: approverRole, approver }];
     });
+  }
+
+  /**
+   * Add a role from the step form, or use the one that already has that name.
+   *
+   * The list is not HR's only any more: a manager describing their own chain
+   * can add the office their steps need, and the backend dedupes by name so the
+   * organisation still has one "Dean" rather than one per team. The returned
+   * role is folded into the local list, which is what makes it selectable in
+   * the step that prompted the card.
+   */
+  async function createRole() {
+    const label = newRoleName.trim();
+    if (!label) {
+      setRoleDialogError("Enter a role name.");
+      return;
+    }
+    setRoleDialogError("");
+    setCreatingRole(true);
+    try {
+      const { role, created } = await createOrReuseApproverRole(label);
+      setAvailableRoles((current) => {
+        if (current.some((row) => row.id === role.id)) {
+          return current.map((row) => (row.id === role.id ? role : row));
+        }
+        return [...current, role].sort((a, b) => a.label.localeCompare(b.label));
+      });
+      setRoleNotice(
+        created
+          ? `Added ${role.label}.`
+          : `${role.label} already exists — using it.`
+      );
+      setNewRoleName("");
+      setRoleDialogOpen(false);
+    } catch (err) {
+      setRoleDialogError(
+        err instanceof Error ? err.message : "Could not create the role."
+      );
+    } finally {
+      setCreatingRole(false);
+    }
   }
 
   /** One role may sit at only one point in a chain. */
@@ -356,12 +458,20 @@ function toggleMember(userId: number) {
   }
 
   function describe(): WorkflowSectionInput[] {
-    return steps.map((step, index) => ({
-      order: index + 1,
-      approver_role: step.approver_role,
-      approver: step.approver,
-      ...(step.name ? { name: step.name } : {}),
-    }));
+    return steps.map((step, index) => {
+      const role = step.approver_role
+        ? roleByCode.get(step.approver_role)
+        : undefined;
+      // A wide holding is the step's approver even though it was never picked
+      // in the select: the field shows it locked, and the same person is sent.
+      const holder =
+        role !== undefined ? wideHolderByRoleId.get(role.id) : undefined;
+      return {
+        order: index + 1,
+        approver_role: step.approver_role,
+        approver: holder?.id ?? step.approver,
+      };
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -447,24 +557,35 @@ function toggleMember(userId: number) {
           required
           placeholder={`e.g. ${team.name} replacement`}
         />
-        <p className="mt-1 text-xs text-text-muted">
-          This chain&apos;s own name — what the team&apos;s chain list and the
-          audit trail call it. It applies from today until the end of the current
-          academic calendar.
-        </p>
       </div>
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium text-text-primary">Steps</span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={addStep}
-            disabled={roles.length === 0}
-          >
-            Add step
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() => {
+                setRoleDialogError("");
+                setNewRoleName("");
+                setRoleDialogOpen(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New role
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={addStep}
+              disabled={availableRoles.length === 0}
+            >
+              Add step
+            </Button>
+          </div>
         </div>
 
         {rolesError && (
@@ -473,17 +594,18 @@ function toggleMember(userId: number) {
         {candidateError && (
           <p className="mb-2 text-xs text-status-rejected">{candidateError}</p>
         )}
-        {roles.length === 0 && (
+        {roleNotice && (
+          <p className="mb-2 text-xs text-status-approved">{roleNotice}</p>
+        )}
+        {availableRoles.length === 0 && (
           <p className="mb-2 text-xs text-status-pending">
-            No approver roles are available, so no step can be described. Create
-            a role first.
+            No approver roles yet. Use “New role” to add one.
           </p>
         )}
 
         {steps.length === 0 ? (
           <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-            No steps yet. Each step is one office deciding once, in order —
-            the chain reads from the top down.
+            No steps yet.
           </p>
         ) : (
           <ol className="space-y-2">
@@ -510,13 +632,11 @@ function toggleMember(userId: number) {
                       },
                     ]
                   : people;
-              // An institution-wide role has one true approver — its single
-              // institution-wide holder — so the field is locked to that name
-              // and another may not be selected. The backend appoints the same
-              // person at save, so the lock is the front half of a rule the
-              // whole chain already keeps.
+              // A role with a wide holder has one true approver — the
+              // narrowest holder of that role for this team — so the field is
+              // locked to that name and another may not be selected.
               const wideHolder =
-                roleId !== undefined && team.category === "administration"
+                roleId !== undefined
                   ? wideHolderByRoleId.get(roleId)
                   : undefined;
               return (
@@ -542,7 +662,7 @@ function toggleMember(userId: number) {
                     }
                     className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
                   >
-                    {roles.map((role) => {
+                    {availableRoles.map((role) => {
                       const usedIndex = steps.findIndex(
                         (step) => step.approver_role === role.code
                       );
@@ -568,44 +688,19 @@ function toggleMember(userId: number) {
                 </div>
                 <div className="min-w-40 flex-1">
                   <label
-                    htmlFor={`step-name-${index}`}
-                    className="mb-1 block text-xs font-medium text-text-secondary"
-                  >
-                    Step name
-                  </label>
-                  <Input
-                    id={`step-name-${index}`}
-                    value={step.name ?? ""}
-                    onChange={(event) =>
-                      update(index, {
-                        name: event.target.value || undefined,
-                      })
-                    }
-                    placeholder={
-                      roleByCode.get(step.approver_role)?.label ?? "Role label"
-                    }
-                  />
-                </div>
-                <div className="min-w-40 flex-1">
-                  <label
                     htmlFor={`step-approver-${index}`}
                     className="mb-1 block text-xs font-medium text-text-secondary"
                   >
                     Approver
                   </label>
                   {wideHolder ? (
-                    <>
-                      <div
-                        id={`step-approver-${index}`}
-                        className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
-                      >
-                        <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
-                        <span className="font-medium">{wideHolder.name}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-text-muted">
-                        Locked to the institution-wide holder of this role.
-                      </p>
-                    </>
+                    <div
+                      id={`step-approver-${index}`}
+                      className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
+                    >
+                      <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                      <span className="font-medium">{wideHolder.name}</span>
+                    </div>
                   ) : (
                     <select
                       id={`step-approver-${index}`}
@@ -679,26 +774,12 @@ function toggleMember(userId: number) {
             Normal workflow members
           </span>
         </div>
-        <p className="mb-3 text-xs text-text-muted">
-          Drawn only from this team&apos;s members on the{" "}
-          <a
-            href={`/dashboard/teams/${team.id}?tab=members`}
-            className="font-medium text-brand-primary hover:text-brand-primary-hover"
-          >
-            Members
-          </a>{" "}
-          tab: the team members whose submissions this chain decides. Each
-          person serves one of the team&apos;s chains at a time, and adding
-          them to a team never places them on a chain by itself. Distinct from
-          the step approvers above — members submit into the chain, approvers
-          act at its steps.
-        </p>
 
         {poolError && <p className="mb-2 text-sm text-status-rejected">{poolError}</p>}
 
         {!pool && !poolError && (
           <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-            Loading who may join this chain&apos;s member pool...
+            Loading members...
           </p>
         )}
 
@@ -741,7 +822,7 @@ function toggleMember(userId: number) {
               </div>
             ) : (
               <p className="rounded-md border border-dashed border-border-default p-3 text-sm text-text-muted">
-                Nobody is on this chain as a normal member yet.
+                No members yet.
               </p>
             )}
 
@@ -778,11 +859,7 @@ function toggleMember(userId: number) {
                 </ul>
               </div>
             ) : (
-              <p className="text-xs text-text-muted">
-                No other team member may join this chain — the pool is limited
-                to {team.name}&apos;s members who are not already on another
-                chain with the team.
-              </p>
+              <p className="text-xs text-text-muted">No other members can join.</p>
             )}
 
             {elsewhere.length > 0 && (
@@ -818,7 +895,7 @@ function toggleMember(userId: number) {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="submit"
-          disabled={loading || roles.length === 0}
+          disabled={loading || availableRoles.length === 0}
           loading={loading}
         >
           {workflow ? "Save workflow" : "Create workflow"}
@@ -834,12 +911,67 @@ function toggleMember(userId: number) {
         </Button>
       </div>
 
-      <p className="text-xs text-text-muted">
-        A second chain the team owns draws its step approvers and members from
-        the people not already serving one of its chains — one employee serves
-        one chain at a time, unless they are a team-wide, campus-wide, or
-        institution-wide approver.
-      </p>
+      <Dialog
+        open={roleDialogOpen}
+        onOpenChange={(next) => {
+          if (!next && !creatingRole) {
+            setRoleDialogOpen(false);
+            setRoleDialogError("");
+            setNewRoleName("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New approver role</DialogTitle>
+            <DialogDescription>
+              An existing name reuses that role.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Field label="Role name" htmlFor="new-role-name">
+            <Input
+              id="new-role-name"
+              value={newRoleName}
+              onChange={(event) => setNewRoleName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void createRole();
+                }
+              }}
+              placeholder="e.g. Examinations Officer"
+              autoFocus
+              disabled={creatingRole}
+            />
+          </Field>
+
+          {roleDialogError && <Alert tone="error">{roleDialogError}</Alert>}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setRoleDialogOpen(false);
+                setRoleDialogError("");
+                setNewRoleName("");
+              }}
+              disabled={creatingRole}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void createRole()}
+              loading={creatingRole}
+              disabled={!newRoleName.trim()}
+            >
+              Create role
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

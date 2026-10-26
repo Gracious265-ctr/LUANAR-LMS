@@ -2,6 +2,55 @@
 
 Update this file after every meaningful implementation change.
 
+## Team-Wide Approvers on Several Chains + Routing Materialisation (2026-10-26)
+
+- **FIX** — a team-wide holder can staff steps of **every** chain the team owns,
+  including the team's **designated manager**. `ensure_not_assigned_elsewhere`
+  exempted only `wide_approver_ids_for_team`, which leaves the manager out
+  because a *membership* re-routes their own leave; a step appointment is not a
+  membership, so the chain form — which locks a step to the team's holder —
+  used to refuse the manager on the team's second chain. The guard now also
+  exempts anyone holding a team-wide role (`holds_team_wide_role`), and
+  `GET /teams/eligible-approvers/` keeps those holders offered when scoping by
+  `workflow`/`workflow=new`. Enrolment is unchanged: the manager is still an
+  ordinary member of one chain at a time, and the member pool still says so.
+- **VERIFIED** — two or more chains route together, each employee through the
+  chain they are enrolled on: `chains/tests_chain_routing.py` gained three
+  `assign_workflow` cases proving the real writer materialises the enrolled
+  chain (and the default for the unenrolled), with two members' applications
+  live on two different chains at once, plus a submission-endpoint case where
+  two employees of one team submit through the API at the same time and get the
+  stages of their own chains (`POST /leave-applications/<id>/submit/` with the
+  real `DatabaseWorkflowProvider`).
+
+## Multi-Chain Routing — Readiness and Chain Expiry (2026-10-26)
+
+- **DONE** — a team routes one or more chains at the same time: each person
+  follows the chain they are enrolled on (`WorkflowMember`), and `Team.workflow`
+  is only the default for the unenrolled and for wide approvers who staff
+  several. `chains/routing.py` is the one resolver, used by submission and by the
+  "On Leave" scope. This pass closed the two holes the default-only view left:
+  `validate_team` now checks **every chain the team routes** (default plus any
+  chain with enrolments), names the chain in step-level messages, and stops
+  reporting a missing default when enrolled members still route; a chain nobody
+  is enrolled on is not reported, so a draft replacement chain does not make a
+  team unready. `DatabaseWorkflowProvider` now refuses a chain past its
+  `effective_to` (new `workflow_ended` readiness code) instead of silently
+  routing an expired term. Tests: `chains/tests_chain_routing.py` gained five
+  readiness/expiry cases (16 tests); full `chains` suite 699 OK, and the
+  leave submission/resubmission/pipeline/API suites 51 OK.
+- **FIX** — building a second chain through `POST /workflows/` (or rewriting one
+  through `PATCH`) with an approver who already staffs another of the team's
+  chains returned a 500: `_attach_section_approvers` raises `TeamActionError`
+  from the shared appointment guard, but the workflow write path only translated
+  `WorkflowActionError`/`StageSequenceError`/`WorkflowMemberError`. Both
+  `create_workflow` and `update_workflow` now translate it to
+  `WorkflowActionError`, so the refusal is a 400 against `approver` naming the
+  step the person already holds, and the transaction leaves no half-built chain.
+  Two API tests in `chains/tests_teams.py` (`SectionApproverTests`) pin the
+  create and edit paths; the one-chain-per-employee rule itself is unchanged
+  (wide approvers remain the exception, and the picker already scopes to `new`).
+
 ## Frontend Integration — Shared App Header (2026-10-23)
 
 - **DONE** — Applied the rounded, branded `Navbar1` consistently to the
@@ -6423,3 +6472,55 @@ read-only role list, a manager staffing their own team's step and refused
 another's, HR anywhere; plus two `seed_test_profiles` manager tests). Frontend
 **117 files / 992 tests OK**; `tsc --noEmit` clean. Ruff clean on the new/edited
 seed, test, and view files.
+
+## Completed — On Leave visibility, plus teams that route several chains (2026-10-26)
+
+**Goal.** A new "On Leave" screen answering "who is away, and may I see them",
+scoped by the viewer's place in the approval hierarchy, and a routing change
+that lets one team route more than one chain at the same time.
+
+**Routing: one team, many chains.** `Team.workflow` stays exactly what it is at
+the database (a `OneToOneField`), but its meaning is now the team's **default**
+chain. A team routes every chain its people are enrolled on
+(`WorkflowMember`), each person through the chain they were placed on. The
+single definition of "which chain does this person route through" lives in the
+new `chains/routing.py` (`routed_workflow_for`, `routed_workflow_for_user`,
+`routed_chain_ids_by_user`): enrolment wins, the default is the fallback, and a
+wide approver holding several chains routes through the default. The submission
+provider (`chains/providers.py`) and the On Leave read scope both call it, so
+routing and visibility cannot diverge. A team with no default can still route
+its enrolled people, and only the unenrolled are refused — the error now names
+the employee. `teams/migrations/0003_alter_team_workflow.py` carries the
+help-text change only. Team screens say "default" rather than "in force": the
+workflows list marks a chain `Default` or `Additional`, the action is
+**Make default**, and the overview no longer claims the team "routes one".
+
+**On Leave scope ladder** (`leave/on_leave.py`, all decided server-side):
+`organisation` HR/superuser → everyone; `institution` an institution-wide
+approver → the administration teams; `campus` a campus-wide approver → the teams
+at their campus; `team` a designated manager → the teams they run, across all
+their chains; `chain` an ordinary member → the people whose leave routes through
+their own chain; `self` → their own approved leave. Only `status=approved` rows
+are listed. Rows carry `state` (`on_leave` / `upcoming` / `returned`), and the
+default listing is current + upcoming, with returned leave behind
+`include_past`. `GET /api/v1/leave/on-leave/` accepts `q` (name/email, capped at
+100) and `include_past`, and returns `today`, `scope`, `counts`, `results`.
+
+**Frontend.** `lib/on-leave.ts` (types, state labels, URL builder, server read),
+`components/leave/OnLeaveTable.tsx` (presentational), and the server-rendered
+`dashboard/leave/on-leave` page with a scope label, a compact count line, a
+search form, and a current/past toggle. `lib/nav/leave-nav.ts` gains **On
+Leave** (the existing module boundary already claims the path).
+
+**Verification.** Backend: new `chains/tests_chain_routing.py` (11 tests — an
+enrolled member routes through their chain, the unenrolled fall back, two chains
+of one team route in parallel, a wide approver uses the default, a chainless
+default still routes its enrolled members, no chain raises, and the bulk read
+agrees with the single-person answer) and `leave/tests/test_on_leave.py` (25
+tests — all six rungs, the chain being narrower than the team, a scoped role
+granted institution-wide not widening the scope, approved-only, ordering,
+`include_past`, search, the row shape, anonymous coverage, 401, and the filters
+over HTTP). Frontend: `tests/on-leave-lib.test.ts`,
+`tests/on-leave-table.test.tsx`, `tests/leave-nav.test.ts` (20 tests) and the
+dashboard-shell rail assertion for the new nav item; the full suite is **126
+files / 1061 tests OK**. `tsc --noEmit` clean; eslint reports no new warnings.

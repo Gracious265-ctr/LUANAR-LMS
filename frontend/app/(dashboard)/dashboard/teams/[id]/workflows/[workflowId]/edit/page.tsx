@@ -4,8 +4,10 @@ import { ArrowLeft } from "lucide-react";
 
 import { WorkflowForm } from "@/components/hr/workflow-form";
 import type { ApproverRole } from "@/lib/approver-roles";
-import { listActiveApproverRoles } from "@/lib/approver-roles-client";
-import { listApproverRoles } from "@/lib/approver-roles";
+import {
+  listApproverRoles,
+  listEligibleApproverRoles,
+} from "@/lib/approver-roles";
 import { getCurrentUser } from "@/lib/auth";
 import {
   canAccessTeams,
@@ -64,7 +66,7 @@ export default async function EditWorkflowPage({
     // endpoint, so they read the read-only list a team's manager is allowed.
     roles = isTeamsAdministrator(user)
       ? await listApproverRoles()
-      : await listActiveApproverRoles();
+      : await listEligibleApproverRoles();
   } catch {
     rolesError = ROLES_ERROR;
   }

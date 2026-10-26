@@ -17,11 +17,7 @@ export default async function NewLeaveTypePage() {
         <h2 className="text-2xl font-bold tracking-tight text-text-primary">
           Create leave type
         </h2>
-        <p className="text-text-secondary">
-          Name it, decide who it applies to and how it is requested. How many
-          days each grade actually receives is configured per entitlement, not
-          here.
-        </p>
+        <p className="text-text-secondary">Name it, and decide who it applies to and how it is requested.</p>
       </div>
 
       <LeaveTypeForm />

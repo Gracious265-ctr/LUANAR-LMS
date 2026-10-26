@@ -97,10 +97,6 @@ export function TeamsSection({
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-text-primary">Teams</h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application.
-          </p>
         </div>
         {canCreate && (
           <Button
@@ -151,7 +147,7 @@ export function TeamsSection({
           targetKey={overlay.target}
           size="lg"
           title="New team"
-          description="A team is created as a draft that routes nothing until it owns an approval chain. First describe the team, then name the manager who will run it: they build the chain and staff each step from the team's own page."
+          description="A team routes nothing until it owns an approval chain."
           onOpenChange={(open) => {
             if (!open) overlay.close();
           }}

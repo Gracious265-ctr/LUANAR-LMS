@@ -29,17 +29,27 @@ USERS = [
 AUDIT = [("audit", "0011_alter_auditentry_target_type")]
 
 # The "before roles were data" point, as a list of targets rather than a single
-# one. Both apps have to be named: ``users.0005`` adds the ``team`` column *and*
+# one. Every app has to be named: ``users.0005`` adds the ``team`` column *and*
 # points it at the ``Team`` table ``workflows.0010`` creates, so rewinding the
 # workflows app alone would leave a foreign key on a table that no longer exists
 # and make the reverse fail on a dependency rather than on a decision. Order
 # matters for the same reason: dependents come off the database before the
 # things they point at.
+#
+# ``leave`` is not a target: rewinding ``users``/``chains`` to this point already
+# unapplies the leave migrations that depend on them (``leave.0023`` onward), so
+# the table stops at ``leave.0022``. :func:`BackfillMigrationTests.build_legacy_state`
+# names that point too when it reads the historical model, which is what keeps
+# the fixture's insert matching the table it writes to.
 PRE_USER_ROLE = ("users", "0004_employeeprofile_gender")
 PRE_ROLE_TARGETS = [
     PRE_USER_ROLE,
     ("chains", "0009_delegation_one_open_request_per_approver"),
 ]
+
+#: The leave migration the rewind above stops at, for fixtures that need to
+#: insert an application while the schema is rewound.
+PRE_ROLE_LEAVE = ("leave", "0022_delete_leavetype_state_only")
 
 SEED_CHAIN = [
     ("Administration chain", "administration", ["supervisor", "hod", "registrar"]),
@@ -108,7 +118,7 @@ class BackfillMigrationTests(MigrationTestCase):
         ``ApplicationStage.role`` is a string with a hardcoded choice list.
         """
         self.migrate(*PRE_ROLE_TARGETS)
-        apps = self.state(PRE_ROLE_TARGETS)
+        apps = self.state(*PRE_ROLE_TARGETS, PRE_ROLE_LEAVE)
         Workflow = apps.get_model("chains", "Workflow")
         WorkflowStage = apps.get_model("chains", "WorkflowStage")
         ApplicationStage = apps.get_model("chains", "ApplicationStage")
@@ -130,9 +140,13 @@ class BackfillMigrationTests(MigrationTestCase):
         WorkflowStage.objects.create(workflow=stray, order=1, approver_role=STRAY_CODE)
 
         # An application already in flight, so the snapshot backfill has rows to
-        # write. The leave app is untouched by this sequence, so the real model is
-        # the one that matches its table.
-        from leave.models import LeaveApplication  # noqa: PLC0415
+        # write. This has to be the *historical* model, not ``leave.models``:
+        # the rewind above also unapplies the leave migrations that depend on
+        # ``users``/``chains``, so the live model describes columns (such as
+        # ``rejection_accepted_at``) this table does not have yet. Naming the
+        # leave stop point in the projection keeps the model and the table in
+        # step as leave grows.
+        LeaveApplication = apps.get_model("leave", "LeaveApplication")
 
         employee = User.objects.create(username="legacy@roles.test")
         EmployeeProfile.objects.create(

@@ -35,6 +35,8 @@ export interface LeaveApplication {
   calendar_days: number | null;
   financial_year_label: string | null;
   documents: SupportingDocument[];
+  /** When the employee accepted a rejection; null while it is still open. */
+  rejection_accepted_at?: string | null;
 }
 
 /**
@@ -44,8 +46,7 @@ export interface LeaveApplication {
  * sentence itself rather than a generic banner.
  */
 const DOCUMENT_ERRORS: Record<string, string> = {
-  application_not_editable:
-    "This application is no longer editable. Documents can only be changed on a draft or while it is rejected.",
+  application_not_editable: "This application is not editable.",
   document_not_active:
     "This document has already been removed or replaced.",
 };

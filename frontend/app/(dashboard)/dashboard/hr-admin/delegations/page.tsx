@@ -66,10 +66,7 @@ export default async function DelegationsPage({
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">Delegations</h2>
-          <p className="text-text-secondary">
-            Review approver unavailability requests, approve a delegate, reject
-            with a reason, or cancel active cover.
-          </p>
+          <p className="text-text-secondary">Review and decide approver unavailability requests.</p>
         </div>
 
         <Card>

@@ -29,7 +29,19 @@ export function AppLauncherGrid() {
   const apps = (data?.apps || [])
     .map((a) => {
       const key = a.key as AppKey;
-      if (!(key in APPS_REGISTRY)) return null;
+      if (!(key in APPS_REGISTRY)) {
+        // A key the registry does not know is dropped, so a module renamed on
+        // one side of the API would lose its card with nothing failing. Say so
+        // in development instead of hiding it; see backend/launcher/services.py
+        // and APPS_REGISTRY in lib/apps-registry.ts.
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `Launcher returned unknown app key "${a.key}". ` +
+              "Add it to APPS_REGISTRY in frontend/lib/apps-registry.ts."
+          );
+        }
+        return null;
+      }
       return { ...a, key };
     })
     .filter(Boolean) as Array<{

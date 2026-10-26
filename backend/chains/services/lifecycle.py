@@ -1,10 +1,13 @@
 """Workflow and team lifecycle: create, edit, route, and retire.
 
 A *team* is the organisational unit that owns one or more approval chains and is
-put in force when HR creates it; a *workflow* is one of the chains it owns, one
-of which is the team's routing chain. This module owns the two lifecycles and the
-readiness check that reports — without mutating anything — whether a team can
-route an application today.
+put in force when HR creates it; a *workflow* is one of the chains it owns. A
+team routes every chain its people are enrolled on at the same time, and the
+chain named as the team's :attr:`~teams.models.Team.workflow` is the **default**
+one — where somebody not yet placed on one of the team's chains routes, and where
+a wide approver routes when their holding staffs several. This module owns the
+two lifecycles and the readiness check that reports — without mutating anything
+— whether a team can route an application today.
 
 Chain *structure* (validating and rewriting a step list) lives in
 :mod:`workflows.services.configuration`; appointing the people who staff those
@@ -29,7 +32,7 @@ from roles.services import (
 )
 from teams.models import Team, TeamRoleAssignment
 from users.models import User
-from chains.models import Section, SectionMember, Workflow
+from chains.models import Section, SectionMember, Workflow, WorkflowMember
 from chains.providers import WorkflowConfigError, resolve_section_approvers
 from chains.services import _shared
 from chains.services._shared import (
@@ -50,6 +53,7 @@ from chains.services.membership import (
     _team_name,
     add_section_member,
     ensure_membership_allowed,
+    holds_role_wide_for_team,
     sync_workflow_members,
 )
 
@@ -68,7 +72,7 @@ def wide_holder_ids(team: Team, role: ApproverRole) -> set[int]:
             team=team, role=role, user__is_active=True
         ).values_list("user_id", flat=True)
     )
-    if team.campus_id is not None:
+    if team.campus_id is not None and team.category == Team.Category.ACADEMIC:
         ids |= set(
             CampusRoleAssignment.objects.filter(
                 campus_id=team.campus_id, role=role, user__is_active=True
@@ -89,27 +93,108 @@ def validate_team(team: Team) -> TeamReadiness:
     Side-effect free and safe to call at any time. A team is in force from
     creation, so this is a *standing* check rather than a gate before an
     activation: it is how HR finds the step that has lost its approver since the
-    chain was written, and reports a chainless team's missing workflow.
+    chain was written, and reports a team that has nothing to route through.
+
+    Every chain the team routes is checked, not only its default one: a team
+    routes one or more chains at the same time (see
+    :func:`_routing_chains`), and an unstaffed step on the second chain strands
+    the employees enrolled on it just as surely as one on the first.
 
     The checks are deliberately about the team's *own* configuration — the
-    workflow, its sections, their roles, and whether somebody can act at each
+    chains, their sections, their roles, and whether somebody can act at each
     step today. Per-applicant resolution (an applicant who is themselves the
     only approver of a step, say) cannot be known without an application and is
     still refused at submission by invariant 12.7.
     """
     issues: list[TeamIssue] = []
-    workflow = team.workflow
+    chains = _routing_chains(team)
 
-    if workflow is None:
+    if not chains:
         issues.append(
             TeamIssue(
                 "workflow_missing",
                 "workflow",
                 f"The {team.name} team has no approval workflow. Describe the "
-                "approval steps this team routes through.",
+                "approval steps this team routes through, or place its employees "
+                "on one of the chains it owns.",
             )
         )
         return TeamReadiness(team=team, issues=tuple(issues))
+
+    for workflow in chains:
+        issues.extend(_chain_issues(team, workflow))
+
+    if (
+        team.effective_from is not None
+        and team.effective_to is not None
+        and team.effective_to < team.effective_from
+    ):
+        issues.append(
+            TeamIssue(
+                "window_ordered",
+                "effective_to",
+                f"The end date ({team.effective_to.isoformat()}) is before the "
+                f"start date ({team.effective_from.isoformat()}).",
+            )
+        )
+
+    if team.effective_to is not None and team.effective_to < timezone.localdate():
+        issues.append(
+            TeamIssue(
+                "window_ended",
+                "effective_to",
+                f"This team's last routing date was "
+                f"{team.effective_to.isoformat()}, which has passed. Move the end "
+                "date into the future, or leave it blank, to activate the team.",
+            )
+        )
+
+    return TeamReadiness(team=team, issues=tuple(issues))
+
+
+def _routing_chains(team: Team) -> list[Workflow]:
+    """Every chain the team routes, its default chain first.
+
+    A team routes one or more chains at the same time: its default chain
+    (:attr:`Team.workflow` — where somebody nobody enrolled routes, and where a
+    wide approver routes when their holding staffs several) and every chain one
+    of its people is enrolled on (:class:`~chains.models.WorkflowMember`).
+    Readiness that stopped at the default would report a team as ready while a
+    second chain it routes has lost its approver, which is exactly the failure
+    the check exists to catch.
+
+    A chain nobody is enrolled on and that is not the default routes nothing,
+    so it is left out: a replacement chain being built beside the live ones is
+    allowed to be incomplete, and reporting it would make every team with a
+    draft chain look broken.
+    """
+    chains: list[Workflow] = []
+    default = team.workflow
+    if default is not None:
+        chains.append(default)
+    enrolled_ids = set(
+        WorkflowMember.objects.filter(team=team)
+        .values_list("workflow_id", flat=True)
+        .distinct()
+    )
+    if default is not None:
+        enrolled_ids.discard(default.pk)
+    chains.extend(
+        Workflow.objects.filter(team=team, pk__in=enrolled_ids).order_by("name")
+    )
+    return chains
+
+
+def _chain_issues(team: Team, workflow: Workflow) -> list[TeamIssue]:
+    """Every reason one of the team's chains cannot route, or an empty list.
+
+    The chain's own questions: is it switched on, is it in force today, does it
+    have steps, and can somebody act at each of them. A step that resolves to
+    nobody is reported rather than raised, so one pass names every problem
+    across every chain the team routes.
+    """
+    issues: list[TeamIssue] = []
+    today = timezone.localdate()
 
     if not workflow.is_active:
         issues.append(
@@ -121,10 +206,7 @@ def validate_team(team: Team) -> TeamReadiness:
             )
         )
 
-    if (
-        workflow.effective_from is not None
-        and workflow.effective_from > timezone.localdate()
-    ):
+    if workflow.effective_from is not None and workflow.effective_from > today:
         issues.append(
             TeamIssue(
                 "workflow_scheduled",
@@ -132,6 +214,18 @@ def validate_team(team: Team) -> TeamReadiness:
                 f"Workflow '{workflow.name}' does not start until "
                 f"{workflow.effective_from.isoformat()}. Move its start date "
                 f"earlier, or wait until then to activate the {team.name} team.",
+            )
+        )
+
+    if workflow.effective_to is not None and workflow.effective_to < today:
+        issues.append(
+            TeamIssue(
+                "workflow_ended",
+                "workflow",
+                f"Workflow '{workflow.name}' stopped routing on "
+                f"{workflow.effective_to.isoformat()}. Extend its end date, or "
+                "move the employees enrolled on it to a chain that is still in "
+                "force.",
             )
         )
 
@@ -157,8 +251,9 @@ def validate_team(team: Team) -> TeamReadiness:
                 TeamIssue(
                     "inactive_role",
                     "sections",
-                    f'The "{section.name}" step needs the "{role.label}" role, which '
-                    "is deactivated. Reactivate it in Roles, or replace the step.",
+                    f'The "{section.name}" step of workflow "{workflow.name}" '
+                    f'needs the "{role.label}" role, which is deactivated. '
+                    "Reactivate it in Roles, or replace the step.",
                     section=section.order,
                     approver_role=role.code,
                 )
@@ -195,7 +290,7 @@ def validate_team(team: Team) -> TeamReadiness:
                     "no_approver",
                     "sections",
                     f'Nobody can act on the "{section.name}" step '
-                    f"({role.label}). {hint}",
+                    f'({role.label}) of workflow "{workflow.name}". {hint}',
                     section=section.order,
                     approver_role=role.code,
                 )
@@ -219,41 +314,18 @@ def validate_team(team: Team) -> TeamReadiness:
                         TeamIssue(
                             "approver_outside_team",
                             "sections",
-                            f'The approver of the "{section.name}" step is no longer '
-                            "a member of this team. Appoint one of the team's "
-                            "members, or move the approver's employee record.",
+                            f'The approver of the "{section.name}" step of '
+                            f'workflow "{workflow.name}" is no longer a member '
+                            "of this team. Appoint one of the team's members, or "
+                            "move the approver's employee record.",
                             section=section.order,
                             approver_role=role.code,
                         )
                     )
                     break
 
-    if (
-        team.effective_from is not None
-        and team.effective_to is not None
-        and team.effective_to < team.effective_from
-    ):
-        issues.append(
-            TeamIssue(
-                "window_ordered",
-                "effective_to",
-                f"The end date ({team.effective_to.isoformat()}) is before the "
-                f"start date ({team.effective_from.isoformat()}).",
-            )
-        )
+    return issues
 
-    if team.effective_to is not None and team.effective_to < timezone.localdate():
-        issues.append(
-            TeamIssue(
-                "window_ended",
-                "effective_to",
-                f"This team's last routing date was "
-                f"{team.effective_to.isoformat()}, which has passed. Move the end "
-                "date into the future, or leave it blank, to activate the team.",
-            )
-        )
-
-    return TeamReadiness(team=team, issues=tuple(issues))
 
 def _ensure_team_category(team: Team) -> None:
     """Refuse a category/campus pair that cannot mean anything.
@@ -461,12 +533,18 @@ def _place_new_team_member(*, team: Team, section: Section, user: User) -> None:
     moving them would leave the team they came from with approvers who can no
     longer be eligible, and doing that as a side effect of creating some other
     team is not a change HR should get by accident — it is a deliberate edit to
-    their employee record, and the message says so.
+    their employee record, and the message says so. A wide holder is the
+    exception: their post already approves for the team from outside it.
     """
     role = section.approver_role
     if role.is_institution_wide:
         # An institution-wide holder approves from outside any team, so there is
         # no membership to establish.
+        return
+    if holds_role_wide_for_team(team=team, role=role, user=user):
+        # A campus-wide holder staffs the new team from their campus without
+        # becoming one of its members; placing them on it would re-route their
+        # own leave and take them off the team that actually holds them.
         return
 
     profile = getattr(user, "employee_profile", None)
@@ -641,13 +719,17 @@ def update_team(
     return team
 
 def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
-    """Point a team at one of the chains it owns.
+    """Make one of the team's chains its default chain.
 
-    Routing is a decision about *which* of the team's chains is in force, so it
-    is an action rather than a field edit. The workflow named must be one the
-    team already owns (:attr:`Workflow.team`), so "route through this chain
-    instead" can never become "adopt somebody else's chain" — which would
-    strand every application inside the old one at a step nobody staffs.
+    A team routes every chain its people are enrolled on, so this is not a
+    switch between one live chain and a standby one: it changes where the
+    people nobody has enrolled route, and where a wide approver routes when
+    they staff several of the team's chains. It is an action rather than a
+    field edit because it changes routing for a whole group of employees. The
+    workflow named must be one the team already owns
+    (:attr:`Workflow.team`), so "make this the default" can never become
+    "adopt somebody else's chain" — which would strand every application
+    inside the old one at a step nobody staffs.
 
     The team's manager owns this day-to-day decision, but HR keeps the same
     reach so an installation that has not yet designated a manager can still
@@ -696,13 +778,15 @@ def academic_calendar_end() -> date | None:
 def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
     """Build a workflow the team owns, with its stages, in one transaction.
 
-    A team may own several workflows — the one it routes through, and a
-    replacement HR is building alongside it — so a workflow is created *for* a
-    team and ownership is written at creation. Ownership is not routing:
-    :attr:`Team.workflow` still decides which chain an application follows, and
-    it is only moved here when the team has no chain at all, because silently
-    re-routing a team that already routes is the one change this must never
-    make.
+    A team may own several workflows — one per part of its staff, and a
+    replacement HR is building alongside them — so a workflow is created *for*
+    a team and ownership is written at creation. Ownership is not routing: each
+    person follows the chain they are enrolled on (:class:`WorkflowMember`), and
+    :attr:`Team.workflow` only decides where somebody nobody has enrolled routes
+    and where a wide approver routes when their holding staffs several. It is
+    therefore only moved here when the team has no chain at all, because
+    silently re-pointing the default of a team that already routes is the one
+    change this must never make.
 
     ``sections`` is the same stage list the team form sends, so stage
     configuration is one implementation whether HR is editing the chain they
@@ -745,13 +829,23 @@ def create_workflow(*, team: Team, actor, data: dict) -> Workflow:
             sections = replace_workflow_sections(
                 workflow, [dict(section) for section in sections_payload]
             )
-            _attach_section_approvers(
-                team=team,
-                workflow=workflow,
-                sections=sections,
-                config=[dict(section) for section in sections_payload],
-                actor=actor,
-            )
+            try:
+                _attach_section_approvers(
+                    team=team,
+                    workflow=workflow,
+                    sections=sections,
+                    config=[dict(section) for section in sections_payload],
+                    actor=actor,
+                )
+            except TeamActionError as exc:
+                # The appointment guard refuses somebody the step cannot hold
+                # — most often a person already staffing another of the team's
+                # chains, which is exactly what building a second chain runs
+                # into. This write path reports that as the field error it is
+                # (and rolls the new chain back with the transaction) rather
+                # than letting a configuration refusal escape as a server
+                # fault.
+                raise WorkflowActionError(exc.field, exc.message) from exc
 
         if team.workflow_id is None:
             team.workflow = workflow
@@ -818,13 +912,18 @@ def update_workflow(*, workflow: Workflow, actor, data: dict) -> Workflow:
                 sections = replace_workflow_sections(locked, sections_payload)
             except StageSequenceError as exc:
                 raise WorkflowActionError(exc.field, exc.message)
-            _attach_section_approvers(
-                team=team,
-                workflow=locked,
-                sections=sections,
-                config=sections_payload,
-                actor=actor,
-            )
+            try:
+                _attach_section_approvers(
+                    team=team,
+                    workflow=locked,
+                    sections=sections,
+                    config=sections_payload,
+                    actor=actor,
+                )
+            except TeamActionError as exc:
+                # Same translation as :func:`create_workflow`: a refused
+                # appointment is a field error on this request, never a 500.
+                raise WorkflowActionError(exc.field, exc.message) from exc
 
         _shared.record_audit(
             actor=actor,

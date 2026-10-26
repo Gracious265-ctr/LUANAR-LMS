@@ -245,10 +245,7 @@ export function LeaveDocumentTemplateEditor({
             </div>
           </div>
 
-          <p className="mb-3 text-xs text-text-muted">
-            The data field itself is fixed (its value always comes from the
-            approved application record); you control the label and order.
-          </p>
+          <p className="mb-3 text-xs text-text-muted">The data field is fixed; you control the label and order.</p>
 
           {fields.length === 0 ? (
             <p className="py-2 text-sm text-text-muted">

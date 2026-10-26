@@ -34,7 +34,7 @@ export function PendingApplicationsTable({
     return (
       <EmptyState
         title="No pending applications"
-        description="All submitted applications are either assigned or no leave applications have been submitted yet."
+        description="No submitted applications are awaiting a decision."
       />
     );
   }

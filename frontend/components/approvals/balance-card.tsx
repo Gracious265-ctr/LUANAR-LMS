@@ -38,8 +38,7 @@ export function BalanceCard({ data }: { data: ApprovalReview }) {
           className={`mt-3 flex items-start gap-2 rounded-lg p-3 text-sm ${STATUS_STYLES.pending}`}
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          Requested days exceed the available balance. This is shown for
-          information only and does not change the decision options.
+          Requested days exceed the available balance.
         </p>
       )}
       <p className="mt-3 text-xs text-text-muted">

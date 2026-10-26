@@ -1,5 +1,14 @@
 import { apiFetch } from "@/app/api/_lib/api-fetch";
 
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const query = searchParams.toString();
+  return apiFetch(
+    "GET",
+    query ? `campus-role-assignments/?${query}` : "campus-role-assignments/"
+  );
+}
+
 /** Appoint one person to hold a role across a whole campus. */
 export async function POST(request: Request) {
   const body = await request.json();

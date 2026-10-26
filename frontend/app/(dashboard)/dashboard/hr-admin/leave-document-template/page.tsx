@@ -31,12 +31,7 @@ export default async function LeaveDocumentTemplatePage() {
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">
             Approved Leave Document Template
           </h2>
-          <p className="text-text-secondary">
-            Configure the official template used for approved leave documents:
-            branding wording, official text, data fields, and signature areas.
-            The data itself always comes from the approved application record;
-            values are never edited here.
-          </p>
+          <p className="text-text-secondary">Configure the approved leave document template.</p>
         </div>
 
         {templateError ? (

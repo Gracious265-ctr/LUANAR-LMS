@@ -11,6 +11,12 @@ snapshot, freezes the new cycle's revision history row, increments
 ``assigned_approver`` (deliberately not the rejecting actor; delegations and
 reassignments re-apply automatically at query time). The stage chain is never
 rebuilt.
+
+``accept_rejection`` is the other response to a rejection. It closes the
+application without resubmitting anything: the status stays ``rejected`` (the
+decision happened; its history is not rewritten), the acceptance is stamped on
+the row and audited, and from then on the edit, resubmit and document paths all
+refuse. It is the employee saying "understood" rather than "let me try again".
 """
 
 from audit.models import AuditEntry
@@ -30,6 +36,57 @@ class NotResubmittableError(Exception):
 
 class WorkflowInconsistentError(Exception):
     """The returning stage is missing or not in the expected decided state."""
+
+
+class NotAcceptableError(Exception):
+    """The application is not rejected, so there is no rejection to accept."""
+
+
+def accept_rejection(*, user, application_id):
+    """Close a rejection the employee has chosen not to contest.
+
+    The application stays ``rejected`` — the decision happened and its history
+    is not rewritten — but the rejection stops being an open request for the
+    employee to act. Once accepted it can no longer be edited, resubmitted, or
+    have its documents changed, and the dashboard no longer lists it under
+    "Needs Your Attention".
+
+    Idempotent: accepting an already-accepted rejection returns the record
+    unchanged rather than writing a second audit row, so a double click or a
+    retried request is harmless.
+    """
+    from ..models import LeaveApplication
+
+    with transaction.atomic():
+        app = (
+            LeaveApplication.objects.filter(id=application_id, employee=user)
+            .select_for_update()
+            .first()
+        )
+        if app is None:
+            raise ResubmissionNotFoundError()
+        if app.status != LeaveApplication.Status.REJECTED:
+            raise NotAcceptableError()
+        if app.rejection_accepted_at is not None:
+            return app
+
+        accepted_at = timezone.now()
+        app.rejection_accepted_at = accepted_at
+        app.save(update_fields=["rejection_accepted_at", "updated_at"])
+
+        record_audit(
+            actor=user,
+            action=AuditEntry.Action.APPLICATION_REJECTION_ACCEPTED,
+            target_type=AuditEntry.TargetType.APPLICATION,
+            target_id=app.pk,
+            target_summary=app.reference_number,
+            detail=changed_fields(
+                {"rejection_accepted_at": None},
+                {"rejection_accepted_at": accepted_at.isoformat()},
+            ),
+            reason="Employee accepted the rejection.",
+        )
+        return app
 
 
 def resubmit_application(*, user, application_id):
@@ -64,6 +121,11 @@ def resubmit_application(*, user, application_id):
             raise ResubmissionNotFoundError()
 
         if app.status != LeaveApplication.Status.REJECTED:
+            raise NotResubmittableError()
+
+        # Accepting a rejection closes it. The employee chose not to contest the
+        # decision, so the edit-and-resubmit path is no longer available.
+        if app.rejection_accepted_at is not None:
             raise NotResubmittableError()
 
         _acquire_employee_lock(employee.id if employee is not None else 0)

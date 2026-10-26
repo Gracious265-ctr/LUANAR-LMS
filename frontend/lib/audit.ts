@@ -73,6 +73,7 @@ export const ACTION_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
   reassigned: "Reassigned",
   submitted: "Submitted",
+  application_rejection_accepted: "Rejection accepted",
   document_generated: "Approved document generated",
   document_failed: "Document generation failed",
 };

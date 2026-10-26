@@ -18,7 +18,7 @@ export function ReassignmentTable({
     return (
       <EmptyState
         title="No reassignments yet"
-        description="Reassign a pending application from the intervention queue above to record the first reassignment."
+        description="Reassign a pending application to record the first reassignment."
       />
     );
   }

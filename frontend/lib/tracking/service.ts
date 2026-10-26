@@ -43,3 +43,42 @@ export async function fetchTracking(applicationId: string): Promise<TrackingResu
     };
   }
 }
+
+/**
+ * Accept the rejection on an application, closing it without resubmitting.
+ *
+ * The backend keeps the status (`rejected`) and records the acceptance on the
+ * row, so the caller re-reads the tracking payload afterwards rather than
+ * guessing the new state from this response.
+ */
+export async function acceptRejection(
+  applicationId: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    const res = await fetch(
+      `/api/leave/leave-applications/${encodeURIComponent(applicationId)}/accept-rejection/`,
+      { method: "POST", credentials: "include" }
+    );
+
+    if (res.ok) return { ok: true };
+
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409) {
+      return {
+        ok: false,
+        message: "This application is not rejected.",
+      };
+    }
+    return {
+      ok: false,
+      message:
+        (data as { detail?: string }).detail ||
+        "The rejection could not be accepted. Try again.",
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Could not reach the server. Check your connection and try again.",
+    };
+  }
+}

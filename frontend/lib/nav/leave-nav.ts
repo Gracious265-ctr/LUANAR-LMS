@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Calendar, FilePen, FileText, Home } from "lucide-react";
+import { Calendar, FilePen, FileText, Home, Users } from "lucide-react";
 
 /**
  * The Leave module's own navigation, kept in one place so the sidebar's
@@ -49,6 +49,12 @@ const isDrafts = (pathname: string) =>
   pathname === "/dashboard/leave/drafts" ||
   pathname.startsWith("/dashboard/leave/drafts/");
 
+// Approved leave within the viewer's scope. `isLeaveModule` already claims
+// everything under `/dashboard/leave/`.
+const isOnLeave = (pathname: string) =>
+  pathname === "/dashboard/leave/on-leave" ||
+  pathname.startsWith("/dashboard/leave/on-leave/");
+
 export const LEAVE_NAV_ITEMS: LeaveNavItem[] = [
   { label: "Dashboard", href: "/dashboard/leave", icon: Home, match: isLeaveIndex },
   {
@@ -62,6 +68,12 @@ export const LEAVE_NAV_ITEMS: LeaveNavItem[] = [
     href: "/dashboard/leave/drafts",
     icon: FilePen,
     match: isDrafts,
+  },
+  {
+    label: "On Leave",
+    href: "/dashboard/leave/on-leave",
+    icon: Users,
+    match: isOnLeave,
   },
   {
     // `/dashboard/leave/new` is a redirect shim to the compose overlay, so this

@@ -225,11 +225,7 @@ export function SupportingDocumentsUploader({
       )}
 
       {canReplace && editable && documents.length > 0 && (
-        <p className="mt-2 text-xs text-text-muted">
-          This application was rejected. Replace a document to
-          submit a corrected copy — the previous version stays in your history
-          for the approvers to compare.
-        </p>
+        <p className="mt-2 text-xs text-text-muted">Replace a document to submit a corrected copy.</p>
       )}
 
       {documents.length > 0 && (

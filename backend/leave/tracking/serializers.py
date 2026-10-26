@@ -92,6 +92,7 @@ class TrackedOutcomeSerializer(serializers.Serializer):
             "approver_name": outcome.approver_name,
             "decided_at": _iso(outcome.decided_at),
             "reason": outcome.reason,
+            "accepted_at": _iso(outcome.accepted_at),
         }
 
 

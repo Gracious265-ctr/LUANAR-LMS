@@ -104,7 +104,7 @@ export function TeamPlansCalendar() {
       <EmptyState
         icon={<Calendar className="h-8 w-8 text-text-muted" />}
         title="No team to show yet"
-        description="You're not part of a team yet, so there are no plans to show. Once HR places you in a team, your colleagues' plans will appear here."
+        description="You're not part of a team yet."
       />
     );
   }

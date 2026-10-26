@@ -123,10 +123,7 @@ export function TeamRoster({
         <p className="mt-2 text-sm text-status-rejected">{error}</p>
       ) : null}
 
-      <p className="mt-2 text-xs text-text-muted">
-        Only employees without a team are offered here. To move somebody from
-        another team, take them off that team first.
-      </p>
+      <p className="mt-2 text-xs text-text-muted">Only employees without a team are offered here.</p>
     </div>
   );
 }

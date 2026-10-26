@@ -53,10 +53,7 @@ export default async function EntitlementsPage({
         <div>
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-text-primary">Entitlements</h2>
-            <p className="text-text-secondary">
-              Configure grade ranges and annual leave entitlements. Grade ranges
-              must not overlap; change an existing band by editing its rule.
-            </p>
+            <p className="text-text-secondary">Configure grade ranges and annual leave entitlements.</p>
           </div>
         </div>
 
@@ -68,10 +65,7 @@ export default async function EntitlementsPage({
             <h3 className="text-lg font-semibold text-text-primary">
               Resolve a grade
             </h3>
-            <p className="mt-1 text-sm text-text-secondary">
-              Enter a grade to see the annual entitlement the system determines
-              for it today.
-            </p>
+            <p className="mt-1 text-sm text-text-secondary">Enter a grade to see its current entitlement.</p>
             <div className="relative mt-4">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
               <Input

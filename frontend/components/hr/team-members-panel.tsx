@@ -184,7 +184,7 @@ export function TeamMembersPanel({
           {count === 0 ? (
             <EmptyState
               title="No members yet"
-              description="Nobody's leave routes through this team yet. Add someone below, and their submissions will follow the chain this team routes through."
+              description="Nobody's leave routes through this team yet."
             />
           ) : filtered.length === 0 ? (
             <EmptyState
@@ -308,13 +308,7 @@ export function TeamMembersPanel({
             </Button>
           </div>
 
-          <p className="text-xs text-text-muted">
-            Only employees without a team who match this team&apos;s category are
-            offered here, and never a wide approver — approvers are managed on
-            the Approvers tab. Removing someone is refused while they still tie
-            to this team — a step appointment, a team-wide role, an open
-            approver period, or a place on one of its chains.
-          </p>
+          <p className="text-xs text-text-muted">Only employees without a team who match this team&apos;s category are offered here.</p>
         </>
       )}
     </div>

@@ -245,12 +245,7 @@ function DecisionDialogInner({
               >
                 {error}
                 {blocked && (
-                  <p className="mt-1 text-xs">
-                    Reloading will not help. This application&apos;s final stage
-                    resolves to the applicant, so Human Resources must change the
-                    applicant&apos;s approver role or the workflow before it can be
-                    decided.
-                  </p>
+                  <p className="mt-1 text-xs">Human Resources must change the applicant&apos;s approver role or the workflow.</p>
                 )}
               </Alert>
             )}

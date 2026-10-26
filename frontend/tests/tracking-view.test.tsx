@@ -7,6 +7,7 @@ import type { TrackingResponse, TrackingResult } from "@/lib/tracking/types";
 
 vi.mock("@/lib/tracking/service", () => ({
   fetchTracking: vi.fn(),
+  acceptRejection: vi.fn(),
 }));
 
 vi.mock("@/lib/leave-api", () => ({

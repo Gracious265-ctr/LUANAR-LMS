@@ -90,11 +90,7 @@ export function DelegationsSection({
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-text-primary">{heading}</h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Delegations hand one approver&apos;s pending work to someone else for a
-            period. Approving, rejecting and cancelling happen on the
-            delegation&apos;s own page.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">Approving, rejecting and cancelling happen on the delegation&apos;s own page.</p>
         </div>
         <Button
           variant="primary"
@@ -157,7 +153,7 @@ export function DelegationsSection({
         targetKey={overlay.target}
         size="md"
         title="New delegation request"
-        description="Name the approver and the period. The delegate nomination is optional: HR can confirm or replace it when approving."
+        description="Name the approver and the period."
         onOpenChange={(open) => {
           if (!open) overlay.close();
         }}

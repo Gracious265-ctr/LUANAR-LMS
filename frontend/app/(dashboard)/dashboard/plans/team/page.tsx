@@ -14,8 +14,7 @@ export default function TeamPlansPage() {
         </h1>
         <p className="flex items-center gap-1.5 text-text-muted">
           <CalendarRange className="h-4 w-4" aria-hidden="true" />
-          Planned leave across your team — dashed entries are plans, not approved
-          leave.
+          Planned leave across your team.
         </p>
       </div>
 

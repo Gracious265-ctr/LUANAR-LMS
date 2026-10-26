@@ -369,10 +369,7 @@ export function WideHoldingPanel({
       )}
 
       {holdings.length === 0 && (
-        <p className="mt-2 text-xs text-text-muted">
-          No holders here. A stage whose role is unheld falls back to the next
-          scope, and is refused only when nothing is left to fall back to.
-        </p>
+        <p className="mt-2 text-xs text-text-muted">No holders here.</p>
       )}
 
       {!canManage ? (
@@ -440,11 +437,7 @@ export function WideHoldingPanel({
 
           <div>
             {selectedRole != null && candidates.length === 0 ? (
-              <p className="text-xs text-text-muted">
-                Every active matching employee already holds a wide approver
-                role here or elsewhere. Remove that holding first, or pick
-                another role.
-              </p>
+              <p className="text-xs text-text-muted">Every matching employee already holds a wide approver role.</p>
             ) : (
               <>
                 <label

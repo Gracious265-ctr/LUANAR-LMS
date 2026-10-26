@@ -5,8 +5,10 @@ for a submitted leave application. It is the single point of swappability:
 :func:`get_workflow_provider` reads ``settings.WORKFLOW_PROVIDER``.
 
 The default is :class:`DatabaseWorkflowProvider`, which resolves the applicant's
-**team** to the one workflow that team routes through, and maps its
-``Section`` rows into ``StageDefinition`` objects. Each section's approver is
+**chain** and maps its ``Section`` rows into ``StageDefinition`` objects. A team
+routes every chain its people are enrolled on, at the same time, so the chain is
+the one the applicant belongs to (see :mod:`.routing`), falling back to the
+team's default chain. Each section's approver is
 found by :func:`resolve_section_approvers`: the section's appointed approver
 unless that person is the applicant, or — when the section has no approver —
 the narrowest wide holding that applies, being the team's holder for the role,
@@ -35,6 +37,8 @@ from .models import (
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
+
+from .routing import routed_workflow_for
 
 
 class WorkflowConfigError(ValueError):
@@ -182,7 +186,7 @@ def _wide_holder_ids(section) -> tuple[str, list[int]]:
         holders = _team_wide_holder_ids(team, role)
         if holders:
             return ("team", holders)
-        if team.campus_id is not None:
+        if team.category == Team.Category.ACADEMIC and team.campus_id is not None:
             holders = _campus_wide_holder_ids(team.campus, role)
             if holders:
                 return ("campus", holders)
@@ -456,11 +460,16 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 f"{team.effective_to.isoformat()}. Ask HR to move the employee to "
                 "a team that is still in force."
             )
-        workflow = team.workflow
+        # A team routes every chain its people are enrolled on, all at once: the
+        # applicant routes through the chain HR placed them on, and only somebody
+        # nobody has enrolled falls back to the team's default chain. "Which
+        # chain is this application's" is therefore a per-applicant question.
+        workflow = routed_workflow_for(team, getattr(application, "employee_id", None))
         if workflow is None:
             raise WorkflowConfigError(
-                f"The {team.name} team has no approval workflow. Ask HR to create "
-                "one for it, with at least one section."
+                f"The {team.name} team has no approval workflow for this employee. "
+                "Ask HR to create one for the team, or to place the employee on "
+                "one of its chains."
             )
         if not workflow.is_active:
             raise WorkflowConfigError(
@@ -475,6 +484,22 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
                 f"Workflow '{workflow.name}' does not start until "
                 f"{workflow.effective_from.isoformat()}. Ask HR to activate it "
                 "earlier, or to point the team at an active workflow."
+            )
+        # A chain is written against a term, so its end date is a real end: a
+        # team routes several chains at once, and the one whose window has
+        # closed must stop even while the team and its sibling chains are still
+        # in force. Refused here rather than silently routed, because an
+        # approval decided by a chain everybody believes has expired is worse
+        # than the employee being told to ask HR to extend it.
+        if (
+            workflow.effective_to is not None
+            and workflow.effective_to < timezone.localdate()
+        ):
+            raise WorkflowConfigError(
+                f"Workflow '{workflow.name}' stopped routing on "
+                f"{workflow.effective_to.isoformat()}. Ask HR to extend its end "
+                "date, or to place the employee on a chain that is still in "
+                "force."
             )
 
         sections = list(
@@ -525,24 +550,28 @@ class DatabaseWorkflowProvider(SnapshotStagesMixin):
 
 
 def _applicant_section_order(sections, applicant_id) -> int | None:
-    """The order of the stage the applicant would have to act on alone, if any.
+    """The highest order the applicant would have to act on alone, if any.
 
-    At most one, because ``section_workflow_approver_unique`` (Unit 30) puts an
-    employee on one stage per workflow. That is what makes the skip-forward
-    decision a single comparison rather than a search for a safe landing point.
+    The applicant can hold more than one step's capacity even though an explicit
+    appointment is limited to one stage per workflow: they may be appointed to
+    one stage *and* be the wide holder that resolves another stage of a role
+    they hold. Those are separate rows, so both resolve to them.
 
-    "Would have to act on" is resolved the same way :func:`resolve_section_approvers`
-    resolves the stage -- the configured approver, or the sole institution-wide
-    holder when the section is unstaffed -- so the applicant is recognised as
-    holding a stage whether they were appointed to it directly or reached it
-    through a role's fallback.
+    Routing skips **at and below** the applicant's position, so the *highest*
+    such order is the one that matters: every stage at or below it is skipped
+    and the application opens above it, never at a lower stage. Picking the
+    first match instead would leave a higher stage resolving to the applicant,
+    and the submission would be refused for self-approval rather than routed
+    forward past them.
     """
     if applicant_id is None:
         return None
-    for section in sections:
-        if _section_candidate_ids(section) == {applicant_id}:
-            return section.order
-    return None
+    orders = [
+        section.order
+        for section in sections
+        if _section_candidate_ids(section) == {applicant_id}
+    ]
+    return max(orders) if orders else None
 
 
 def _section_candidate_ids(section) -> set[int]:

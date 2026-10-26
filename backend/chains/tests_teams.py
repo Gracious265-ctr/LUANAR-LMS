@@ -672,6 +672,74 @@ class SectionApproverTests(ConfigurationAPIBase):
         self.assertIn("already assigned to step 1", str(refused.data))
         self.assertIsNone(Section.objects.get(pk=steps[1].pk).approver_id)
 
+    def test_creating_a_second_chain_with_somebody_on_the_first_is_a_client_error(self):
+        """The appointment guard is a field error, never a server fault.
+
+        Building a second chain for the team and naming somebody who already
+        staffs a step of the first is refused by the one-chain-per-employee
+        rule. The refusal comes from the same appointment guard the standalone
+        action uses, so this endpoint has to report it the way that action
+        does — a 400 against ``approver`` — and leave no half-built chain
+        behind, rather than letting it escape as a 500.
+        """
+        self.add_approver(self.supervisor)
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Registry Senior Chain",
+                "team": self.team["id"],
+                "sections": [
+                    {
+                        "name": "Senior check",
+                        "approver_role": "supervisor",
+                        "approver": self.supervisor.pk,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("approver", response.data)
+        self.assertIn("already staffs step", str(response.data["approver"]))
+        self.assertFalse(Workflow.objects.filter(name="Registry Senior Chain").exists())
+
+    def test_rewriting_a_chain_with_somebody_from_the_other_chain_is_a_client_error(
+        self,
+    ):
+        """The edit path translates the same refusal as the create path."""
+        created = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Second chain",
+                "team": self.team["id"],
+                "sections": [
+                    {"name": "Check", "approver_role": "supervisor"}
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        self.add_approver(self.supervisor)
+
+        response = self.client.patch(
+            f"{WORKFLOWS_URL}{created.data['id']}/",
+            {
+                "sections": [
+                    {
+                        "name": "Check",
+                        "approver_role": "supervisor",
+                        "approver": self.supervisor.pk,
+                    }
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("approver", response.data)
+        self.assertIn("already staffs step", str(response.data["approver"]))
+
     def test_an_approver_from_another_team_is_refused(self):
         """A team's approvers are its own employees.
 
@@ -1240,6 +1308,99 @@ class InstitutionWideAutoApprovalTests(ConfigurationAPIBase):
         self.create_team()
         section = self.workflow.sections.get(approver_role__code="supervisor")
         self.assertIsNone(section.approver_id)
+
+
+class CampusWideHolderOnTeamCreationTests(ConfigurationAPIBase):
+    """A campus holder staffs a new team's chain without joining the team.
+
+    A campus-wide holding spans every academic team at its campus, including
+    teams that do not exist yet, so creating one whose chain names the holder is
+    the ordinary case rather than an edge. Their post is the appointment: the
+    team is written around them, and they are not moved onto it — that would
+    re-route their own leave through a team they merely approve for.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from users.models import EmployeeProfile
+
+        self.campus = Campus.objects.create(name="Bunda Campus", code="bunda")
+        self.role = ApproverRole.objects.get(code="supervisor")
+        self.holder = make_employee(
+            "campus-holder@teams.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=self.campus, role=self.role, user=self.holder
+        )
+
+    def campus_chain(self, approver=None) -> dict:
+        return {
+            "name": "Campus chain",
+            "sections": [
+                {
+                    "name": "Supervisor",
+                    "approver_role": "supervisor",
+                    "approver": self.holder.pk if approver is None else approver,
+                }
+            ],
+        }
+
+    def create_campus_team(self, **extra) -> dict:
+        return self.create_team(
+            name="Bunda Faculty Team",
+            campus=self.campus.pk,
+            category=Team.Category.ACADEMIC,
+            **extra,
+        )
+
+    def test_creating_a_team_appoints_its_campus_holder(self):
+        self.create_campus_team(new_workflow=self.campus_chain())
+        section = self.workflow.sections.get(approver_role__code="supervisor")
+        self.assertEqual(section.approver_id, self.holder.pk)
+        self.assertTrue(
+            SectionMember.objects.filter(section=section, user=self.holder).exists()
+        )
+
+    def test_the_campus_holder_is_not_moved_onto_the_team(self):
+        self.create_campus_team(new_workflow=self.campus_chain())
+        self.holder.employee_profile.refresh_from_db()
+        self.assertIsNone(self.holder.employee_profile.team_id)
+
+    def test_a_holder_from_another_campus_is_still_refused(self):
+        """The exemption is the campus' holder, not any wide holder anywhere.
+
+        A holder at a different campus is still on their own team's roster, so
+        naming them here would mean moving them — a deliberate edit to their
+        employee record, not a side effect of creating this team.
+        """
+        from users.models import EmployeeProfile
+
+        other_campus = Campus.objects.create(name="Other Campus", code="other")
+        home = team_for("Other Campus Team")
+        outsider = make_employee(
+            "other-campus-holder@teams.test",
+            team=home,
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=other_campus, role=self.role, user=outsider
+        )
+
+        response = self.client.post(
+            TEAMS_URL,
+            {
+                "name": "Other campus team",
+                "campus": self.campus.pk,
+                "category": Team.Category.ACADEMIC,
+                "new_workflow": self.campus_chain(approver=outsider.pk),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("approver", response.data)
+        self.assertFalse(Team.objects.filter(name="Other campus team").exists())
 
 
 class RoleAssignmentAPITests(ConfigurationAPIBase):

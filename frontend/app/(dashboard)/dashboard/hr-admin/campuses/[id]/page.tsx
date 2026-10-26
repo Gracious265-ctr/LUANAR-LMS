@@ -167,11 +167,7 @@ export default async function CampusPage({
         <h3 className="text-lg font-semibold text-text-primary">
           Academic teams at this campus
         </h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          These teams&apos; stages may resolve to a campus-wide holding below.
-          An administration team never sits at a campus, so it never appears
-          here.
-        </p>
+        <p className="mt-1 text-sm text-text-secondary">Teams at this campus.</p>
         {teamsResult.error ? (
           <p className="mt-3 text-sm text-status-rejected">
             {teamsResult.error}
@@ -179,7 +175,7 @@ export default async function CampusPage({
         ) : teams.length === 0 ? (
           <EmptyState
             title="No teams sit here yet"
-            description="A team is placed at a campus when it is created or edited, and only an academic team may be."
+            description="A team is placed at a campus when it is created or edited."
           />
         ) : (
           <ul className="mt-3 divide-y divide-border-default">
@@ -212,12 +208,7 @@ export default async function CampusPage({
         <h3 className="text-lg font-semibold text-text-primary">
           Campus-wide approvers
         </h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          One holder per role for this whole campus. Every stage at every team
-          here falls back to these when it has no team-wide holder — and never
-          when it has nobody, because an unheld role is refused at submission
-          rather than guessed at.
-        </p>
+        <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole campus.</p>
         {rolesResult.error && (
           <p className="mt-3 text-sm text-status-rejected">
             {rolesResult.error}
@@ -234,11 +225,7 @@ export default async function CampusPage({
           </p>
         )}
         {roles.length === 0 ? (
-          <p className="mt-3 text-sm text-text-muted">
-            No active scoped roles to hold here. An institution-wide role is
-            held on the Approvers page instead, and reaches only administration
-            teams.
-          </p>
+          <p className="mt-3 text-sm text-text-muted">No active scoped roles to hold here.</p>
         ) : (
           <div className="mt-4">
             <WideHoldingPanel

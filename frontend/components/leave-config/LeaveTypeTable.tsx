@@ -34,7 +34,7 @@ export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
     return (
       <EmptyState
         title="No leave types configured yet"
-        description="Leave, Plans and Approvals all read from this registry, and none of them work until at least one leave type exists."
+        description="Leave, Plans and Approvals all read from this registry."
         action={
           <Link
             href="/leave-config/new"

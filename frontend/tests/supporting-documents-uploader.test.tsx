@@ -211,7 +211,7 @@ describe("SupportingDocumentsUploader", () => {
       />
     );
 
-    expect(screen.getByText(/was rejected/i)).toBeInTheDocument();
+    expect(screen.getByText(/submit a corrected copy/i)).toBeInTheDocument();
 
     const picker = screen.getByLabelText("Replace document letter.pdf");
     fireEvent.change(picker, {

@@ -43,11 +43,7 @@ export default async function LeaveConfigPage({
           <h2 className="text-2xl font-semibold tracking-tight text-text-primary">
             Leave Configuration
           </h2>
-          <p className="text-text-secondary">
-            The leave types every other module reads from. Deactivating a type
-            retires it from new applications and plans without touching
-            anything already filed against it.
-          </p>
+          <p className="text-text-secondary">The leave types every other module reads from.</p>
         </div>
         <Link
           href="/leave-config/new"

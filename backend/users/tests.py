@@ -173,6 +173,27 @@ class EmployeeEndpointTests(TestCase):
         response = self.client.patch(self.detail_url, {})
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_superuser_can_list_employees(self):
+        """The bootstrap administrator is HR for this gate.
+
+        ``createsuperuser`` is how a deployment starts, and the Approvers page
+        is where HR hands out holdings — if the superuser cannot read the
+        employee directory, that page shows "Unable to load employees, so
+        holders cannot be added" and the account that is supposed to be able to
+        do everything can appoint nobody.
+        """
+        admin = User.objects.create_superuser(
+            username="bootstrap@test.luanar",
+            email="bootstrap@test.luanar",
+            password=SEED_PASSWORD,
+        )
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)  # type: ignore[index]
+        response = self.client.get(self.detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_hr_can_list_employees(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.list_url)

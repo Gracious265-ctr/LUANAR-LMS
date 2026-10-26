@@ -218,7 +218,8 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     #: Statuses an employee may still edit (Unit 25 D7). ``REJECTED``
     #: is editable so the employee may adjust the application before
     #: resubmitting; ``resubmit`` re-validates, advances ``submission_cycle``
-    #: and freezes a new revision.
+    #: and freezes a new revision. Once a rejection is accepted the row is
+    #: still ``REJECTED`` but no longer editable — the employee closed it.
     #: The frontend mirrors this (``LeaveApplicationForm.tsx`` treats
     #: ``rejected`` as editable and omits it from READ_ONLY_STATUSES).
     EDITABLE_STATUSES = (
@@ -226,9 +227,17 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         LeaveApplication.Status.REJECTED,
     )
 
+    def _editable(self, instance) -> bool:
+        if instance.status not in self.EDITABLE_STATUSES:
+            return False
+        return not (
+            instance.status == LeaveApplication.Status.REJECTED
+            and instance.rejection_accepted_at is not None
+        )
+
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status not in self.EDITABLE_STATUSES:
+        if not self._editable(instance):
             return Response(
                 {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -237,7 +246,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status not in self.EDITABLE_STATUSES:
+        if not self._editable(instance):
             return Response(
                 {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,

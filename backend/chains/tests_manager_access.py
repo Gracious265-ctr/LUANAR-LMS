@@ -16,7 +16,10 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from roles.services import managed_team_ids_for
+from roles.models import ApproverRole, RoleAssignment
+from campuses.models import CampusRoleAssignment
 from teams.models import TeamRoleAssignment
+from users.models import EmployeeProfile
 
 from .testing import DEV_PASSWORD, ensure_roles, make_employee, make_team
 
@@ -351,6 +354,241 @@ class ManagerApproverRoleListTests(ManagerAccessBase):
         self.client.force_authenticate(self.plain)
         self.assertEqual(
             self.client.get(self.ROLES_URL).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+class ManagerApproverRoleCreationTests(ManagerAccessBase):
+    """A manager may name the role a step needs, but only name it.
+
+    Describing a chain sometimes needs an office the organisation has not
+    written down yet, and asking HR for one word blocks the whole form. Creating
+    is therefore open to a manager, while the role's scope and history — which
+    decide who may ever hold it — stay HR's. Creation is deduped by name, so a
+    manager can add "Dean" but never a second one.
+    """
+
+    ROLES_URL = "/api/v1/approver-roles/"
+
+    def test_manager_creates_a_role_from_its_name(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.post(
+            self.ROLES_URL, {"label": "Examinations Officer"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["code"], "examinations-officer")
+        self.assertTrue(
+            ApproverRole.objects.filter(code="examinations-officer").exists()
+        )
+
+    def test_adding_the_same_name_twice_reuses_the_first_role(self):
+        self.client.force_authenticate(self.manager)
+        first = self.client.post(
+            self.ROLES_URL, {"label": "Examinations Officer"}, format="json"
+        )
+        second = self.client.post(
+            self.ROLES_URL, {"label": "examinations officer"}, format="json"
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(first.data["id"], second.data["id"])
+        self.assertEqual(
+            ApproverRole.objects.filter(
+                label__iexact="Examinations Officer"
+            ).count(),
+            1,
+        )
+
+    def test_manager_cannot_edit_or_retire_a_role(self):
+        role = ensure_roles("supervisor")["supervisor"]
+        self.client.force_authenticate(self.manager)
+        self.assertEqual(
+            self.client.patch(
+                f"{self.ROLES_URL}{role.id}/",
+                {"description": "Rewritten by a manager"},
+                format="json",
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.delete(f"{self.ROLES_URL}{role.id}/").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_plain_employee_still_cannot_create_a_role(self):
+        self.client.force_authenticate(self.plain)
+        response = self.client.post(
+            self.ROLES_URL, {"label": "Examinations Officer"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(
+            ApproverRole.objects.filter(code="examinations-officer").exists()
+        )
+
+
+class ManagerInstitutionHoldingReadTests(ManagerAccessBase):
+    """A manager reads institution-wide holders but cannot change them.
+
+    The chain form a manager edits shows an institution-wide step's holder by
+    name and locks the step to that person. That read used to be HR-only, so the
+    form got a 403 on every institution-wide role and fell back to treating the
+    step as unstaffed — a correct-looking form that quietly differed from what
+    the backend would save.
+    """
+
+    ASSIGNMENTS_URL = "/api/v1/role-assignments/"
+
+    def setUp(self):
+        super().setUp()
+        self.role = ensure_roles("registrar")["registrar"]
+        self.assignment = RoleAssignment.objects.create(
+            role=self.role, user=self.manager
+        )
+
+    def test_manager_reads_the_institution_wide_holders(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.get(self.ASSIGNMENTS_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)  # type: ignore[index]
+        self.assertEqual(response.data["results"][0]["user"], self.manager.pk)  # type: ignore[index]
+
+    def test_manager_cannot_grant_a_holding(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.post(
+            self.ASSIGNMENTS_URL,
+            {"user": self.plain.pk, "role": self.role.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(RoleAssignment.objects.count(), 1)
+
+    def test_manager_cannot_revoke_a_holding(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.delete(
+            f"{self.ASSIGNMENTS_URL}{self.assignment.pk}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(RoleAssignment.objects.filter(pk=self.assignment.pk).exists())
+
+    def test_plain_employee_still_cannot_read_them(self):
+        self.client.force_authenticate(self.plain)
+        response = self.client.get(self.ASSIGNMENTS_URL)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class ManagerWideHoldingReadTests(ManagerAccessBase):
+    """A manager reads the wide holders that staff their own teams' chains.
+
+    The chain form locks any step whose role is held team-wide or campus-wide,
+    so the read has to reach a manager — scoped to the teams they manage, since
+    another team's holder is none of their business. Writes stay HR's.
+    """
+
+    TEAM_URL = "/api/v1/team-role-assignments/"
+    CAMPUS_URL = "/api/v1/campus-role-assignments/"
+
+    def setUp(self):
+        super().setUp()
+        # ``make_manager`` already gave ``self.manager`` a supervisor holding on
+        # ``self.team`` and designated it the team's manager.
+        self.academic_team = make_team(
+            "Academic Managed", ("supervisor",), campus="Read Campus"
+        )
+        self.academic_manager = make_manager(
+            self.academic_team, "academic-manager@manager.test"
+        )
+        self.role = ensure_roles("supervisor")["supervisor"]
+        self.campus_holder = make_employee(
+            "campus-wide@manager.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=self.academic_team.campus,
+            role=self.role,
+            user=self.campus_holder,
+        )
+        # A holding at a campus this manager does not manage, which must stay
+        # out of their read.
+        self.other_campus_team = make_team(
+            "Other Campus Team", ("supervisor",), campus="Hidden Campus"
+        )
+        self.hidden_holder = make_employee(
+            "hidden-campus-wide@manager.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=self.other_campus_team.campus,
+            role=self.role,
+            user=self.hidden_holder,
+        )
+
+    def test_manager_reads_only_their_own_team_wide_holdings(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.get(self.TEAM_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]  # type: ignore[index]
+        self.assertEqual([row["team"] for row in rows], [self.team.pk])
+
+        self.client.force_authenticate(self.academic_manager)
+        response = self.client.get(self.TEAM_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]  # type: ignore[index]
+        self.assertEqual([row["team"] for row in rows], [self.academic_team.pk])
+
+    def test_manager_reads_campus_holdings_at_their_own_campus_only(self):
+        self.client.force_authenticate(self.academic_manager)
+        response = self.client.get(self.CAMPUS_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"]  # type: ignore[index]
+        self.assertEqual(
+            [row["campus"] for row in rows], [self.academic_team.campus_id]
+        )
+        self.assertNotIn(self.hidden_holder.pk, [row["user"] for row in rows])
+
+    def test_an_administration_manager_has_no_campus_holdings_to_read(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.get(self.CAMPUS_URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"], [])  # type: ignore[index]
+
+    def test_manager_still_cannot_write_a_team_holding(self):
+        self.client.force_authenticate(self.manager)
+        response = self.client.post(
+            self.TEAM_URL,
+            {"team": self.team.pk, "role": self.role.pk, "user": self.plain.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_still_cannot_write_a_campus_holding(self):
+        self.client.force_authenticate(self.academic_manager)
+        response = self.client.post(
+            self.CAMPUS_URL,
+            {
+                "campus": self.academic_team.campus_id,
+                "role": self.role.pk,
+                "user": self.plain.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_holds_a_campus_holding_read(self):
+        self.client.force_authenticate(self.academic_manager)
+        response = self.client.get(
+            f"{self.CAMPUS_URL}?campus={self.academic_team.campus_id}"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)  # type: ignore[index]
+
+    def test_plain_employee_still_cannot_read_them(self):
+        self.client.force_authenticate(self.plain)
+        self.assertEqual(
+            self.client.get(self.TEAM_URL).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.get(self.CAMPUS_URL).status_code,
             status.HTTP_403_FORBIDDEN,
         )
 

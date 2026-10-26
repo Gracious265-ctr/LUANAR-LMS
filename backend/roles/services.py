@@ -347,8 +347,8 @@ def role_code_from_name(name: object) -> str:
     return code
 
 
-def create_approver_role(*, actor, data: dict) -> ApproverRole:
-    """Create one approver role from its name, and audit it.
+def create_approver_role(*, actor, data: dict) -> tuple[ApproverRole, bool]:
+    """Create one approver role from its name, or return the one that has it.
 
     Only the name is HR's to give. ``code`` is derived from it (see
     :func:`role_code_from_name`), and the behavioural fields — history scope,
@@ -360,11 +360,37 @@ def create_approver_role(*, actor, data: dict) -> ApproverRole:
     incompatible states: a name that says "Vice Chancellor" beside a code that
     says ``vc``, where the label is what every screen shows and the code is what
     every rule reads.
+
+    A name that already names a role does **not** create a second one: the same
+    word typed twice — by HR on the Roles screen, or by a team manager from the
+    chain form's "New role" card — resolves to the role that already exists.
+    Two offices sharing a name is exactly the ambiguity a chain cannot afford,
+    and the caller only ever meant "the Registrar", not "a second Registrar".
+    Matching is on the label, case- and whitespace-insensitively, because that
+    is the name people type; two *different* labels that happen to slug alike
+    are still two roles and keep separate codes.
+
+    Returns ``(role, created)``. ``created`` is False when an existing role was
+    reused, so the API can answer 200 rather than 201 and the caller can say
+    "already exists" without guessing. A matching *retired* role is refused
+    instead of silently reused: past stages still quote its name, and bringing
+    it back is HR's decision, not a side effect of adding a step.
     """
     data = dict(data)
     label = (data.get("label") or "").strip()
     if not label:
         raise RoleActionError("label", "Enter a role name.")
+    existing = (
+        ApproverRole.objects.filter(label__iexact=label).order_by("pk").first()
+    )
+    if existing is not None:
+        if not existing.is_active:
+            raise RoleActionError(
+                "label",
+                f"The {existing.label} role already exists but is retired. Ask HR "
+                "to reactivate it in Roles.",
+            )
+        return existing, False
     data["label"] = label
     data["code"] = role_code_from_name(label)
     for field in (
@@ -384,7 +410,7 @@ def create_approver_role(*, actor, data: dict) -> ApproverRole:
             target_summary=role.label,
             detail={"before": None, "after": _role_snapshot(role)},
         )
-    return role
+    return role, True
 
 
 def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRole:
@@ -1207,24 +1233,37 @@ def wide_approver_ids_for_team(team: Team | None) -> set[int]:
 
     A wide approver staffs a chain without being appointed to its steps: the
     holder of a team-wide role on this team, the holder of a campus-wide role
-    at the team's campus, or the holder of an institution-wide role. They are
-    the deliberate exception to "one employee sits on one chain per team": a
-    team building a second chain reuses its registrar or bursar, it does not
-    move them off the first chain.
+    at the team's campus, or — for an administration team only — the holder of
+    an institution-wide role. They are the deliberate exception to "one employee
+    sits on one chain per team": a team building a second chain reuses its
+    registrar or bursar, it does not move them off the first chain.
+
+    Two exclusions keep that exception honest:
+
+    * a **campus-wide** holding reaches only the academic teams at its own
+      campus, so a team elsewhere — or an administration team — never sees it;
+    * an **institution-wide** holding is an administration office, so an
+      academic team does not see it at all;
+    * the team's **designated manager** is not in this set. A manager joins
+      their own team's roster to route their own leave, and once there they are
+      an ordinary member of one of its chains rather than a wide holder who can
+      sit on all of them.
     """
     if team is None:
         return set()
-    ids = set(
-        RoleAssignment.objects.filter(
-            role__is_institution_wide=True, user__is_active=True
-        ).values_list("user_id", flat=True)
-    )
+    ids: set[int] = set()
+    if team.category == Team.Category.ADMINISTRATION:
+        ids.update(
+            RoleAssignment.objects.filter(
+                role__is_institution_wide=True, user__is_active=True
+            ).values_list("user_id", flat=True)
+        )
     ids.update(
         TeamRoleAssignment.objects.filter(
-            team=team, user__is_active=True
+            team=team, user__is_active=True, is_team_manager=False
         ).values_list("user_id", flat=True)
     )
-    if team.campus_id is not None:
+    if team.category == Team.Category.ACADEMIC and team.campus_id is not None:
         ids.update(
             CampusRoleAssignment.objects.filter(
                 campus_id=team.campus_id, user__is_active=True
@@ -1255,6 +1294,12 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     this team's campus — is not a normal member: they staff steps from the
     Approvers tab and are kept out of the roster, so being an approver never
     also quietly routes someone's leave as a member.
+
+    The team's **designated manager** is the one exception. Their own leave
+    must route through the team they run, and only a roster row makes that
+    true, so the manager may place themselves here. Once placed they leave
+    every other team's candidate list, which is the "one team per employee"
+    rule doing its job rather than a special case.
 
     Somebody already on a different team is refused rather than moved. Moving
     an employee off another team would leave that team with steps whose

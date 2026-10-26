@@ -66,6 +66,8 @@ export interface TrackingOutcome {
   approver_name: string;
   decided_at: string;
   reason?: string;
+  /** When the employee chose to accept the rejection instead of resubmitting. */
+  accepted_at?: string | null;
 }
 
 export interface ResubmissionInfo {

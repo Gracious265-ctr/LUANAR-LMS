@@ -274,15 +274,13 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
         {isAnnual && (
           <Alert tone="info">
             <p>
-              {leaveType?.name} is created for you the first time you add an
-              entitlement, so its name and short code are fixed. Its rules are
-              yours to change here; how many days a grade range is granted is
-              changed by editing{" "}
+              {leaveType?.name} is created by its first entitlement, so its name
+              and short code are fixed. Days per grade are set in{" "}
               <Link
                 href="/dashboard/hr-admin/entitlements"
                 className="font-medium underline"
               >
-                the entitlement
+                entitlements
               </Link>
               .
             </p>

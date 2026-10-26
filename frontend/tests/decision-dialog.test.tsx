@@ -121,7 +121,7 @@ describe("DecisionDialog", () => {
       await screen.findByText(/every remaining approval stage \(Registrar\)/)
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Reloading will not help/)
+      screen.getByText(/Human Resources must change the applicant/)
     ).toBeInTheDocument();
     // A refresh cannot resolve it, so no Reload affordance is offered and the
     // decision cannot be retried.

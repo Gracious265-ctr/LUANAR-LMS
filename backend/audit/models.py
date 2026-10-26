@@ -47,6 +47,10 @@ class AuditEntry(models.Model):
         STAGE_SKIPPED = "stage_skipped", "Approval stage skipped"
         SUBMITTED = "submitted", "Submitted"
         APPLICATION_RESUBMITTED = "application_resubmitted", "Application resubmitted"
+        APPLICATION_REJECTION_ACCEPTED = (
+            "application_rejection_accepted",
+            "Rejection accepted",
+        )
         DOCUMENT_ADDED = "document_added", "Document added"
         DOCUMENT_REPLACED = "document_replaced", "Document replaced"
         DOCUMENT_REMOVED = "document_removed", "Document removed"

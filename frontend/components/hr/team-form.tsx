@@ -826,11 +826,7 @@ interface TeamDetails {
         )}
         </div>
         {!team ? (
-          <p className="text-xs text-text-muted md:col-span-2">
-            Next, name the manager who runs this team. They build its approval
-            chain and staff each step, and they are the only person who can
-            configure the team&apos;s members.
-          </p>
+          <p className="text-xs text-text-muted md:col-span-2">Name the manager who runs this team and its approval chain.</p>
         ) : null}
       </form>
     );
@@ -853,14 +849,7 @@ interface TeamDetails {
           <h3 className="mt-1 text-sm font-semibold text-text-primary">
             Assign team manager
           </h3>
-          <p className="mt-1 text-xs text-text-muted">
-            The manager is a team-wide approver who runs this team: they add its
-            members, build its approval chains, staff each step, and decide which
-            chain routes. They hold one of the team-scoped roles, and must be an
-            active employee of the team&apos;s own category. A person may hold
-            only one wide approver role, so anyone who already holds one anywhere
-            is not offered here.
-          </p>
+          <p className="mt-1 text-xs text-text-muted">The manager runs this team: its members, chains, and steps.</p>
         </div>
 
         {rolesError ? (
@@ -922,7 +911,7 @@ interface TeamDetails {
           </select>
           <p className="mt-1 text-xs text-text-muted">
             {managerCandidates.length === 0
-              ? "Nobody matching this team's category is free to manage it. Everyone who does already holds a wide approver role, or is not an active employee of this category."
+              ? "Nobody matching this team's category is free to manage it."
               : `Only active ${TEAM_CATEGORY_LABELS[details.category].toLowerCase()} employees who hold no wide approver role are offered.`}
           </p>
         </div>
@@ -974,13 +963,7 @@ interface TeamDetails {
         <h3 className="mt-1 text-sm font-semibold text-text-primary">
           Who approves for this team
         </h3>
-        <p className="mt-1 text-xs text-text-muted">
-          The steps this team&apos;s applications follow, in order. A step is
-          named by the role it uses, so the role and the one person who acts for
-          it are all there is to choose: an application is routed to a named
-          approver, not to whichever of several people happens to act first.
-          Candidates are the employees already on this team.
-        </p>
+        <p className="mt-1 text-xs text-text-muted">The steps this team&apos;s applications follow, in order.</p>
       </div>
 
       {rolesError ? (
@@ -1042,10 +1025,7 @@ interface TeamDetails {
               Cancel
             </Button>
           </div>
-          <p className="mt-1 text-xs text-text-muted">
-            The new role appears in every step&apos;s role picker. Behaviour such
-            as history scope and cancellation handling is set on the Roles page.
-          </p>
+          <p className="mt-1 text-xs text-text-muted">The new role appears in every step&apos;s role picker.</p>
           {roleCreateError ? (
             <p className="mt-1 text-xs text-status-rejected">{roleCreateError}</p>
           ) : null}
@@ -1059,10 +1039,7 @@ interface TeamDetails {
       ) : null}
 
       {sections.length === 0 ? (
-        <p className="text-sm text-text-muted md:col-span-2">
-          No approval steps yet. A team with no steps is a draft and routes
-          nothing, which is a legitimate way to save it and finish later.
-        </p>
+        <p className="text-sm text-text-muted md:col-span-2">No approval steps yet.</p>
       ) : null}
 
       {resolvedSections.map((section, index) => {
@@ -1170,10 +1147,7 @@ interface TeamDetails {
                       : "Choose which holder decides at this step."}
                 </p>
               ) : options.length === 0 ? (
-                <p className="mt-1 text-xs text-text-muted">
-                  Nobody on this team can hold this role yet. Put somebody on the
-                  team below, or appoint a holder on the Roles page.
-                </p>
+                <p className="mt-1 text-xs text-text-muted">Nobody on this team can hold this role yet.</p>
               ) : null}
             </div>
           </div>

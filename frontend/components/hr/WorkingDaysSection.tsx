@@ -64,10 +64,7 @@ export function WorkingDaysSection({
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-4">
       <div>
         <h3 className="text-lg font-semibold text-text-primary">Working days</h3>
-        <p className="mt-1 text-sm text-text-secondary">
-          The days the institution treats as working days. Leave day counts and
-          notice periods exclude the days you clear here, along with holidays.
-        </p>
+        <p className="mt-1 text-sm text-text-secondary">Leave day counts and notice periods exclude the days you clear here.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

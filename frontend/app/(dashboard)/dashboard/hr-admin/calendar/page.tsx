@@ -154,12 +154,7 @@ export default async function CalendarPage({
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">
             Calendar
           </h2>
-          <p className="text-text-secondary">
-            Configure financial years, holidays, events, and the working-day
-            pattern. The system uses these when validating leave applications:
-            public holidays and non-working days do not count as working leave
-            days.
-          </p>
+          <p className="text-text-secondary">Configure financial years, holidays, events, and working days.</p>
         </div>
 
         {yearsError ? (

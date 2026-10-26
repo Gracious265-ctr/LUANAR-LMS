@@ -1,4 +1,4 @@
-import { apiClientUrl } from "./api-client";
+import { apiClient, apiClientUrl } from "./api-client";
 import type { HistoryScope } from "./approver-role-scopes";
 
 export { HISTORY_SCOPE_LABELS, HISTORY_SCOPES } from "./approver-role-scopes";
@@ -76,6 +76,21 @@ export async function getApproverRole(
   id: number | string
 ): Promise<ApproverRole> {
   return apiClientUrl<ApproverRole>(`/api/v1/approver-roles/${id}/`);
+}
+
+/**
+ * The active roles a chain's steps may name, read by a team's manager.
+ *
+ * The workflow form's role list is the same one HR reads, but the HR-only
+ * reader refuses a manager, so the backend exposes a read-only list to whoever
+ * manages a team (``TeamViewSet.eligible_approver_roles``). Reading it here
+ * rather than through the browser proxy matters: the pages that build a chain
+ * are server components, and a relative ``fetch("/api/hr/...")`` has no origin
+ * to resolve against on the server — it throws, and the page then reports that
+ * no role could be loaded even though every role exists.
+ */
+export async function listEligibleApproverRoles(): Promise<ApproverRole[]> {
+  return apiClient<ApproverRole[]>("/api/v1/teams/eligible-approver-roles/");
 }
 
 export async function listRoleAssignments(

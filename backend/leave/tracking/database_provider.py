@@ -257,6 +257,7 @@ class DatabaseTrackingProvider(TrackingProvider):
             approver_name=decision.approver_name or _user_name(decision.approver),
             decided_at=decision.decided_at,
             reason=decision.comment,
+            accepted_at=application.rejection_accepted_at,
         )
 
     def _resubmission(self, application, audit_rows) -> ResubmissionInfo:
@@ -271,7 +272,10 @@ class DatabaseTrackingProvider(TrackingProvider):
         )
         if last_resubmitted_at is None and count > 0:
             last_resubmitted_at = application.submitted_at
-        can_resubmit = application.status == LeaveApplication.Status.REJECTED
+        can_resubmit = (
+            application.status == LeaveApplication.Status.REJECTED
+            and application.rejection_accepted_at is None
+        )
         returns_to_stage = None
         if can_resubmit:
             returning = application.current_stage

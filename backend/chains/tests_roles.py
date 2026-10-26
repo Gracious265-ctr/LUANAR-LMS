@@ -143,17 +143,55 @@ class RoleCreationTests(RoleAPIBase):
         )
         self.assertEqual(entry.actor, self.hr)
 
-    def test_a_second_role_of_the_same_name_gets_its_own_code(self):
-        """Names are not unique, so the code must be able to disambiguate them.
+    def test_a_name_that_already_exists_reuses_the_role(self):
+        """The same name typed twice is one role, not two.
 
-        Refusing the duplicate instead would make the code derive-and-fail on a
-        name HR is allowed to reuse — and the retry that fixes it is what makes
-        the suffix approach worth having.
+        A manager adding a role from a chain's step form types a name they may
+        not know is already in the organisation's vocabulary. Creating a second
+        "Dean" would give the chain a step no holder could ever staff, so the
+        existing role is returned and nothing new is written.
         """
         ensure_roles("dean")
+        existing = ApproverRole.objects.get(code="dean")
+        before = ApproverRole.objects.count()
+
         response = self.client.post(LIST_URL, {"label": "Dean"}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(ApproverRole.objects.filter(code__startswith="dean").count(), 2)
+
+        # 200, not 201: the name created nothing.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], existing.pk)
+        self.assertEqual(ApproverRole.objects.count(), before)
+
+    def test_matching_ignores_case_and_surrounding_space(self):
+        ensure_roles("dean")
+        existing = ApproverRole.objects.get(code="dean")
+        before = ApproverRole.objects.count()
+
+        response = self.client.post(
+            LIST_URL, {"label": "  dean  "}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], existing.pk)
+        self.assertEqual(ApproverRole.objects.count(), before)
+
+    def test_a_retired_role_with_the_same_name_is_refused(self):
+        """Reusing a retired role silently would resurrect a name HR put down.
+
+        Past stages quote the old role, so bringing it back is a decision made
+        on the Roles screen, not a side effect of adding a chain step.
+        """
+        role = ensure_roles("dean")["dean"]
+        role.is_active = False
+        role.save(update_fields=["is_active"])
+
+        response = self.client.post(LIST_URL, {"label": "Dean"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("label", response.data)
+        self.assertFalse(
+            ApproverRole.objects.filter(label__iexact="Dean", is_active=True).exists()
+        )
 
     def test_blank_label_rejected(self):
         response = self.client.post(LIST_URL, self.payload(label=""), format="json")
@@ -595,7 +633,7 @@ class RoleServiceTests(TestCase):
         )
 
     def test_create_returns_the_role_and_audits_it(self):
-        role = create_approver_role(
+        role, created = create_approver_role(
             actor=self.hr,
             data={
                 "code": "examiner",
@@ -605,6 +643,7 @@ class RoleServiceTests(TestCase):
                 "is_institution_wide": False,
             },
         )
+        self.assertTrue(created)
         self.assertEqual(role.code, "examiner")
         self.assertTrue(AuditEntry.objects.filter(
             target_type=AuditEntry.TargetType.APPROVER_ROLE,

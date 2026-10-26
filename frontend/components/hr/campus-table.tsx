@@ -33,7 +33,7 @@ export function CampusTable({
     return (
       <EmptyPanel
         title="No campuses yet"
-        description="A campus is where an academic team sits, and it is what makes campus-wide approvers reachable for that team's stages."
+        description="A campus is where an academic team sits."
       />
     );
   }

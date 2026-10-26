@@ -78,7 +78,7 @@ describe("LeaveApplicationForm", () => {
         await screen.findByText(/application no longer editable/i)
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/read-only record/i)
+        screen.getByText(/read-only now/i)
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: /review application/i })
@@ -86,6 +86,23 @@ describe("LeaveApplicationForm", () => {
       expect(screen.queryByText(/drag & drop files/i)).not.toBeInTheDocument();
     }
   );
+
+  it("keeps an accepted rejection read-only", async () => {
+    mockApi(
+      application("rejected", {
+        rejection_accepted_at: "2026-10-17T08:00:00Z",
+      })
+    );
+
+    render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
+
+    expect(
+      await screen.findByText(/application no longer editable/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/submit a corrected copy/i)
+    ).not.toBeInTheDocument();
+  });
 
   it("keeps the uploader editable and explains Replace on a rejected edit", async () => {
     mockApi(
@@ -112,7 +129,7 @@ describe("LeaveApplicationForm", () => {
 
     expect(await screen.findByText(/drag & drop files/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/was rejected/i)
+      screen.getByText(/submit a corrected copy/i)
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/application no longer editable/i)

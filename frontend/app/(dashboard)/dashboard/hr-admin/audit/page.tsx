@@ -80,20 +80,14 @@ export default async function AuditPage({
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">Audit View</h2>
-          <p className="text-text-secondary">
-            Review finalized leave applications and the administrative audit trail
-            of actions taken across the system.
-          </p>
+          <p className="text-text-secondary">Review finalized applications and the administrative audit trail.</p>
         </div>
 
         <Card>
           <h3 className="mb-4 text-lg font-semibold text-text-primary">
             Finalized leave
           </h3>
-          <p className="mb-4 text-sm text-text-secondary">
-            Leave applications that employees have submitted. Open one to view its
-            documents, reassignment history, and full audit trail.
-          </p>
+          <p className="mb-4 text-sm text-text-secondary">Applications employees have submitted.</p>
           {finalizedError ? (
             <div className="rounded-lg bg-status-rejected-subtle py-12 text-center text-sm text-status-rejected">
               {finalizedError}
@@ -109,10 +103,7 @@ export default async function AuditPage({
               <h3 className="text-lg font-semibold text-text-primary">
                 Administrative history
               </h3>
-              <p className="text-sm text-text-secondary">
-                Every configuration change, decision, and submission is recorded
-                with the acting user.
-              </p>
+              <p className="text-sm text-text-secondary">Every configuration change, decision, and submission is recorded.</p>
             </div>
             <form
               method="get"

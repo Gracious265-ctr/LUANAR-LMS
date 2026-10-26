@@ -754,11 +754,12 @@ class TeamSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_workflows(self, instance: Team) -> list[dict]:
-        """Every workflow this team owns, flagging the one it routes through.
+        """Every workflow this team owns, flagging the default one.
 
-        A team may hold several chains, so the team screen lists them rather
-        than showing only the live one — otherwise a replacement HR is building
-        would be invisible until somebody pointed the team at it.
+        A team may hold several chains, and it routes all of them at once for
+        the people enrolled on each — ``is_routing`` names the default, not the
+        only live chain. The screen lists every chain so an additional one is
+        never mistaken for a chain that routes nothing.
         """
         return [
             {

@@ -408,7 +408,7 @@ describe("DashboardShell mobile drawer", () => {
 });
 
 describe("DashboardShell Leave module", () => {
-  it("scopes the rail to the launcher plus exactly the three Leave items", () => {
+  it("scopes the rail to the launcher plus exactly the five Leave items", () => {
     currentPath = "/dashboard/leave";
     // An HR approver is the strictest case: the module rail must hide their HR
     // and approvals destinations, not merely the employee-only extras.
@@ -430,12 +430,16 @@ describe("DashboardShell Leave module", () => {
       "href",
       "/dashboard/leave/drafts",
     );
+    expect(within(nav).getByRole("link", { name: "On Leave" })).toHaveAttribute(
+      "href",
+      "/dashboard/leave/on-leave",
+    );
     expect(
       within(nav).getByRole("link", { name: "New Application" }),
     ).toHaveAttribute("href", "/dashboard/leave/new");
 
-    // Exactly four destinations and the launcher — nothing leaks in.
-    expect(within(nav).getAllByRole("link")).toHaveLength(5);
+    // Exactly five destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(6);
 
     for (const hidden of [
       "Approvals",
@@ -495,6 +499,23 @@ describe("DashboardShell Leave module", () => {
     expect(within(nav).getByRole("link", { name: "Dashboard" })).not.toHaveAttribute(
       "aria-current",
     );
+  });
+
+  it("marks On Leave active on the on-leave page", () => {
+    currentPath = "/dashboard/leave/on-leave";
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "On Leave" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(nav).getByRole("link", { name: "Drafts" })).not.toHaveAttribute(
+      "aria-current",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "My Applications" }),
+    ).not.toHaveAttribute("aria-current");
   });
 
   it("marks Dashboard active only on the Leave index", () => {

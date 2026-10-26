@@ -129,12 +129,7 @@ async function TeamsPage({
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-text-primary">Teams</h2>
-          <p className="text-text-secondary">
-            The routing unit: an employee belongs to a team, and that
-            team&apos;s chain decides who approves their application. A team is
-            either academic — sitting at a campus — or administration-wide, and
-            only a team that is in force routes anything.
-          </p>
+          <p className="text-text-secondary">The routing unit: a team&apos;s chain decides who approves its applications.</p>
         </div>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

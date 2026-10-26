@@ -900,6 +900,121 @@ class WideHolderCategoryTests(MemberAPIBase):
         )
 
 
+class WideHolderSectionAppointmentTests(MemberAPIBase):
+    """A wide holder may be named on a step, without joining the team.
+
+    The chain form locks a step to the narrowest holder of its role and sends
+    that person's id, so the write path has to accept the very appointment the
+    form displays. Their post is the appointment: a team-wide or campus-wide
+    holder approves for the team without belonging to it, and saving the chain
+    must not move them onto it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.role = ensure_roles("supervisor")["supervisor"]
+
+    def test_team_wide_holder_can_be_named_on_a_step(self):
+        home = make_team("Team Wide Home", ["supervisor"])
+        holder = make_employee("team-wide-named@members.test", team=home)
+        TeamRoleAssignment.objects.create(
+            team=self.team, role=self.role, user=holder
+        )
+
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Team wide chain",
+                "team": self.team.pk,
+                "sections": [
+                    {"approver_role": "supervisor", "approver": holder.pk}
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        section = Section.objects.get(
+            workflow_id=response.json()["id"], approver_role=self.role
+        )
+        self.assertEqual(section.approver_id, holder.pk)
+        holder.employee_profile.refresh_from_db()
+        self.assertEqual(holder.employee_profile.team_id, home.pk)
+
+    def test_the_designated_manager_can_staff_steps_of_two_chains(self):
+        """A team-wide post staffs every chain, and the manager's post is one.
+
+        The manager is left out of ``wide_approver_ids_for_team`` because a
+        workflow *membership* re-routes their own leave. A step appointment is
+        not a membership, so the chain form — which locks the step to the team's
+        holder — must be able to save the manager on the team's second chain.
+        """
+        manager = make_employee("manager-wide@members.test", team=self.team)
+        TeamRoleAssignment.objects.create(
+            team=self.team, role=self.role, user=manager, is_team_manager=True
+        )
+        second = make_workflow("Manager Second Chain", ["supervisor"], is_active=True)
+        second.team = self.team
+        second.save(update_fields=["team"])
+
+        first_section = self.team.workflow.sections.get(approver_role=self.role)
+        second_section = second.sections.get(approver_role=self.role)
+        for section in (first_section, second_section):
+            response = self.client.post(
+                "/api/v1/section-members/",
+                {"section": section.pk, "user": manager.pk},
+                format="json",
+            )
+            self.assertEqual(
+                response.status_code, status.HTTP_201_CREATED, response.data
+            )
+
+        first_section.refresh_from_db()
+        second_section.refresh_from_db()
+        self.assertEqual(first_section.approver_id, manager.pk)
+        self.assertEqual(second_section.approver_id, manager.pk)
+
+    def test_campus_wide_holder_can_be_named_on_a_step(self):
+        team = make_team(
+            "Campus Wide Chain", ["supervisor"], campus="Campus Wide Chain Campus"
+        )
+        holder = make_employee(
+            "campus-wide-named@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=team.campus, role=self.role, user=holder
+        )
+
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Campus wide chain",
+                "team": team.pk,
+                "sections": [
+                    {"approver_role": "supervisor", "approver": holder.pk}
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        section = Section.objects.get(
+            workflow_id=response.json()["id"], approver_role=self.role
+        )
+        self.assertEqual(section.approver_id, holder.pk)
+        holder.employee_profile.refresh_from_db()
+        self.assertIsNone(holder.employee_profile.team_id)
+
+    def test_someone_who_is_not_a_wide_holder_is_still_refused(self):
+        home = make_team("Ordinary Home", ["supervisor"])
+        outsider = make_employee("not-wide@members.test", team=home)
+        section = self.team.workflow.sections.first()
+
+        with self.assertRaises(TeamActionError):
+            ensure_membership_allowed(section, outsider)
+
+
 class WideHolderSingleRoleTests(MemberAPIBase):
     """A person holds one wide approver role, at one of the three scopes.
 

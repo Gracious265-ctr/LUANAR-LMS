@@ -159,10 +159,7 @@ export function AdminUserForm({
           className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-text-primary placeholder:text-text-placeholder focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
           placeholder={user ? "Leave blank to keep the current password" : "At least 8 characters"}
         />
-        <p className="mt-1 text-xs text-text-muted">
-          HR is the source of credentials. There is no self-service password
-          change, so this is how an HR user gets (or regains) access.
-        </p>
+        <p className="mt-1 text-xs text-text-muted">HR is the source of credentials; there is no self-service password change.</p>
       </div>
 
       {user ? (
