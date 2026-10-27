@@ -120,18 +120,17 @@ export function listEmployeesByTeam(
  * The list is scoped to a team's own half of the institution: `category` keeps
  * only employees of the team's kind (an academic team takes academic employees,
  * an administration team takes administration employees), and
- * `excludedWideForTeam` drops the people who staff that team's steps as wide
- * approvers — an approver is managed on the Approvers tab, not the roster.
+ * `excludeWideHolders` drops everyone holding a wide approver role —
+ * institution-wide, on any team, or at any campus — because a wide holder
+ * staffs steps from the Approvers tab rather than joining a roster.
  */
 export function listUnassignedEmployees(
   category?: EmployeeCategory,
-  excludedWideForTeam?: number | string
+  excludeWideHolders?: boolean
 ): Promise<Employee[]> {
   const params = new URLSearchParams({ team: "none" });
   if (category) params.set("category", category);
-  if (excludedWideForTeam !== undefined) {
-    params.set("not_wide_for_team", String(excludedWideForTeam));
-  }
+  if (excludeWideHolders) params.set("not_wide_holder", "1");
   return listAllPages(`?${params.toString()}`);
 }
 

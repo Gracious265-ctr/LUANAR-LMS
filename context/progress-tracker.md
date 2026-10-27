@@ -6887,3 +6887,49 @@ over HTTP). Frontend: `tests/on-leave-lib.test.ts`,
 `tests/on-leave-table.test.tsx`, `tests/leave-nav.test.ts` (20 tests) and the
 dashboard-shell rail assertion for the new nav item; the full suite is **126
 files / 1061 tests OK**. `tsc --noEmit` clean; eslint reports no new warnings.
+
+## Completed — Roster and default chain are the designated manager's alone (2026-10-27)
+
+**Goal.** HR continued to appear as a second manager on the team screen: it could
+add and remove members and choose the default chain. The user wanted that power
+narrowed to the one person the team was handed to, and wanted the roster's
+candidates scoped to the team's own half of the institution.
+
+**Authority.** A new, strictly narrower guard lives beside the existing one:
+
+- `_require_can_manage_team` stays the broad manager surface
+  (`is_hr_actor or is_team_manager`) for team identity edits, chains, and steps.
+- `_require_team_manager` admits only `TeamRoleAssignment.is_team_manager` and
+  refuses HR. It gates `members` POST, `remove_member`, and `route` in
+  `teams/views.py` (403 before the service), and is repeated in
+  `add_team_member`, `remove_team_member`, and `route_team`. A team with no
+  designated manager therefore cannot be staffed until HR names one — the
+  deadlock is intentional.
+
+**Candidates.** `member_candidates` and the HR directory's
+`?not_wide_holder=1` now exclude **any** wide holder — an institution-wide
+`RoleAssignment`, a `TeamRoleAssignment` on any team, or a
+`CampusRoleAssignment` at any campus — via the new
+`roles.services.wide_role_holder_ids()`. The team's own manager is the one
+exemption, since joining the roster is how their leave routes through the team
+they run. `wide_approver_ids_for_team` keeps its narrower routing meaning and is
+still what step eligibility reads. The refusal names the holdings through
+`wide_role_labels_for(user)`.
+
+**Frontend.** `Team.is_team_manager` is on the team payload; `TeamMembersPanel`
+hides Add/Remove for non-managers and says "Only this team's designated manager
+can change its roster"; `RouteChainButton` disappears for non-managers while the
+Default badge stays; `WorkflowCompactCard` forwards `canMakeDefault`; the team
+and workflows pages pass the flag. The HR picker now sends
+`not_wide_holder=1` (`listUnassignedEmployees(category, excludeWideHolders)`).
+
+**Verification.** Backend `chains.tests_workflow_members` **83 OK** (new
+`TeamRosterAuthorityTests`: HR add/remove/route 403, another team's manager 404,
+manager add/remove/route success, service-layer refusals, candidates omit wide
+holders, and institution/other-campus/other-team holdings refused);
+`chains.tests_teams` + `chains.tests_wide_scope` **119 OK**; `users` **165 OK**
+(roster-filter tests rewritten for the holder-wide rule). Frontend **130 files /
+1107 tests OK**; `tsc --noEmit` and targeted eslint clean. The pre-existing
+`chains.tests_team_configuration` routing-fixture failures (2 failures + 11
+errors: "has no approval workflow for this employee") are unchanged and
+unrelated.

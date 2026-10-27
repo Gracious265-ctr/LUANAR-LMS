@@ -151,6 +151,12 @@ export interface Team {
   effective_to: string | null;
   /** False outside the team's effective window, even when it is active. */
   is_effective: boolean;
+  /**
+   * Whether the signed-in user is this team's designated manager. The roster
+   * and the default chain are the manager's to change, so HR reads the same
+   * team read-only; the server refuses those writes to anyone else.
+   */
+  is_team_manager: boolean;
   /** Required: a team with no chain routes nothing, so it cannot be saved without one. */
   stage_roles: TeamStageRole[];
   member_count: number;

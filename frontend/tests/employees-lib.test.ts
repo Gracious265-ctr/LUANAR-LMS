@@ -38,11 +38,11 @@ describe("listUnassignedEmployees", () => {
     );
   });
 
-  it("keeps a team's wide approvers out of its own roster", async () => {
-    await listUnassignedEmployees("administration", 7);
+  it("keeps every wide approver out of a roster's candidates", async () => {
+    await listUnassignedEmployees("administration", true);
 
     expect(apiClient).toHaveBeenCalledWith(
-      "/api/v1/employees/?team=none&category=administration&not_wide_for_team=7"
+      "/api/v1/employees/?team=none&category=administration&not_wide_holder=1"
     );
   });
 
@@ -56,7 +56,7 @@ describe("listUnassignedEmployees", () => {
     vi.mocked(apiClientUrl).mockResolvedValue(pageResponse([{ id: 2 }]));
     vi.mocked(apiClientUrl).mockResolvedValueOnce(pageResponse([{ id: 2 }]));
 
-    const rows = await listUnassignedEmployees("academic", 3);
+    const rows = await listUnassignedEmployees("academic", true);
 
     expect(apiClientUrl).toHaveBeenCalledWith(
       "https://lms.test/api/v1/employees/?team=none&page=2"

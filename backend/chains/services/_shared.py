@@ -23,6 +23,7 @@ __all__ = [
     "WorkflowActionError",
     "WorkflowAssignmentError",
     "_require_can_manage_team",
+    "_require_team_manager",
     "_unique_team_code",
     "_unique_workflow_name",
     "changed_fields",
@@ -149,6 +150,28 @@ def _require_can_manage_team(actor, team, error_cls: type[Exception]) -> None:
         return
     raise error_cls(
         "detail", "You do not have permission to manage this team."
+    )
+
+
+def _require_team_manager(actor, team, error_cls: type[Exception]) -> None:
+    """Refuse ``actor`` unless they are ``team``'s designated manager.
+
+    Staffing a team is the manager's decision, not HR's: HR hands a team to one
+    person and keeps the decisions around it — its identity, its lifecycle, and
+    who manages it — while the roster and the default chain become the
+    manager's. The rule is deliberately narrower than
+    :func:`_require_can_manage_team`: being HR is not a reason to staff a team
+    the HR account does not run, and another team's manager is refused too. A
+    team with nobody designated cannot be staffed at all, so HR has to name its
+    manager first; that is the intended order, because the manager is who the
+    roster exists for.
+    """
+    if is_team_manager(actor, team):
+        return
+    raise error_cls(
+        "detail",
+        "Only this team's designated manager can change its members or its "
+        "default chain. Ask HR to name a manager for the team.",
     )
 
 

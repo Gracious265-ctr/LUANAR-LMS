@@ -38,8 +38,7 @@ from .throttles import (
     PasswordSetRequestRateThrottle,
 )
 
-from teams.models import Team
-from roles.services import wide_approver_ids_for_team
+from roles.services import wide_role_holder_ids
 
 User = get_user_model()
 
@@ -294,23 +293,15 @@ class EmployeeViewSet(
         if category in EmployeeProfile.Category.values:
             queryset = queryset.filter(category=category)
 
-        # ``not_wide_for_team=<id>`` drops the people who staff the team's steps
-        # as wide approvers (institution-wide, team-wide on that team, or
-        # campus-wide at its campus): an approver is managed on the Approvers
-        # tab, not placed on the roster, so they are offered to nothing here.
-        # The same rule the write path enforces, read once for the picker.
-        not_wide_for_team = self.request.query_params.get("not_wide_for_team")
-        if not_wide_for_team:
-            try:
-                team_id = int(not_wide_for_team)
-            except ValueError:
-                team_id = None
-            if team_id is not None:
-                wide_team = Team.objects.filter(pk=team_id).first()
-                if wide_team is not None:
-                    queryset = queryset.exclude(
-                        user_id__in=wide_approver_ids_for_team(wide_team)
-                    )
+        # ``not_wide_holder=1`` drops everyone who holds a wide approver role —
+        # institution-wide, team-wide on any team, or campus-wide at any campus.
+        # A wide holder staffs steps from the Approvers tab and their leave is
+        # already routed by that office, so they are not roster material. This is
+        # the read half of the roster write's guard, kept on one rule. The team's
+        # own manager is the documented exception and is offered through the
+        # team's own ``member-candidates`` route instead.
+        if self.request.query_params.get("not_wide_holder") in {"1", "true"}:
+            queryset = queryset.exclude(user_id__in=wide_role_holder_ids())
         return queryset
 
     @action(detail=True, methods=["post"], url_path="password-set-link")

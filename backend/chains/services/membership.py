@@ -21,6 +21,7 @@ from roles.services import (
     WorkflowMemberError,
     _employee_profile_for,
     _member_display_name,
+    is_team_manager,
     wide_approver_ids_for_team,
 )
 from teams.models import Team, TeamRoleAssignment
@@ -636,7 +637,17 @@ def remove_team_member(*, team: Team, user: User, actor) -> None:
     validation read it. Clearing it anyway would leave a configuration that
     looks staffed and cannot act, so each responsibility is named and must be
     released first.
+
+    Only the team's designated manager may call this, for the same reason they
+    are the only one who may add: the roster is theirs once HR hands the team
+    over.
     """
+    if not is_team_manager(actor, team):
+        raise WorkflowMemberError(
+            "detail",
+            "Only this team's designated manager can add or remove its "
+            "members. Ask HR to name a manager for the team.",
+        )
     profile = _employee_profile_for(user)
     if profile is None:
         raise WorkflowMemberError(

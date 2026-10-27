@@ -8,11 +8,14 @@ import { buttonVariants } from "@/components/ui/button";
 interface WorkflowCompactCardProps {
   workflow: WorkflowRef;
   teamId: number;
+  /** Only the team's designated manager may make a chain its default. */
+  canMakeDefault?: boolean;
 }
 
 export function WorkflowCompactCard({
   workflow,
   teamId,
+  canMakeDefault = true,
 }: WorkflowCompactCardProps) {
   const steps = workflow.section_count;
   const effective = workflow.effective_from ?? "—";
@@ -54,7 +57,11 @@ export function WorkflowCompactCard({
             Edit
           </Link>
           {!workflow.is_routing && (
-            <RouteChainButton teamId={teamId} workflow={workflow} />
+            <RouteChainButton
+              teamId={teamId}
+              workflow={workflow}
+              canManage={canMakeDefault}
+            />
           )}
         </div>
       </div>

@@ -20,6 +20,7 @@ from roles.services import (
     add_team_member,
     add_team_members,
     approver_role_codes_for,
+    is_team_manager,
 )
 from teams.models import Team, TeamRoleAssignment
 from users.models import EmployeeProfile, User
@@ -295,6 +296,11 @@ class TeamSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     sections = serializers.SerializerMethodField()
     is_effective = serializers.BooleanField(read_only=True)
+    # Whether the requesting user is this team's designated manager. It decides
+    # the roster and the default chain on the screen, which the API now lets
+    # only the manager write, so the UI must not offer HR buttons that would be
+    # refused. Read-only and computed, never stored.
+    is_team_manager = serializers.SerializerMethodField()
 
     class Meta:
         model = Team
@@ -315,6 +321,7 @@ class TeamSerializer(serializers.ModelSerializer):
             "effective_from",
             "effective_to",
             "is_effective",
+            "is_team_manager",
             "stage_roles",
             "member_count",
             "members",
@@ -418,6 +425,20 @@ class TeamSerializer(serializers.ModelSerializer):
                 }
             )
         return attrs
+
+    def get_is_team_manager(self, instance: Team) -> bool:
+        """Whether the caller is the one manager this team was handed to.
+
+        The roster and the default chain are the manager's to change, so the
+        team screen reads this instead of re-deriving the rule from the viewer's
+        role: HR sees the same roster read-only, and a manager sees their
+        controls on their own team only.
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        return is_team_manager(user, instance)
 
     def get_workflows(self, instance: Team) -> list[dict]:
         """Every workflow this team owns, flagging the one it routes through.

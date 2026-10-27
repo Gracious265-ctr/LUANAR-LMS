@@ -32,9 +32,16 @@ import {
 export function RouteChainButton({
   teamId,
   workflow,
+  canManage = true,
 }: {
   teamId: number;
   workflow: WorkflowRef;
+  /**
+   * Whether the viewer is the team's designated manager. Only the manager may
+   * choose the default chain, so everyone else sees the Default badge where it
+   * applies and no button at all.
+   */
+  canManage?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -47,6 +54,10 @@ export function RouteChainButton({
         Default
       </Badge>
     );
+  }
+
+  if (!canManage) {
+    return null;
   }
 
   async function routeThrough() {

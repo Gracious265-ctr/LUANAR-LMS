@@ -1272,6 +1272,61 @@ def wide_approver_ids_for_team(team: Team | None) -> set[int]:
     return ids
 
 
+def wide_role_holder_ids() -> set[int]:
+    """Every user who holds a wide approver role, anywhere.
+
+    Three holdings are "wide": an institution-wide :class:`RoleAssignment`, a
+    team-wide :class:`TeamRoleAssignment` on any team, and a campus-wide
+    :class:`CampusRoleAssignment` at any campus. A wide holder staffs steps from
+    the Approvers tab, so they are not roster material — a team's roster is the
+    people whose leave routes through the team, and a wide holder's leave routes
+    through the chains their holding staffs.
+
+    :func:`wide_approver_ids_for_team` answers the narrower question "who staffs
+    *this* team's steps"; this answers "who is a wide holder at all", which is
+    what a roster add refuses. The two differ exactly where a holding reaches a
+    different team or campus than the one being staffed.
+    """
+    ids: set[int] = set()
+    ids.update(
+        RoleAssignment.objects.filter(user__is_active=True).values_list(
+            "user_id", flat=True
+        )
+    )
+    ids.update(
+        TeamRoleAssignment.objects.filter(user__is_active=True).values_list(
+            "user_id", flat=True
+        )
+    )
+    ids.update(
+        CampusRoleAssignment.objects.filter(user__is_active=True).values_list(
+            "user_id", flat=True
+        )
+    )
+    return ids
+
+
+def wide_role_labels_for(user) -> list[str]:
+    """Human names for the wide holdings ``user`` carries, one per holding.
+
+    Used in the refusal a roster add gives, so the manager sees *which* holding
+    keeps the person out rather than a bare "wide approver". Display-only: the
+    rule itself lives in :func:`wide_role_holder_ids`.
+    """
+    labels: list[str] = []
+    for assignment in RoleAssignment.objects.filter(user=user).select_related("role"):
+        labels.append(f"{assignment.role.label}, institution-wide")
+    for assignment in TeamRoleAssignment.objects.filter(user=user).select_related(
+        "role", "team"
+    ):
+        labels.append(f"{assignment.role.label} for {assignment.team.name}")
+    for assignment in CampusRoleAssignment.objects.filter(user=user).select_related(
+        "role", "campus"
+    ):
+        labels.append(f"{assignment.role.label} at {assignment.campus.name}")
+    return labels
+
+
 def _employee_profile_for(user: User):
     profile = getattr(user, "employee_profile", None)
     if profile is None:
@@ -1290,10 +1345,12 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     belong: an academic team takes academic employees, an administration team
     takes administration employees, and a mismatch is refused rather than
     allowed to sit on the roster until routing surprises someone. And a **wide
-    approver** — institution-wide, team-wide on this team, or campus-wide at
-    this team's campus — is not a normal member: they staff steps from the
-    Approvers tab and are kept out of the roster, so being an approver never
-    also quietly routes someone's leave as a member.
+    approver** — anyone holding an institution-wide, team-wide, or campus-wide
+    approver role, on this team or another — is not a normal member: they staff
+    steps from the Approvers tab, so joining a roster would quietly route their
+    leave through a team whose steps they already serve. Being a wide holder
+    *anywhere* is the bar; a holding on another team or campus still means the
+    person's leave is routed by that office.
 
     The team's **designated manager** is the one exception. Their own leave
     must route through the team they run, and only a roster row makes that
@@ -1304,8 +1361,20 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     Somebody already on a different team is refused rather than moved. Moving
     an employee off another team would leave that team with steps whose
     approvers are no longer members, and it would re-route their leave without
-    HR choosing to — a deliberate edit, not a side effect of filling a roster.
+    the manager choosing to — a deliberate edit, not a side effect of filling a
+    roster.
+
+    Only the team's designated manager may call this. HR names the manager and
+    owns the team's identity and lifecycle, but staffing the roster belongs to
+    the person the team was handed to; HR is refused here rather than treated as
+    a second manager.
     """
+    if not is_team_manager(actor, team):
+        raise WorkflowMemberError(
+            "detail",
+            "Only this team's designated manager can add or remove its "
+            "members. Ask HR to name a manager for the team.",
+        )
     if not user.is_active:
         raise WorkflowMemberError(
             "user",
@@ -1328,13 +1397,16 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             f'{team.get_category_display()} team takes only '
             f'{team.get_category_display()} employees.',
         )
-    if user.pk in wide_approver_ids_for_team(team):
-        raise WorkflowMemberError(
-            "user",
-            f"{_member_display_name(user)} is a wide approver for this team, so "
-            "they serve its steps from the Approvers tab rather than as a normal "
-            "member. Remove the holding first if they should sit on the roster.",
-        )
+    if not is_team_manager(user, team):
+        holdings = wide_role_labels_for(user)
+        if holdings:
+            raise WorkflowMemberError(
+                "user",
+                f"{_member_display_name(user)} holds a wide approver role "
+                f"({'; '.join(holdings)}), so they staff steps from the "
+                "Approvers tab rather than joining a roster. Remove the holding "
+                "first if they should be a normal member.",
+            )
     with transaction.atomic():
         locked_profile = EmployeeProfile.objects.select_for_update().get(pk=profile.pk)
         if locked_profile.team_id == team.pk:

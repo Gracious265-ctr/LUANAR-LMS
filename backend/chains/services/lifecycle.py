@@ -41,6 +41,7 @@ from chains.services._shared import (
     TeamReadiness,
     WorkflowActionError,
     _require_can_manage_team,
+    _require_team_manager,
     _unique_team_code,
     _unique_workflow_name,
 )
@@ -731,11 +732,14 @@ def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
     "adopt somebody else's chain" — which would strand every application
     inside the old one at a step nobody staffs.
 
-    The team's manager owns this day-to-day decision, but HR keeps the same
-    reach so an installation that has not yet designated a manager can still
-    configure its own teams.
+    The team's manager owns this decision outright. Choosing which chain
+    everybody who is not enrolled falls back to is a staffing decision about
+    that team, so HR is not a second key here: HR hands the team to a manager,
+    and the manager points it at a chain. A chain only becomes the default
+    among chains the team already owns (checked below), so this can never
+    become "adopt somebody else's chain".
     """
-    _require_can_manage_team(actor, team, TeamActionError)
+    _require_team_manager(actor, team, TeamActionError)
     with transaction.atomic():
         team = Team.objects.select_for_update().get(pk=team.pk)
         if workflow is None or workflow.team_id != team.pk:

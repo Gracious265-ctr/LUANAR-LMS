@@ -98,6 +98,7 @@ export default async function TeamWorkflowsPage({
                 <WorkflowCompactCard
                   workflow={workflow}
                   teamId={team.id}
+                  canMakeDefault={team.is_team_manager}
                 />
               </li>
             ))}

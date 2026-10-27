@@ -34,9 +34,12 @@ type RosterFilter = "all" | "approver" | "role" | "workflow" | "inactive";
 export function TeamMembersPanel({
   team,
   candidates,
+  canManage = false,
 }: {
   team: { id: number; name: string };
   candidates: Employee[];
+  /** Only the team's designated manager may add or remove members. */
+  canManage?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = useState<TeamMemberSummary[] | null>(null);
@@ -235,16 +238,18 @@ export function TeamMembersPanel({
                       </p>
                     )}
                   </div>
-                  <ConfirmButton
-                    size="sm"
-                    onConfirm={() => remove(member)}
-                    disabled={busyId === member.id}
-                    loading={busyId === member.id}
-                    prompt={`Remove ${member.full_name} from ${team.name}?`}
-                    aria-label={`Remove ${member.full_name} from ${team.name}`}
-                  >
-                    Remove
-                  </ConfirmButton>
+                  {canManage && (
+                    <ConfirmButton
+                      size="sm"
+                      onConfirm={() => remove(member)}
+                      disabled={busyId === member.id}
+                      loading={busyId === member.id}
+                      prompt={`Remove ${member.full_name} from ${team.name}?`}
+                      aria-label={`Remove ${member.full_name} from ${team.name}`}
+                    >
+                      Remove
+                    </ConfirmButton>
+                  )}
                 </li>
               ))}
             </ul>
@@ -282,20 +287,28 @@ export function TeamMembersPanel({
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button
-              type="button"
-              onClick={() => {
-                setAddError("");
-                setAddOpen(true);
-              }}
-              disabled={candidates.length === 0 || busyId !== null}
-            >
-              Add employees
-            </Button>
-            <p className="text-xs text-text-muted">
-              Only employees without a team who match this team&apos;s category
-              are offered here.
-            </p>
+            {canManage ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  setAddError("");
+                  setAddOpen(true);
+                }}
+                disabled={candidates.length === 0 || busyId !== null}
+              >
+                Add employees
+              </Button>
+            ) : (
+              <p className="text-xs text-text-muted">
+                Only this team&apos;s designated manager can change its roster.
+              </p>
+            )}
+            {canManage && (
+              <p className="text-xs text-text-muted">
+                Only employees of this team&apos;s category, on no team and
+                holding no wide approver role, are offered here.
+              </p>
+            )}
           </div>
         </>
       )}
@@ -307,7 +320,7 @@ export function TeamMembersPanel({
           if (!next) setAddError("");
         }}
         title="Add employees to this team"
-        description="Only employees without a team and matching this team's category are offered. One employee belongs to one team."
+        description="Only employees matching this team's category, on no team and holding no wide approver role, are offered. One employee belongs to one team."
         employees={candidates.map((person) => ({
           id: person.user_id,
           full_name: person.full_name,

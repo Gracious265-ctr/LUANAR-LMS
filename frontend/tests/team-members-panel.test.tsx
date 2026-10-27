@@ -136,7 +136,9 @@ describe("TeamMembersPanel", () => {
 
   it("adds an unassigned employee to the team", async () => {
     vi.mocked(addTeamMembers).mockResolvedValue([...[]]);
-    render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
+    render(
+      <TeamMembersPanel team={team} candidates={[unassigned]} canManage />
+    );
     await screen.findByText("Ruth Member");
 
     fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
@@ -166,7 +168,11 @@ describe("TeamMembersPanel", () => {
     });
     vi.mocked(addTeamMembers).mockResolvedValue([]);
     render(
-      <TeamMembersPanel team={team} candidates={[unassigned, second]} />
+      <TeamMembersPanel
+        team={team}
+        candidates={[unassigned, second]}
+        canManage
+      />
     );
     await screen.findByText("Ruth Member");
 
@@ -189,7 +195,9 @@ describe("TeamMembersPanel", () => {
     vi.mocked(addTeamMembers).mockRejectedValue(
       new Error("Sam Candidate is already on Registry Operations.")
     );
-    render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
+    render(
+      <TeamMembersPanel team={team} candidates={[unassigned]} canManage />
+    );
     await screen.findByText("Ruth Member");
 
     fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
@@ -213,7 +221,7 @@ describe("TeamMembersPanel", () => {
         "Ruth Member still holds an open approver period on the Supervisor step."
       )
     );
-    render(<TeamMembersPanel team={team} candidates={[]} />);
+    render(<TeamMembersPanel team={team} candidates={[]} canManage />);
     await screen.findByText("Ruth Member");
 
     fireEvent.click(
@@ -229,21 +237,42 @@ describe("TeamMembersPanel", () => {
   });
 
   it("opens the picker with only the scoped candidates and says so", async () => {
-    render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
+    render(
+      <TeamMembersPanel team={team} candidates={[unassigned]} canManage />
+    );
     await screen.findByText("Ruth Member");
 
     expect(
-      screen.getByText(/who match this team's category are offered here/)
+      screen.getByText(
+        /only employees of this team's category, on no team and holding no wide approver role, are offered here/i
+      )
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
     const dialog = await screen.findByRole("dialog");
-    // The picker's promise is scoped by the team's category and by who is
-    // already its wide approver. The server read those filters (the panel is
-    // handed the filtered candidates), and the copy names the scope rather
-    // than implying the whole directory is on offer.
+    // The picker's promise is scoped by the team's category and by who holds a
+    // wide approver role. The server read those filters (the panel is handed the
+    // filtered candidates), and the copy names the scope rather than implying
+    // the whole directory is on offer.
     expect(
       within(dialog).getByRole("checkbox", { name: "Sam Candidate" })
+    ).toBeInTheDocument();
+  });
+
+  it("offers a non-manager the roster read-only", async () => {
+    render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
+    await screen.findByText("Ruth Member");
+
+    expect(
+      screen.queryByRole("button", { name: "Add employees" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Remove Ruth Member from Bunda College Faculty",
+      })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Only this team's designated manager can change its roster/)
     ).toBeInTheDocument();
   });
 });

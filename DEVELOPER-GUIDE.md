@@ -457,18 +457,36 @@ walk it).
 A team manager is an ordinary employee holding a *team-wide* approver role whose
 `TeamRoleAssignment.is_team_manager` is set. One manager per team is a database
 constraint; HR designates them on the team's **Approvers** tab (Make manager) or
-at team creation (`manager={"role","user"}`). Authority is `is_hr_actor(actor) or
-is_team_manager(actor, team)` (`backend/chains/services/_shared.py::_require_can_manage_team`).
+at team creation (`manager={"role","user"}`). There are two guards in
+`backend/chains/services/_shared.py`:
+
+* `_require_can_manage_team` — `is_hr_actor(actor) or is_team_manager(actor, team)`.
+  The wider manager surface: team identity edits, chains, steps.
+* `_require_team_manager` — the designated manager only; HR is refused. Staffing
+  the roster (add/remove) and choosing the team's default chain. The views repeat
+  it as a 403 before the service runs, and `add_team_member`,
+  `remove_team_member`, and `route_team` enforce it again.
 
 | Surface | HR / superuser | Team manager |
 |---------|----------------|--------------|
 | Teams list | every team | only teams they manage (single team → redirect) |
 | Team identity (category, campus, name) & retire | yes | **no** (403) |
-| Team chains (create/edit/route a `Workflow`) | yes | yes, own team only |
+| Team chains (create/edit a `Workflow`) | yes | yes, own team only |
+| Default chain (`POST /teams/{id}/route/`) | **no** (403) | yes, own team only |
 | Workflow steps | staff from the whole directory | staff from the team's own members |
-| Roster (add/remove members) | yes | yes, own team only |
+| Roster (add/remove members) | **read-only** (writes 403) | yes, own team only |
 | Approvers tab (wide holders, Make manager) | read + write | **read-only** |
 | Approver roles (create/edit/retire) | yes | no (read-only active list) |
+
+A roster add is narrower than `EmployeeProfile.team`: the employee's **category**
+must match the team's (administration team → administration employee, academic
+team → academic employee), they must be on **no** team, and they must hold **no
+wide approver role anywhere** — institution-wide, on any team, or at any campus
+(`wide_role_holder_ids()` in `backend/roles/services.py`). The team's own
+designated manager is the one exemption, because joining the roster is how their
+leave routes through the team they run. `GET /teams/{id}/member-candidates/` and
+`GET /employees/?team=none&not_wide_holder=1` read the same rule, and the roster
+payload carries `is_team_manager` so the UI can hide the manager-only controls.
 
 The manager path reads through **manager-scoped endpoints**, never by loosening an
 HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and

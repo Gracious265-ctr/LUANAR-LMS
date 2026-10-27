@@ -76,7 +76,7 @@ async function loadMemberCandidates(
     if (isAdministrator) {
       return await listUnassignedEmployees(
         team.category as EmployeeCategory,
-        team.id
+        true
       );
     }
     return await listMemberCandidates(team.id);
@@ -367,7 +367,11 @@ export default async function TeamPage({
                       >
                         Edit steps
                       </Link>
-                      <RouteChainButton teamId={team.id} workflow={workflow} />
+                      <RouteChainButton
+                        teamId={team.id}
+                        workflow={workflow}
+                        canManage={team.is_team_manager}
+                      />
                     </div>
                   </li>
                 ))}
@@ -431,7 +435,11 @@ export default async function TeamPage({
           </h3>
           <p className="mt-1 text-sm text-text-secondary">People whose submissions this team&apos;s chains decide.</p>
           <div className="mt-4">
-            <TeamMembersPanel team={team} candidates={candidates} />
+            <TeamMembersPanel
+              team={team}
+              candidates={candidates}
+              canManage={team.is_team_manager}
+            />
           </div>
         </div>
       )}
