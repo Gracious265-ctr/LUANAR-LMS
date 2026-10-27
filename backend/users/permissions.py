@@ -4,7 +4,16 @@ from .models import User
 
 
 class IsHRRole(permissions.BasePermission):
-    """Allow access only to authenticated users with the HR role."""
+    """Allow an authenticated HR user, or the bootstrap superuser.
+
+    The superuser is the account a deployment starts with, created with
+    ``createsuperuser``; it is not a ``User.Role`` value but every other HR
+    gate in the project treats it as one (``roles.permissions.is_hr``, the
+    Teams and Approvers pages, the launcher). Gating on the role alone made the
+    bootstrap administrator open a page whose own data requests then 403'd —
+    the Approvers page showed "Unable to load employees" because this class
+    refused ``/api/v1/employees/``.
+    """
 
     message = "You do not have permission to perform this action."
 
@@ -13,7 +22,10 @@ class IsHRRole(permissions.BasePermission):
         return bool(
             user
             and user.is_authenticated
-            and getattr(user, "role", None) == User.Role.HR
+            and (
+                getattr(user, "role", None) == User.Role.HR
+                or user.is_superuser
+            )
         )
 
 

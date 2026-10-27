@@ -67,7 +67,7 @@ describe("LeaveApplicationForm", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(["submitted", "approved", "rejected", "cancelled"])(
+  it.each(["submitted", "approved", "cancelled"])(
     "shows a read-only notice when editing a %s application",
     async (statusName) => {
       mockApi(application(statusName));
@@ -78,7 +78,7 @@ describe("LeaveApplicationForm", () => {
         await screen.findByText(/application no longer editable/i)
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/read-only record/i)
+        screen.getByText(/read-only now/i)
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("button", { name: /review application/i })
@@ -87,9 +87,26 @@ describe("LeaveApplicationForm", () => {
     }
   );
 
-  it("keeps the uploader editable and explains Replace on a correction edit", async () => {
+  it("keeps an accepted rejection read-only", async () => {
     mockApi(
-      application("correction_required", {
+      application("rejected", {
+        rejection_accepted_at: "2026-10-17T08:00:00Z",
+      })
+    );
+
+    render(<LeaveApplicationForm mode="edit" applicationId="app-1" />);
+
+    expect(
+      await screen.findByText(/application no longer editable/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/submit a corrected copy/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the uploader editable and explains Replace on a rejected edit", async () => {
+    mockApi(
+      application("rejected", {
         documents: [
           {
             id: "doc-1",
@@ -112,7 +129,7 @@ describe("LeaveApplicationForm", () => {
 
     expect(await screen.findByText(/drag & drop files/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/returned for correction/i)
+      screen.getByText(/submit a corrected copy/i)
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/application no longer editable/i)

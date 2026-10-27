@@ -4,7 +4,6 @@ import {
   CircleDot,
   Clock,
   RefreshCw,
-  RotateCcw,
   Send,
   UserCheck,
   XCircle,
@@ -53,13 +52,6 @@ export const STATUS_META: Record<TrackingStatus, StatusMeta> = {
     textClass: STATUS_TEXT.rejected,
     dotClass: STATUS_SOLID.rejected,
   },
-  correction_required: {
-    label: "Correction Required",
-    icon: RotateCcw,
-    badgeTone: "correction",
-    textClass: STATUS_TEXT.correction_required,
-    dotClass: STATUS_SOLID.correction_required,
-  },
   cancelled: {
     label: "Cancelled",
     icon: Ban,
@@ -78,7 +70,6 @@ const EVENT_ICONS: Record<string, LucideIcon> = {
   submitted: Send,
   approved: CheckCircle2,
   rejected: XCircle,
-  correction_requested: RotateCcw,
   resubmitted: RefreshCw,
   reassigned: UserCheck,
 };
@@ -99,8 +90,6 @@ export function eventTitle(event: TrackingEvent, stages: TrackingStage[]): strin
       return `${roleLabel} approved`;
     case "rejected":
       return `${roleLabel} rejected`;
-    case "correction_requested":
-      return `${roleLabel} returned for correction`;
     case "resubmitted":
       return event.resubmission_number
         ? `You resubmitted (#${event.resubmission_number})`

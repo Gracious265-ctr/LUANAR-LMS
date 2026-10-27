@@ -8,6 +8,7 @@ from leave_types.models import LeaveType
 from leave_types.serializers import LeaveTypeSerializer
 from leave_types.services import (
     AnnualLeaveLifecycleError,
+    can_access_leave_config,
     can_access_leave_types,
     deactivate_leave_type,
     reactivate_leave_type,

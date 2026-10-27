@@ -19,6 +19,7 @@ import type {
 } from "@/lib/teams";
 import { createTeam, listEligibleApprovers, updateTeam } from "@/lib/teams-client";
 import { buttonVariants, Button } from "@/components/ui/button";
+import { FormProgress, type FormProgressStage } from "@/components/ui/form-progress";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 
@@ -31,26 +32,6 @@ interface DraftSection {
   approver: number | null;
 }
 
-/**
- * Two questions, but not two pages for every team.
- *
- * Creating a team asks only what the team *is* — its kind, academic or
- * administration, its campus when it is academic, its name, and its window —
- * and writes it as a chainless draft. The next screen is the new team's
- * Members tab: an approver is one of the team's employees, so the roster has
- * to exist before the picker can be honest about who is on it. Only once
- * employees are on it does the team get its workflow, added from its Overview.
- *
- * Editing keeps the two-page shape. Page one is the same details; page two is
- * who decides for the team, one named person per step. Eligibility is answered
- * by the team itself, so the picker is scoped by `?team=` and offers only
- * people already on the team.
- *
- * A team with no steps can still be saved. It becomes a draft, routes nothing,
- * and the chain is added from its own page when HR is ready. That is why on an
- * edit "Save as draft" sits beside "Save changes" rather than behind an extra
- * screen.
- */
 /**
  * Two pages for every team, but not the same two.
  *
@@ -145,6 +126,20 @@ export function TeamForm({
   // decision: an existing team's manager is changed from its Approvers tab.
   const [managerRoleId, setManagerRoleId] = useState("");
   const [managerUserId, setManagerUserId] = useState("");
+
+  /**
+   * The pages, in order, as the progress rail names them. Creating ends on the
+   * manager who runs the new team; editing ends on the chain it already owns.
+   */
+  const stages: FormProgressStage[] = team
+    ? [
+        { id: "details", label: "Team details" },
+        { id: "steps", label: "Approval steps" },
+      ]
+    : [
+        { id: "details", label: "Team details" },
+        { id: "manager", label: "Team manager" },
+      ];
 
   const rolesUnavailable = rolesError !== "" || roles.length === 0;
 
@@ -598,6 +593,9 @@ interface TeamDetails {
         onSubmit={handleDetailsSubmit}
         className="grid grid-cols-1 gap-4 md:grid-cols-2"
       >
+        <div className="md:col-span-2">
+          <FormProgress stages={stages} current="details" />
+        </div>
         <div>
           <label
             htmlFor="name"
@@ -631,14 +629,8 @@ interface TeamDetails {
           >
             {(
               [
-                {
-                  value: "administration",
-                  hint: "Institution-wide. The only kind an institution-wide approver may serve.",
-                },
-                {
-                  value: "academic",
-                  hint: "Sits at a campus, and may use campus-wide approvers.",
-                },
+                { value: "administration" },
+                { value: "academic" },
               ] as const
             ).map((option) => {
               const selected = details.category === option.value;
@@ -672,9 +664,6 @@ interface TeamDetails {
                   <span>
                     <span className="font-medium">
                       {TEAM_CATEGORY_LABELS[option.value]}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-text-muted">
-                      {option.hint}
                     </span>
                   </span>
                 </label>
@@ -714,11 +703,6 @@ interface TeamDetails {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-text-muted">
-            {details.category === "academic"
-              ? "Required. Scopes campus-wide approvers to this team's stages."
-              : "An administration team is institution-wide and does not sit at a campus."}
-          </p>
           {details.category === "academic" && campuses.length === 0 && (
             <p className="mt-1 text-xs text-status-pending">
               No campuses yet. Create one first —{" "}
@@ -773,9 +757,6 @@ interface TeamDetails {
               }))
             }
           />
-          <p className="mt-1 text-xs text-text-muted">
-            Blank means from the day the team is activated.
-          </p>
         </div>
 
         <div>
@@ -797,9 +778,6 @@ interface TeamDetails {
               }))
             }
           />
-          <p className="mt-1 text-xs text-text-muted">
-            Optional. A dated end is how a team is handed over without a gap.
-          </p>
         </div>
 
         {error && (
@@ -825,13 +803,6 @@ interface TeamDetails {
           </Link>
         )}
         </div>
-        {!team ? (
-          <p className="text-xs text-text-muted md:col-span-2">
-            Next, name the manager who runs this team. They build its approval
-            chain and staff each step, and they are the only person who can
-            configure the team&apos;s members.
-          </p>
-        ) : null}
       </form>
     );
   }
@@ -839,6 +810,9 @@ interface TeamDetails {
   if (!team) {
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="md:col-span-2">
+          <FormProgress stages={stages} current="manager" />
+        </div>
         <div className="md:col-span-2">
           <p className="text-xs text-text-muted">
             <span className="font-medium text-text-secondary">
@@ -853,14 +827,6 @@ interface TeamDetails {
           <h3 className="mt-1 text-sm font-semibold text-text-primary">
             Assign team manager
           </h3>
-          <p className="mt-1 text-xs text-text-muted">
-            The manager is a team-wide approver who runs this team: they add its
-            members, build its approval chains, staff each step, and decide which
-            chain routes. They hold one of the team-scoped roles, and must be an
-            active employee of the team&apos;s own category. A person may hold
-            only one wide approver role, so anyone who already holds one anywhere
-            is not offered here.
-          </p>
         </div>
 
         {rolesError ? (
@@ -891,11 +857,11 @@ interface TeamDetails {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-text-muted">
-            {managerRoles.length === 0
-              ? "No team-scoped roles are available. Create one on the Roles page first."
-              : "Only active, team-scoped roles are offered — an institution-wide role is held outside a single team."}
-          </p>
+          {managerRoles.length === 0 ? (
+            <p className="mt-1 text-xs text-text-muted">
+              No team-scoped roles are available. Create one on the Roles page first.
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -920,11 +886,11 @@ interface TeamDetails {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-text-muted">
-            {managerCandidates.length === 0
-              ? "Nobody matching this team's category is free to manage it. Everyone who does already holds a wide approver role, or is not an active employee of this category."
-              : `Only active ${TEAM_CATEGORY_LABELS[details.category].toLowerCase()} employees who hold no wide approver role are offered.`}
-          </p>
+          {managerCandidates.length === 0 ? (
+            <p className="mt-1 text-xs text-text-muted">
+              Nobody matching this team&apos;s category is free to manage it.
+            </p>
+          ) : null}
         </div>
 
         {error && (
@@ -965,6 +931,9 @@ interface TeamDetails {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <div className="md:col-span-2">
+        <FormProgress stages={stages} current="steps" />
+      </div>
+      <div className="md:col-span-2">
         <p className="text-xs text-text-muted">
           <span className="font-medium text-text-secondary">
             {details.name || "This team"}
@@ -974,13 +943,6 @@ interface TeamDetails {
         <h3 className="mt-1 text-sm font-semibold text-text-primary">
           Who approves for this team
         </h3>
-        <p className="mt-1 text-xs text-text-muted">
-          The steps this team&apos;s applications follow, in order. A step is
-          named by the role it uses, so the role and the one person who acts for
-          it are all there is to choose: an application is routed to a named
-          approver, not to whichever of several people happens to act first.
-          Candidates are the employees already on this team.
-        </p>
       </div>
 
       {rolesError ? (
@@ -1042,10 +1004,6 @@ interface TeamDetails {
               Cancel
             </Button>
           </div>
-          <p className="mt-1 text-xs text-text-muted">
-            The new role appears in every step&apos;s role picker. Behaviour such
-            as history scope and cancellation handling is set on the Roles page.
-          </p>
           {roleCreateError ? (
             <p className="mt-1 text-xs text-status-rejected">{roleCreateError}</p>
           ) : null}
@@ -1059,10 +1017,7 @@ interface TeamDetails {
       ) : null}
 
       {sections.length === 0 ? (
-        <p className="text-sm text-text-muted md:col-span-2">
-          No approval steps yet. A team with no steps is a draft and routes
-          nothing, which is a legitimate way to save it and finish later.
-        </p>
+        <p className="text-sm text-text-muted md:col-span-2">No approval steps yet.</p>
       ) : null}
 
       {resolvedSections.map((section, index) => {
@@ -1170,10 +1125,7 @@ interface TeamDetails {
                       : "Choose which holder decides at this step."}
                 </p>
               ) : options.length === 0 ? (
-                <p className="mt-1 text-xs text-text-muted">
-                  Nobody on this team can hold this role yet. Put somebody on the
-                  team below, or appoint a holder on the Roles page.
-                </p>
+                <p className="mt-1 text-xs text-text-muted">Nobody on this team can hold this role yet.</p>
               ) : null}
             </div>
           </div>

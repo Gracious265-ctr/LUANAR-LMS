@@ -26,6 +26,11 @@ export interface LeaveApplicationOverlayProps {
   applicationId?: string;
   /** Initial stage, so a `/review` or `/submitted` link can deep-link into it. */
   initialStage?: LeaveOverlayStage;
+  /**
+   * The list route that hosts this overlay, used when a freshly created draft
+   * learns its id and the URL has to name it. Defaults to the drafts list.
+   */
+  basePath?: string;
   onOpenChange: (open: boolean) => void;
   /** Called after a successful submit so the list can refetch. */
   onSubmitted?: (applicationId: string) => void;
@@ -91,6 +96,7 @@ function LeaveApplicationOverlayInner({
   mode,
   applicationId,
   initialStage,
+  basePath = "/dashboard/leave/drafts",
   onOpenChange,
   onSubmitted,
   onStageChange,
@@ -132,7 +138,7 @@ function LeaveApplicationOverlayInner({
     setDraftId(id);
     // `replace`, not `push`: the user opened the overlay deliberately, so a
     // refresh should resume this draft rather than re-trigger the Back button.
-    router.replace(`/dashboard/leave/drafts?edit=${id}`);
+    router.replace(`${basePath}?edit=${id}`);
   };
 
   const handleSubmitted = (id: string) => {

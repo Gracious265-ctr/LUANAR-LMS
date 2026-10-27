@@ -1,9 +1,8 @@
 """Read-only serializers for the tracking endpoint (Unit 15).
 
 These translate the ``WorkflowTracking`` contracts (Section 2) into the API
-response (Section 1). ``TrackedOutcomeSerializer`` renders the reason text
-under ``reason`` for rejections and ``comment`` for corrections depending on
-the context key supplied by the view.
+response (Section 1). ``TrackedOutcomeSerializer`` renders the mandatory
+reason text under ``reason``.
 """
 
 from rest_framework import serializers
@@ -84,18 +83,17 @@ class TrackedEventSerializer(serializers.Serializer):
 
 
 class TrackedOutcomeSerializer(serializers.Serializer):
-    """Serializes a rejection (``reason``) or correction (``comment``)."""
+    """Serializes a rejection outcome (``reason``)."""
 
     def to_representation(self, outcome):
-        key = self.context.get("outcome_key", "reason")
-        payload = {
+        return {
             "stage_order": outcome.stage_order,
             "role_label": outcome.role_label,
             "approver_name": outcome.approver_name,
             "decided_at": _iso(outcome.decided_at),
+            "reason": outcome.reason,
+            "accepted_at": _iso(outcome.accepted_at),
         }
-        payload[key] = outcome.reason
-        return payload
 
 
 class ResubmissionInfoSerializer(serializers.Serializer):
@@ -155,17 +153,10 @@ class WorkflowTrackingSerializer(serializers.Serializer):
                 for event in workflow.events
             ],
             "rejection": (
-                TrackedOutcomeSerializer(context={"outcome_key": "reason"}).to_representation(
+                TrackedOutcomeSerializer().to_representation(
                     workflow.rejection
                 )
                 if workflow.rejection
-                else None
-            ),
-            "correction": (
-                TrackedOutcomeSerializer(context={"outcome_key": "comment"}).to_representation(
-                    workflow.correction
-                )
-                if workflow.correction
                 else None
             ),
             "resubmission": ResubmissionInfoSerializer().to_representation(

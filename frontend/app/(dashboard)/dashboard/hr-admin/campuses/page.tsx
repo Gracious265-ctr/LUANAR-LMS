@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
-import { CampusTable } from "@/components/hr/campus-table";
+import { CampusList } from "@/components/hr/CampusList";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
@@ -47,11 +47,7 @@ export default async function CampusesPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-text-primary">Campuses</h2>
-          <p className="text-text-secondary">
-            Where an academic team sits. A campus scopes campus-wide approvers
-            to the teams at it, and an administration team — which is
-            institution-wide — never sits at one.
-          </p>
+          <p className="text-text-secondary">Where an academic team sits.</p>
         </div>
         <Link
           href="/dashboard/hr-admin/campuses/new"
@@ -69,7 +65,7 @@ export default async function CampusesPage() {
           </div>
         </div>
       ) : (
-        <CampusTable
+        <CampusList
           campuses={campusesResult.value}
           teams={teamsResult.value}
         />

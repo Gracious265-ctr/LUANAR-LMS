@@ -7,7 +7,7 @@ import { Search } from "lucide-react";
 import type { Employee } from "@/lib/employees";
 import type { TeamMemberSummary } from "@/lib/team-members";
 import {
-  addTeamMember,
+  addTeamMembers,
   listTeamMembers,
   removeTeamMember,
 } from "@/lib/team-members-client";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Alert, EmptyState } from "@/components/ui/states";
+import { EmployeePickerDialog } from "@/components/hr/employee-picker-dialog";
 
 const PAGE_SIZE = 10;
 
@@ -44,7 +45,9 @@ export function TeamMembersPanel({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<RosterFilter>("all");
   const [page, setPage] = useState(1);
-  const [selectedCandidate, setSelectedCandidate] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
 
   async function reload() {
     try {
@@ -98,23 +101,24 @@ export function TeamMembersPanel({
     setPage(1);
   }
 
-  async function addCandidate() {
-    if (selectedCandidate === "") return;
-    const userId = Number(selectedCandidate);
-    setBusyId(userId);
-    setError("");
+  async function addCandidates(userIds: number[]) {
+    if (userIds.length === 0) return;
+    setAdding(true);
+    setAddError("");
     try {
-      await addTeamMember(team.id, userId);
-      setSelectedCandidate("");
+      await addTeamMembers(team.id, userIds);
+      setAddOpen(false);
       setPage(1);
       await reload();
       router.refresh();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "That employee could not be added."
+      setAddError(
+        err instanceof Error
+          ? err.message
+          : "Those employees could not be added."
       );
     } finally {
-      setBusyId(null);
+      setAdding(false);
     }
   }
 
@@ -184,7 +188,7 @@ export function TeamMembersPanel({
           {count === 0 ? (
             <EmptyState
               title="No members yet"
-              description="Nobody's leave routes through this team yet. Add someone below, and their submissions will follow the chain this team routes through."
+              description="Nobody's leave routes through this team yet."
             />
           ) : filtered.length === 0 ? (
             <EmptyState
@@ -277,46 +281,46 @@ export function TeamMembersPanel({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="sr-only" htmlFor="roster-candidate">
-              Employee to add to this team
-            </label>
-            <select
-              id="roster-candidate"
-              value={selectedCandidate}
-              onChange={(event) => setSelectedCandidate(event.target.value)}
-              disabled={candidates.length === 0 || busyId !== null}
-              className="min-w-60 flex-1 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">
-                {candidates.length === 0
-                  ? "No employees to add to this team"
-                  : "Choose an employee..."}
-              </option>
-              {candidates.map((person) => (
-                <option key={person.id} value={person.user_id}>
-                  {person.full_name}
-                  {person.designation ? ` — ${person.designation}` : ""}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
-              onClick={() => void addCandidate()}
-              disabled={selectedCandidate === "" || busyId !== null}
+              type="button"
+              onClick={() => {
+                setAddError("");
+                setAddOpen(true);
+              }}
+              disabled={candidates.length === 0 || busyId !== null}
             >
-              Add to team
+              Add employees
             </Button>
+            <p className="text-xs text-text-muted">
+              Only employees without a team who match this team&apos;s category
+              are offered here.
+            </p>
           </div>
-
-          <p className="text-xs text-text-muted">
-            Only employees without a team who match this team&apos;s category are
-            offered here, and never a wide approver — approvers are managed on
-            the Approvers tab. Removing someone is refused while they still tie
-            to this team — a step appointment, a team-wide role, an open
-            approver period, or a place on one of its chains.
-          </p>
         </>
       )}
+
+      <EmployeePickerDialog
+        open={addOpen}
+        onOpenChange={(next) => {
+          setAddOpen(next);
+          if (!next) setAddError("");
+        }}
+        title="Add employees to this team"
+        description="Only employees without a team and matching this team's category are offered. One employee belongs to one team."
+        employees={candidates.map((person) => ({
+          id: person.user_id,
+          full_name: person.full_name,
+          email: person.email,
+          designation: person.designation,
+        }))}
+        onConfirm={(userIds) => void addCandidates(userIds)}
+        confirmLabel={(count) =>
+          count === 0 ? "Add to team" : `Add ${count} to team`
+        }
+        busy={adding}
+        error={addError}
+      />
     </div>
   );
 }

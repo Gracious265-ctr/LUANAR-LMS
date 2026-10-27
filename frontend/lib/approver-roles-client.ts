@@ -23,25 +23,65 @@ export type { HistoryScope } from "./approver-role-scopes";
  * through ``next/headers``, which puts the server module (and its cookies
  * dependency) into the client bundle. Reads go through the ``/api/hr`` proxy,
  * so the browser only ever sees the paginated rows, never Django.
+ *
+ * The list is readable by HR *and* a team manager, while granting or revoking
+ * a holding stays HR's. A manager describing a chain needs the holder's name to
+ * show — and lock — an institution-wide step; without the read the form fell
+ * back to "unstaffed" and disagreed with what the backend would save.
  */
 export async function listRoleAssignments(
   roleId?: number | string
 ): Promise<RoleAssignment[]> {
-  const rows: RoleAssignment[] = [];
+  return readAllPages<RoleAssignment>(
+    "/api/hr/role-assignments/",
+    roleId === undefined ? {} : { role: String(roleId) }
+  );
+}
+
+/**
+ * Who holds each role across a whole team, today.
+ *
+ * The team-wide twin of the institution-wide read above, and read for the same
+ * reason: the step form locks a step to the narrowest holder of its role, and a
+ * team-wide holder is the narrowest holding there is. A manager may read their
+ * own team's holdings (granting one stays HR's).
+ */
+export async function listTeamRoleAssignments(
+  team?: number | string
+): Promise<TeamRoleAssignment[]> {
+  return readAllPages<TeamRoleAssignment>(
+    "/api/hr/team-role-assignments/",
+    team === undefined ? {} : { team: String(team) }
+  );
+}
+
+/** The campus-wide twin, reaching every academic team at that campus. */
+export async function listCampusRoleAssignments(
+  campus?: number | string
+): Promise<CampusRoleAssignment[]> {
+  return readAllPages<CampusRoleAssignment>(
+    "/api/hr/campus-role-assignments/",
+    campus === undefined ? {} : { campus: String(campus) }
+  );
+}
+
+/** Every page of one paginated ``/api/hr`` reader, in one list. */
+async function readAllPages<T>(
+  path: string,
+  filters: Record<string, string> = {}
+): Promise<T[]> {
+  const rows: T[] = [];
   let page = 1;
   for (;;) {
-    const params = new URLSearchParams();
-    if (roleId !== undefined) {
-      params.set("role", String(roleId));
-    }
+    const params = new URLSearchParams(filters);
     params.set("page", String(page));
-    const response = await fetch(`/api/hr/role-assignments/?${params}`);
+    const response = await fetch(`${path}?${params}`);
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(apiErrorMessage(data));
     }
     const data = (await response.json()) as {
-      results?: RoleAssignment[];
+      results?: T[];
       next?: string | null;
     };
     const batch = data.results ?? [];
@@ -58,22 +98,38 @@ export async function createApproverRole(
   return send<ApproverRole>("/api/hr/approver-roles", "POST", input);
 }
 
+export interface CreatedRoleResult {
+  role: ApproverRole;
+  /** False when that name already named a role, so nothing new was written. */
+  created: boolean;
+}
+
 /**
- * The active roles a chain's steps may name, read by a team's manager.
+ * Add a role by name from the chain form, reusing one that already exists.
  *
- * The workflow form's role list is the same one HR reads, but that reader is
- * HR-only, so a manager opening "New workflow" saw no roles and the Add-step and
- * Create-workflow buttons sat disabled — a form they could not operate. This
- * reads the read-only list the backend exposes to whoever manages a team;
- * writing roles still goes through the HR-only role endpoints.
+ * The backend owns the dedupe — it matches the label case-insensitively and
+ * answers 201 only when it actually wrote a row — so this reports which
+ * happened from the status rather than guessing in the browser. That matters
+ * here because the caller is often a team manager typing the name of an office
+ * they cannot see the full list of: "already exists" has to be a reassurance,
+ * not a second role that no holder could ever staff.
  */
-export async function listActiveApproverRoles(): Promise<ApproverRole[]> {
-  const response = await fetch("/api/hr/teams/eligible-approver-roles/");
+export async function createOrReuseApproverRole(
+  label: string
+): Promise<CreatedRoleResult> {
+  const response = await fetch("/api/hr/approver-roles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(apiErrorMessage(data));
   }
-  return (await response.json()) as ApproverRole[];
+  return {
+    role: (await response.json()) as ApproverRole,
+    created: response.status === 201,
+  };
 }
 
 export async function updateApproverRole(
@@ -109,6 +165,24 @@ export async function removeRoleAssignment(
   await send<void>(`/api/hr/role-assignments/${id}`, "DELETE");
 }
 
+/**
+ * Hand an institution-wide holding to a new person.
+ *
+ * A role has exactly one institution-wide approver, so changing the holder is a
+ * replace rather than a remove-then-assign: the steps and chains the outgoing
+ * holder staffed move onto their successor in one write.
+ */
+export async function replaceRoleAssignment(
+  id: number | string,
+  input: { user: number | string }
+): Promise<RoleAssignment> {
+  return send<RoleAssignment>(
+    `/api/hr/role-assignments/${id}/replace`,
+    "POST",
+    input
+  );
+}
+
 async function send<T>(
   endpoint: string,
   method: "POST" | "PATCH" | "DELETE",
@@ -116,8 +190,12 @@ async function send<T>(
 ): Promise<T> {
   const response = await fetch(endpoint, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    // A body-less POST (the set-manager actions) must not claim to carry JSON:
+    // an empty body with that content type is a malformed request to a parser
+    // that is never going to be asked for the data anyway.
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (response.status === 204) {
     return undefined as T;
@@ -155,8 +233,10 @@ export async function removeTeamRoleAssignment(id: number | string): Promise<voi
 /**
  * Designate a team-wide holding as its team's manager.
  *
- * There is exactly one per team: the backend clears the flag from any other
- * holder on the team, so this is a selection, not an addition.
+ * One manager per team: the backend clears the flag from the team's other
+ * holders, so this is the "make this person the manager" action rather than a
+ * toggle that could leave two. Returns the updated holding so the caller can
+ * show the new state without a full re-read.
  */
 export async function setTeamManager(
   id: number | string
@@ -167,7 +247,7 @@ export async function setTeamManager(
   );
 }
 
-/** Undo a manager designation, leaving the holding in place. */
+/** Remove the manager designation from this holding (the team keeps none). */
 export async function clearTeamManager(
   id: number | string
 ): Promise<TeamRoleAssignment> {

@@ -1,19 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Plus } from "lucide-react";
 
 import type { AdminUser } from "@/lib/admin-users";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
+import { matchesSearch } from "@/lib/search";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { AdminUserForm } from "@/components/admin/admin-user-form";
 import { AdminUserTable } from "@/components/admin/admin-user-table";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FilterChips } from "@/components/ui/filter-chips";
+import { ListSearch } from "@/components/ui/list-search";
 
 /** Query key for the HR-user overlay on the list page. */
 export const ADMIN_USER_PARAM = "user";
+
+/** Status narrowing for the account list. Labels avoid the row's own wording. */
+const STATUS_FILTERS = [
+  { value: "", label: "All accounts" },
+  { value: "active", label: "Active only" },
+  { value: "inactive", label: "Inactive only" },
+] as const;
+
+type StatusFilter = (typeof STATUS_FILTERS)[number]["value"];
 
 /**
  * The HR-accounts list as a create/edit overlay.
@@ -24,15 +37,37 @@ export const ADMIN_USER_PARAM = "user";
  * not-found fetch path — only the one case where the id in the URL matches no
  * row.
  *
- * The list is not filtered, and deactivated accounts stay on it on purpose, so
- * a row that exists is always on screen; the not-found branch is reachable only
- * from a stale or hand-edited URL, and it says so rather than showing a blank
- * form.
+ * Deactivated accounts stay in the list on purpose, so a deactivated login is
+ * visible rather than silently gone. The local search and status chips narrow
+ * what the table draws, but never the dataset the overlay resolves against:
+ * `?user=<id>` still finds its row while a filter hides it, so the not-found
+ * branch stays reachable only from a stale or hand-edited URL — and it says so
+ * rather than showing a blank form.
  */
 export function AdminUsersSection({ users }: { users: AdminUser[] }) {
   const router = useRouter();
   const overlay = useOverlayParam(ADMIN_USER_PARAM);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("");
 
+  const visibleUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        if (status === "active" && !user.is_active) return false;
+        if (status === "inactive" && user.is_active) return false;
+        return matchesSearch(search, [
+          user.full_name,
+          user.first_name,
+          user.last_name,
+          user.email,
+          user.is_active ? "active" : "inactive",
+        ]);
+      }),
+    [search, status, users]
+  );
+
+  // Editing resolves against the whole list, not the narrowed view: a filter
+  // must never turn a live `?user=<id>` deep link into a not-found.
   const editing =
     overlay.target !== null && !overlay.isCreate
       ? users.find((row) => String(row.id) === overlay.target)
@@ -58,9 +93,32 @@ export function AdminUsersSection({ users }: { users: AdminUser[] }) {
         </Button>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <ListSearch
+          value={search}
+          onChange={setSearch}
+          label="Search HR users"
+          placeholder="Search by name or email"
+          className="w-full sm:w-72"
+        />
+        <FilterChips
+          label="Filter HR users by status"
+          options={STATUS_FILTERS}
+          value={status}
+          onChange={setStatus}
+        />
+      </div>
+
       <AdminUserTable
-        users={users}
+        users={visibleUsers}
         onEdit={(user) => overlay.openEdit(user.id)}
+        empty={
+          search || status ? (
+            <p className="text-sm text-text-muted">
+              No HR users match this search and status.
+            </p>
+          ) : undefined
+        }
       />
 
       <AdminFormOverlay

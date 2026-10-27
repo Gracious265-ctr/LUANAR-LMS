@@ -52,10 +52,7 @@ export default async function DocumentsHubPage() {
           <h1 className="text-2xl font-bold tracking-tight text-text-primary">
             Documents
           </h1>
-          <p className="mt-1 text-text-secondary">
-            Everything filed against a leave application — your own, and the
-            people you cover if you manage a team. Choose a list to open it.
-          </p>
+          <p className="mt-1 text-text-secondary">Files filed against a leave application.</p>
         </div>
 
         <div className={TWO_COLUMN}>

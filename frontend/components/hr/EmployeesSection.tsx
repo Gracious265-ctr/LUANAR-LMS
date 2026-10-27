@@ -135,7 +135,7 @@ export function EmployeesSection({
         targetKey={overlay.target}
         size="md"
         title="New employee"
-        description="Creating an employee also creates their sign-in account with this email address and a set password."
+        description="Creating an employee also creates their sign-in account."
         onOpenChange={(open) => {
           if (!open) overlay.close();
         }}

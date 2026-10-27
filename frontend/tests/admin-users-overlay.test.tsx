@@ -221,4 +221,28 @@ describe("AdminUsersSection", () => {
       "/dashboard/admin/users?q=ada&user=2"
     );
   });
+
+  it("narrows the list by name or email", () => {
+    render(<AdminUsersSection users={users} />);
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search HR users" }),
+      { target: { value: "leave@" } }
+    );
+
+    expect(screen.getByText("leave@luanar.ac.mw")).toBeInTheDocument();
+    expect(screen.queryByText("hr@test.luanar")).toBeNull();
+  });
+
+  it("narrows the list to inactive accounts without losing the row", () => {
+    render(<AdminUsersSection users={users} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Inactive only" }));
+
+    expect(screen.getByText("leave@luanar.ac.mw")).toBeInTheDocument();
+    expect(screen.queryByText("hr@test.luanar")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Edit Leave Officer" })
+    ).toBeInTheDocument();
+  });
 });

@@ -15,15 +15,20 @@ import { STATUS_TEXT } from "@/lib/status-styles";
 export function AdminUserTable({
   users,
   onEdit,
+  empty,
 }: {
   users: AdminUser[];
   onEdit?: (user: AdminUser) => void;
+  /** Overrides the empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (users.length === 0) {
     return (
-      <p className="text-sm text-text-muted">
-        No HR users yet. Create one to hand over the HR back office.
-      </p>
+      empty ?? (
+        <p className="text-sm text-text-muted">
+          No HR users yet. Create one to hand over the HR back office.
+        </p>
+      )
     );
   }
 

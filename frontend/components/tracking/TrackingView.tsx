@@ -90,8 +90,7 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
   }
 
   const data = result.data;
-  const showAttention =
-    Boolean(data.rejection) || Boolean(data.correction);
+  const showAttention = Boolean(data.rejection);
   const chainSteps = chainFromTracking(data);
 
   // Only mount the cancellation surface when the tracking payload carries the
@@ -139,7 +138,12 @@ export function TrackingView({ applicationId }: { applicationId: string }) {
         <div className="space-y-6 lg:w-1/3">
           {(showAttention || data.resubmission.count > 0) && (
             <div className="space-y-6">
-              {showAttention && <OutcomePanel data={data} />}
+              {showAttention && (
+                <OutcomePanel
+                  data={data}
+                  onAccepted={() => load("refresh")}
+                />
+              )}
               {data.resubmission.count > 0 && (
                 <ResubmissionNote resubmission={data.resubmission} />
               )}
@@ -186,7 +190,7 @@ function NotFoundState({
       </p>
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Link
-          href="/dashboard/leave/drafts"
+          href="/dashboard/leave/applications"
           className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border-default bg-surface-card px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover focus-ring"
         >
           My applications

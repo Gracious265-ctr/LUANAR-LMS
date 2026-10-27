@@ -26,16 +26,21 @@ import { cn } from "@/lib/utils";
 export function PendingApplicationsTable({
   applications,
   onReassign,
+  empty,
 }: {
   applications: PendingApplication[];
   onReassign?: (application: PendingApplication) => void;
+  /** Overrides the empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (applications.length === 0) {
     return (
-      <EmptyState
-        title="No pending applications"
-        description="All submitted applications are either assigned or no leave applications have been submitted yet."
-      />
+      empty ?? (
+        <EmptyState
+          title="No pending applications"
+          description="No submitted applications are awaiting a decision."
+        />
+      )
     );
   }
 

@@ -53,7 +53,6 @@ const CARD_STATUS_META: Record<
   submitted: STATUS_META.pending,
   approved: STATUS_META.approved,
   rejected: STATUS_META.rejected,
-  correction_required: STATUS_META.correction_required,
   cancelled: STATUS_META.cancelled,
 };
 

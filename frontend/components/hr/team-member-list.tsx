@@ -256,11 +256,7 @@ export function TeamMemberList({ team }: { team: Team }) {
 
       {error && <p className="mt-3 text-sm text-status-rejected">{error}</p>}
 
-      <p className="mt-2 text-xs text-text-muted">
-        Each step has exactly one approver. Changing it is a handover: the
-        person leaving stops from that day and the record of who held the step
-        is kept.
-      </p>
+      <p className="mt-2 text-xs text-text-muted">Each step has exactly one approver.</p>
     </div>
   );
 }

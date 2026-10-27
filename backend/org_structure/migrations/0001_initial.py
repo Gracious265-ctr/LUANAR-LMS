@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ('name', models.CharField(max_length=200)),
                 ('has_teams', models.BooleanField(default=False, help_text='Whether this unit is composed of teams.')),
                 ('designated_approver', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='org_units', to=settings.AUTH_USER_MODEL)),
-                ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='children', to='org.orgunit')),
+                ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='children', to='org_structure.orgunit')),
             ],
             options={
                 'ordering': ['unit_type', 'name'],

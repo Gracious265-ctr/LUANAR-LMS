@@ -1,38 +1,50 @@
 """Team management endpoints (moved from chains)."""
 
-from rest_framework import mixins, permissions, status, viewsets
+from django.db import IntegrityError
+from rest_framework import mixins, permissions, serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from audit.models import AuditEntry
 from audit.services import record_audit
-from campuses.models import Campus
-from chains.models import SectionMember, Workflow, WorkflowMember
+from campuses.models import Campus, CampusRoleAssignment
+from chains.models import Section, SectionMember, Workflow, WorkflowMember
 from chains.services import (
+    StageSequenceError,
     assign_workflow_member,
+    remove_team_member,
     create_team,
     deactivate_team,
+    normalize_section_sequence,
     remove_workflow_member,
+    team_member_summaries,
     update_team,
+    validate_team,
+    wide_approver_ids_for_team,
+    workflow_member_pool,
 )
-from chains.services._shared import _require_can_manage_team
-from chains.services.lifecycle import validate_team as validate_team_configuration
-from roles.models import ApproverRole
+from chains.services.lifecycle import route_team
+from chains.serializers import TeamReadinessSerializer, WorkflowMemberPoolSerializer
+from chains.services._shared import TeamActionError, _require_can_manage_team
+from roles.models import ApproverRole, RoleAssignment
 from roles.permissions import IsHROnly, IsHROrTeamManager, is_hr
-from roles.services import is_team_manager, managed_team_ids_for
-
-
-class TeamActionError(Exception):
-    pass
+from roles.services import RoleActionError, WorkflowMemberError, is_team_manager
+from chains.views import _managed_team_ids
 
 
 can_manage_team = _require_can_manage_team
 
 from teams.models import Team, TeamRoleAssignment
-from teams.serializers import TeamSerializer
-from roles.serializers import TeamRoleAssignmentSerializer
+from teams.serializers import (
+    TeamMemberAddSerializer,
+    TeamMemberBulkAddSerializer,
+    TeamMemberSummarySerializer,
+    TeamSerializer,
+)
+from roles.serializers import ApproverRoleSerializer, TeamRoleAssignmentSerializer
 from users.models import EmployeeProfile, User
+from users.serializers import EmployeeSerializer
 
 from .permissions import IsHROrTeamManager as TeamsIsHROrTeamManager
 
@@ -100,6 +112,11 @@ class TeamViewSet(
         directory is HR-only, so a team manager building their roster had no way
         to read who was available and could only remove people, never add them.
 
+        The team's own designated manager is offered even though they are a wide
+        approver: joining the roster is how their own leave routes through the
+        team they run. Once they join, "unassigned employees" excludes them from
+        every other team's list.
+
         This proposes the same list through a route a manager may reach — the
         team is ``self.get_object()``, so the scoped queryset has already
         refused a team that is not theirs — and returns the employee shape the
@@ -131,7 +148,8 @@ class TeamViewSet(
         A role is not secret configuration (a manager names steps with it), so the
         list is exposed read-only here: active roles only, and only to a caller
         who manages at least one team, which ``IsHROrTeamManager`` already gates.
-        Writing roles stays on the HR-only role endpoint.
+        A manager may also *create* a role by name on the role endpoint, deduped
+        by name; editing and retiring one stay HR's.
         """
         roles = ApproverRole.objects.filter(is_active=True).order_by("label")
         return Response(ApproverRoleSerializer(roles, many=True).data)
@@ -176,7 +194,7 @@ class TeamViewSet(
             base = base.exclude(status=Team.Status.INACTIVE)
         campus = params.get("campus")
         if campus:
-            base = base.filter(campus_id=positive_int(campus, "campus"))
+            base = base.filter(campus_id=_positive_int(campus, "campus"))
         category = params.get("category")
         if category:
             if category not in Team.Category.values:
@@ -225,7 +243,7 @@ class TeamViewSet(
                     )
                 }
             )
-        team = Team.objects.filter(pk=positive_int(team_id, "team")).first()
+        team = Team.objects.filter(pk=_positive_int(team_id, "team")).first()
         if team is None:
             raise drf_serializers.ValidationError(
                 {"team": "That team is missing."}
@@ -248,7 +266,7 @@ class TeamViewSet(
             if workflow_filter == "new":
                 excluded_workflow_ids: set[int] = set()
             else:
-                excluded_workflow_ids = {positive_int(workflow_filter, "workflow")}
+                excluded_workflow_ids = {_positive_int(workflow_filter, "workflow")}
             assigned_ids = set(
                 WorkflowMember.objects.filter(team=team)
                 .exclude(workflow_id__in=excluded_workflow_ids)
@@ -263,29 +281,22 @@ class TeamViewSet(
                 .exclude(workflow_id__in=excluded_workflow_ids)
                 .values_list("approver_id", flat=True)
             )
-            wide_ids = set(
-                RoleAssignment.objects.filter(
-                    role__is_institution_wide=True, user__is_active=True
-                ).values_list("user_id", flat=True)
-            )
-            wide_ids.update(
+            # A team-wide holder staffs the steps of every chain — including the
+            # team's designated manager, whose holding is a post rather than an
+            # enrolment — so they stay offered even after staffing another
+            # chain, exactly as the write path now accepts them.
+            wide_ids = wide_approver_ids_for_team(team) | set(
                 TeamRoleAssignment.objects.filter(
                     team=team, user__is_active=True
                 ).values_list("user_id", flat=True)
             )
-            if team.campus_id is not None:
-                wide_ids.update(
-                    CampusRoleAssignment.objects.filter(
-                        campus_id=team.campus_id, user__is_active=True
-                    ).values_list("user_id", flat=True)
-                )
             queryset = queryset.exclude(user_id__in=assigned_ids - wide_ids)
 
         role = None
         role_id = params.get("role")
         if role_id:
             role = ApproverRole.objects.filter(
-                pk=positive_int(role_id, "role")
+                pk=_positive_int(role_id, "role")
             ).first()
             if role is None:
                 raise drf_serializers.ValidationError(
@@ -320,16 +331,40 @@ class TeamViewSet(
         candidates = list(
             queryset.order_by("user__first_name", "user__last_name")
         )
-        if role is not None and role.is_institution_wide:
-            # An institution-wide role is held outside any one team, so the holder
-            # is absent from the team-scoped queryset above. Offer them anyway:
-            # selecting this role *is* how the holder is put on the step, and a
-            # picker that could not show them would leave HR with a step no team
-            # member is allowed to fill.
+        if role is not None:
+            # A wide holding staffs this role's steps from outside the team
+            # roster, so its holder is absent from the team-scoped queryset
+            # above. Offer them anyway: selecting the role is how the holder is
+            # put on a step, and a picker that could not show them would leave
+            # the step unfillable.
+            #
+            # The scope is the same one routing applies: the team's own holder,
+            # the holder at the campus of an *academic* team, and — for an
+            # *administration* team only — the institution-wide holder. A
+            # campus-wide approver never reaches a team at another campus, and
+            # an institution-wide approver never reaches an academic team.
+            wide_holder_ids = set(
+                TeamRoleAssignment.objects.filter(
+                    team=team, role=role, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            if team.category == Team.Category.ACADEMIC and team.campus_id is not None:
+                wide_holder_ids.update(
+                    CampusRoleAssignment.objects.filter(
+                        campus_id=team.campus_id, role=role, user__is_active=True
+                    ).values_list("user_id", flat=True)
+                )
+            if (
+                role.is_institution_wide
+                and team.category == Team.Category.ADMINISTRATION
+            ):
+                wide_holder_ids.update(
+                    RoleAssignment.objects.filter(
+                        role=role, user__is_active=True
+                    ).values_list("user_id", flat=True)
+                )
             already_offered = {profile.user_id for profile in candidates}
-            holder_ids = RoleAssignment.objects.filter(
-                role=role, user__is_active=True
-            ).values_list("user_id", flat=True)
+            holder_ids = wide_holder_ids - conflicting_ids
             candidates.extend(
                 EmployeeProfile.objects.filter(
                     user_id__in=holder_ids, user__is_active=True
@@ -338,7 +373,7 @@ class TeamViewSet(
                 .select_related("user", "team")
             )
 
-        return response.Response(
+        return Response(
             {
                 "team": {"id": team.pk, "name": team.name},
                 "candidates": [
@@ -361,18 +396,24 @@ class TeamViewSet(
 
     @action(detail=True, methods=["get", "post"], url_path="members")
     def members(self, request, *args, **kwargs):
-        """List this team's normal members, or place one employee on it.
+        """List this team's normal members, or place employees on it.
 
         GET is the team members screen's roster: every employee whose
         :attr:`EmployeeProfile.team` is this team, with the workflow they are a
         normal member of and whether they also staff a step or hold a team-wide
-        role. POST places one employee through the same guards the service
-        applies, so a picker that offers a candidate from another team gets a
-        refusal naming that team rather than a silent move.
+        role. POST accepts either one ``user`` or a ``users`` list. The list is
+        one all-or-nothing write, so a picker that selects several people never
+        leaves the roster with only some of them. Both paths apply the same
+        guards, so a candidate from another team gets a refusal naming that
+        team rather than a silent move.
         """
         team = self.get_object()
         if request.method == "POST":
-            serializer = TeamMemberAddSerializer(
+            bulk = "users" in request.data
+            serializer_class = (
+                TeamMemberBulkAddSerializer if bulk else TeamMemberAddSerializer
+            )
+            serializer = serializer_class(
                 data=request.data, context={**self.get_serializer_context(), "team": team}
             )
             serializer.is_valid(raise_exception=True)
@@ -408,7 +449,7 @@ class TeamViewSet(
         sent back with a single "cannot remove".
         """
         team = self.get_object()
-        user_id = positive_int(kwargs["user_id"], "user_id")
+        user_id = _positive_int(kwargs["user_id"], "user_id")
         user = User.objects.filter(pk=user_id).first()
         if user is None:
             return Response(
@@ -438,7 +479,7 @@ class TeamViewSet(
         workflow_id = request.query_params.get("workflow")
         if workflow_id:
             workflow = Workflow.objects.filter(
-                pk=positive_int(workflow_id, "workflow"), team=team
+                pk=_positive_int(workflow_id, "workflow"), team=team
             ).first()
             if workflow is None:
                 return Response(
@@ -498,7 +539,7 @@ class TeamViewSet(
         workflow = None
         if workflow_id not in (None, ""):
             try:
-                workflow_pk = positive_int(workflow_id, "workflow")
+                workflow_pk = _positive_int(workflow_id, "workflow")
             except ValidationError:
                 return Response(
                     {"workflow": ["That workflow is missing or is not this team's."]},

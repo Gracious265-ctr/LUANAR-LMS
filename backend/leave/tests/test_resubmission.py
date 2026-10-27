@@ -4,9 +4,9 @@
 Contract under test (D9):
 - 404 ``RESUBMISSION_NOT_FOUND`` — missing application, or one not owned by the
   caller (never 403).
-- 409 ``NOT_RESUBMITTABLE`` — status is not ``rejected``/``correction_required``.
+- 409 ``NOT_RESUBMITTABLE`` — status is not ``rejected``.
 - 409 ``WORKFLOW_INCONSISTENT`` — returning stage is gone or was not
-  rejected/correction-requested.
+  rejected.
 - 422 ``VALIDATION_FAILED`` — the re-validation (snapshot re-run) fails.
 - Happy path: ``submission_cycle + 1``, the returning stage re-opened in place
   (``pending``, ``decision_version + 1``), ``current_stage`` points at it,

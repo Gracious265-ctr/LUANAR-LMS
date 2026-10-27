@@ -19,6 +19,11 @@ import {
 } from "@/lib/notifications/service";
 import type { Notification } from "@/lib/notifications/types";
 
+const mockGetUnreadCount = vi.mocked(getUnreadCount);
+const mockListNotifications = vi.mocked(listNotifications);
+const mockMarkRead = vi.mocked(markRead);
+const mockMarkAllRead = vi.mocked(markAllRead);
+
 const { routerMock } = vi.hoisted(() => ({
   routerMock: { push: vi.fn() },
 }));
@@ -59,10 +64,10 @@ function openBell() {
 describe("NotificationBell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getUnreadCount.mockResolvedValue(0);
-    listNotifications.mockResolvedValue([]);
-    markRead.mockResolvedValue(undefined);
-    markAllRead.mockResolvedValue(undefined);
+    mockGetUnreadCount.mockResolvedValue(0);
+    mockListNotifications.mockResolvedValue([]);
+    mockMarkRead.mockResolvedValue(undefined);
+    mockMarkAllRead.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -79,7 +84,7 @@ describe("NotificationBell", () => {
   });
 
   it("shows the exact count while it is between 1 and 9", async () => {
-    getUnreadCount.mockResolvedValue(3);
+    mockGetUnreadCount.mockResolvedValue(3);
     render(<NotificationBell />);
 
     expect(await screen.findByText("3")).toBeInTheDocument();
@@ -87,7 +92,7 @@ describe("NotificationBell", () => {
   });
 
   it("caps the badge at 9+ once the count exceeds 9", async () => {
-    getUnreadCount.mockResolvedValue(12);
+    mockGetUnreadCount.mockResolvedValue(12);
     render(<NotificationBell />);
 
     expect(await screen.findByText("9+")).toBeInTheDocument();
@@ -96,7 +101,7 @@ describe("NotificationBell", () => {
 
   it("re-polls the unread count every 30 seconds", async () => {
     vi.useFakeTimers();
-    getUnreadCount.mockResolvedValue(3);
+    mockGetUnreadCount.mockResolvedValue(3);
     render(<NotificationBell />);
 
     await act(async () => {
@@ -122,7 +127,7 @@ describe("NotificationBell", () => {
   });
 
   it("marks a read-only list without offering any read actions", async () => {
-    listNotifications.mockResolvedValue([{ ...UNREAD, is_read: true }]);
+    mockListNotifications.mockResolvedValue([{ ...UNREAD, is_read: true }]);
     render(<NotificationBell />);
     openBell();
 
@@ -134,7 +139,7 @@ describe("NotificationBell", () => {
   });
 
   it("clicking a row marks it read and navigates in the same action", async () => {
-    listNotifications.mockResolvedValue([UNREAD]);
+    mockListNotifications.mockResolvedValue([UNREAD]);
     render(<NotificationBell />);
     openBell();
 
@@ -149,7 +154,7 @@ describe("NotificationBell", () => {
   });
 
   it("the inline tick marks a row read without navigating or closing", async () => {
-    listNotifications.mockResolvedValue([UNREAD]);
+    mockListNotifications.mockResolvedValue([UNREAD]);
     render(<NotificationBell />);
     openBell();
 
@@ -169,8 +174,8 @@ describe("NotificationBell", () => {
   });
 
   it('"Mark all read" clears every row and the badge without reopening', async () => {
-    getUnreadCount.mockResolvedValueOnce(2).mockResolvedValue(0);
-    listNotifications.mockResolvedValue([UNREAD, READ]);
+    mockGetUnreadCount.mockResolvedValueOnce(2).mockResolvedValue(0);
+    mockListNotifications.mockResolvedValue([UNREAD, READ]);
     render(<NotificationBell />);
     openBell();
 

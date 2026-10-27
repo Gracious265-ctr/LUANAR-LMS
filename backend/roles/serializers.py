@@ -82,9 +82,11 @@ class ApproverRoleSerializer(serializers.ModelSerializer):
         return self._usage_for(instance)
 
     def create(self, validated_data: dict) -> ApproverRole:
-        return create_approver_role(
+        role, created = create_approver_role(
             actor=self.context["actor"], data=dict(validated_data)
         )
+        self.role_created = created
+        return role
 
     def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
         return update_approver_role(
@@ -155,9 +157,11 @@ class ApproverRoleWriteSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data: dict) -> ApproverRole:
-        return create_approver_role(
+        role, created = create_approver_role(
             actor=self.context["actor"], data=dict(validated_data)
         )
+        self.role_created = created
+        return role
 
     def update(self, instance: ApproverRole, validated_data: dict) -> ApproverRole:
         return update_approver_role(

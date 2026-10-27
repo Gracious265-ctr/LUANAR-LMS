@@ -43,10 +43,7 @@ export function CoverRequestSection({
           <h3 className="text-lg font-semibold text-text-primary">
             Request cover
           </h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Going away? Ask HR to route your pending approvals to someone else.
-            You can nominate a delegate, or leave the choice to HR.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">Ask HR to route your pending approvals to someone else while you are away.</p>
         </div>
         <Button variant="primary" onClick={overlay.openCreate} className="shrink-0">
           <Plus className="h-4 w-4" />

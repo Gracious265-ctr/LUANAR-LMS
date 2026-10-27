@@ -8,9 +8,8 @@ the actual state the application passed through (invariant 12.5: stage snapshot,
 never the current workflow configuration).
 
 Event type vocabulary is pinned to the frontend ``EVENT_ICONS`` set:
-``submitted``, ``approved``, ``rejected``, ``correction_requested``,
-``resubmitted``, ``reassigned``. Stage states stay ``approved | awaiting |
-rejected | returned | skipped | upcoming``.
+``submitted``, ``approved``, ``rejected``, ``resubmitted``, ``reassigned``.
+Stage states stay ``approved | awaiting | rejected | skipped | upcoming``.
 """
 
 from datetime import datetime
@@ -33,7 +32,6 @@ from .provider import TrackingProvider
 _EVENT_TYPES = {
     ApprovalDecision.Action.APPROVE: "approved",
     ApprovalDecision.Action.REJECT: "rejected",
-    ApprovalDecision.Action.RETURN_FOR_CORRECTION: "correction_requested",
 }
 
 
@@ -119,9 +117,6 @@ class DatabaseTrackingProvider(TrackingProvider):
             rejection=self._outcome(
                 application, ApprovalDecision.Action.REJECT, decisions
             ),
-            correction=self._outcome(
-                application, ApprovalDecision.Action.RETURN_FOR_CORRECTION, decisions
-            ),
             resubmission=self._resubmission(application, audit_rows),
         )
 
@@ -162,7 +157,6 @@ class DatabaseTrackingProvider(TrackingProvider):
         elif decision is not None and stage.status in (
             ApplicationStage.Status.APPROVED,
             ApplicationStage.Status.REJECTED,
-            ApplicationStage.Status.CORRECTION_REQUESTED,
         ):
             approver = self._decided_approver(decision, stage)
             assigned_at = stage.created_at
@@ -188,8 +182,6 @@ class DatabaseTrackingProvider(TrackingProvider):
             return "awaiting"
         if stage.status == ApplicationStage.Status.REJECTED:
             return "rejected"
-        if stage.status == ApplicationStage.Status.CORRECTION_REQUESTED:
-            return "returned"
         if stage.status == ApplicationStage.Status.SKIPPED:
             # A skipped stage is settled, not upcoming (Unit 30). Rendering it as
             # "upcoming" would say somebody still has to act on a stage that
@@ -251,10 +243,7 @@ class DatabaseTrackingProvider(TrackingProvider):
         return final[0].decided_at if final else None
 
     def _outcome(self, application, action, decisions) -> TrackedOutcome | None:
-        if action == ApprovalDecision.Action.REJECT:
-            if application.status != LeaveApplication.Status.REJECTED:
-                return None
-        elif application.status != LeaveApplication.Status.CORRECTION_REQUIRED:
+        if application.status != LeaveApplication.Status.REJECTED:
             return None
         decision = next(
             (d for d in reversed(decisions) if d.action == action),
@@ -268,6 +257,7 @@ class DatabaseTrackingProvider(TrackingProvider):
             approver_name=decision.approver_name or _user_name(decision.approver),
             decided_at=decision.decided_at,
             reason=decision.comment,
+            accepted_at=application.rejection_accepted_at,
         )
 
     def _resubmission(self, application, audit_rows) -> ResubmissionInfo:
@@ -282,9 +272,9 @@ class DatabaseTrackingProvider(TrackingProvider):
         )
         if last_resubmitted_at is None and count > 0:
             last_resubmitted_at = application.submitted_at
-        can_resubmit = application.status in (
-            LeaveApplication.Status.REJECTED,
-            LeaveApplication.Status.CORRECTION_REQUIRED,
+        can_resubmit = (
+            application.status == LeaveApplication.Status.REJECTED
+            and application.rejection_accepted_at is None
         )
         returns_to_stage = None
         if can_resubmit:

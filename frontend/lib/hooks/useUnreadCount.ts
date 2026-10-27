@@ -15,13 +15,10 @@ export const NOTIFICATION_POLL_INTERVAL_MS = 30_000;
 export function useUnreadCount() {
   const [data, setData] = useState(0);
 
-  const refetch = useCallback(async () => {
-    try {
-      setData(await getUnreadCount());
-    } catch {
-      // Keep the last known count.
-    }
-  }, []);
+  const refetch = useCallback(
+    () => getUnreadCount().then(setData).catch(() => {}),
+    []
+  );
 
   useEffect(() => {
     void refetch();

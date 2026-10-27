@@ -21,20 +21,20 @@ export async function listTeamMembers(
 }
 
 /**
- * Place one employee on a team.
+ * Place one or more employees on a team.
  *
- * The backend refuses an employee who is already on the team, or one with no
- * employee record, and those refusals arrive as field errors this picker can
- * show next to its input.
+ * The bulk body is the picker's whole selection; the backend validates every
+ * person before it writes anyone, so a refusal leaves the roster untouched.
+ * The returned rows are the team's roster after the write.
  */
-export async function addTeamMember(
+export async function addTeamMembers(
   teamId: number | string,
-  userId: number
+  userIds: number[]
 ): Promise<TeamMemberSummary[]> {
   const response = await fetch(`/api/hr/teams/${teamId}/members`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: userId }),
+    body: JSON.stringify({ users: userIds }),
     cache: "no-store",
   });
   if (!response.ok) {

@@ -36,12 +36,7 @@ export default async function NewCampusPage() {
         <h2 className="mt-2 text-2xl font-bold text-text-primary">
           New campus
         </h2>
-        <p className="text-text-secondary">
-          A campus is what an academic team sits at, and it is what scopes
-          campus-wide approvers to the teams at it. Creating one here does not
-          move anybody: a team is placed at a campus when it is created or
-          edited.
-        </p>
+        <p className="text-text-secondary">A campus is where an academic team sits and what scopes its campus-wide approvers.</p>
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

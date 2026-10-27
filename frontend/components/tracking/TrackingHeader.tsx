@@ -28,7 +28,7 @@ export function TrackingHeader({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <Link
-          href="/dashboard/leave/drafts"
+          href="/dashboard/leave/applications"
           className="inline-flex min-h-11 items-center gap-1.5 rounded-lg text-sm font-medium text-text-link hover:text-text-link-hover focus-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />

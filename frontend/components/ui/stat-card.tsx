@@ -27,6 +27,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   variant: StatCardVariant;
   onClick?: () => void;
+  href?: string;
   className?: string;
 }
 
@@ -37,6 +38,7 @@ export function StatCard({
   icon,
   variant,
   onClick,
+  href,
   className,
 }: StatCardProps) {
   const body = (
@@ -58,6 +60,17 @@ export function StatCard({
       <p className="mt-1 text-sm text-text-muted">{subtitle}</p>
     </>
   );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        className={cn(cardStyles, "hover-float focus-ring block w-full text-left", className)}
+      >
+        {body}
+      </a>
+    );
+  }
 
   if (onClick) {
     return (

@@ -130,12 +130,13 @@ export async function deactivateTeam(id: number | string): Promise<Team> {
 }
 
 /**
- * Point a team at one of the chains it already owns.
+ * Make one of the chains a team already owns its default.
  *
- * This is the routing decision, not an edit to a chain: the chain keeps its
- * steps, and what changes is which of the team's chains new applications go
- * through. The backend refuses a chain the team does not own, so this can
- * never move a team onto somebody else's steps.
+ * This is a routing decision, not an edit to a chain: the chain keeps its steps
+ * and the applications already inside it. The team routes every chain its
+ * people are enrolled on, so what changes is where the remaining employees go.
+ * The backend refuses a chain the team does not own, so this can never move a
+ * team onto somebody else's steps.
  */
 export async function routeTeamThrough(
   teamId: number | string,

@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 
 import { BalanceSection } from "@/components/leave/BalanceSection";
 import { DashboardStatCards } from "@/components/leave/DashboardStatCards";
-import { DraftsSection } from "@/components/leave/DraftsSection";
 import { NeedsAttentionSection } from "@/components/leave/NeedsAttentionSection";
 import { RecentApplicationsSection } from "@/components/leave/RecentApplicationsSection";
 import { Button } from "@/components/ui/button";
@@ -83,8 +82,6 @@ export default function LeaveDashboardPage() {
           )}
 
           <BalanceSection balances={data.balances} />
-
-          {data.drafts.length > 0 && <DraftsSection drafts={data.drafts} />}
 
           <RecentApplicationsSection applications={data.recent} />
         </>

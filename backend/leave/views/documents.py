@@ -5,9 +5,9 @@ Employee-scoped, owner-only document operations on a leave application:
 - ``GET    .../documents/`` — active rows by default; ``?include_retired=true``
   adds retired rows with their lifecycle fields for the archive view.
 - ``POST   .../documents/`` — upload on editable statuses (``draft``,
-  ``correction_required``); any other status returns 409 ``application_not_editable``.
+  ``rejected``); any other status returns 409 ``application_not_editable``.
 - ``DELETE .../documents/{pk}/`` — remove; hard in a draft, retire otherwise.
-- ``POST   .../documents/{pk}/replace/`` — replace on ``correction_required``
+- ``POST   .../documents/{pk}/replace/`` — replace on ``rejected``
   only; retires the old row and returns the new one plus ``retired_document``.
 
 Authorization mirrors the rest of the employee API: another employee's
@@ -83,7 +83,7 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             return self._conflict(
                 "application_not_editable",
                 "This application is not editable. Documents can only be "
-                "changed on a draft or while it is returned for correction.",
+                "changed on a draft or while it is rejected.",
             )
         except ValidationError as exc:
             return self._bad_request(exc.detail)
@@ -100,7 +100,7 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
             return self._conflict(
                 "application_not_editable",
                 "This application is not editable. Documents can only be "
-                "changed on a draft or while it is returned for correction.",
+                "changed on a draft or while it is rejected.",
             )
         except DocumentNotActiveError:
             return self._conflict(
@@ -120,8 +120,8 @@ class SupportingDocumentViewSet(viewsets.ViewSet):
         except DocumentNotEditableError:
             return self._conflict(
                 "application_not_editable",
-                "Documents can only be replaced on an application that has "
-                "been returned for correction.",
+                "Documents can only be replaced on an application that is "
+                "rejected.",
             )
         except DocumentNotActiveError:
             return self._conflict(

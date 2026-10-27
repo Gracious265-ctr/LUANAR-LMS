@@ -14,10 +14,10 @@ import type {
 import {
   listApproverRoles,
   listCampusRoleAssignments,
+  listEligibleApproverRoles,
   listRoleAssignments,
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
-import { listActiveApproverRoles } from "@/lib/approver-roles-client";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
@@ -98,7 +98,7 @@ async function loadScopedRoles(
   try {
     return isAdministrator
       ? await listApproverRoles()
-      : await listActiveApproverRoles();
+      : await listEligibleApproverRoles();
   } catch {
     return [];
   }
@@ -295,7 +295,7 @@ export default async function TeamPage({
               </div>
               <div>
                 <span className="text-xs uppercase tracking-wide text-text-muted">
-                  Chain in force
+                  Default chain
                 </span>
                 <p className="text-sm font-medium text-text-primary">
                   {team.workflow_name || "None"}
@@ -303,7 +303,7 @@ export default async function TeamPage({
                 <p className="mt-1 text-xs text-text-muted">
                   {workflows.length === 0
                     ? "This team owns no chains yet."
-                    : `Owns ${workflows.length} chain${workflows.length === 1 ? "" : "s"}; routes one.`}
+                    : `Owns ${workflows.length} chain${workflows.length === 1 ? "" : "s"}, routes all of them.`}
                 </p>
               </div>
               <div>
@@ -340,10 +340,7 @@ export default async function TeamPage({
               </Link>
             </div>
             {workflows.length === 0 ? (
-              <p className="text-sm text-text-muted">
-                None yet. A team routes nothing until it owns a chain, and the
-                chain is built on the team&apos;s own page.
-              </p>
+              <p className="text-sm text-text-muted">None yet.</p>
             ) : (
               <ul className="divide-y divide-border-default">
                 {workflows.map((workflow) => (
@@ -385,11 +382,7 @@ export default async function TeamPage({
           <h3 className="text-lg font-semibold text-text-primary">
             Who decides at each step
           </h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            The chain in force, and the one person who acts at each of its
-            steps. A step with nobody on it blocks activation — and blocks
-            submission, for the applications that would have reached it.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">The default chain, and who acts at each step.</p>
           <div className="mt-4">
             <TeamMemberList team={team} />
           </div>
@@ -401,22 +394,18 @@ export default async function TeamPage({
           <h3 className="text-lg font-semibold text-text-primary">
             Team-wide approvers
           </h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            One holder per role for this whole team. Every step falls back to
-            these when nobody is appointed to it — and to a campus-wide holder
-            at this team&apos;s campus next, before anything else.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole team.</p>
           {roles.length === 0 ? (
             <p className="mt-3 text-sm text-text-muted">
-              No active scoped roles to hold here yet. An institution-wide role
-              is held on the{" "}
+              No active scoped roles to hold here yet. Institution-wide roles
+              are held on the{" "}
               <Link
                 href="/dashboard/hr-admin/approvers"
                 className="font-medium text-brand-primary hover:text-brand-primary-hover"
               >
                 Approvers
               </Link>{" "}
-              page, and reaches only administration teams.
+              page.
             </p>
           ) : (
             <div className="mt-4">
@@ -440,13 +429,7 @@ export default async function TeamPage({
           <h3 className="text-lg font-semibold text-text-primary">
             Team members
           </h3>
-          <p className="mt-1 text-sm text-text-secondary">
-            Add and remove the people whose submissions this team&apos;s chains
-            decide. Being a team member is what makes someone selectable as a
-            normal member of this team&apos;s workflows — it places nobody on a
-            workflow by itself, and removal is refused while someone still ties
-            to the team.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">People whose submissions this team&apos;s chains decide.</p>
           <div className="mt-4">
             <TeamMembersPanel team={team} candidates={candidates} />
           </div>

@@ -63,7 +63,7 @@ export function MyPlans() {
       <EmptyPanel
         icon={<CalendarPlus className="h-10 w-10 text-brand-primary" />}
         title="No leave plans yet"
-        description="Save a leave type and dates ahead of time. When the date nears, we'll remind you to apply."
+        description="Save a leave type and dates ahead of time."
         action={
           <Button variant="primary" onClick={() => router.push("/dashboard/plans/new")}>
             Create a Plan

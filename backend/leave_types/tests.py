@@ -9,9 +9,9 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from audit.models import AuditEntry
-from leave_config.models import LeaveType
-from leave_config.serializers import LeaveTypeSerializer
-from leave_config.services import (
+from leave_types.models import LeaveType
+from leave_types.serializers import LeaveTypeSerializer
+from leave_types.services import (
     can_access_leave_config,
     check_notice,
     is_eligible,

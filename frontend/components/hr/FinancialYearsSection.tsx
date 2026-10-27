@@ -7,12 +7,21 @@ import { Plus } from "lucide-react";
 import type { FinancialYear } from "@/lib/financial-years";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
+import { FinancialYearCarryOverButton } from "@/components/hr/financial-year-carry-over-button";
 import { FinancialYearForm } from "@/components/hr/financial-year-form";
 import { FinancialYearTable } from "@/components/hr/financial-year-table";
 import { Button } from "@/components/ui/button";
+import { currentDateIso } from "@/lib/utils";
 
 /** Query key for the financial-year overlay. Shares the calendar page with `holiday`. */
 export const FINANCIAL_YEAR_PARAM = "financialYear";
+
+/** The ISO date one day after `iso`. Rollover links a year to the next day. */
+function nextDay(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
 
 /**
  * The financial-years half of the leave calendar, as a create/edit overlay.
@@ -45,6 +54,21 @@ export function FinancialYearsSection({ years }: { years: FinancialYear[] }) {
       ? " Exactly one financial year is active at a time; creating this one active deactivates the period that is active now."
       : " Exactly one financial year is active at a time; activating this period deactivates the one that is active now.";
 
+  // A year can be rolled over once it has begun (active or past) and a year is
+  // configured to receive the carried days — the one starting the day after it
+  // ends. An upcoming period has no rejections to carry, and a closing year
+  // with no successor has nowhere to put them.
+  const today = currentDateIso();
+  function renderCarryOver(year: FinancialYear) {
+    const hasBegun = year.is_active || year.start_date <= today;
+    const nextStart = nextDay(year.end_date);
+    const hasSuccessor = years.some((row) => row.start_date === nextStart);
+    if (!hasBegun || !hasSuccessor) {
+      return null;
+    }
+    return <FinancialYearCarryOverButton year={year} />;
+  }
+
   return (
     <>
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -63,7 +87,11 @@ export function FinancialYearsSection({ years }: { years: FinancialYear[] }) {
         </Button>
       </div>
 
-      <FinancialYearTable years={years} onEdit={overlay.openEdit} />
+      <FinancialYearTable
+        years={years}
+        onEdit={overlay.openEdit}
+        renderCarryOver={renderCarryOver}
+      />
 
       <AdminFormOverlay
         open={overlay.isOpen}

@@ -22,7 +22,7 @@ Old value      New value           Why
 ``dvc``        ``approver``        nothing is lost by flattening the user row
 =============  ==================  ===============================================
 
-Runs *after* ``workflows.0011`` on purpose: 0011 finds active registrars by their
+Runs *after* ``chains.0011`` on purpose: 0011 finds active registrars by their
 old ``User.role`` value in order to give them the institution-wide registrar
 ``RoleAssignment``. Narrowing the choices first would hide them.
 

@@ -1,7 +1,9 @@
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from .models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole
+from roles.services import create_campus, update_campus
 from teams.models import Team, TeamRoleAssignment
 from users.models import User
 
@@ -11,7 +13,7 @@ class CampusSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Campus
-        fields = ["id", "name", "code", "description", "is_active", "created_at", "updated_at"]
+        fields = ["id", "name", "code", "is_active", "created_at", "updated_at"]
         read_only_fields = ["created_at", "updated_at"]
 
     def validate_code(self, value: str) -> str:

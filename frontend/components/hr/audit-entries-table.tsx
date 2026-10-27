@@ -17,10 +17,7 @@ export function AuditEntriesTable({ entries }: { entries: AuditEntry[] }) {
     return (
       <div className="py-12 text-center text-text-muted">
         <p className="text-base font-medium text-text-primary">No audit entries</p>
-        <p className="mt-1 text-sm">
-          Actions you take here — configuration changes, decisions, and
-          submissions — are recorded in the administrative history.
-        </p>
+        <p className="mt-1 text-sm">Actions taken here are recorded in the administrative history.</p>
       </div>
     );
   }

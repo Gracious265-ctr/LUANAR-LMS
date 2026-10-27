@@ -28,13 +28,22 @@ import {
  * column, no scrolling to compare two of them. Each row opens the team, which
  * is where the chain and the roster live.
  */
-export function TeamTable({ teams }: { teams: Team[] }) {
+export function TeamTable({
+  teams,
+  empty,
+}: {
+  teams: Team[];
+  /** Overrides the empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
+}) {
   if (teams.length === 0) {
     return (
-      <EmptyPanel
-        title="No teams found"
-        description="Create a team to route its employees' applications through their own approvers."
-      />
+      empty ?? (
+        <EmptyPanel
+          title="No teams found"
+          description="Create a team to route its employees' applications through their own approvers."
+        />
+      )
     );
   }
 

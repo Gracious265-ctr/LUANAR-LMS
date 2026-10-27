@@ -13,12 +13,14 @@ class Workflow(models.Model):
 
     A workflow is *owned* by exactly one :class:`Team` (:attr:`team`), which is
     what makes "workflow listing for a team" answerable: a team may hold several
-    workflows — a replacement chain built alongside the live one, or one per
-    campus unit — and HR configures each of them independently. Ownership is
-    deliberately separate from :attr:`Team.workflow`, the single workflow that
-    actually routes: a team owns many, routes one, and picks which.
+    workflows — one per part of its staff, or a replacement chain being built
+    beside the live one — and HR configures each of them independently. A team
+    routes every chain its people are enrolled on **at the same time**; the chain
+    one person's leave goes through is the one they are enrolled on
+    (:class:`WorkflowMember`), falling back to :attr:`Team.workflow`, the team's
+    default chain (see :mod:`chains.routing`).
 
-    At submission the applicant's team selects the routing workflow, and that
+    At submission the applicant's own chain is materialised, and that
     workflow's ordered :class:`Section` rows are who may act at each step.
 
     There is no employee category filter. It was a free-text scope field that

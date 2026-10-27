@@ -26,6 +26,49 @@ def make_user(role: str, email: str) -> User:
     )
 
 
+class LauncherKeyContractTests(TestCase):
+    """The keys the launcher emits are a contract with the frontend registry.
+
+    ``frontend/lib/apps-registry.ts`` turns each key into a card, and
+    ``AppLauncherGrid`` drops a key it does not recognise without a trace — so a
+    renamed module costs its card for every entitled role and nothing fails.
+    That is exactly what happened when the apps were restructured: the backend
+    kept emitting ``org`` and ``leave-types`` while the registry had moved to
+    ``teams`` and ``leave-config``, and HR silently lost both cards.
+
+    HR is the role that is entitled to every card, so its set is the whole
+    contract. Adding, renaming, or removing a card must update the registry in
+    the same commit — this test is the reminder.
+    """
+
+    # Keep in step with APPS_REGISTRY in frontend/lib/apps-registry.ts.
+    EXPECTED_KEYS = {
+        "leave",
+        "plans",
+        "approvals",
+        "teams",
+        "documents",
+        "leave-config",
+        "calendar-app",
+    }
+
+    def test_hr_card_keys_are_the_ones_the_frontend_registry_defines(self):
+        hr = make_user(User.Role.HR, "contract-hr@example.com")
+        keys = {app["key"] for app in get_launcher_apps(hr)}
+        self.assertEqual(keys, self.EXPECTED_KEYS)
+
+    def test_no_card_is_emitted_that_the_contract_does_not_name(self):
+        # One card per module: an unknown key here is a card nobody can see.
+        for role, email in [
+            (User.Role.EMPLOYEE, "contract-employee@example.com"),
+            (User.Role.APPROVER, "contract-approver@example.com"),
+            (User.Role.HR, "contract-hr-all@example.com"),
+        ]:
+            with self.subTest(role=role):
+                emitted = {app["key"] for app in get_launcher_apps(make_user(role, email))}
+                self.assertLessEqual(emitted, self.EXPECTED_KEYS)
+
+
 class LeaveConfigLauncherTests(TestCase):
     """Spec 4.6: the card only appears for the accounts that can use it.
 
@@ -40,15 +83,15 @@ class LeaveConfigLauncherTests(TestCase):
 
     def test_employee_never_sees_the_card(self):
         employee = make_user(User.Role.EMPLOYEE, "employee@example.com")
-        self.assertNotIn("leave-types", self.keys(employee))
+        self.assertNotIn("leave-config", self.keys(employee))
 
     def test_approver_never_sees_the_card(self):
         approver = make_user(User.Role.APPROVER, "approver@example.com")
-        self.assertNotIn("leave-types", self.keys(approver))
+        self.assertNotIn("leave-config", self.keys(approver))
 
     def test_hr_sees_the_card(self):
         hr = make_user(User.Role.HR, "hr@example.com")
-        self.assertIn("leave-types", self.keys(hr))
+        self.assertIn("leave-config", self.keys(hr))
 
     def test_superuser_sees_the_card(self):
         admin = User.objects.create_superuser(
@@ -56,7 +99,7 @@ class LeaveConfigLauncherTests(TestCase):
             email="admin@example.com",
             password="hunter2-hunter2",
         )
-        self.assertIn("leave-types", self.keys(admin))
+        self.assertIn("leave-config", self.keys(admin))
 
     def test_the_card_carries_no_badge(self):
         # Configurability is a yes/no fact, not a quantity; a "0" badge would
@@ -64,7 +107,7 @@ class LeaveConfigLauncherTests(TestCase):
         # registry page full of leave types means.
         hr = make_user(User.Role.HR, "hr-badge@example.com")
         card = next(
-            app for app in get_launcher_apps(hr) if app["key"] == "leave-types"
+            app for app in get_launcher_apps(hr) if app["key"] == "leave-config"
         )
         self.assertIsNone(card["badge"])
 
@@ -116,8 +159,8 @@ class CalendarLauncherTests(TestCase):
         self.assertFalse(can_access_calendar(None))
 
 
-class OrgLauncherTests(TestCase):
-    """The Workflows card is offered to HR, staff, and designated team managers.
+class TeamsLauncherTests(TestCase):
+    """The Teams card is offered to HR, staff, and designated team managers.
 
     A team manager is an ordinary ``employee`` account whose only claim to the
     module is a team they manage, so the card is the one place the launcher has
@@ -146,7 +189,7 @@ class OrgLauncherTests(TestCase):
 
     def test_hr_sees_the_card(self):
         hr = make_user(User.Role.HR, "hr-org@example.com")
-        self.assertIn("org", self.keys(hr))
+        self.assertIn("teams", self.keys(hr))
 
     def test_superuser_sees_the_card(self):
         admin = User.objects.create_superuser(
@@ -154,15 +197,15 @@ class OrgLauncherTests(TestCase):
             email="admin-org@example.com",
             password="hunter2-hunter2",
         )
-        self.assertIn("org", self.keys(admin))
+        self.assertIn("teams", self.keys(admin))
 
     def test_team_manager_sees_the_card(self):
         manager, _ = self.make_team_manager("manager-org@example.com")
-        self.assertIn("org", self.keys(manager))
+        self.assertIn("teams", self.keys(manager))
 
     def test_ordinary_employee_never_sees_the_card(self):
         employee = make_user(User.Role.EMPLOYEE, "plain-org@example.com")
-        self.assertNotIn("org", self.keys(employee))
+        self.assertNotIn("teams", self.keys(employee))
 
     def test_retiring_the_role_closes_the_door(self):
         # A manager's authority is the *active* role they hold; deactivating it
@@ -171,7 +214,7 @@ class OrgLauncherTests(TestCase):
         manager, _ = self.make_team_manager(
             "retired-org@example.com", active=False
         )
-        self.assertNotIn("org", self.keys(manager))
+        self.assertNotIn("teams", self.keys(manager))
 
     def test_the_gate_matches_the_page_guard(self):
         manager, _ = self.make_team_manager("guard-org@example.com")

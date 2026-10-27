@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 
 from django.http import Http404
 from django.utils import timezone
@@ -121,6 +122,62 @@ class FinancialYearViewSet(
     def get_queryset(self):
         return FinancialYear.objects.all()
 
+    @action(detail=True, methods=["post"], url_path="carry-over")
+    def carry_over(self, request, pk=None):
+        """Roll rejected-leave days from this year into the next one.
+
+        HR-triggered, idempotent. Scans the *closing* year (this object) for
+        applications still rejected, computes each employee's carry-over
+        (``leave.services.carry_over``) and writes ``LeaveCarryOver`` rows that
+        fund the following year. Ordinary unused entitlement is not carried.
+        Pass ``?dry_run=1`` to preview without writing.
+        """
+        from ..services import financial_year_label
+        from ..services.carry_over import (
+            carry_over_financial_year,
+            next_financial_year,
+        )
+
+        closing_year = self.get_object()
+        opening_year = next_financial_year(closing_year)
+        if opening_year is None:
+            return Response(
+                {
+                    "detail": (
+                        "No financial year is configured to follow this one; "
+                        "create it first."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        dry_run_raw = request.query_params.get("dry_run")
+        if dry_run_raw is None:
+            dry_run_raw = request.data.get("dry_run")
+        dry_run = str(dry_run_raw or "").lower() in {"1", "true", "yes"}
+        results = carry_over_financial_year(
+            closing_year, opening_year, dry_run=dry_run
+        )
+
+        return Response(
+            {
+                "from_financial_year": financial_year_label(closing_year),
+                "to_financial_year": financial_year_label(opening_year),
+                "dry_run": dry_run,
+                "employees": [
+                    {
+                        "employee_id": row["employee_id"],
+                        "days": str(row["days"]),
+                        "created": row["created"],
+                    }
+                    for row in results
+                ],
+                "total_days": str(
+                    sum((row["days"] for row in results), start=Decimal(0))
+                ),
+            }
+        )
+
 
 class LeaveApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = LeaveApplicationSerializer
@@ -131,6 +188,14 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        # "My Applications" is the track list for submitted-onward rows;
+        # drafts are continued from the dashboard, so that view passes
+        # ``exclude_status=draft``. Comma-separated so more can be added.
+        exclude_status = self.request.query_params.get("exclude_status")
+        if exclude_status:
+            statuses = [s.strip() for s in exclude_status.split(",") if s.strip()]
+            if statuses:
+                qs = qs.exclude(status__in=statuses)
         return qs
 
     def perform_create(self, serializer):
@@ -150,20 +215,29 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             )
             instance.save(update_fields=["calculated_days"])
 
-    #: Statuses an employee may still edit (Unit 25 D7). ``CORRECTION_REQUIRED``
-    #: is editable because that is the whole point of returning an application
-    #: for correction; the employee edits, then calls ``resubmit`` which
-    #: re-validates, advances ``submission_cycle`` and freezes a new revision.
-    #: The frontend already assumed this (``LeaveApplicationForm.tsx`` treats
-    #: ``correction_required`` as editable and omits it from READ_ONLY_STATUSES).
+    #: Statuses an employee may still edit (Unit 25 D7). ``REJECTED``
+    #: is editable so the employee may adjust the application before
+    #: resubmitting; ``resubmit`` re-validates, advances ``submission_cycle``
+    #: and freezes a new revision. Once a rejection is accepted the row is
+    #: still ``REJECTED`` but no longer editable — the employee closed it.
+    #: The frontend mirrors this (``LeaveApplicationForm.tsx`` treats
+    #: ``rejected`` as editable and omits it from READ_ONLY_STATUSES).
     EDITABLE_STATUSES = (
         LeaveApplication.Status.DRAFT,
-        LeaveApplication.Status.CORRECTION_REQUIRED,
+        LeaveApplication.Status.REJECTED,
     )
+
+    def _editable(self, instance) -> bool:
+        if instance.status not in self.EDITABLE_STATUSES:
+            return False
+        return not (
+            instance.status == LeaveApplication.Status.REJECTED
+            and instance.rejection_accepted_at is not None
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status not in self.EDITABLE_STATUSES:
+        if not self._editable(instance):
             return Response(
                 {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -172,7 +246,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
 
     def partial_update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.status not in self.EDITABLE_STATUSES:
+        if not self._editable(instance):
             return Response(
                 {"detail": "This application cannot be edited."},
                 status=status.HTTP_400_BAD_REQUEST,

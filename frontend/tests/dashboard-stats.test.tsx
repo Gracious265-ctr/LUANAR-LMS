@@ -21,6 +21,7 @@ const summary: LeaveSummary = {
   entitlement: null,
   financial_year: null,
   available_balance: "24",
+  carry_over_days: null,
   pending_applications: 3,
   upcoming_leave: { days: 5, applications: 1 },
 };

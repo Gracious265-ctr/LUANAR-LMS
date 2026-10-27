@@ -434,10 +434,10 @@ describe("LeaveTypeForm — the record's own state", () => {
     renderForm({ name: "Annual leave", code: "annual" });
 
     expect(
-      screen.getByText(/created for you the first time you add an entitlement/i)
+      screen.getByText(/created by its first entitlement/i)
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "the entitlement" })
+      screen.getByRole("link", { name: "entitlements" })
     ).toHaveAttribute("href", "/dashboard/hr-admin/entitlements");
   });
 

@@ -274,15 +274,13 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
         {isAnnual && (
           <Alert tone="info">
             <p>
-              {leaveType?.name} is created for you the first time you add an
-              entitlement, so its name and short code are fixed. Its rules are
-              yours to change here; how many days a grade range is granted is
-              changed by editing{" "}
+              {leaveType?.name} is created by its first entitlement, so its name
+              and short code are fixed. Days per grade are set in{" "}
               <Link
                 href="/dashboard/hr-admin/entitlements"
                 className="font-medium underline"
               >
-                the entitlement
+                entitlements
               </Link>
               .
             </p>
@@ -291,12 +289,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
 
         <div className="space-y-6">
           <div className="pb-4 border-b border-border-default">
-            <Stepper
-              steps={steps}
-              orientation="horizontal"
-              activeStep={["basics", "eligibility", "rules"].indexOf(currentStep)}
-              interactive={false}
-            />
+            <Stepper steps={steps} orientation="horizontal" />
           </div>
 
           {currentStep === "basics" && (
@@ -346,7 +339,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
                   />
                 </Field>
 
-                <div className="space-y-block">
+                <div className="space-y-stack">
                   <p
                     id="color-label"
                     className="text-sm font-medium leading-none text-text-secondary"

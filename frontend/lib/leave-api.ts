@@ -26,7 +26,6 @@ export interface LeaveApplication {
     | "submitted"
     | "approved"
     | "rejected"
-    | "correction_required"
     | "cancelled";
   reference_number: string | null;
   created_at: string;
@@ -36,6 +35,8 @@ export interface LeaveApplication {
   calendar_days: number | null;
   financial_year_label: string | null;
   documents: SupportingDocument[];
+  /** When the employee accepted a rejection; null while it is still open. */
+  rejection_accepted_at?: string | null;
 }
 
 /**
@@ -45,8 +46,7 @@ export interface LeaveApplication {
  * sentence itself rather than a generic banner.
  */
 const DOCUMENT_ERRORS: Record<string, string> = {
-  application_not_editable:
-    "This application is no longer editable. Documents can only be changed on a draft or while it is returned for correction.",
+  application_not_editable: "This application is not editable.",
   document_not_active:
     "This document has already been removed or replaced.",
 };
@@ -91,12 +91,22 @@ async function request<T>(
 
 const API = "/api/leave/leave-applications";
 
-export async function getLeaveApplications(status?: string): Promise<{
+export async function getLeaveApplications(
+  {
+    status,
+    excludeStatus,
+  }: { status?: string; excludeStatus?: string } = {}
+): Promise<{
   count: number;
   results: LeaveApplication[];
 }> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  return request(`${API}/${query}`, {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (excludeStatus) params.set("exclude_status", excludeStatus);
+  const query = params.toString();
+  return request(
+    `/api/leave/leave-applications/${query ? `?${query}` : ""}`,
+    {
     credentials: "include",
     fallback: "Failed to fetch applications",
   });

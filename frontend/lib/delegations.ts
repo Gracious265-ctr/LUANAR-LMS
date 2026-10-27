@@ -60,9 +60,14 @@ export interface DelegationListResponse {
 }
 
 export async function listDelegations(
-  state?: DelegationState
+  state?: DelegationState,
+  /** Matches the approver's name or email; the backend owns the query. */
+  approver?: string
 ): Promise<DelegationListResponse> {
-  const qs = state ? `?state=${encodeURIComponent(state)}` : "";
+  const params = new URLSearchParams();
+  if (state) params.set("state", state);
+  if (approver) params.set("approver", approver);
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return apiClient<DelegationListResponse>(`/api/v1/delegations/${qs}`);
 }
 

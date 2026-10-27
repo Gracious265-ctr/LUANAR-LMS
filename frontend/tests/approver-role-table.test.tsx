@@ -233,6 +233,7 @@ describe("ApproverRoleTable", () => {
       user: 3,
       user_name: "Sam Supervisor",
       role_label: "Supervisor",
+      is_team_manager: false,
       created_at: "2026-01-01T00:00:00Z",
     };
     vi.mocked(removeTeamRoleAssignment).mockResolvedValue(undefined);

@@ -10,7 +10,9 @@ from .views import (
     SupportingDocumentViewSet,
 )
 from .views.dashboard import LeaveDashboardView
+from .views.accept_rejection import LeaveApplicationAcceptRejectionView
 from .views.me import LeaveSummaryView
+from .views.on_leave import OnLeaveView
 from .views.resubmit import LeaveApplicationResubmitView
 from .views.validation import LeaveApplicationSubmitView, LeaveValidateView
 
@@ -52,6 +54,11 @@ urlpatterns = [
         name="leave-dashboard",
     ),
     path(
+        "leave/on-leave/",
+        OnLeaveView.as_view(),
+        name="leave-on-leave",
+    ),
+    path(
         "leave-applications/<uuid:pk>/submit/",
         LeaveApplicationSubmitView.as_view(),
         name="leave-application-submit",
@@ -60,6 +67,11 @@ urlpatterns = [
         "leave-applications/<uuid:pk>/resubmit/",
         LeaveApplicationResubmitView.as_view(),
         name="leave-application-resubmit",
+    ),
+    path(
+        "leave-applications/<uuid:pk>/accept-rejection/",
+        LeaveApplicationAcceptRejectionView.as_view(),
+        name="leave-application-accept-rejection",
     ),
     path("", include("leave.tracking.urls")),
     path("", include("leave.cancellations.urls")),

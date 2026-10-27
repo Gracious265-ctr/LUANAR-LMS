@@ -107,18 +107,25 @@ def forwards(apps, schema_editor):
     untraced = 0
     for stage in (
         ApplicationStage.objects.select_related(
-            "application__employee__employee_profile__team"
+            "application__employee__employee_profile"
         )
         .order_by("id")
         .iterator()
     ):
         profile = getattr(stage.application.employee, "employee_profile", None)
-        team = getattr(profile, "team", None) if profile else None
-        if team is None or team.workflow_id is None:
+        team_id = profile.team_id if profile else None
+        workflow_id = (
+            Team.objects.filter(pk=team_id)
+            .values_list("workflow_id", flat=True)
+            .first()
+            if team_id is not None
+            else None
+        )
+        if workflow_id is None:
             untraced += 1
             continue
         section = Section.objects.filter(
-            workflow_id=team.workflow_id, order=stage.stage_order
+            workflow_id=workflow_id, order=stage.stage_order
         ).first()
         if section is None:
             untraced += 1

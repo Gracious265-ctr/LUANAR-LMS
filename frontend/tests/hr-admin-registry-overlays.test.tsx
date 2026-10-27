@@ -186,6 +186,18 @@ describe("HR admin registry overlays — wave 1", () => {
       expect(routerMock.back).toHaveBeenCalledTimes(1);
       expect(routerMock.push).not.toHaveBeenCalled();
     });
+
+    it("narrows the rules to the search text", () => {
+      render(<EntitlementsSection entitlements={entitlements} today="2026-06-01" />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: "Search entitlement rules" }),
+        { target: { value: "30" } }
+      );
+
+      expect(screen.getByText("E–F")).toBeInTheDocument();
+      expect(screen.queryByText("G–H")).toBeNull();
+    });
   });
 
   describe("RolesSection", () => {
@@ -253,6 +265,38 @@ describe("HR admin registry overlays — wave 1", () => {
 
       await waitFor(() => expect(updateApproverRole).toHaveBeenCalled());
       await waitFor(() => expect(routerMock.refresh).toHaveBeenCalled());
+    });
+
+    it("narrows the registry to the search text", () => {
+      render(<RolesSection roles={roles} assignments={noAssignments} />);
+
+      fireEvent.change(
+        screen.getByRole("searchbox", { name: "Search approver roles" }),
+        { target: { value: "dean" } }
+      );
+
+      expect(screen.getByText("Dean of faculty")).toBeInTheDocument();
+      expect(screen.queryByText("Head of department")).toBeNull();
+    });
+
+    it("narrows the registry to retired roles", () => {
+      const withRetired = [
+        ...roles,
+        {
+          ...roles[0],
+          id: 99,
+          code: "legacy",
+          label: "Legacy role",
+          is_active: false,
+        },
+      ];
+      render(<RolesSection roles={withRetired} assignments={noAssignments} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Retired only" }));
+
+      expect(screen.getByText("Legacy role")).toBeInTheDocument();
+      expect(screen.queryByText("Head of department")).toBeNull();
+      expect(screen.queryByText("Dean of faculty")).toBeNull();
     });
   });
 });

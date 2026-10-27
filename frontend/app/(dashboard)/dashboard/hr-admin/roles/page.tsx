@@ -108,13 +108,7 @@ async function RolesPage() {
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-text-primary">Approver roles</h2>
-          <p className="text-text-secondary">
-            The approver positions a workflow step can name. Creating a role
-            here is what makes it selectable on a chain; giving a role a holder
-            — at institution, team or campus scope — is done on the Approvers
-            page, and it is that holding (not an edit here) which decides a
-            role&apos;s scope.
-          </p>
+          <p className="text-text-secondary">The approver positions a workflow step can name.</p>
         </div>
         <Link
           href="/dashboard/hr-admin/approvers"

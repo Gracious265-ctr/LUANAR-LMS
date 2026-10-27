@@ -34,10 +34,7 @@ from .models import (
     Section,
 )
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    CampusRoleAssignment,
-    RoleAssignment,
-)
+from roles.models import RoleAssignment
 from teams.models import (
     Team,
     TeamRoleAssignment,
@@ -133,6 +130,67 @@ class TeamMemberManagementTests(MemberAPIBase):
             target_id=carol.pk,
         )
         self.assertTrue(audit.exists())
+
+    def test_add_members_places_the_whole_selection(self):
+        carol = make_employee("carol-bulk@members.test")
+        dave = make_employee("dave-bulk@members.test")
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"users": [carol.pk, dave.pk]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        for user in (carol, dave):
+            user.refresh_from_db()
+            self.assertEqual(user.employee_profile.team_id, self.team.pk)
+            self.assertTrue(
+                AuditEntry.objects.filter(
+                    target_type=AuditEntry.TargetType.EMPLOYEE,
+                    target_id=user.pk,
+                ).exists()
+            )
+        roster_ids = {row["user"] for row in response.json()}
+        self.assertIn(carol.pk, roster_ids)
+        self.assertIn(dave.pk, roster_ids)
+
+    def test_add_members_rolls_back_the_whole_selection_on_one_refusal(self):
+        carol = make_employee("carol-rollback@members.test")
+        other = make_team("Another Members Team", ["supervisor"])
+        dave = make_employee("dave-rollback@members.test", team=other)
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"users": [carol.pk, dave.pk]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already on", response.json()["users"][0])
+        carol.refresh_from_db()
+        self.assertIsNone(carol.employee_profile.team_id)
+        self.assertFalse(
+            AuditEntry.objects.filter(
+                target_type=AuditEntry.TargetType.EMPLOYEE,
+                target_id=carol.pk,
+            ).exists()
+        )
+
+    def test_add_members_rejects_empty_and_duplicate_selections(self):
+        carol = make_employee("carol-selection@members.test")
+        empty = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"users": []},
+            format="json",
+        )
+        self.assertEqual(empty.status_code, status.HTTP_400_BAD_REQUEST)
+
+        duplicate = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"users": [carol.pk, carol.pk]},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("duplicate", duplicate.json()["users"][0].lower())
+        carol.refresh_from_db()
+        self.assertIsNone(carol.employee_profile.team_id)
 
     def test_add_member_already_on_another_team_is_refused(self):
         other = make_team("Other Team", ["supervisor"])
@@ -423,6 +481,80 @@ class WorkflowMemberEligibilityTests(MemberAPIBase):
                 workflow=self.flow_a, user_ids=[outsider.pk], actor=self.hr
             )
 
+    def test_sync_refuses_a_normal_member_of_another_chain(self):
+        """Writing somebody already on another chain does not move them.
+
+        A chain's member list says who is on *that* chain. Taking somebody off
+        another chain to satisfy this write would silently change a chain this
+        request does not own, so the assignment is refused and both chains stay
+        as they were.
+        """
+        assign_workflow_member(workflow=self.flow_a, user=self.alice, actor=self.hr)
+
+        with self.assertRaises(WorkflowMemberError):
+            sync_workflow_members(
+                workflow=self.flow_b, user_ids=[self.alice.pk], actor=self.hr
+            )
+
+        self.assertTrue(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_a, user=self.alice
+            ).exists()
+        )
+        self.assertFalse(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_b, user=self.alice
+            ).exists()
+        )
+
+    def test_sync_leaves_a_step_approver_where_they_are(self):
+        """A step appointment still pins somebody to that chain.
+
+        The move rolls back with the refused write: they keep the membership
+        of the chain whose step they staff rather than ending up on two chains.
+        """
+        assign_workflow_member(workflow=self.flow_a, user=self.alice, actor=self.hr)
+        appoint_approver_to_section(
+            self.flow_a.sections.first(), "supervisor", user=self.alice, team=self.team
+        )
+
+        with self.assertRaises(WorkflowMemberError):
+            sync_workflow_members(
+                workflow=self.flow_b, user_ids=[self.alice.pk], actor=self.hr
+            )
+
+        self.assertTrue(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_a, user=self.alice
+            ).exists()
+        )
+        self.assertFalse(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_b, user=self.alice
+            ).exists()
+        )
+
+    def test_pool_separates_member_and_step_assignments(self):
+        """``kind`` says why somebody is on another chain.
+
+        Neither kind is offerable for this chain: a normal member of another
+        chain and somebody staffing one of its steps both have to be removed
+        from where they are first.
+        """
+        assign_workflow_member(workflow=self.flow_a, user=self.alice, actor=self.hr)
+        appoint_approver_to_section(
+            self.flow_a.sections.first(), "supervisor", user=self.bob, team=self.team
+        )
+
+        pool = workflow_member_pool(team=self.team, workflow=self.flow_b)
+
+        kinds = {row["user"]: row["kind"] for row in pool["assigned_elsewhere"]}
+        self.assertEqual(kinds[self.alice.pk], "member")
+        self.assertEqual(kinds[self.bob.pk], "step")
+        available = {row["user"] for row in pool["available"]}
+        self.assertNotIn(self.alice.pk, available)
+        self.assertNotIn(self.bob.pk, available)
+
     def test_step_approver_elsewhere_excluded_and_named(self):
         appoint_approver_to_section(
             self.flow_a.sections.first(), "supervisor", user=self.alice, team=self.team
@@ -525,6 +657,35 @@ class WorkflowMemberAPITests(MemberAPIBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual({m["user"] for m in response.json()["members"]},
                          {self.bob.pk})
+
+    def test_create_workflow_refuses_a_member_of_another_chain(self):
+        """A new chain cannot take its members off the live one.
+
+        The screen no longer offers a normal member of another chain as
+        somebody who can be moved here, and the write refuses even a direct
+        request: the person stays on the chain they are already on.
+        """
+        assign_workflow_member(workflow=self.flow, user=self.alice, actor=self.hr)
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "API Flow 3",
+                "team": self.team.pk,
+                "sections": [
+                    {"name": "Check", "approver_role": "supervisor", "approver": None}
+                ],
+                "members": [self.alice.pk],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already a normal member", response.json()["members"][0])
+        self.assertFalse(Workflow.objects.filter(name="API Flow 3").exists())
+        self.assertTrue(
+            WorkflowMember.objects.filter(
+                workflow=self.flow, user=self.alice
+            ).exists()
+        )
 
     def test_clear_members_with_empty_list(self):
         assign_workflow_member(workflow=self.flow, user=self.alice, actor=self.hr)
@@ -901,6 +1062,121 @@ class WideHolderCategoryTests(MemberAPIBase):
                 campus=academic_team.campus, role=self.role, user=academic
             ).exists()
         )
+
+
+class WideHolderSectionAppointmentTests(MemberAPIBase):
+    """A wide holder may be named on a step, without joining the team.
+
+    The chain form locks a step to the narrowest holder of its role and sends
+    that person's id, so the write path has to accept the very appointment the
+    form displays. Their post is the appointment: a team-wide or campus-wide
+    holder approves for the team without belonging to it, and saving the chain
+    must not move them onto it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.role = ensure_roles("supervisor")["supervisor"]
+
+    def test_team_wide_holder_can_be_named_on_a_step(self):
+        home = make_team("Team Wide Home", ["supervisor"])
+        holder = make_employee("team-wide-named@members.test", team=home)
+        TeamRoleAssignment.objects.create(
+            team=self.team, role=self.role, user=holder
+        )
+
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Team wide chain",
+                "team": self.team.pk,
+                "sections": [
+                    {"approver_role": "supervisor", "approver": holder.pk}
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        section = Section.objects.get(
+            workflow_id=response.json()["id"], approver_role=self.role
+        )
+        self.assertEqual(section.approver_id, holder.pk)
+        holder.employee_profile.refresh_from_db()
+        self.assertEqual(holder.employee_profile.team_id, home.pk)
+
+    def test_the_designated_manager_can_staff_steps_of_two_chains(self):
+        """A team-wide post staffs every chain, and the manager's post is one.
+
+        The manager is left out of ``wide_approver_ids_for_team`` because a
+        workflow *membership* re-routes their own leave. A step appointment is
+        not a membership, so the chain form — which locks the step to the team's
+        holder — must be able to save the manager on the team's second chain.
+        """
+        manager = make_employee("manager-wide@members.test", team=self.team)
+        TeamRoleAssignment.objects.create(
+            team=self.team, role=self.role, user=manager, is_team_manager=True
+        )
+        second = make_workflow("Manager Second Chain", ["supervisor"], is_active=True)
+        second.team = self.team
+        second.save(update_fields=["team"])
+
+        first_section = self.team.workflow.sections.get(approver_role=self.role)
+        second_section = second.sections.get(approver_role=self.role)
+        for section in (first_section, second_section):
+            response = self.client.post(
+                "/api/v1/section-members/",
+                {"section": section.pk, "user": manager.pk},
+                format="json",
+            )
+            self.assertEqual(
+                response.status_code, status.HTTP_201_CREATED, response.data
+            )
+
+        first_section.refresh_from_db()
+        second_section.refresh_from_db()
+        self.assertEqual(first_section.approver_id, manager.pk)
+        self.assertEqual(second_section.approver_id, manager.pk)
+
+    def test_campus_wide_holder_can_be_named_on_a_step(self):
+        team = make_team(
+            "Campus Wide Chain", ["supervisor"], campus="Campus Wide Chain Campus"
+        )
+        holder = make_employee(
+            "campus-wide-named@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        CampusRoleAssignment.objects.create(
+            campus=team.campus, role=self.role, user=holder
+        )
+
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {
+                "name": "Campus wide chain",
+                "team": team.pk,
+                "sections": [
+                    {"approver_role": "supervisor", "approver": holder.pk}
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        section = Section.objects.get(
+            workflow_id=response.json()["id"], approver_role=self.role
+        )
+        self.assertEqual(section.approver_id, holder.pk)
+        holder.employee_profile.refresh_from_db()
+        self.assertIsNone(holder.employee_profile.team_id)
+
+    def test_someone_who_is_not_a_wide_holder_is_still_refused(self):
+        home = make_team("Ordinary Home", ["supervisor"])
+        outsider = make_employee("not-wide@members.test", team=home)
+        section = self.team.workflow.sections.first()
+
+        with self.assertRaises(TeamActionError):
+            ensure_membership_allowed(section, outsider)
 
 
 class WideHolderSingleRoleTests(MemberAPIBase):

@@ -9,6 +9,7 @@ workflow builder and the launcher.
 from dataclasses import dataclass
 from django.db import transaction
 from django.db.models import Count
+from django.utils import timezone
 from django.utils.text import slugify
 from audit.models import AuditEntry
 from audit.services import changed_fields, record_audit
@@ -16,7 +17,7 @@ from users.models import EmployeeProfile, User
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
 from teams.models import Team, TeamRoleAssignment
-from chains.models import Section, SectionMember
+from chains.models import Section, SectionMember, WorkflowMember
 
 
 def _resolve_stage_role(value) -> ApproverRole | None:
@@ -346,8 +347,8 @@ def role_code_from_name(name: object) -> str:
     return code
 
 
-def create_approver_role(*, actor, data: dict) -> ApproverRole:
-    """Create one approver role from its name, and audit it.
+def create_approver_role(*, actor, data: dict) -> tuple[ApproverRole, bool]:
+    """Create one approver role from its name, or return the one that has it.
 
     Only the name is HR's to give. ``code`` is derived from it (see
     :func:`role_code_from_name`), and the behavioural fields — history scope,
@@ -359,11 +360,37 @@ def create_approver_role(*, actor, data: dict) -> ApproverRole:
     incompatible states: a name that says "Vice Chancellor" beside a code that
     says ``vc``, where the label is what every screen shows and the code is what
     every rule reads.
+
+    A name that already names a role does **not** create a second one: the same
+    word typed twice — by HR on the Roles screen, or by a team manager from the
+    chain form's "New role" card — resolves to the role that already exists.
+    Two offices sharing a name is exactly the ambiguity a chain cannot afford,
+    and the caller only ever meant "the Registrar", not "a second Registrar".
+    Matching is on the label, case- and whitespace-insensitively, because that
+    is the name people type; two *different* labels that happen to slug alike
+    are still two roles and keep separate codes.
+
+    Returns ``(role, created)``. ``created`` is False when an existing role was
+    reused, so the API can answer 200 rather than 201 and the caller can say
+    "already exists" without guessing. A matching *retired* role is refused
+    instead of silently reused: past stages still quote its name, and bringing
+    it back is HR's decision, not a side effect of adding a step.
     """
     data = dict(data)
     label = (data.get("label") or "").strip()
     if not label:
         raise RoleActionError("label", "Enter a role name.")
+    existing = (
+        ApproverRole.objects.filter(label__iexact=label).order_by("pk").first()
+    )
+    if existing is not None:
+        if not existing.is_active:
+            raise RoleActionError(
+                "label",
+                f"The {existing.label} role already exists but is retired. Ask HR "
+                "to reactivate it in Roles.",
+            )
+        return existing, False
     data["label"] = label
     data["code"] = role_code_from_name(label)
     for field in (
@@ -383,7 +410,7 @@ def create_approver_role(*, actor, data: dict) -> ApproverRole:
             target_summary=role.label,
             detail={"before": None, "after": _role_snapshot(role)},
         )
-    return role
+    return role, True
 
 
 def update_approver_role(*, role: ApproverRole, actor, data: dict) -> ApproverRole:
@@ -472,6 +499,137 @@ def _role_snapshot(role: ApproverRole) -> dict:
         "handles_cancellation": role.handles_cancellation,
         "is_institution_wide": role.is_institution_wide,
     }
+
+
+def _repoint_wide_positions(
+    *,
+    role: ApproverRole,
+    previous_user: User,
+    new_user: User,
+    team: Team | None = None,
+    campus: Campus | None = None,
+) -> None:
+    """Move the positions a replaced wide approver held onto their successor.
+
+    A wide approver's holding staffs chains within its scope — the steps that
+    name the role, and the chains they were placed on as a normal member. When
+    the holding is re-pointed at a new person, the successor inherits those
+    positions rather than leaving every step and membership pointing at somebody
+    who no longer holds the role.
+
+    Only the positions the outgoing holder actually had are moved, and only
+    within the holding's scope:
+
+    * ``team`` scopes the move to that team's chains (a team-wide holding);
+    * ``campus`` scopes it to the teams at that campus (a campus-wide holding);
+    * neither scopes it to every team (an institution-wide holding).
+
+    A step is moved only when it names this role *and* pointed at the outgoing
+    holder, so a step HR gave to somebody else by hand is left alone. Each
+    handover closes the outgoing holder's :class:`SectionMember` period and opens
+    the successor's, exactly as :func:`chains.services.add_section_member`
+    does, so "who held the step in March" stays answerable. A wide membership the
+    successor already has on the same workflow is not duplicated — the outgoing
+    row is simply dropped.
+    """
+    sections = Section.objects.filter(approver_role=role, approver=previous_user)
+    if team is not None:
+        sections = sections.filter(workflow__team=team)
+    if campus is not None:
+        sections = sections.filter(workflow__team__campus=campus)
+
+    today = timezone.localdate()
+    for section in sections:
+        SectionMember.objects.filter(
+            section=section, user=previous_user, effective_to__isnull=True
+        ).update(effective_to=today)
+        section.approver = new_user
+        section.save(update_fields=["approver"])
+        membership = SectionMember(
+            section=section, user=new_user, effective_from=today
+        )
+        membership.full_clean()
+        membership.save()
+
+    memberships = WorkflowMember.objects.filter(
+        user=previous_user, is_wide_approver=True
+    )
+    if team is not None:
+        memberships = memberships.filter(team=team)
+    if campus is not None:
+        memberships = memberships.filter(team__campus=campus)
+    for membership in memberships:
+        clash = WorkflowMember.objects.filter(
+            workflow=membership.workflow, user=new_user
+        ).exists()
+        if clash:
+            membership.delete()
+        else:
+            membership.user = new_user
+            membership.save(update_fields=["user"])
+
+
+def replace_role_assignment(
+    *, assignment: RoleAssignment, user: User, actor
+) -> RoleAssignment:
+    """Hand an institution-wide holding to a new person, positions and all.
+
+    A role has exactly one institution-wide holder, so changing it is a replace
+    rather than a remove-then-assign: this re-points the holding at ``user`` and
+    moves every step and wide membership the outgoing holder staffed under the
+    role onto them in the same atomic step. Without it a chain written while the
+    old holder was in post would keep routing to somebody who no longer holds
+    the role.
+
+    Refuses an inactive user, and refuses the holder they already are.
+    """
+    with transaction.atomic():
+        assignment = RoleAssignment.objects.select_for_update().get(pk=assignment.pk)
+        role = assignment.role
+        if not user.is_active:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} is not an active user. "
+                "Activate the account before assigning a role.",
+            )
+        if assignment.user_id == user.pk:
+            raise RoleActionError(
+                "user",
+                f"{user.get_full_name() or user.username} already holds the "
+                f"{role.label} role institution-wide.",
+            )
+        outgoing = assignment.user
+        before = {
+            "user_id": outgoing.pk,
+            "user": outgoing.get_full_name() or outgoing.username,
+            "assignment_id": assignment.pk,
+        }
+        assignment.user = user
+        assignment.save(update_fields=["user"])
+        _repoint_wide_positions(
+            role=role, previous_user=outgoing, new_user=user
+        )
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.APPROVER_ROLE,
+            target_id=role.pk,
+            target_summary=role.label,
+            detail=changed_fields(
+                before,
+                {
+                    "user_id": user.pk,
+                    "user": user.get_full_name() or user.username,
+                    "assignment_id": assignment.pk,
+                },
+            ),
+            reason=(
+                f"{user.get_full_name() or user.username} now holds the "
+                f"{role.label} role institution-wide, replacing "
+                f"{outgoing.get_full_name() or outgoing.username}."
+            ),
+        )
+    return assignment
 
 
 def create_role_assignment(*, user: User, role: ApproverRole, actor) -> RoleAssignment:
@@ -666,10 +824,17 @@ def create_team_role_assignment(
                     f"{role.label} role on {team.name}.",
                 )
             before = _team_assignment_snapshot(previous)
+            outgoing = previous.user
             previous.user = user
             previous.is_team_manager = is_team_manager
             previous.save(update_fields=["user", "is_team_manager"])
             assignment = previous
+            _repoint_wide_positions(
+                role=role,
+                previous_user=outgoing,
+                new_user=user,
+                team=team,
+            )
         else:
             assignment = TeamRoleAssignment.objects.create(
                 team=team, role=role, user=user, is_team_manager=is_team_manager
@@ -822,9 +987,16 @@ def create_campus_role_assignment(
                     f"{role.label} role at {campus.name}.",
                 )
             before = _campus_assignment_snapshot(previous)
+            outgoing = previous.user
             previous.user = user
             previous.save(update_fields=["user"])
             assignment = previous
+            _repoint_wide_positions(
+                role=role,
+                previous_user=outgoing,
+                new_user=user,
+                campus=campus,
+            )
         else:
             assignment = CampusRoleAssignment.objects.create(
                 campus=campus, role=role, user=user
@@ -989,7 +1161,6 @@ def _campus_snapshot(campus: Campus) -> dict:
     return {
         "name": campus.name,
         "code": campus.code,
-        "description": campus.description,
         "is_active": campus.is_active,
     }
 
@@ -1062,24 +1233,37 @@ def wide_approver_ids_for_team(team: Team | None) -> set[int]:
 
     A wide approver staffs a chain without being appointed to its steps: the
     holder of a team-wide role on this team, the holder of a campus-wide role
-    at the team's campus, or the holder of an institution-wide role. They are
-    the deliberate exception to "one employee sits on one chain per team": a
-    team building a second chain reuses its registrar or bursar, it does not
-    move them off the first chain.
+    at the team's campus, or — for an administration team only — the holder of
+    an institution-wide role. They are the deliberate exception to "one employee
+    sits on one chain per team": a team building a second chain reuses its
+    registrar or bursar, it does not move them off the first chain.
+
+    Two exclusions keep that exception honest:
+
+    * a **campus-wide** holding reaches only the academic teams at its own
+      campus, so a team elsewhere — or an administration team — never sees it;
+    * an **institution-wide** holding is an administration office, so an
+      academic team does not see it at all;
+    * the team's **designated manager** is not in this set. A manager joins
+      their own team's roster to route their own leave, and once there they are
+      an ordinary member of one of its chains rather than a wide holder who can
+      sit on all of them.
     """
     if team is None:
         return set()
-    ids = set(
-        RoleAssignment.objects.filter(
-            role__is_institution_wide=True, user__is_active=True
-        ).values_list("user_id", flat=True)
-    )
+    ids: set[int] = set()
+    if team.category == Team.Category.ADMINISTRATION:
+        ids.update(
+            RoleAssignment.objects.filter(
+                role__is_institution_wide=True, user__is_active=True
+            ).values_list("user_id", flat=True)
+        )
     ids.update(
         TeamRoleAssignment.objects.filter(
-            team=team, user__is_active=True
+            team=team, user__is_active=True, is_team_manager=False
         ).values_list("user_id", flat=True)
     )
-    if team.campus_id is not None:
+    if team.category == Team.Category.ACADEMIC and team.campus_id is not None:
         ids.update(
             CampusRoleAssignment.objects.filter(
                 campus_id=team.campus_id, user__is_active=True
@@ -1110,6 +1294,12 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     this team's campus — is not a normal member: they staff steps from the
     Approvers tab and are kept out of the roster, so being an approver never
     also quietly routes someone's leave as a member.
+
+    The team's **designated manager** is the one exception. Their own leave
+    must route through the team they run, and only a roster row makes that
+    true, so the manager may place themselves here. Once placed they leave
+    every other team's candidate list, which is the "one team per employee"
+    rule doing its job rather than a special case.
 
     Somebody already on a different team is refused rather than moved. Moving
     an employee off another team would leave that team with steps whose
@@ -1178,5 +1368,49 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             reason=f"Added to the {team.name} team as a normal member.",
         )
     return locked_profile
+
+
+def add_team_members(
+    *, team: Team, users: list[User], actor
+) -> list[EmployeeProfile]:
+    """Place several employees on a team in one all-or-nothing write.
+
+    The roster picker lets HR select more than one person at once, so this
+    repeats :func:`add_team_member` inside one transaction: every refusal is
+    collected, and if any person cannot join, the whole selection is rolled
+    back. Without the outer transaction a selection could leave half its people
+    on the team and report only the one that failed, which reads as a partial
+    roster nobody chose.
+
+    A single request still reports one field error, ``users``, naming each
+    person who could not join. The audit rows the successful adds wrote are
+    rolled back with them.
+    """
+    seen: set[int] = set()
+    for user in users:
+        if user.pk in seen:
+            raise WorkflowMemberError(
+                "users",
+                "Remove duplicate employees from the selection.",
+            )
+        seen.add(user.pk)
+
+    if not users:
+        raise WorkflowMemberError(
+            "users",
+            "Select at least one employee to add.",
+        )
+
+    with transaction.atomic():
+        profiles: list[EmployeeProfile] = []
+        refusals: list[str] = []
+        for user in users:
+            try:
+                profiles.append(add_team_member(team=team, user=user, actor=actor))
+            except WorkflowMemberError as exc:
+                refusals.append(exc.message)
+        if refusals:
+            raise WorkflowMemberError("users", " ".join(refusals))
+    return profiles
 
 

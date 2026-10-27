@@ -158,11 +158,7 @@ export function EmployeeForm({
           value={ROLE_LABELS[employee?.role ?? "employee"]}
           className="w-full cursor-not-allowed rounded-md border border-input-border bg-input-background px-3 py-2 text-text-muted focus:outline-none"
         />
-        <p className="mt-1 text-xs text-text-muted">
-          The directory creates normal employees. Approver access follows from
-          the workflow stage you appoint somebody to, and an HR account is
-          created by an administrator.
-        </p>
+        <p className="mt-1 text-xs text-text-muted">Approver access follows from the workflow stage you appoint someone to.</p>
       </div>
 
       <div>

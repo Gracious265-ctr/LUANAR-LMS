@@ -125,10 +125,7 @@ export function CreatePlanForm({
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <h2 className="text-base font-semibold text-text-primary">Create a Plan</h2>
-          <p className="mt-1 text-sm text-text-secondary">
-            Save a leave type and dates ahead of time. Nothing is submitted — when the
-            date nears, we&apos;ll remind you to apply.
-          </p>
+          <p className="mt-1 text-sm text-text-secondary">Save a leave type and dates ahead of time; nothing is submitted.</p>
         </div>
 
         <Field

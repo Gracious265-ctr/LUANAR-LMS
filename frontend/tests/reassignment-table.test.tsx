@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 
+import { ReassignmentHistory } from "@/components/hr/ReassignmentHistory";
 import { ReassignmentTable } from "@/components/hr/reassignment-table";
 import type { Reassignment } from "@/lib/reassignments";
 
@@ -47,5 +48,42 @@ describe("ReassignmentTable", () => {
     render(<ReassignmentTable reassignments={[]} />);
 
     expect(screen.getByText("No reassignments yet")).toBeInTheDocument();
+  });
+});
+
+describe("ReassignmentHistory search", () => {
+  const second: Reassignment = {
+    ...reassignment,
+    id: 2,
+    application: "app-2",
+    reference_number: "LUANAR-2026-0002",
+    employee_name: "Ruth Member",
+    to_approver_name: "Mary Registrar",
+    reason: "HOD cover while the office is vacant.",
+  };
+
+  it("narrows the history by reference, person, or reason", () => {
+    render(<ReassignmentHistory reassignments={[reassignment, second]} />);
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search reassignment history" }),
+      { target: { value: "ruth" } }
+    );
+
+    expect(screen.getByText("LUANAR-2026-0002")).toBeInTheDocument();
+    expect(screen.queryByText("LUANAR-2026-0001")).toBeNull();
+  });
+
+  it("says a search hid every row rather than claiming there is no history", () => {
+    render(<ReassignmentHistory reassignments={[reassignment]} />);
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search reassignment history" }),
+      { target: { value: "nothing here" } }
+    );
+
+    expect(
+      screen.getByText("No reassignments match this search")
+    ).toBeInTheDocument();
   });
 });

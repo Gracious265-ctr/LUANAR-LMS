@@ -16,7 +16,7 @@ export const fieldStyles = [
 export function Input({
   className,
   ...props
-}: React.InputHTMLAttributes<HTMLInputElement>) {
+}: React.ComponentPropsWithRef<"input">) {
   return <input className={cn(fieldStyles, className)} {...props} />;
 }
 
@@ -44,7 +44,7 @@ export function Field({
   className?: string;
 }) {
   return (
-    <div className={cn("space-y-block", className)}>
+    <div className={cn("space-y-stack", className)}>
       <Label htmlFor={htmlFor} className="block">
         {label}
       </Label>

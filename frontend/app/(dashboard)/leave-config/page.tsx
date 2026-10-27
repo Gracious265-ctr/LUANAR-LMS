@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { LeaveTypeTable } from "@/components/leave-config/LeaveTypeTable";
+import { LeaveTypeList } from "@/components/leave-config/LeaveTypeList";
 import { ShowInactiveToggle } from "@/components/leave-config/ShowInactiveToggle";
 import { Alert } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -43,11 +43,7 @@ export default async function LeaveConfigPage({
           <h2 className="text-2xl font-semibold tracking-tight text-text-primary">
             Leave Configuration
           </h2>
-          <p className="text-text-secondary">
-            The leave types every other module reads from. Deactivating a type
-            retires it from new applications and plans without touching
-            anything already filed against it.
-          </p>
+          <p className="text-text-secondary">The leave types every other module reads from.</p>
         </div>
         <Link
           href="/leave-config/new"
@@ -74,7 +70,7 @@ export default async function LeaveConfigPage({
             {error}
           </Alert>
         ) : (
-          <LeaveTypeTable leaveTypes={leaveTypes} />
+          <LeaveTypeList leaveTypes={leaveTypes} />
         )}
       </div>
     </div>

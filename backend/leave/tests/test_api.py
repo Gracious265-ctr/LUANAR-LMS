@@ -206,3 +206,64 @@ class SubmitEndpointTests(StubProviderMixin, TestCase):
         ]
         self.assertEqual(ref_a, "LV-2026-27-000001")
         self.assertEqual(ref_b, "LV-2026-27-000002")
+
+
+class ApplicationListFilterTests(StubProviderMixin, TestCase):
+    """The owner-scoped list filters that back "My Applications" and the
+    dashboard cards (``status`` narrows; ``exclude_status`` drops)."""
+
+    url = "/api/v1/leave-applications/"
+
+    def setUp(self):
+        self.use_stub()
+        self.client = APIClient()
+        self.user = make_user()
+        self.client.force_authenticate(user=self.user)
+        for status_ in ("draft", "submitted", "rejected", "cancelled"):
+            LeaveApplication.objects.create(
+                employee=self.user,
+                leave_type_id=1,
+                start_date=EARLIEST_ANNUAL_START,
+                end_date=date(2026, 10, 2),
+                reason=status_,
+                status=status_,
+            )
+        other = make_user(username="other@test.luanar")
+        LeaveApplication.objects.create(
+            employee=other,
+            leave_type_id=1,
+            start_date=EARLIEST_ANNUAL_START,
+            end_date=date(2026, 10, 2),
+            reason="Not mine",
+            status="submitted",
+        )
+
+    def statuses(self, response):
+        return sorted(row["status"] for row in response.data["results"])
+
+    def test_lists_only_the_owners_applications(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            self.statuses(response),
+            ["cancelled", "draft", "rejected", "submitted"],
+        )
+
+    def test_status_filter_narrows_to_one_status(self):
+        response = self.client.get(self.url, {"status": "submitted"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.statuses(response), ["submitted"])
+
+    def test_exclude_status_drops_the_named_status(self):
+        response = self.client.get(self.url, {"exclude_status": "draft"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            self.statuses(response), ["cancelled", "rejected", "submitted"]
+        )
+
+    def test_exclude_status_accepts_a_comma_separated_list(self):
+        response = self.client.get(
+            self.url, {"exclude_status": "draft,cancelled"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.statuses(response), ["rejected", "submitted"])

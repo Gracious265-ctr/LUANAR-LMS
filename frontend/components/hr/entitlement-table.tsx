@@ -22,6 +22,7 @@ export function EntitlementTable({
   entitlements,
   today = currentDateIso(),
   onEdit,
+  empty,
 }: {
   entitlements: Entitlement[];
   today?: string;
@@ -30,13 +31,17 @@ export function EntitlementTable({
    * to the standalone edit page, in which case the pencil renders as a link.
    */
   onEdit?: (id: number) => void;
+  /** Overrides the empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (entitlements.length === 0) {
     return (
-      <EmptyState
-        title="No entitlement rules found"
-        description="Add a grade range and annual leave entitlement to get started."
-      />
+      empty ?? (
+        <EmptyState
+          title="No entitlement rules found"
+          description="Add a grade range and annual leave entitlement to get started."
+        />
+      )
     );
   }
 

@@ -14,15 +14,20 @@ import { Badge } from "@/components/ui/badge";
 
 export function FinalizedLeaveTable({
   applications,
+  empty,
 }: {
   applications: FinalizedApplication[];
+  /** Overrides the empty state — the page supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (applications.length === 0) {
     return (
-      <EmptyState
-        title="No finalized applications"
-        description="Submitted leave applications organization-wide appear here once employees submit them."
-      />
+      empty ?? (
+        <EmptyState
+          title="No finalized applications"
+          description="Submitted leave applications organization-wide appear here once employees submit them."
+        />
+      )
     );
   }
 

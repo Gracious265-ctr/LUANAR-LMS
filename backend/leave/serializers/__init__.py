@@ -321,6 +321,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "submitted_at",
             "documents",
+            "rejection_accepted_at",
         ]
         read_only_fields = [
             "id",
@@ -335,6 +336,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "submitted_at",
+            "rejection_accepted_at",
         ]
 
     def get_documents(self, obj) -> list:

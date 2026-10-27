@@ -15,7 +15,7 @@ export default function NotFound() {
         className="max-w-md"
         icon={<Compass className="size-8" aria-hidden="true" />}
         title="We could not find that page"
-        description="The link may be out of date, or the record may have been removed. If you followed a link from inside the system, return to your dashboard to continue."
+        description="The link may be out of date, or the record may have been removed."
         action={
           <Link
             href="/dashboard"

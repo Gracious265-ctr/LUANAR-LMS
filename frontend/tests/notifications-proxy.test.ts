@@ -87,11 +87,7 @@ describe("notification proxies", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(null, { status: 204 }));
 
-    const response = await markAllPOST(
-      new Request("http://localhost:3000/api/notifications/mark-all-read/", {
-        method: "POST",
-      }),
-    );
+    const response = await markAllPOST();
 
     expect(fetchSpy).toHaveBeenCalledWith(
       `${DJANGO}/api/v1/notifications/mark-all-read/`,

@@ -10,8 +10,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from directory.factory import get_organization_provider
-from org.models import OrgUnit
-from org.services import sync_org_structure_from_provider
+from org_structure.models import OrgUnit
+from org_structure.services import sync_org_structure_from_provider
 
 User = get_user_model()
 

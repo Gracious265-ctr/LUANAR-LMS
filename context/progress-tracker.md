@@ -2,6 +2,418 @@
 
 Update this file after every meaningful implementation change.
 
+## Rosters — employees are added several at a time (2026-10-27)
+
+- **DONE — one picker adds a whole selection.** `EmployeePickerDialog`
+  (`frontend/components/hr/employee-picker-dialog.tsx`) lists the eligible
+  people with checkboxes, narrows them with local search, offers **Select all
+  shown**, and confirms with a count (`Add 3 to team`). It resets the selection
+  each time it opens, so a save never leaves the previous choice checked.
+- **DONE — the team member panel uses it.** `TeamMembersPanel` no longer has a
+  one-employee select box; **Add employees** opens the picker, and the panel
+  passes the whole selection to the new bulk client `addTeamMembers`.
+- **DONE — the chain member page uses it.** The per-row **Add** buttons are
+  gone. **Add employees** opens the same picker over the team members who are
+  not on another of the team's chains, and confirming merges the selected ids
+  into the chain's member list. The existing **View N employees already on
+  another chain** button is unchanged.
+- **DONE — the team write is all-or-nothing.** `POST /api/v1/teams/{id}/members/`
+  accepts `users: [id, …]` beside the existing single `user`. The new
+  `add_team_members` service runs every person through `add_team_member` inside
+  one transaction and raises all refusals under `users`, so a selection with one
+  ineligible person leaves the roster and its audit trail untouched. Empty and
+  duplicate selections are rejected before any write.
+- **DONE — the one-chain rule keeps its deliberate exception.** A wide approver
+  is not refused for serving several of a team's chains: their wider holding
+  already staffs them, `assign_workflow_member` marks the row
+  `is_wide_approver`, and `workflow_member_pool` puts them back in `available`
+  rather than in `assigned_elsewhere`. Everyone else — member, step approver, or
+  the team's manager — serves one chain at a time.
+- **DONE — removed the duplicated serializer block.** `backend/teams/serializers.py`
+  defined `TeamSectionInputSerializer` through `TeamMemberAddSerializer` twice,
+  byte for byte, so the second copy silently replaced the first. The copy is
+  gone (1235 → 654 lines) and the bulk serializer now follows a single set of
+  definitions.
+- **VERIFIED** — backend `uv run manage.py test chains.tests_workflow_members`
+  (72 tests, including bulk placement, rollback on one refusal, empty and
+  duplicate selections); frontend targeted picker/panel/workflow suites (47
+  tests) and `tsc --noEmit`; eslint on the changed files. Headless Chrome at
+  1280x1000: the team picker lists both unassigned candidates with **Select all
+  shown** and `Add 2 to team`, and the chain picker lists the one joinable
+  member with `Add 1 member`, both fully in the viewport. Full frontend suite:
+  **130 files / 1106 tests pass**; targeted eslint clean. `chains.tests_teams`
+  (108 tests) plus `chains.tests_wide_scope` (11) pass again after the
+  serializer cleanup. `chains.tests_team_configuration` still reports 2
+  failures and 11 errors in team-routing fixtures (`WorkflowConfigError: … has
+  no approval workflow for this employee`), outside the member write path; that
+  suite is not claimed as green here.
+
+## Chains cards — Edit and Make default live in the card (2026-10-26)
+
+- **DONE — "Read only" is gone.** `WorkflowCompactCard` no longer takes
+  `readOnly`; every card carries a secondary-button **Edit** link to
+  `…/workflows/{id}/edit`, so a chain is editable from the list instead of only
+  from its detail page.
+- **DONE — Make default moved into each card.** Non-default cards render
+  `RouteChainButton` (the default card shows the **Default** badge instead, so
+  there is one badge and no self-referential action). The standalone
+  `WorkflowRoutingActions` component and the workflows page "Default chain"
+  section are deleted; the detail page no longer fetches the sibling list it
+  only needed for that section.
+- **DONE — the confirmation fits the viewport.** `RouteChainButton`'s inline
+  confirmation (which overflowed the card) is now a dialog without a close
+  button, offering **Keep the current default** / **Yes, make it default**.
+- **VERIFIED** — headless Chrome (1280x1000, HR): every chain card is 76px with
+  `Edit` plus `Make default` (the default chain has `Edit` and the badge only),
+  no separate "Default chain" section, and the dialog sits fully in the viewport
+  at 512x188. Targeted eslint and `tsc --noEmit` are clean; the full frontend
+  suite passes.
+
+## Chains cards — a spacing token shadowed `inline-block` (2026-10-26)
+
+- **DONE — `--spacing-block` broke every `inline-block` element.** Tailwind turns
+  each `--spacing-*` theme key into a utility suffix, so the key emitted a second
+  `.inline-block { inline-size: var(--space-block) }` rule after the display
+  utility. Every inline-block became 20px wide and its text overflowed — on the
+  workflow cards, "Additional"/"Default" ran into "Read only". The key is now
+  `--spacing-stack`, `space-y-block` became `space-y-stack` in
+  `components/ui/input.tsx` and `components/leave-config/LeaveTypeForm.tsx`, and
+  `app/globals.css` carries a comment keeping display keywords out of the spacing
+  namespace. The compiled CSS now has one `.inline-block` rule (display only).
+- **DONE — chain cards were cards inside cards.** The workflows page wrapped
+  each `WorkflowCompactCard` (already bordered and padded) in an `<li>` with the
+  same border, background and padding, plus a divider list. The `<li>` is now
+  unstyled and the list uses `space-y-3`. The card also keeps its badge group
+  from shrinking (`shrink-0`) and lets the name block truncate (`min-w-0`).
+- **VERIFIED** — headless Chrome (1280x1000, logged in as HR): each chain is one
+  76px card (the `li` and card share the same rect), the badges are 78px/61px
+  instead of 20px and no longer overlap "Read only"; the compiled stylesheet no
+  longer contains the second `.inline-block` rule. `npm test` 129 files / 1100
+  tests pass; tsc clean. This fix has no JS test surface, so the browser and the
+  compiled CSS are the evidence.
+
+## Workflow members — one chain per employee is strict, with a View dialog (2026-10-26)
+
+- **DONE — an already-placed person is refused, not moved.** Reverses the
+  earlier "Move here" behaviour at the user's request. `sync_workflow_members`
+  no longer deletes a `WorkflowMember` row on another chain before assigning
+  here; it lets `assign_workflow_member` refuse and re-raises the refusal as
+  field `members`, so `POST`/`PATCH /api/v1/workflows/` answers 400 and the
+  transaction leaves every chain untouched. The single-add endpoint already
+  refused, so both write paths now say the same thing.
+- **DONE — the member page no longer offers a move.**
+  `frontend/components/hr/workflow-form.tsx` dropped `movingFrom`, "Moving
+  from …" and **Move here**. The list behind **View employees already on
+  another chain** is context only and says the person must be removed from the
+  chain they are on first. `assigned_elsewhere.kind` still distinguishes a normal
+  member from a step approver for the reason line, not for an action.
+- **DONE — the elsewhere list sits behind a button.** The people already on
+  another chain are no longer printed inline. A **View N employees already on
+  another chain** button opens a dialog listing each person's name,
+  designation/email, whether they are a normal member or a step approver, and the
+  chain they serve, with the reminder that they must be removed from it first.
+  It is a dialog rather than an employee link because the employee directory is
+  HR-only while a team's manager can also open this form, and the pool already
+  has the fields, so opening the list costs no extra request. Tests cover both
+  kinds and assert the people are absent until the button is used.
+- **DONE — tests.** Backend
+  `test_sync_refuses_a_normal_member_of_another_chain`,
+  `test_pool_separates_member_and_step_assignments` and
+  `test_create_workflow_refuses_a_member_of_another_chain` replace the move
+  tests. Frontend "keeps people on another chain behind a list button" replaces
+  the move test (no **Move here**/**Add**, save disabled with nobody on the
+  chain, and the list only appears in the dialog).
+- **Still open — wide approvers.** The deliberate `is_wide_approver` exemption
+  is unchanged: an institution/campus-wide role holder may still serve on
+  several chains. Confirm whether the strict one-chain rule should also cover
+  them.
+- **VERIFIED** — backend `uv run manage.py test chains.tests_workflow_members`
+  (69 tests); frontend targeted `workflow-form-members` (35 tests); eslint clean
+  on the form, pool types and tests; `tsc --noEmit` clean after removing a
+  corrupted generated `.next/dev/types/validator.ts` that the running dev
+  server had written. Full frontend suite: **129 files / 1100 tests pass**.
+
+## Workflow form — a write can no longer sit under Continue (2026-10-26)
+
+- **DONE — the member page's write moved away from the Continue position.**
+  Its action row is now `Back to steps` → `Cancel` on the left and the
+  `Create workflow` / `Save workflow` write at the far right, so the point where
+  "Continue to members" was is occupied by the harmless way back rather than by
+  a write. Both action rows carry distinct keys, so the focused Continue button
+  is unmounted when the page changes instead of being reused as a focused save
+  button — a keystroke meant for the page that just closed cannot reach the
+  write either. The 32px/1.5s gesture guard stays as a fallback for narrow
+  screens that wrap the row. `frontend/tests/workflow-form-members.test.tsx`
+  pins the layout (the leading action is "Back to steps", a repeat click there
+  writes nothing) and the remount (the Continue node is not the save node).
+- **The reported save was a stale bundle.** The click at 21:15 PATCHed workflow
+  14 with zero members (`audit_auditentry` 79). The current form cannot do
+  that: `membersProblem()` refuses an empty member list and the save button is
+  disabled while nobody is on the chain. That write therefore came from a
+  browser still running the pre-fix bundle — a tab opened before the 21:12
+  change that never took the HMR update — so the fix needed a hard reload as
+  well as the code.
+- **VERIFIED** — `npm test` 129 files / 1100 tests pass; eslint clean on the
+  form and its tests; `tsc --noEmit -p tsconfig.json` clean (the only test
+  typecheck error is the pre-existing `tests/tracking-service.test.ts` one).
+  Real browser (Chrome/CDP, 1280x1200 and 390x844): one Continue click opens
+  the member page with no non-GET request; a repeat click at Continue's old
+  point lands on "Back to steps" (or empty space when the row wraps) and
+  writes nothing.
+
+## Workflow Members — a chain saves with its people, and people can move onto it (2026-10-26)
+
+**Goal.** A workflow must not be written before the people who will follow it
+are on it, and a team whose staff all sit on an existing chain must still be
+able to staff a new one.
+
+- **DONE — the member page always offered nobody on a live team.** The
+  one-chain-per-employee rule (`chains.services.membership`) excludes everyone
+  already on another chain from the create pool. On a team whose staff are all
+  enrolled on its current chain, the member page therefore opened with an empty
+  "Team members who can join" and a save that wrote a chain with zero members.
+  (The seeded **Registry Operations** team showed this: five staff on
+  "Registry Operations workflow", none offerable for a second chain.)
+- **DONE — saving requires a member.** `WorkflowForm.membersProblem()` refuses
+  a write with an empty member list, `Create workflow` / `Save workflow` is
+  disabled until somebody is on the chain, and a one-line note above the
+  actions says why. The guard runs again in `handleSave`, so no stray click can
+  write a chain nobody is on either.
+- **DONE — only a deliberate click on save can write.** The save button is
+  `type="button"` and calls `handleSave()` itself; the form's `onSubmit` only
+  prevents the default, so an implicit submit (Enter, autofill) is inert
+  instead of saving or silently jumping pages. A click whose `event.detail > 1`
+  is ignored: on the edit page the save button lands almost exactly where
+  "Continue to members" was (y≈844 vs y≈868), so the second click of a
+  double-click arrived on save and PATCHed the chain. That second click is not
+  consent; a single click still saves.
+- **DONE — the gesture that opens the member page cannot save it.** The second
+  click of a double-click is not the only accidental write: a *slow* second
+  click (300ms, 800ms, even 1.2s later) arrives with `detail: 1` and lands on
+  Save simply because Save is where Continue was. `handleContinue` now records
+  the click's point and time, and the save handler ignores a click within 32px
+  of it, inside 1500ms, whose pointer never moved away — the shape of the same
+  physical gesture. Moving the pointer more than 8px ends the gesture, so a
+  deliberate click on Save (which sits only ~25px from Continue) writes
+  normally; a keyboard activation has no coordinates and is never treated as
+  the gesture. Real browser: same-spot second clicks at 0/300/800/1200ms give
+  **no write at all**, and a save click after moving PATCHes. On the **new**
+  page the same check at 0/300/800ms leaves the member page open and its chain
+  uncreated.
+- **DONE — "Continue to members" only opens the member page.** The forward
+  button is a plain `type="button"` whose handler validates the name and steps
+  and calls `setPage(2)`; it has no write path. Only `handleSave` sends the
+  payload, and it refuses unless the member page is showing with somebody on
+  the chain, so no step, name or member list leaves the browser while moving
+  between the two pages. A real browser check on the edit page records **no
+  non-GET request at all** for the Continue click.
+- **DONE — people on another chain can be moved here.** *(Superseded below:
+  the one-chain rule is now strict, so these rows are listed with a **View**
+  action only.)* `workflow_member_pool`
+  now tags each `assigned_elsewhere` row with `kind`: `"member"` (a normal
+  member of that chain) or `"step"` (approves one of its steps). The member page
+  lists the first group with **Move here**; choosing somebody adds them to this
+  chain's member list and shows "Moving from <chain>" until saved. Step
+  approvers stay listed with no button, because freeing them is a change to the
+  chain they approve for.
+- **DONE — the move is atomic in the workflow write.** *(Superseded below:
+  `sync_workflow_members` now refuses instead of moving.)*
+  `sync_workflow_members` now removes a normally-assigned member from the chain
+  they were on before assigning them here, inside the same transaction. The
+  one-chain rule still holds after the write (the person ends up on exactly one
+  chain), and a person staffing a step of another chain is still refused —
+  the rollback leaves them where they were. `assign_workflow_member` (the
+  single-add endpoint) keeps refusing so a direct POST cannot silently move
+  somebody.
+- **VERIFIED** — backend: `chains/tests_workflow_members.py` gained a sync move,
+  a refused step-approver move (rolled back), the pool's `kind` pair, and a
+  create-with-members move through `POST /api/v1/workflows/` (69 tests in that
+  module). Frontend: `tests/workflow-form-members.test.tsx` gained "will not
+  save a chain with nobody on it" (disabled button, hint, inert implicit
+  submit), "ignores the second click of a double-click on save" (`detail: 2`
+  writes nothing, `detail: 1` saves once), "opens the member page without
+  writing the chain" (the forward button is `type="button"`, neither writer is
+  called, and the button is gone once page two shows), "does not save an edited
+  chain's steps from Continue" (`updateWorkflow` is not called) and "moves a
+  normal member of another chain onto this one" (only the member shows **Move
+  here**; the chosen id is submitted); the page-one guard now asserts an
+  implicit submit stays on the steps page, and the existing page-two save tests
+  add a member first. Two further tests pin the gesture guard: "ignores a
+  second click that lands where Continue was" (a `detail: 1` click at
+  Continue's point does not write; the same button clicked elsewhere does) and
+  "saves once the pointer has moved away from Continue" (a `pointermove` ends
+  the gesture, so a save at the old spot still PATCHes). Full runs: `npm test`
+  **129 files / 1098 tests pass**;
+  `npm run lint` 0 errors (9 pre-existing warnings); `npx tsc --noEmit
+  -p tsconfig.json` clean. Backend:
+  `chains/tests_workflow_members.py` green (69 tests); the full
+  `uv run manage.py test` run still reports **7 failures + 36 errors**, all
+  pre-existing and unrelated — they come from `chains/routing.py`, where
+  `routed_workflow_for` now requires a `WorkflowMember` enrolment, while older
+  fixtures in `chains/tests_approvals.py`, `chains/tests_team_configuration.py`
+  and `tests/test_end_to_end.py` only assign the employee to a team. Re-running
+  `WorkflowProviderDatabaseTests` with these changes stashed reproduces the same
+  5 failures / 8 errors, so the membership work neither adds nor hides any.
+  Real browser (Chrome/CDP, 1280px): on
+  `/dashboard/teams/2/workflows/2/edit` a double-click on Continue opens the
+  member page and stays there with no PATCH, while a single click on Save
+  PATCHes `/api/hr/workflows/2` (200) and lands on the team's workflow list.
+
+## Frontend — Team & Workflow Forms: Progress Rail and Two-Page Workflow (2026-10-26)
+
+- **DONE** — a form that is split across pages now says where the viewer is.
+  `frontend/components/ui/form-progress.tsx` (`FormProgress`) wraps the existing
+  `Stepper` (`size="sm"`, no avatars) and maps `{id,label}` stages onto
+  completed/current/pending from one `current` id, with
+  `aria-label="Form progress"`. It is display-only: pages still move through
+  the form's own validated actions, so the rail cannot be used to skip one.
+- **TeamForm** carries the rail on both of its pages. Creating shows
+  "Team details" → "Team manager"; editing shows "Team details" →
+  "Approval steps" and still opens on the steps page. The manager step, the
+  steps page and the create/edit intros lost their long explanatory copy:
+  category/campus/effective-date hints, the manager-role and manager-candidate
+  paragraphs, the steps subhead, the new-role note, the note under page one's
+  buttons, and the host pages' ("Edit {team}", "New workflow") description
+  lines. Short actionable notes (no campus yet, no holder yet, no team-scoped
+  role, nobody free to manage) remain. The Teams create overlay's description
+  is now one line. Also removed the stale duplicate docblock above `TeamForm`.
+- **WorkflowForm** is now two pages instead of one long form. Page one is the
+  chain's name and its ordered steps (plus the "New role" card); "Continue to
+  members" is the only way forward and it runs the same name/step/duplicate-role
+  validation the save used to run. Page two is the member pool, the selected
+  "On this chain" list, and the create/save action, with "Back to steps".
+  Pressing Enter in the name field advances rather than submitting the form,
+  because page one deliberately has no submit button. One `<form>` is still
+  used, so the payload (`name`, `team`, `sections`, `members`) is unchanged;
+  the pool fetch stays eager. Both pages render the rail
+  ("Steps" → "Members").
+- Editing a chain also starts on the steps page and keeps its existing steps
+  and members; `handleSave` re-runs the step validation before writing, in case
+  the steps were changed after "Continue".
+- **FIXED** — "Continue to members" could save the chain instead of opening the
+  member page. A browser can submit a form from Enter in a field or select (and
+  from autofill) even though page one deliberately has no save button, and that
+  submit ran the real save. The form's native submit is now inert (`onSubmit`
+  only prevents the default); only the `type="button"` save on the member page
+  writes, so an implicit submit neither saves nor jumps a page. On the **edit**
+  page the save button lands almost exactly where "Continue" was (y≈844 vs
+  y≈868 at 1280px), so the second click of a double-click arrived on Save and
+  PATCHed the chain before the viewer had read the page; clicks with
+  `event.detail > 1` are ignored while a single click still saves. A slower
+  second click is the same accident with `detail: 1`, so the forward click's
+  point and time are remembered: a save click inside 32px and 1500ms, with the
+  pointer never moving away, belongs to the gesture that opened the page and is
+  ignored. The forward
+  button is also no longer disabled when the roles list is empty — it always
+  responds, and `stepsProblem()` now returns the message **and the control that
+  fixes it**, so the cursor lands on the Name field, "Add step", "New role", or
+  the repeated role's select. Page-one errors clear as soon as the name or steps
+  are edited. "Add step" now starts a step on the first **unused** role (it used
+  to open on `availableRoles[0]` even when a step already held it, creating a
+  duplicate the form then refused to pass) and is disabled once every role is on
+  a step, with a one-line note pointing at "New role".
+  `frontend/components/ui/input.tsx` now accepts a `ref`
+  (`React.ComponentPropsWithRef<"input">`) so the form can focus it.
+- **VERIFIED** — `frontend/tests/workflow-form-members.test.tsx` walks the new
+  pages (a shared `continueToMembers()` helper; the edited-workflow fixture now
+  carries a section so page one is valid) and gained suites for the page split
+  (blocked continue, "Back to steps", Enter-to-advance), the page-one submit
+  guard (an implicit submit stays on the steps page and never calls
+  `createWorkflow`, the missing-name and no-step cases focus the right control,
+  and "Continue" still responds with no roles), and step roles (a new step takes
+  an unused role; "Add step" stops once every role is used).
+  `frontend/tests/team-form.test.tsx` asserts the stages on both create pages
+  and the completed/current pair on an edit. Full run: `npm test` 129 files /
+  1094 tests pass; `npm run lint` 0 errors (9 pre-existing warnings);
+  `npx tsc --noEmit -p tsconfig.json` clean. `npm run typecheck:test` still
+  fails only on the pre-existing unrelated `tests/tracking-service.test.ts`
+  error.
+
+## Frontend — Search and Filters on List Screens (2026-10-26)
+
+- **DONE** — every list that already holds its whole dataset is now searchable,
+  with a status/state narrowing where the rows have one: My Applications and
+  Drafts, HR users, Teams, Approver roles, Entitlements, Leave types, Campuses,
+  the reassignment queue and its history, and both document-hub pages
+  (Supporting and Approved).
+- Shared primitives, so the rule is defined once: `lib/search.ts`
+  (`matchesSearch` — case-insensitive, every token must appear somewhere in the
+  row), `components/ui/list-search.tsx` (labelled search box with a clear
+  action) and `components/ui/filter-chips.tsx` (an `aria-pressed` chip group,
+  the same pattern the teams and delegations screens already used). Each table
+  gained an optional `empty` slot, so a search that hides every row says so
+  instead of claiming the registry itself is empty.
+- Server-side search where the endpoint already supports it: `audit?employee=`
+  (`listFinalizedApplications`) and `delegations?approver=` (`listDelegations`
+  now takes both state and approver). Both are plain GET forms that carry the
+  other active filter as a hidden input, so narrowing one never resets the
+  other. My Applications' status chips push the existing `?status=` the
+  endpoint already filters on; Drafts gets search only.
+- Overlays still resolve against the **unfiltered** dataset, so live `?user=`,
+  `?role=`, `?entitlement=` and `?team=` deep links keep opening a row the
+  current filter is hiding — a filter can never make the not-found branch fire.
+- The two document pages now share `components/documents/documents-table.tsx`.
+  Each server page maps its rows to a formatted `DocumentRow`, which is what
+  keeps `lib/documents/hub.ts` (and its server-only API client) out of the
+  browser bundle.
+- **VERIFIED** — `npm test`: 129 files / 1083 tests pass; `npm run lint`: 0
+  errors (pre-existing warnings only). New suites `tests/search.test.ts`,
+  `tests/list-controls.test.tsx` and `tests/documents-table.test.tsx`; search
+  cases added to the applications, HR-users, teams, approver-roles,
+  entitlements and reassignment suites.
+- **NOTE** — `npm run typecheck:test` still fails on one pre-existing,
+  unrelated error in `tests/tracking-service.test.ts`; nothing in this change
+  touches it.
+
+## Team-Wide Approvers on Several Chains + Routing Materialisation (2026-10-26)
+
+- **FIX** — a team-wide holder can staff steps of **every** chain the team owns,
+  including the team's **designated manager**. `ensure_not_assigned_elsewhere`
+  exempted only `wide_approver_ids_for_team`, which leaves the manager out
+  because a *membership* re-routes their own leave; a step appointment is not a
+  membership, so the chain form — which locks a step to the team's holder —
+  used to refuse the manager on the team's second chain. The guard now also
+  exempts anyone holding a team-wide role (`holds_team_wide_role`), and
+  `GET /teams/eligible-approvers/` keeps those holders offered when scoping by
+  `workflow`/`workflow=new`. Enrolment is unchanged: the manager is still an
+  ordinary member of one chain at a time, and the member pool still says so.
+- **VERIFIED** — two or more chains route together, each employee through the
+  chain they are enrolled on: `chains/tests_chain_routing.py` gained three
+  `assign_workflow` cases proving the real writer materialises the enrolled
+  chain (and the default for the unenrolled), with two members' applications
+  live on two different chains at once, plus a submission-endpoint case where
+  two employees of one team submit through the API at the same time and get the
+  stages of their own chains (`POST /leave-applications/<id>/submit/` with the
+  real `DatabaseWorkflowProvider`).
+
+## Multi-Chain Routing — Readiness and Chain Expiry (2026-10-26)
+
+- **DONE** — a team routes one or more chains at the same time: each person
+  follows the chain they are enrolled on (`WorkflowMember`), and `Team.workflow`
+  is only the default for the unenrolled and for wide approvers who staff
+  several. `chains/routing.py` is the one resolver, used by submission and by the
+  "On Leave" scope. This pass closed the two holes the default-only view left:
+  `validate_team` now checks **every chain the team routes** (default plus any
+  chain with enrolments), names the chain in step-level messages, and stops
+  reporting a missing default when enrolled members still route; a chain nobody
+  is enrolled on is not reported, so a draft replacement chain does not make a
+  team unready. `DatabaseWorkflowProvider` now refuses a chain past its
+  `effective_to` (new `workflow_ended` readiness code) instead of silently
+  routing an expired term. Tests: `chains/tests_chain_routing.py` gained five
+  readiness/expiry cases (16 tests); full `chains` suite 699 OK, and the
+  leave submission/resubmission/pipeline/API suites 51 OK.
+- **FIX** — building a second chain through `POST /workflows/` (or rewriting one
+  through `PATCH`) with an approver who already staffs another of the team's
+  chains returned a 500: `_attach_section_approvers` raises `TeamActionError`
+  from the shared appointment guard, but the workflow write path only translated
+  `WorkflowActionError`/`StageSequenceError`/`WorkflowMemberError`. Both
+  `create_workflow` and `update_workflow` now translate it to
+  `WorkflowActionError`, so the refusal is a 400 against `approver` naming the
+  step the person already holds, and the transaction leaves no half-built chain.
+  Two API tests in `chains/tests_teams.py` (`SectionApproverTests`) pin the
+  create and edit paths; the one-chain-per-employee rule itself is unchanged
+  (wide approvers remain the exception, and the picker already scopes to `new`).
+
 ## Frontend Integration — Shared App Header (2026-10-23)
 
 - **DONE** — Applied the rounded, branded `Navbar1` consistently to the
@@ -6423,3 +6835,55 @@ read-only role list, a manager staffing their own team's step and refused
 another's, HR anywhere; plus two `seed_test_profiles` manager tests). Frontend
 **117 files / 992 tests OK**; `tsc --noEmit` clean. Ruff clean on the new/edited
 seed, test, and view files.
+
+## Completed — On Leave visibility, plus teams that route several chains (2026-10-26)
+
+**Goal.** A new "On Leave" screen answering "who is away, and may I see them",
+scoped by the viewer's place in the approval hierarchy, and a routing change
+that lets one team route more than one chain at the same time.
+
+**Routing: one team, many chains.** `Team.workflow` stays exactly what it is at
+the database (a `OneToOneField`), but its meaning is now the team's **default**
+chain. A team routes every chain its people are enrolled on
+(`WorkflowMember`), each person through the chain they were placed on. The
+single definition of "which chain does this person route through" lives in the
+new `chains/routing.py` (`routed_workflow_for`, `routed_workflow_for_user`,
+`routed_chain_ids_by_user`): enrolment wins, the default is the fallback, and a
+wide approver holding several chains routes through the default. The submission
+provider (`chains/providers.py`) and the On Leave read scope both call it, so
+routing and visibility cannot diverge. A team with no default can still route
+its enrolled people, and only the unenrolled are refused — the error now names
+the employee. `teams/migrations/0003_alter_team_workflow.py` carries the
+help-text change only. Team screens say "default" rather than "in force": the
+workflows list marks a chain `Default` or `Additional`, the action is
+**Make default**, and the overview no longer claims the team "routes one".
+
+**On Leave scope ladder** (`leave/on_leave.py`, all decided server-side):
+`organisation` HR/superuser → everyone; `institution` an institution-wide
+approver → the administration teams; `campus` a campus-wide approver → the teams
+at their campus; `team` a designated manager → the teams they run, across all
+their chains; `chain` an ordinary member → the people whose leave routes through
+their own chain; `self` → their own approved leave. Only `status=approved` rows
+are listed. Rows carry `state` (`on_leave` / `upcoming` / `returned`), and the
+default listing is current + upcoming, with returned leave behind
+`include_past`. `GET /api/v1/leave/on-leave/` accepts `q` (name/email, capped at
+100) and `include_past`, and returns `today`, `scope`, `counts`, `results`.
+
+**Frontend.** `lib/on-leave.ts` (types, state labels, URL builder, server read),
+`components/leave/OnLeaveTable.tsx` (presentational), and the server-rendered
+`dashboard/leave/on-leave` page with a scope label, a compact count line, a
+search form, and a current/past toggle. `lib/nav/leave-nav.ts` gains **On
+Leave** (the existing module boundary already claims the path).
+
+**Verification.** Backend: new `chains/tests_chain_routing.py` (11 tests — an
+enrolled member routes through their chain, the unenrolled fall back, two chains
+of one team route in parallel, a wide approver uses the default, a chainless
+default still routes its enrolled members, no chain raises, and the bulk read
+agrees with the single-person answer) and `leave/tests/test_on_leave.py` (25
+tests — all six rungs, the chain being narrower than the team, a scoped role
+granted institution-wide not widening the scope, approved-only, ordering,
+`include_past`, search, the row shape, anonymous coverage, 401, and the filters
+over HTTP). Frontend: `tests/on-leave-lib.test.ts`,
+`tests/on-leave-table.test.tsx`, `tests/leave-nav.test.ts` (20 tests) and the
+dashboard-shell rail assertion for the new nav item; the full suite is **126
+files / 1061 tests OK**. `tsc --noEmit` clean; eslint reports no new warnings.

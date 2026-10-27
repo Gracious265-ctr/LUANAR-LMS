@@ -21,9 +21,7 @@ export default async function HRAdminPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-text-primary">HR Administration</h2>
-          <p className="text-text-secondary">
-            Manage employee records and configuration for the leave management system.
-          </p>
+          <p className="text-text-secondary">Manage employee records and configuration.</p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -65,10 +63,7 @@ export default async function HRAdminPage() {
             <h3 className="text-lg font-semibold text-text-primary">
               Leave Configuration
             </h3>
-            <p className="mt-1 text-sm text-text-secondary">
-              Maintain the registry of leave types and every rule attached to
-              them: eligibility, duration, notice, and documents.
-            </p>
+            <p className="mt-1 text-sm text-text-secondary">Leave types and their rules.</p>
           </Link>
           <Link
             href="/dashboard/hr-admin/roles"

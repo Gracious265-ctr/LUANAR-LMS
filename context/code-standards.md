@@ -119,6 +119,11 @@ These rules apply across all branches and environments. Code that violates these
 - Do not introduce raw hexadecimal colors when an existing design token represents the required value.
 - Do not introduce arbitrary color values without updating the project's design-token system.
 - Maintain consistent spacing, typography, borders, and radius scales.
+- Do not name a `--spacing-*` theme key after a display utility (`block`,
+  `flex`, `grid`, `inline`, `table`, …). Tailwind turns the key into a utility
+  suffix, so `--spacing-block` emits a second `.inline-block` rule that
+  overrides the display utility. Use the intended layout word instead
+  (`--spacing-stack`).
 - Reuse existing utility patterns before creating new styling patterns.
 - Do not create inline styles when an existing Tailwind utility or project token provides the required styling.
 - Do not create a new visual pattern for a component when an existing project pattern already solves the same problem.

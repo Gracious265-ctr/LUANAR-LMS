@@ -114,7 +114,7 @@ class Migration(migrations.Migration):
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
-            options={"ordering": ["label"]},
+            options={"db_table": "workflows_approverrole", "ordering": ["label"]},
         ),
         migrations.CreateModel(
             name="Campus",
@@ -130,12 +130,12 @@ class Migration(migrations.Migration):
                 ),
                 ("name", models.CharField(max_length=200, unique=True)),
                 ("code", models.SlugField(max_length=50, unique=True)),
-                ("description", models.TextField(blank=True, default="")),
+                ("description", models.TextField(blank=True, default="", null=True)),
                 ("is_active", models.BooleanField(default=True)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
             ],
-            options={"ordering": ["name"]},
+            options={"db_table": "workflows_campus", "ordering": ["name"]},
         ),
         migrations.CreateModel(
             name="RoleAssignment",
@@ -167,7 +167,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-            options={"ordering": ["role", "user"]},
+            options={"db_table": "workflows_roleassignment", "ordering": ["role", "user"]},
         ),
         migrations.CreateModel(
             name="Team",
@@ -218,7 +218,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-            options={"ordering": ["name"]},
+            options={"db_table": "workflows_team", "ordering": ["name"]},
         ),
         migrations.CreateModel(
             name="TeamMember",

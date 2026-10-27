@@ -379,21 +379,6 @@ class ApprovalNotificationTests(StubProviderMixin, TestCase):
         row = self._for(self.employee, "application.rejected").get()
         self.assertIn("was rejected", row.message)
 
-    def test_correction_request_notifies_the_employee(self):
-        app = self._submitted()
-
-        with self.captureOnCommitCallbacks(execute=True):
-            decide(
-                application_id=app.pk,
-                actor=self.supervisor,
-                action=ApprovalDecision.Action.RETURN_FOR_CORRECTION,
-                comment="Please review the leave dates.",
-                expected_version=1,
-            )
-
-        row = self._for(self.employee, "application.correction_required").get()
-        self.assertIn("needs correction", row.message)
-
     def test_resubmission_reopens_the_stage_with_a_fresh_pending_item(self):
         app = self._submitted()
         with self.captureOnCommitCallbacks(execute=True):

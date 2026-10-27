@@ -165,6 +165,20 @@ describe("TeamForm", () => {
       <TeamForm campuses={campuses} roles={roles} employees={[maryManager]} />
     );
 
+    // The rail names the two pages of a create: the details being filled in,
+    // then the manager who runs the new team.
+    let progress = within(
+      screen.getByRole("group", { name: "Form progress" })
+    );
+    expect(progress.getByText("Team details").closest("li")).toHaveAttribute(
+      "data-state",
+      "current"
+    );
+    expect(progress.getByText("Team manager").closest("li")).toHaveAttribute(
+      "data-state",
+      "pending"
+    );
+
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Registry" },
     });
@@ -177,6 +191,16 @@ describe("TeamForm", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Continue to the manager" })
+    );
+
+    progress = within(screen.getByRole("group", { name: "Form progress" }));
+    expect(progress.getByText("Team details").closest("li")).toHaveAttribute(
+      "data-state",
+      "completed"
+    );
+    expect(progress.getByText("Team manager").closest("li")).toHaveAttribute(
+      "data-state",
+      "current"
     );
 
     chooseManager();
@@ -289,6 +313,17 @@ describe("TeamForm", () => {
     );
 
     // An edit opens on the steps page, because that is where the work is.
+    const progress = within(
+      screen.getByRole("group", { name: "Form progress" })
+    );
+    expect(progress.getByText("Team details").closest("li")).toHaveAttribute(
+      "data-state",
+      "completed"
+    );
+    expect(progress.getByText("Approval steps").closest("li")).toHaveAttribute(
+      "data-state",
+      "current"
+    );
     expect(
       screen.getByRole("heading", { name: "Who approves for this team" })
     ).toBeInTheDocument();

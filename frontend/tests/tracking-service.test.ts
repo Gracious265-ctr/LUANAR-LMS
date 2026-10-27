@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchTracking } from "@/lib/tracking/service";
+import { fetchTracking, acceptRejection } from "@/lib/tracking/service";
 import type { TrackingResponse } from "@/lib/tracking/types";
 
 const BASE_URL = "/api/leave/leave-applications/app-1/tracking/";
@@ -97,5 +97,53 @@ describe("fetchTracking", () => {
     });
     await fetchTracking("app-1");
     expect(seen).toEqual([BASE_URL]);
+  });
+});
+
+describe("acceptRejection", () => {
+  it("posts to the accept-rejection proxy path", async () => {
+    const seen: Array<{ url: string; method?: string }> = [];
+    mockFetch((url) => {
+      seen.push(url);
+      return Promise.resolve(jsonResponse({ status: "rejected" }, 200));
+    });
+
+    const result = await acceptRejection("app-1");
+
+    expect(result).toEqual({ ok: true });
+    expect(seen).toEqual([
+      "/api/leave/leave-applications/app-1/accept-rejection/",
+    ]);
+  });
+
+  it("explains a 409 as 'not rejected'", async () => {
+    mockFetch(() =>
+      Promise.resolve(jsonResponse({ code: "NOT_REJECTED" }, 409))
+    );
+
+    const result = await acceptRejection("app-1");
+
+    expect(result).toEqual({
+      ok: false,
+      message: "This application is not rejected.",
+    });
+  });
+
+  it("forwards a backend detail on other failures", async () => {
+    mockFetch(() =>
+      Promise.resolve(jsonResponse({ detail: "Server exploded" }, 500))
+    );
+
+    const result = await acceptRejection("app-1");
+
+    expect(result).toEqual({ ok: false, message: "Server exploded" });
+  });
+
+  it("turns network failures into an error result", async () => {
+    mockFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await acceptRejection("app-1");
+
+    expect(result).toMatchObject({ ok: false });
   });
 });

@@ -187,6 +187,22 @@ describe("TeamsSection — wave 2", () => {
     ).toBeNull();
   });
 
+  it("narrows the teams list to the search text", () => {
+    renderSection({
+      teams: [
+        makeTeam(),
+        makeTeam({ id: 9, name: "Registry", campus: null, campus_name: "" }),
+      ],
+    });
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search teams" }), {
+      target: { value: "registry" },
+    });
+
+    expect(screen.getByText("Registry")).toBeInTheDocument();
+    expect(screen.queryByText("Bunda College Faculty")).toBeNull();
+  });
+
   it("keeps the retired filter when opening the create form", () => {
     searchParamsRef.current = new URLSearchParams("status=retired");
     renderSection({ teams: [] });

@@ -64,12 +64,7 @@ from django.utils import timezone
 from leave.models import FinancialYear, GradeEntitlement
 from leave_types.models import LeaveType
 from campuses.models import Campus, CampusRoleAssignment
-from roles.models import ApproverRole, RoleAssignment (
-    ApproverRole,
-    Campus,
-    CampusRoleAssignment,
-    RoleAssignment,
-)
+from roles.models import ApproverRole, RoleAssignment
 from roles.services import (
     RoleActionError,
     create_campus_role_assignment,

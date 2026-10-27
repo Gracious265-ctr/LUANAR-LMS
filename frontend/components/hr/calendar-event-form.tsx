@@ -124,10 +124,7 @@ export function CalendarEventForm({
         />
         Block or warn on leave that overlaps this event
       </label>
-      <p className="text-xs text-text-muted md:col-span-2">
-        Leave this off for a purely informational entry. Turning it on promotes
-        the event to a period that affects leave calculations.
-      </p>
+      <p className="text-xs text-text-muted md:col-span-2">Turn this on for a period that affects leave calculations.</p>
 
       {error && (
         <FormError className="md:col-span-2">{error}</FormError>

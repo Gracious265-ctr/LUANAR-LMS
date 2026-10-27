@@ -33,16 +33,12 @@ export function NotificationPopoverContent({
   const [items, setItems] = useState<Notification[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    setItems(null);
-    try {
-      setItems(await listNotifications());
-    } catch (err) {
+  const load = useCallback(() => {
+    listNotifications().then(setItems, (err: unknown) => {
       setError(
         err instanceof Error ? err.message : "Failed to load your notifications"
       );
-    }
+    });
   }, []);
 
   useEffect(() => {
