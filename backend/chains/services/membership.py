@@ -890,9 +890,13 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
     listed separately under ``current`` so a client can render them as checked
     rather than as a second assignment.
 
-    ``assigned_elsewhere`` is read-only: people the team has already placed on
-    a different chain, with the workflow named so the refusal message and the
-    UI can both say where they already sit.
+    ``assigned_elsewhere`` is people the team has already placed on a
+    different chain, with the workflow named so the refusal message and the UI
+    can both say where they already sit. Each row also says ``kind``: a
+    ``"member"`` is a normal member of that chain, while a ``"step"`` staffs
+    one of its steps. Neither is offerable here — a person serves one chain of
+    the team at a time — so both can only join this one after being removed
+    from the chain they are on.
     """
     team_profiles = list(
         EmployeeProfile.objects.filter(team=team, user__is_active=True)
@@ -958,6 +962,7 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
                         "email": user.email,
                         "workflow_id": row.workflow_id,
                         "workflow_name": row.workflow.name,
+                        "kind": "member",
                     }
                 )
                 continue
@@ -966,6 +971,7 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
                 {
                     "workflow_id": row.workflow_id,
                     "workflow_name": row.workflow.name,
+                    "kind": "member",
                 },
             )
         else:
@@ -977,7 +983,11 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
             wf_id, wf_name = approver_elsewhere[user_id]
             payload = _pool_person(
                 profile,
-                {"workflow_id": wf_id, "workflow_name": wf_name},
+                {
+                    "workflow_id": wf_id,
+                    "workflow_name": wf_name,
+                    "kind": "step",
+                },
             )
         elsewhere_payload.append(payload)
 
@@ -1061,9 +1071,20 @@ def sync_workflow_members(
 
     Used by the workflow write path so HR can set membership in the same pass
     as the chain itself. ``None`` means "leave membership alone"; an empty list
-    means "clear it". Every id is validated through
-    :func:`assign_workflow_member`, so a write cannot smuggle in somebody from
-    another team or a second workflow of this one.
+    means "clear it".
+
+    A person may serve only one of the team's chains at a time. Naming somebody
+    who is already a normal member of another chain is **refused** rather than
+    moving them: this list says who is on *this* chain, and taking them off the
+    other one would silently change a chain this write does not own. The same
+    goes for somebody who staffs a step of another chain — free them from that
+    chain first, then add them here.
+
+    Every id is validated through :func:`assign_workflow_member`, so a write
+    cannot smuggle in somebody from another team and the one-chain rule is
+    re-checked inside the transaction. The refusal rolls the whole write back,
+    so a member list that mixed free and already-placed people leaves every
+    chain exactly as it was.
     """
     if user_ids is None:
         return list(
@@ -1094,14 +1115,21 @@ def sync_workflow_members(
         before_ids = set(current)
         members: list[WorkflowMember] = []
         for user_id in wanted_ids:
-            members.append(
-                assign_workflow_member(
-                    workflow=workflow,
-                    user=users[user_id],
-                    actor=actor,
-                    added_by=actor,
+            user = users[user_id]
+            try:
+                members.append(
+                    assign_workflow_member(
+                        workflow=workflow,
+                        user=user,
+                        actor=actor,
+                        added_by=actor,
+                    )
                 )
-            )
+            except WorkflowMemberError as exc:
+                # The request is writing this chain's member list, so report the
+                # refusal against that list rather than against a single-user
+                # endpoint the caller did not use.
+                raise WorkflowMemberError("members", exc.message) from exc
         after_ids = {membership.user_id for membership in members}
         if before_ids != after_ids:
             _shared.record_audit(

@@ -3,13 +3,16 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { FilePen, Inbox, Plus } from "lucide-react";
+import { FilePen, Inbox, Plus, SearchX } from "lucide-react";
 
 import { type LeaveApplication } from "@/lib/leave-api";
 import { useLeaveApplications } from "@/lib/hooks/useLeaveApplications";
+import { matchesSearch } from "@/lib/search";
 import { getLeaveTypes } from "@/lib/services/leaveTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { FilterChips } from "@/components/ui/filter-chips";
+import { ListSearch } from "@/components/ui/list-search";
 import { EmptyState } from "@/components/ui/states";
 import { Stagger } from "@/components/motion/Stagger";
 import { StaggerItem } from "@/components/motion/StaggerItem";
@@ -25,6 +28,21 @@ interface OverlayTarget {
   applicationId?: string;
   stage: LeaveOverlayStage;
 }
+
+/**
+ * The statuses My Applications can be narrowed to. `submitted` reads as
+ * "Pending" because that is what the card's own badge calls it, and the value
+ * stays the backend's code because the filter is applied by the endpoint.
+ */
+const STATUS_FILTERS = [
+  { value: "", label: "All" },
+  { value: "submitted", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
+] as const;
+
+type StatusFilter = (typeof STATUS_FILTERS)[number]["value"];
 
 /**
  * The list of leave applications, with the apply flow as an overlay. Rendered
@@ -59,6 +77,46 @@ export function ApplicationsList({ view }: { view: "applications" | "drafts" }) 
         : { status: statusFilter, excludeStatus: "draft" }
     );
   const [leaveTypeNames, setLeaveTypeNames] = useState<Record<number, string>>({});
+  const [search, setSearch] = useState("");
+
+  // A hand-edited `?status=` outside the five codes is passed to the API
+  // unchanged but cannot select a chip, so the bar honestly reads "All".
+  const activeStatus: StatusFilter = STATUS_FILTERS.some(
+    (option) => option.value === statusFilter
+  )
+    ? (statusFilter as StatusFilter)
+    : "";
+
+  const visibleApplications = useMemo(
+    () =>
+      applications.filter((application) =>
+        matchesSearch(search, [
+          application.reference_number,
+          application.reason,
+          application.status,
+          application.start_date,
+          application.end_date,
+          application.leave_type_id != null
+            ? leaveTypeNames[application.leave_type_id]
+            : null,
+        ])
+      ),
+    [applications, leaveTypeNames, search]
+  );
+
+  const setStatusFilter = useCallback(
+    (next: StatusFilter) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next) {
+        params.set("status", next);
+      } else {
+        params.delete("status");
+      }
+      const query = params.toString();
+      router.push(query ? `${basePath}?${query}` : basePath);
+    },
+    [basePath, router, searchParams]
+  );
 
   const composeParam = searchParams.get("compose");
   const editParam = searchParams.get("edit");
@@ -222,6 +280,30 @@ export function ApplicationsList({ view }: { view: "applications" | "drafts" }) 
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ListSearch
+          value={search}
+          onChange={setSearch}
+          label={
+            isDrafts ? "Search drafts" : "Search applications"
+          }
+          placeholder={
+            isDrafts
+              ? "Search by reference, leave type, or dates"
+              : "Search by reference, leave type, dates, or reason"
+          }
+          className="w-full sm:w-80"
+        />
+        {!isDrafts && (
+          <FilterChips
+            label="Filter applications by status"
+            options={STATUS_FILTERS}
+            value={activeStatus}
+            onChange={setStatusFilter}
+          />
+        )}
+      </div>
+
       {applications.length === 0 ? (
         <Card>
           <EmptyState
@@ -246,9 +328,17 @@ export function ApplicationsList({ view }: { view: "applications" | "drafts" }) 
             }
           />
         </Card>
+      ) : visibleApplications.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<SearchX className="h-10 w-10" />}
+            title="No matching applications"
+            description="Try a different reference, leave type, date, or status."
+          />
+        </Card>
       ) : (
         <Stagger className="grid gap-4">
-          {applications.map((app) => (
+          {visibleApplications.map((app) => (
             <StaggerItem key={app.id}>
               <ApplicationCard
                 application={app}

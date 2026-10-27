@@ -2,12 +2,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
-import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { AdvanceCard } from "@/components/hr/advance-card";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessTeams } from "@/lib/nav/teams-nav";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
-import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { getTeam } from "@/lib/teams";
 import { buttonVariants } from "@/components/ui/button";
 
 /**
@@ -53,8 +52,6 @@ export default async function WorkflowDetailPage({
   if (workflow.team !== team.id) {
     notFound();
   }
-
-  const workflows = await listTeamWorkflows(team.id).catch(() => []);
 
   return (
     <div className="space-y-6">

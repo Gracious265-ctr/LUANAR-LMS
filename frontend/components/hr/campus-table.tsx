@@ -25,16 +25,21 @@ import {
 export function CampusTable({
   campuses,
   teams,
+  empty,
 }: {
   campuses: Campus[];
   teams: Team[];
+  /** Overrides the empty state — the list supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (campuses.length === 0) {
     return (
-      <EmptyPanel
-        title="No campuses yet"
-        description="A campus is where an academic team sits."
-      />
+      empty ?? (
+        <EmptyPanel
+          title="No campuses yet"
+          description="A campus is where an academic team sits."
+        />
+      )
     );
   }
 

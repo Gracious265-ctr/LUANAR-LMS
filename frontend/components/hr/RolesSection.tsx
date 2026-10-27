@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Plus } from "lucide-react";
 
@@ -11,13 +12,26 @@ import type {
   TeamRoleAssignment,
 } from "@/lib/approver-roles";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
+import { matchesSearch } from "@/lib/search";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { ApproverRoleForm } from "@/components/hr/approver-role-form";
 import { ApproverRoleTable } from "@/components/hr/approver-role-table";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/states";
+import { FilterChips } from "@/components/ui/filter-chips";
+import { ListSearch } from "@/components/ui/list-search";
 
 /** Query key for the approver-role overlay on the list page. */
 export const APPROVER_ROLE_PARAM = "role";
+
+/** State narrowing for the registry. Labels stay distinct from the row badge. */
+const STATE_FILTERS = [
+  { value: "", label: "All roles" },
+  { value: "active", label: "Active only" },
+  { value: "retired", label: "Retired only" },
+] as const;
+
+type StateFilter = (typeof STATE_FILTERS)[number]["value"];
 
 /**
  * The approver-role registry as a create/edit overlay.
@@ -29,8 +43,10 @@ export const APPROVER_ROLE_PARAM = "role";
  * bookmarked URL still lands on the form.
  *
  * Retired roles stay listed and stay editable — HR needs to see that a role
- * exists and why — so this list has no filter that could hide a row and no
- * not-found case beyond an id that matches nothing.
+ * exists and why. The local search and state chips narrow what the table draws,
+ * not what the overlay resolves against, so a `?role=<id>` deep link still opens
+ * a row the current filter hides; the not-found case stays an id that matches
+ * nothing at all.
  *
  * The institution-wide holder block below the table is deliberately not part of
  * this section: `RoleAssignmentForm` is a per-role widget rather than a
@@ -63,7 +79,29 @@ export function RolesSection({
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(APPROVER_ROLE_PARAM);
+  const [search, setSearch] = useState("");
+  const [state, setState] = useState<StateFilter>("");
 
+  const visibleRoles = useMemo(
+    () =>
+      roles.filter((role) => {
+        if (state === "active" && !role.is_active) return false;
+        if (state === "retired" && role.is_active) return false;
+        return matchesSearch(search, [
+          role.label,
+          role.code,
+          role.description,
+          role.is_active ? "active" : "retired",
+          role.history_scope,
+          role.is_institution_wide ? "institution-wide" : "team role",
+          ...role.usage,
+        ]);
+      }),
+    [roles, search, state]
+  );
+
+  // Editing resolves against the whole registry: narrowing the table must not
+  // make a live `?role=<id>` deep link read as a row that no longer exists.
   const editing =
     overlay.target !== null && !overlay.isCreate
       ? roles.find((row) => String(row.id) === overlay.target)
@@ -83,14 +121,38 @@ export function RolesSection({
         </Button>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <ListSearch
+          value={search}
+          onChange={setSearch}
+          label="Search approver roles"
+          placeholder="Search by role, code, or description"
+          className="w-full sm:w-80"
+        />
+        <FilterChips
+          label="Filter approver roles by state"
+          options={STATE_FILTERS}
+          value={state}
+          onChange={setState}
+        />
+      </div>
+
       <ApproverRoleTable
-        roles={roles}
+        roles={visibleRoles}
         assignments={assignments}
         teamHoldings={teamHoldings}
         campusHoldings={campusHoldings}
         teamNameById={teamNameById}
         campusNameById={campusNameById}
         onEdit={overlay.openEdit}
+        empty={
+          search || state ? (
+            <EmptyState
+              title="No roles match this search"
+              description="Try a different role, code, description, or state."
+            />
+          ) : undefined
+        }
       />
 
       <AdminFormOverlay

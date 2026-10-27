@@ -76,7 +76,6 @@ export default async function NewWorkflowPage({
         <h2 className="mt-2 text-2xl font-bold text-text-primary">
           New workflow for {team.name}
         </h2>
-        <p className="text-text-secondary">Describe the steps in order.</p>
       </div>
 
       <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

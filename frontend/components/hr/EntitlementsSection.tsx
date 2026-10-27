@@ -1,16 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Plus } from "lucide-react";
 
 import type { Entitlement } from "@/lib/entitlements";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
+import { matchesSearch } from "@/lib/search";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { EntitlementForm } from "@/components/hr/entitlement-form";
 import { EntitlementTable } from "@/components/hr/entitlement-table";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/states";
+import { ListSearch } from "@/components/ui/list-search";
 
 /** Query key for the entitlement overlay on the list page. */
 export const ENTITLEMENT_PARAM = "entitlement";
@@ -21,10 +25,12 @@ export const ENTITLEMENT_PARAM = "entitlement";
  * Edit mode resolves the record from the rows already on screen: the table
  * carries the whole grade band, so there is no per-record request.
  *
- * This list has no filter of its own. `?grade` on the page is a lookup that
- * answers "what does this grade get", not a narrowing of the table, so no
- * row can be hidden out from under the overlay and there is no not-found case
- * beyond an id that matches nothing at all.
+ * This list's own narrowing is the local search, which filters grades, day
+ * counts, leave types, and effective dates in the browser. `?grade` on the page
+ * remains a separate lookup that answers "what does this grade get", not a
+ * narrowing of the table. Editing resolves against every rule rather than the
+ * searched view, so a hidden row still opens from `?entitlement=<id>` and there
+ * is no not-found case beyond an id that matches nothing at all.
  */
 export function EntitlementsSection({
   entitlements,
@@ -40,7 +46,27 @@ export function EntitlementsSection({
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(ENTITLEMENT_PARAM);
+  const [search, setSearch] = useState("");
 
+  const visible = useMemo(
+    () =>
+      entitlements.filter((rule) => {
+        const current = today ? rule.effective_from <= today : true;
+        return matchesSearch(search, [
+          rule.grade_start,
+          rule.grade_end,
+          `${rule.grade_start}-${rule.grade_end}`,
+          rule.days,
+          rule.leave_type_name,
+          rule.effective_from,
+          current ? "current" : "scheduled",
+        ]);
+      }),
+    [entitlements, search, today]
+  );
+
+  // Editing resolves against every rule, not the narrowed view: a filter must
+  // not make a live `?entitlement=<id>` deep link read as a deleted record.
   const editing =
     overlay.target !== null && !overlay.isCreate
       ? entitlements.find((row) => String(row.id) === overlay.target)
@@ -70,10 +96,26 @@ export function EntitlementsSection({
         </Button>
       </div>
 
-            <EntitlementTable
-        entitlements={entitlements}
+      <ListSearch
+        value={search}
+        onChange={setSearch}
+        label="Search entitlement rules"
+        placeholder="Search by grade, days, leave type, or date"
+        className="mb-4 w-full sm:w-80"
+      />
+
+      <EntitlementTable
+        entitlements={visible}
         today={today}
         onEdit={overlay.openEdit}
+        empty={
+          search ? (
+            <EmptyState
+              title="No entitlement rules match this search"
+              description="Try a different grade, number of days, leave type, or date."
+            />
+          ) : undefined
+        }
       />
 
       <AdminFormOverlay

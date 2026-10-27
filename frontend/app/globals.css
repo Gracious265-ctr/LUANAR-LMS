@@ -530,10 +530,15 @@
   --z-index-portal-above: var(--z-index-portal-above);
   --z-index-toast: var(--z-index-toast);
 
-  /* Spacing Rhythm (named additions; the numeric scale is untouched) */
+  /* Spacing Rhythm (named additions; the numeric scale is untouched)
+     NOTE: a key here becomes a utility suffix, so `block` collided with the
+     `inline-block` display utility — Tailwind emitted a second
+     `.inline-block { inline-size: var(--space-block) }` rule that shrank every
+     inline-block element to 20px and let its text overflow. Keep display
+     keywords (`block`, `flex`, `grid`, `table`, `inline`, …) out of this list. */
   --spacing-hairline: var(--space-hairline);
   --spacing-tight: var(--space-tight);
-  --spacing-block: var(--space-block);
+  --spacing-stack: var(--space-block);
   --spacing-group: var(--space-group);
   --spacing-section: var(--space-section);
   --spacing-gutter: var(--space-gutter);

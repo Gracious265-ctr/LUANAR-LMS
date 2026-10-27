@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 
-import { WorkflowRoutingActions } from "@/components/hr/workflow-routing-actions";
 import { WorkflowCompactCard } from "@/components/hr/workflow-compact-card";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessTeams } from "@/lib/nav/teams-nav";
@@ -93,28 +92,17 @@ export default async function TeamWorkflowsPage({
         {workflows.length === 0 ? (
           <p className="text-sm text-text-muted">None yet.</p>
         ) : (
-          <ul className="divide-y divide-border-default">
+          <ul className="space-y-3">
             {workflows.map((workflow) => (
-              <li
-                key={workflow.id}
-                className="rounded-lg border border-border-default bg-surface-page p-4"
-              >
+              <li key={workflow.id}>
                 <WorkflowCompactCard
                   workflow={workflow}
                   teamId={team.id}
-                  readOnly={true}
                 />
               </li>
             ))}
           </ul>
         )}
-      </div>
-
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          Default chain
-        </h3>
-        <WorkflowRoutingActions team={team} workflows={workflows} />
       </div>
     </div>
   );

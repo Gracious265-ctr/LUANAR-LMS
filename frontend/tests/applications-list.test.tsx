@@ -138,6 +138,56 @@ describe("ApplicationsList (My Applications)", () => {
 
     expect(await screen.findByRole("link", { name: "Track this application" })).toBeInTheDocument();
   });
+
+  it("narrows the loaded applications to the search text", async () => {
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 2,
+      results: [
+        makeApplication({
+          id: "annual-1",
+          status: "submitted",
+          leave_type_id: 1,
+          reference_number: "LV-ANNUAL",
+        }),
+        makeApplication({
+          id: "sick-1",
+          status: "submitted",
+          leave_type_id: 2,
+          reference_number: "LV-SICK",
+          reason: "Flu",
+        }),
+      ],
+    });
+
+    render(<ApplicationsList view="applications" />);
+    await screen.findByText("LV-ANNUAL");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search applications" }),
+      { target: { value: "annual" } }
+    );
+
+    expect(screen.getByText("LV-ANNUAL")).toBeInTheDocument();
+    expect(screen.queryByText("LV-SICK")).toBeNull();
+    // The header still counts the whole list; only the rows are narrowed.
+    expect(screen.getByText("2 applications")).toBeInTheDocument();
+  });
+
+  it("puts the status chip into the URL so the endpoint applies it", async () => {
+    vi.mocked(getLeaveApplications).mockResolvedValue({
+      count: 1,
+      results: [makeApplication({ id: "submitted-1", status: "submitted" })],
+    });
+
+    render(<ApplicationsList view="applications" />);
+    await screen.findByText("My Applications");
+
+    fireEvent.click(screen.getByRole("button", { name: "Approved" }));
+
+    expect(pushMock).toHaveBeenCalledWith(
+      "/dashboard/leave/applications?status=approved"
+    );
+  });
 });
 
 describe("ApplicationsList (Drafts)", () => {

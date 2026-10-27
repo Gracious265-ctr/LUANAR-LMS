@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ReassignmentsSection } from "@/components/hr/ReassignmentsSection";
-import { ReassignmentTable } from "@/components/hr/reassignment-table";
+import { ReassignmentHistory } from "@/components/hr/ReassignmentHistory";
 import { getCurrentUser } from "@/lib/auth";
 import type { Employee } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
@@ -91,7 +91,7 @@ export default async function ReassignmentsPage({
               {historyError}
             </div>
           ) : history ? (
-            <ReassignmentTable reassignments={history.results} />
+            <ReassignmentHistory reassignments={history.results} />
           ) : null}
         </Card>
       </div>

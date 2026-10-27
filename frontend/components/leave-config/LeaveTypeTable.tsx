@@ -29,21 +29,30 @@ import {
  * the edit view, which is what makes "row → Deactivate → Confirm" exactly the
  * three clicks the spec budgets.
  */
-export function LeaveTypeTable({ leaveTypes }: { leaveTypes: LeaveType[] }) {
+export function LeaveTypeTable({
+  leaveTypes,
+  empty,
+}: {
+  leaveTypes: LeaveType[];
+  /** Overrides the empty state — the list supplies search-aware copy. */
+  empty?: React.ReactNode;
+}) {
   if (leaveTypes.length === 0) {
     return (
-      <EmptyState
-        title="No leave types configured yet"
-        description="Leave, Plans and Approvals all read from this registry."
-        action={
-          <Link
-            href="/leave-config/new"
-            className="inline-flex h-control-height-md items-center gap-control-gap rounded-control border border-transparent bg-button-primary px-control-x-md text-sm font-medium text-button-primary-foreground transition-colors hover:bg-button-primary-hover focus-ring"
-          >
-            Create Leave Type
-          </Link>
-        }
-      />
+      empty ?? (
+        <EmptyState
+          title="No leave types configured yet"
+          description="Leave, Plans and Approvals all read from this registry."
+          action={
+            <Link
+              href="/leave-config/new"
+              className="inline-flex h-control-height-md items-center gap-control-gap rounded-control border border-transparent bg-button-primary px-control-x-md text-sm font-medium text-button-primary-foreground transition-colors hover:bg-button-primary-hover focus-ring"
+            >
+              Create Leave Type
+            </Link>
+          }
+        />
+      )
     );
   }
 

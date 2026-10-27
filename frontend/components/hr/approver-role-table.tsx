@@ -134,6 +134,7 @@ export function ApproverRoleTable({
   teamNameById,
   campusNameById,
   onEdit,
+  empty,
 }: {
   roles: ApproverRole[];
   /**
@@ -155,13 +156,17 @@ export function ApproverRoleTable({
    * to the standalone edit page, in which case the pencil renders as a link.
    */
   onEdit?: (id: number) => void;
+  /** Overrides the empty state — the section supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (roles.length === 0) {
     return (
-      <EmptyState
-        title="No roles found"
-        description="Create a role to give it to a team or to one person at institution, team or campus scope."
-      />
+      empty ?? (
+        <EmptyState
+          title="No roles found"
+          description="Create a role to give it to a team or to one person at institution, team or campus scope."
+        />
+      )
     );
   }
 

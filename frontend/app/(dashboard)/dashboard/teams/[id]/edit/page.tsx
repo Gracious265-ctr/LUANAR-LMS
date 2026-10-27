@@ -62,7 +62,6 @@ export default async function EditTeamPage({
           <h2 className="mt-2 text-2xl font-bold text-text-primary">
             Edit {team.name}
           </h2>
-          <p className="text-text-secondary">What this team is, when it is in force, and its approval steps.</p>
         </div>
 
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">

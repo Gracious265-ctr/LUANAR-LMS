@@ -3,10 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import type { Team, WorkflowRef } from "@/lib/teams";
+import type { WorkflowRef } from "@/lib/teams";
 import { routeTeamThrough } from "@/lib/teams-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 /**
  * Make one of a team's chains its default, from wherever that chain is listed.
@@ -59,90 +67,69 @@ export function RouteChainButton({
     }
   }
 
-  if (confirming) {
-    return (
-      <span className="flex flex-wrap items-center justify-end gap-2 text-xs">
-        <span className="text-text-secondary">
-          This chain only starts routing once it is created with its steps and its members are enrolled. Everyone already enrolled keeps their chain — employees not on another chain will route through this one.
-        </span>
-        <Button
-          size="sm"
-          disabled={busy}
-          loading={busy}
-          onClick={() => void routeThrough()}
-        >
-          Yes, make it default
-        </Button>
+  return (
+    <>
+      <span className="inline-flex items-center gap-2">
+        {error && !confirming && (
+          <span className="text-xs text-status-rejected">{error}</span>
+        )}
         <Button
           variant="secondary"
           size="sm"
-          disabled={busy}
-          onClick={() => setConfirming(false)}
+          onClick={() => setConfirming(true)}
         >
-          Keep the current default
+          Make default
         </Button>
-        {error && <span className="text-xs text-status-rejected">{error}</span>}
       </span>
-    );
-  }
 
-  return (
-    <span className="inline-flex items-center gap-2">
-      {error && <span className="text-xs text-status-rejected">{error}</span>}
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => setConfirming(true)}
+      <Dialog
+        open={confirming}
+        onOpenChange={(next) => {
+          if (!next && !busy) {
+            setConfirming(false);
+            setError("");
+          }
+        }}
       >
-        Make default
-      </Button>
-    </span>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              Make &ldquo;{workflow.name}&rdquo; the default?
+            </DialogTitle>
+            <DialogDescription>
+              This chain only starts routing once it is created with its steps
+              and its members are enrolled. Everyone already enrolled keeps
+              their chain — employees not on another chain will route through
+              this one.
+            </DialogDescription>
+          </DialogHeader>
+
+          {error && (
+            <p className="text-sm text-status-rejected">{error}</p>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                setError("");
+              }}
+            >
+              Keep the current default
+            </Button>
+            <Button
+              disabled={busy}
+              loading={busy}
+              onClick={() => void routeThrough()}
+            >
+              Yes, make it default
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
-/**
- * The team's default chain, and the others it routes by enrolment.
- *
- * Every chain with steps is listed, one `RouteChainButton` per row: the team
- * routes all of them, and only one is the default.
- */
-export function WorkflowRoutingActions({
-  team,
-  workflows,
-}: {
-  team: Team;
-  workflows: WorkflowRef[];
-}) {
-  const routable = workflows.filter((workflow) => workflow.section_count > 0);
-
-  if (routable.length === 0) {
-    return (
-      <p className="text-sm text-text-muted">
-        This team owns no chain with steps yet, so it routes nothing. Build the
-        chain first.
-      </p>
-    );
-  }
-
-  return (
-    <ul className="divide-y divide-border-default">
-      {routable.map((workflow) => (
-        <li
-          key={workflow.id}
-          className="flex flex-wrap items-center justify-between gap-2 py-2"
-        >
-          <div>
-            <span className="font-medium text-text-primary">
-              {workflow.name}
-            </span>
-            <p className="text-xs text-text-muted">
-              {workflow.section_count} step
-              {workflow.section_count === 1 ? "" : "s"}
-            </p>
-          </div>
-          <RouteChainButton teamId={team.id} workflow={workflow} />
-        </li>
-      ))}
-    </ul>
-  );
-}

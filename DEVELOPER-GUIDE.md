@@ -191,6 +191,13 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
 | Shared API client / how tokens are attached | `frontend/lib/api-client.ts` |
 | Shared utilities (`cn`, error messages, dates) | `frontend/lib/utils.ts` |
+| **Search and filter** controls on a list screen | `frontend/components/ui/list-search.tsx`, `frontend/components/ui/filter-chips.tsx`, matching rule in `frontend/lib/search.ts` |
+| The **progress rail** above a form split across pages | `frontend/components/ui/form-progress.tsx` (wraps `frontend/components/ui/Stepper.tsx`) |
+| The team create/edit form (details → manager or approval steps) | `frontend/components/hr/team-form.tsx` |
+| A team's **chain builder** (steps page → members page) | `frontend/components/hr/workflow-form.tsx` |
+| The **chain cards** on a team's workflows page (badge, Edit, Make default) | `frontend/components/hr/workflow-compact-card.tsx` |
+| The **multi-select employee picker** used to add a team's or a chain's members | `frontend/components/hr/employee-picker-dialog.tsx` |
+| The Supporting/Approved **document tables** (shared by both pages) | `frontend/components/documents/documents-table.tsx` |
 
 ---
 
@@ -216,6 +223,114 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    `frontend/app/(dashboard)/dashboard/hr-admin/<name>/page.tsx` → a helper in
    `frontend/lib/`.
 3. Add the sidebar link in `frontend/components/dashboard/dashboard-shell.tsx`.
+
+**I want to add search or a filter to a list screen.**
+1. **Decide who filters.** If the page already loads the whole list, filter in
+   the browser. If the backend endpoint takes a query parameter for it, keep it
+   server-side so the filtering happens over the whole dataset, not one page.
+2. **Local search:** render
+   `frontend/components/ui/list-search.tsx` (`ListSearch` — controlled, labelled,
+   with a clear action) and filter with `matchesSearch(query, [...values])` from
+   `frontend/lib/search.ts`. Pass the values the row actually shows (name, code,
+   reference, status label, formatted date) so the box finds what the eye sees.
+3. **Local enum narrowing:** `frontend/components/ui/filter-chips.tsx`
+   (`FilterChips`) for active/retired, account status, etc. Give each chip a
+   label distinct from the row badge ("Active only", not "Active") or Testing
+   Library will find two elements with the same text.
+4. **Keep the empty state honest.** A table that takes an optional `empty` slot
+   (`AdminUserTable`, `TeamTable`, `ApproverRoleTable`, `EntitlementTable`,
+   `LeaveTypeTable`, `CampusTable`, `FinalizedLeaveTable`,
+   `PendingApplicationsTable`, `ReassignmentTable`) should be handed
+   "nothing matches this search" when a filter caused the emptiness, and
+   `undefined` otherwise — an empty registry and a hidden row mean different
+   things.
+5. **Resolve overlays against the unfiltered list.** A section's `?user=<id>` /
+   `?role=<id>` / `?entitlement=<id>` / `?team=<id>` lookup must read the full
+   array it was given (`users.find(...)`, not `visible.find(...)`), or a filter
+   turns a live deep link into a not-found.
+6. **Server search:** add the parameter to the `lib/` helper (see
+   `listFinalizedApplications({ employee })` in `frontend/lib/audit.ts` and
+   `listDelegations(state, approver)` in `frontend/lib/delegations.ts`), then
+   render a plain `method="get"` form with `Input` + `Button`. Carry every
+   *other* active filter as `<input type="hidden">` (see the audit and
+   delegations pages) so searching does not silently reset the tab or the
+   history filters; build the "Clear" links from the same helper that builds the
+   form's own URL.
+7. Add a case to the existing suite for the screen, or a small one for a new
+   shared component. `frontend/tests/list-controls.test.tsx` covers the two
+   primitives.
+
+**I want to split a form across pages or add a progress rail.**
+1. Render `frontend/components/ui/form-progress.tsx` (`FormProgress`) at the
+   top of every page, passing **all** stages in order and the id of the current
+   one. It derives completed/current/pending from position, so a page never
+   invents its own statuses.
+2. Keep one `<form>` and one payload. The forward button is `type="button"`
+   and only validates the page and moves it (`setPage(2)`) — it has no write
+   path at all. The save button on the last page is also `type="button"` and
+   calls the save function directly, running the same validation again (see
+   `stepsProblem()` in `frontend/components/hr/workflow-form.tsx`). A page that
+   can be returned to can be changed, so the check that opened the next page is
+   not evidence about what will be written.
+3. Make the form's native submit **inert**. A browser can submit the form while
+   an earlier page is showing — Enter in a field or select, or autofill — even
+   when that page has no submit button, and a `type="submit"` anywhere would let
+   that write. The workflow form's `onSubmit` only calls `preventDefault()`;
+   pages move through their own click handlers, and Enter in the page's text
+   input advances explicitly. Ignore a click whose `event.detail > 1` on the
+   save button. The stronger rule is layout: put the last page's write at the
+   **far end** of its action row, with the harmless "Back" next to where the
+   forward button was, so a repeat click cannot land on the write at all; key
+   the two action rows so the focused forward button is unmounted instead of
+   becoming a focused save. As a fallback for narrow screens that wrap the row,
+   also record the forward click's point and time and ignore a save click that
+   lands within ~32px of it, inside 1.5s, with the pointer never having moved.
+   End that pending gesture on the first `pointermove` beyond ~8px, otherwise a
+   deliberate click on a save button that happens to sit under the old spot
+   would be swallowed.
+4. Keep the forward button enabled and let the validation say what is missing.
+   `stepsProblem()` returns the message **and the control that fixes it**, so
+   the cursor lands on the field, button or select to change instead of an
+   alert the viewer may be scrolled away from. Only disable an action that
+   genuinely cannot do anything (e.g. "Add step" once every approver role
+   already sits on a step).
+5. Test the boundary, not just the final submit: assert the rail's
+   `data-state` values, that the later page is absent before advancing, that
+   the forward action calls no write API (`createWorkflow`/`updateWorkflow`) and
+   that Enter and an implicit `submit` neither advance nor write, that a
+   `detail: 2` click on save does not write while a `detail: 1` click does, that
+   a `detail: 1` click at the forward button's point does not write either, that
+   the leading action on the later page is the way back rather than the write,
+   that a repeat click at the forward point is not a save, that moving the
+   pointer lets the same click write, that
+   "Back" keeps what was already entered, and that the write API is not called
+   on page one.
+6. Give the last page its own gate, and say it before the click. The workflow
+   form will not write a chain with nobody on it (`membersProblem()`): the save
+   button is disabled while the list is empty, a one-line reason sits above the
+   actions, and `handleSave` repeats the rule so no stray click can bypass it.
+   When a later page shows somebody who is *already placed elsewhere*, treat
+   that as context, not as an action. One person serves one chain of a team at a
+   time, so `workflow_member_pool` returns them under `assigned_elsewhere` with
+   a `kind` (`"member"` or `"step"`) and the member page puts that list behind a
+   **View … already on another chain** button instead of printing it beside the
+   people who can join; the dialog shows what the pool already knows about each
+   person, so it is inspectable without a write path and without linking to the
+   employee directory, which a team's manager cannot read. The rule is enforced
+   on the write side too: both `assign_workflow_member` and
+   `sync_workflow_members` refuse an already-placed person (the sync reports it
+   against `members`) instead of silently moving them off another chain. Wide
+   approvers are the one exception: their holdings staff chains automatically,
+   so they stay addable to several and their row carries
+   `is_wide_approver`.
+7. Add members several at a time. Both rosters open
+   `frontend/components/hr/employee-picker-dialog.tsx`, which holds the
+   selection, searches the already-loaded pool, and confirms with a count. The
+   team roster sends the whole selection to `POST /teams/{id}/members/` as
+   `users: [id, …]`; `add_team_members` validates and writes the batch in one
+   transaction, so one refusal rolls the whole selection back. The chain page
+   merges the selected ids into `members` and writes them with the workflow, so
+   a chain add stays one save rather than one request per person.
 
 **I want to add a new validation rule for leave applications.**
 1. Put the rule in `backend/leave/validation/validators/`.

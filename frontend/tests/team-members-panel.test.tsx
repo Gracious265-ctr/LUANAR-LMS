@@ -1,11 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeamMembersPanel } from "@/components/hr/team-members-panel";
 import { makeEmployee } from "@/lib/employees/__fixtures__";
 import type { TeamMemberSummary } from "@/lib/team-members";
 import {
-  addTeamMember,
+  addTeamMembers,
   listTeamMembers,
   removeTeamMember,
 } from "@/lib/team-members-client";
@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/team-members-client", () => ({
   listTeamMembers: vi.fn(),
-  addTeamMember: vi.fn(),
+  addTeamMembers: vi.fn(),
   removeTeamMember: vi.fn(),
   getWorkflowMemberPool: vi.fn(),
   removeWorkflowMember: vi.fn(),
@@ -135,17 +135,76 @@ describe("TeamMembersPanel", () => {
   });
 
   it("adds an unassigned employee to the team", async () => {
-    vi.mocked(addTeamMember).mockResolvedValue([...[]]);
+    vi.mocked(addTeamMembers).mockResolvedValue([...[]]);
     render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
     await screen.findByText("Ruth Member");
 
-    fireEvent.change(screen.getByLabelText("Employee to add to this team"), {
-      target: { value: "99" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add to team" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Sam Candidate" })
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add 1 to team" })
+    );
 
-    await waitFor(() => expect(addTeamMember).toHaveBeenCalledWith(4, 99));
+    await waitFor(() => expect(addTeamMembers).toHaveBeenCalledWith(4, [99]));
     expect(refresh).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+  });
+
+  it("adds several employees in one selection", async () => {
+    const second = makeEmployee({
+      id: 31,
+      user_id: 100,
+      full_name: "Pat Second",
+      designation: "Officer",
+      team: null,
+      team_name: "",
+    });
+    vi.mocked(addTeamMembers).mockResolvedValue([]);
+    render(
+      <TeamMembersPanel team={team} candidates={[unassigned, second]} />
+    );
+    await screen.findByText("Ruth Member");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Select all shown" }));
+    expect(
+      within(dialog).getByRole("button", { name: "Add 2 to team" })
+    ).toBeEnabled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add 2 to team" })
+    );
+
+    await waitFor(() =>
+      expect(addTeamMembers).toHaveBeenCalledWith(4, [99, 100])
+    );
+  });
+
+  it("shows the backend's reason when an add is refused", async () => {
+    vi.mocked(addTeamMembers).mockRejectedValue(
+      new Error("Sam Candidate is already on Registry Operations.")
+    );
+    render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
+    await screen.findByText("Ruth Member");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Sam Candidate" })
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add 1 to team" })
+    );
+
+    expect(
+      await within(dialog).findByText(/already on Registry Operations/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("shows the backend's reason when a removal is refused", async () => {
@@ -169,19 +228,22 @@ describe("TeamMembersPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("offers only the scoped candidates in the add picker and says so", async () => {
+  it("opens the picker with only the scoped candidates and says so", async () => {
     render(<TeamMembersPanel team={team} candidates={[unassigned]} />);
     await screen.findByText("Ruth Member");
 
     expect(
-      screen.getByRole("option", { name: /Sam Candidate/ })
+      screen.getByText(/who match this team's category are offered here/)
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add employees" }));
+    const dialog = await screen.findByRole("dialog");
     // The picker's promise is scoped by the team's category and by who is
     // already its wide approver. The server read those filters (the panel is
     // handed the filtered candidates), and the copy names the scope rather
     // than implying the whole directory is on offer.
     expect(
-      screen.getByText(/who match this team's category are offered here/)
+      within(dialog).getByRole("checkbox", { name: "Sam Candidate" })
     ).toBeInTheDocument();
   });
 });

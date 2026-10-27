@@ -339,7 +339,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
                   />
                 </Field>
 
-                <div className="space-y-block">
+                <div className="space-y-stack">
                   <p
                     id="color-label"
                     className="text-sm font-medium leading-none text-text-secondary"

@@ -112,6 +112,18 @@ describe("ReassignmentsSection", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("narrows the pending queue to the search text", () => {
+    renderSection();
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search pending applications" }),
+      { target: { value: "jane dean" } }
+    );
+
+    expect(screen.getByText("LUANAR-2026-0002")).toBeInTheDocument();
+    expect(screen.queryByText("LUANAR-2026-0001")).toBeNull();
+  });
+
   it("turns the row action into a button that targets the row id", () => {
     renderSection();
 

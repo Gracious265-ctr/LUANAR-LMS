@@ -1370,3 +1370,47 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     return locked_profile
 
 
+def add_team_members(
+    *, team: Team, users: list[User], actor
+) -> list[EmployeeProfile]:
+    """Place several employees on a team in one all-or-nothing write.
+
+    The roster picker lets HR select more than one person at once, so this
+    repeats :func:`add_team_member` inside one transaction: every refusal is
+    collected, and if any person cannot join, the whole selection is rolled
+    back. Without the outer transaction a selection could leave half its people
+    on the team and report only the one that failed, which reads as a partial
+    roster nobody chose.
+
+    A single request still reports one field error, ``users``, naming each
+    person who could not join. The audit rows the successful adds wrote are
+    rolled back with them.
+    """
+    seen: set[int] = set()
+    for user in users:
+        if user.pk in seen:
+            raise WorkflowMemberError(
+                "users",
+                "Remove duplicate employees from the selection.",
+            )
+        seen.add(user.pk)
+
+    if not users:
+        raise WorkflowMemberError(
+            "users",
+            "Select at least one employee to add.",
+        )
+
+    with transaction.atomic():
+        profiles: list[EmployeeProfile] = []
+        refusals: list[str] = []
+        for user in users:
+            try:
+                profiles.append(add_team_member(team=team, user=user, actor=actor))
+            except WorkflowMemberError as exc:
+                refusals.append(exc.message)
+        if refusals:
+            raise WorkflowMemberError("users", " ".join(refusals))
+    return profiles
+
+

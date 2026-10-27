@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowLeft, ArrowUp, Lock, Plus, X } from "lucide-react";
 
@@ -23,6 +23,8 @@ import { listEligibleApprovers } from "@/lib/teams-client";
 import type { Workflow, WorkflowInput, WorkflowSectionInput } from "@/lib/workflows";
 import { createWorkflow, updateWorkflow } from "@/lib/workflows-client";
 import { Button } from "@/components/ui/button";
+import { EmployeePickerDialog } from "@/components/hr/employee-picker-dialog";
+import { FormProgress } from "@/components/ui/form-progress";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +47,18 @@ interface DraftStep {
 interface WideHolder {
   id: number;
   name: string;
+}
+
+/**
+ * Something page one is missing, and the control that fixes it.
+ *
+ * The form names the problem in an alert, but an alert alone reads as "nothing
+ * happened" when the fix is off screen. Carrying the control with the message
+ * lets the form put the cursor where the work is.
+ */
+interface StepsProblem {
+  message: string;
+  focus: HTMLInputElement | HTMLButtonElement | HTMLSelectElement | null;
 }
 
 /**
@@ -104,6 +118,7 @@ export function WorkflowForm({
   rolesError?: string;
 }) {
   const router = useRouter();
+  const [page, setPage] = useState<1 | 2>(1);
   const [name, setName] = useState(workflow?.name ?? "");
   const [steps, setSteps] = useState<DraftStep[]>(() =>
     workflow
@@ -126,6 +141,22 @@ export function WorkflowForm({
   const [loading, setLoading] = useState(false);
   const [pool, setPool] = useState<WorkflowMemberPool | null>(null);
   const [poolError, setPoolError] = useState("");
+  /**
+   * Whether the "already on another chain" list is open.
+   *
+   * The list is a statement about people who cannot join, so it stays behind a
+   * button rather than taking space beside the people who can. Opening it costs
+   * no request: the pool row already carries every field it shows.
+   */
+  const [elsewhereOpen, setElsewhereOpen] = useState(false);
+  /**
+   * Whether the multi-select add picker is open.
+   *
+   * Members are added several at a time, so the selection is held in the
+   * picker and merged into `memberIds` once, rather than making the roster
+   * re-render after every person.
+   */
+  const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [memberIds, setMemberIds] = useState<number[]>(() =>
     (workflow?.members ?? []).map((member) => member.user)
   );
@@ -139,6 +170,25 @@ export function WorkflowForm({
   const [teamHolders, setTeamHolders] = useState<TeamRoleAssignment[]>([]);
   const [campusHolders, setCampusHolders] = useState<CampusRoleAssignment[]>([]);
 
+  // Where "Continue" sends the cursor when page one is incomplete.
+  const nameRef = useRef<HTMLInputElement>(null);
+  const addStepRef = useRef<HTMLButtonElement>(null);
+  const newRoleRef = useRef<HTMLButtonElement>(null);
+  const roleRefs = useRef<Array<HTMLSelectElement | null>>([]);
+  /**
+   * Where and when the member page was opened.
+   *
+   * The save action is deliberately rendered at the far end of its own action
+   * row, so a click that repeats the Continue gesture normally lands on
+   * "Back to steps" rather than on a write. This guard is the second line of
+   * defence for the layouts where that separation does not hold: a narrow
+   * screen wraps the row, and a slow second click arrives with `detail: 1`
+   * just like the first one. Remembering the gesture lets the save ignore it.
+   */
+  const advanceGesture = useRef<{ x: number; y: number; at: number } | null>(
+    null
+  );
+
   const roleByCode = useMemo(
     () => new Map(availableRoles.map((role) => [role.code, role])),
     [availableRoles]
@@ -151,6 +201,18 @@ export function WorkflowForm({
     () => new Map(availableRoles.map((role) => [role.code, role.id])),
     [availableRoles]
   );
+  /**
+   * The roles no step has claimed yet.
+   *
+   * One role may sit at only one point in a chain, so a new step must start on
+   * an unused role: starting it on one already taken filled the step with a
+   * duplicate the form then refused to continue past, and the second select's
+   * only pre-selected option was the disabled one.
+   */
+  const unusedRoles = useMemo(() => {
+    const used = new Set(steps.map((step) => step.approver_role).filter(Boolean));
+    return availableRoles.filter((role) => !used.has(role.code));
+  }, [availableRoles, steps]);
 
   /**
    * The single holder of each role at each scope, narrowest first.
@@ -302,14 +364,39 @@ export function WorkflowForm({
     };
   }, [team.id, workflow?.id]);
 
+  /**
+   * The gesture that opened the member page ends as soon as the pointer moves.
+   *
+   * A pointer that has travelled is the sign of somebody choosing Save rather
+   * than repeating the click they just made. This keeps the guard below from
+   * swallowing a deliberate click on a button the mouse had to reach.
+   */
+  useEffect(() => {
+    if (page !== 2) return;
+    function endGesture(event: PointerEvent) {
+      const origin = advanceGesture.current;
+      if (origin === null) return;
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 8) {
+        advanceGesture.current = null;
+      }
+    }
+    window.addEventListener("pointermove", endGesture);
+    return () => window.removeEventListener("pointermove", endGesture);
+  }, [page]);
+
   const selectedIds = new Set(memberIds);
 
-function toggleMember(userId: number) {
+  function toggleMember(userId: number) {
     setMemberIds((current) =>
       current.includes(userId)
         ? current.filter((id) => id !== userId)
         : [...current, userId]
     );
+  }
+
+  function addMembers(userIds: number[]) {
+    setMemberIds((current) => [...new Set([...current, ...userIds])]);
+    setAddMembersOpen(false);
   }
 
   const peopleById = new Map<
@@ -338,9 +425,18 @@ function toggleMember(userId: number) {
   const addable = (pool?.available ?? []).filter(
     (person) => !selectedIds.has(person.user)
   );
+  /**
+   * People the team has already placed on another of its chains.
+   *
+   * They are listed for context only: a person serves one chain of the team at
+   * a time, so somebody already on another chain cannot be added here. They
+   * only become addable after HR removes them from the chain they are on, at
+   * which point the server's pool returns them under ``available``.
+   */
   const elsewhere = pool?.assigned_elsewhere ?? [];
 
   function move(index: number, direction: -1 | 1) {
+    setError("");
     setSteps((current) => {
       const next = [...current];
       const target = index + direction;
@@ -351,6 +447,7 @@ function toggleMember(userId: number) {
   }
 
   function remove(index: number) {
+    setError("");
     setSteps((current) => current.filter((_, position) => position !== index));
   }
 
@@ -373,6 +470,7 @@ function toggleMember(userId: number) {
    * the answer now rather than a step that looks undecided.
    */
   function changeRole(index: number, approverRole: string) {
+    setError("");
     setSteps((current) =>
       current.map((step, position) => {
         if (position !== index) return step;
@@ -393,16 +491,24 @@ function toggleMember(userId: number) {
     );
   }
 
+  /**
+   * Starts the next step on a role no step uses yet.
+   *
+   * The button is disabled when every role is taken, because a step can only be
+   * saved on a unique role — offering a step whose select has no valid option is
+   * a dead end, not a draft.
+   */
   function addStep() {
-    setSteps((current) => {
-      const approverRole = availableRoles[0]?.code ?? "";
-      const role = roleByCode.get(approverRole);
-      const approver =
-        role !== undefined
-          ? (wideHolderByRoleId.get(role.id)?.id ?? null)
-          : null;
-      return [...current, { approver_role: approverRole, approver }];
-    });
+    const role = unusedRoles[0];
+    if (role === undefined) return;
+    setError("");
+    setSteps((current) => [
+      ...current,
+      {
+        approver_role: role.code,
+        approver: wideHolderByRoleId.get(role.id)?.id ?? null,
+      },
+    ]);
   }
 
   /**
@@ -474,37 +580,141 @@ function toggleMember(userId: number) {
     });
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-
+  /**
+   * Everything page one must be true before the chain can move on: a name, at
+   * least one step, a role on every step, and no role twice.
+   *
+   * It runs on "Continue" and again on submit. The member page is not a dead
+   * end — HR can step back, change the steps, and return — so the check that
+   * opened page two is not evidence about the chain being written.
+   *
+   * Each problem carries the control that fixes it, so "Continue" puts the
+   * cursor on the missing name or the repeated role instead of only printing a
+   * line the viewer may be scrolled away from.
+   */
+  function stepsProblem(): StepsProblem | null {
     if (!name.trim()) {
-      setError(
-        "Give this chain its own name. It is what the team's chain list and the audit trail call it, so it cannot be left blank."
-      );
-      setLoading(false);
-      return;
+      return {
+        message: "Give this chain a name before continuing.",
+        focus: nameRef.current,
+      };
     }
     if (steps.length === 0) {
-      setError("A chain needs at least one step before it can be saved.");
-      setLoading(false);
-      return;
+      return availableRoles.length === 0
+        ? {
+            message:
+              "No approver roles are available, so no step can be described. Use “New role” to add one.",
+            focus: newRoleRef.current,
+          }
+        : {
+            message: "Add at least one step, then continue to members.",
+            focus: addStepRef.current,
+          };
     }
-    if (steps.some((step) => !step.approver_role)) {
-      setError("Every step needs a role. Pick one for each step.");
-      setLoading(false);
-      return;
+    const unstaffed = steps.findIndex((step) => !step.approver_role);
+    if (unstaffed !== -1) {
+      return {
+        message: "Every step needs a role. Pick one for each step.",
+        focus: roleRefs.current[unstaffed] ?? null,
+      };
     }
     const repeated = repeatedRole();
     if (repeated) {
-      setError(
-        `Two steps both use the ${roleByCode.get(repeated)?.label ?? repeated} role. ` +
-          "Give each step its own role, so one office cannot sign off twice on the same application."
+      // The later step is the one to change; the first occurrence stays put.
+      const later = steps.map((step) => step.approver_role).lastIndexOf(repeated);
+      return {
+        message:
+          `Two steps both use the ${roleByCode.get(repeated)?.label ?? repeated} role. ` +
+          "Give each step its own role, so one office cannot sign off twice on the same application.",
+        focus: roleRefs.current[later] ?? null,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * What page two still needs before the chain may be written.
+   *
+   * A chain with nobody on it routes no one: it looks configured and does
+   * nothing. That is why the workflow is only saved once the people who will
+   * follow it have been put on it, and why the save button stays disabled
+   * until then. The submit guard catches an implicit Enter as well.
+   */
+  function membersProblem(): string | null {
+    if (memberIds.length === 0) {
+      return (
+        "Add at least one team member to this chain before saving it — " +
+        "a chain nobody is on routes no one."
       );
-      setLoading(false);
+    }
+    return null;
+  }
+
+  function handleContinue(event?: React.MouseEvent<HTMLButtonElement>) {
+    const problem = stepsProblem();
+    setError(problem?.message ?? "");
+    if (problem) {
+      problem.focus?.focus();
       return;
     }
+    // The page this click opens is not the one it started on. Remember the
+    // gesture so the save button that lands under the same pointer ignores the
+    // tail of it. A keyboard advance has no point to remember: there is no
+    // pointer resting on Save afterwards.
+    advanceGesture.current =
+      event && event.detail >= 1
+        ? { x: event.clientX, y: event.clientY, at: Date.now() }
+        : null;
+    setPage(2);
+  }
+
+  /**
+   * Whether a click is the tail of the gesture that opened the member page.
+   *
+   * True when it lands where Continue was, soon after the page changed, and
+   * without the pointer having moved since — the shape of a stray second click,
+   * not of somebody reading the page and then choosing to save. A keyboard
+   * activation has no coordinates and `detail` 0, so it never counts.
+   */
+  function isAdvanceGesture(event: React.MouseEvent<HTMLButtonElement>) {
+    const origin = advanceGesture.current;
+    if (origin === null || event.detail < 1) return false;
+    if (Date.now() - origin.at > 1500) return false;
+    const distance = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
+    return distance <= 32;
+  }
+
+  /**
+   * The only way a chain is written: a deliberate single click on the save
+   * button on the member page.
+   *
+   * Nothing saves through the form's native submit. The form is one element
+   * across both pages, so an implicit submit (Enter, autofill, or a control
+   * the browser counts as one) could otherwise write a chain nobody has
+   * finished describing. The save button is therefore `type="button"` and the
+   * form's `onSubmit` only prevents the default; page one moves forward through
+   * `handleContinue()` and the name field's explicit Enter handler.
+   */
+  async function handleSave() {
+    if (page !== 2) return;
+
+    const problem = stepsProblem();
+    if (problem) {
+      setError(problem.message);
+      // The fix is on the first page, so show where it is rather than an error
+      // over a member list that cannot correct it.
+      setPage(1);
+      return;
+    }
+
+    const noMembers = membersProblem();
+    if (noMembers) {
+      setError(noMembers);
+      return;
+    }
+
+    setError("");
+    setLoading(true);
 
     const input: WorkflowInput = {
       name: name.trim(),
@@ -541,375 +751,521 @@ function toggleMember(userId: number) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label
-          htmlFor="workflow_name"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Name
-        </label>
-        <Input
-          id="workflow_name"
-          name="name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          placeholder={`e.g. ${team.name} replacement`}
-        />
-      </div>
+    <form
+      // A native submit never writes: the save button is a plain button and
+      // calls `handleSave` itself, so Enter/autofill/the browser cannot save a
+      // chain that was not deliberately submitted.
+      onSubmit={(event) => event.preventDefault()}
+      className="space-y-4"
+    >
+      <FormProgress
+        stages={[
+          { id: "steps", label: "Steps" },
+          { id: "members", label: "Members" },
+        ]}
+        current={page === 1 ? "steps" : "members"}
+      />
 
-      <div>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm font-medium text-text-primary">Steps</span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={() => {
-                setRoleDialogError("");
-                setNewRoleName("");
-                setRoleDialogOpen(true);
+      {page === 1 && (
+        <>
+          <div>
+            <label
+              htmlFor="workflow_name"
+              className="mb-1 block text-sm font-medium text-text-primary"
+            >
+              Name
+            </label>
+            <Input
+              ref={nameRef}
+              id="workflow_name"
+              name="name"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setError("");
               }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New role
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              type="button"
-              onClick={addStep}
-              disabled={availableRoles.length === 0}
-            >
-              Add step
-            </Button>
+              onKeyDown={(event) => {
+                // Page one has no save action, so Enter advances rather than
+                // submitting the whole chain and skipping the member page.
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleContinue();
+                }
+              }}
+              required
+              placeholder={`e.g. ${team.name} replacement`}
+            />
           </div>
-        </div>
 
-        {rolesError && (
-          <p className="mb-2 text-xs text-status-rejected">{rolesError}</p>
-        )}
-        {candidateError && (
-          <p className="mb-2 text-xs text-status-rejected">{candidateError}</p>
-        )}
-        {roleNotice && (
-          <p className="mb-2 text-xs text-status-approved">{roleNotice}</p>
-        )}
-        {availableRoles.length === 0 && (
-          <p className="mb-2 text-xs text-status-pending">
-            No approver roles yet. Use “New role” to add one.
-          </p>
-        )}
-
-        {steps.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-            No steps yet.
-          </p>
-        ) : (
-          <ol className="space-y-2">
-            {steps.map((step, index) => {
-              const roleId = roleIdByCode.get(step.approver_role);
-              const people =
-                roleId === undefined
-                  ? []
-                  : (candidates[`${team.id}:${roleId}`] ?? []);
-              // An appointed approver must stay visible and selectable even if
-              // they are not in the fetched pool any more (e.g. the step's
-              // role changed since they were appointed, or they left the team's
-              // pool after the appointment).
-              const optionPeople =
-                step.approver != null &&
-                !people.some((person) => person.id === step.approver)
-                  ? [
-                      ...people,
-                      {
-                        id: step.approver,
-                        full_name: approverNameById.get(step.approver) ?? "Current approver",
-                        email: "",
-                        designation: "",
-                      },
-                    ]
-                  : people;
-              // A role with a wide holder has one true approver — the
-              // narrowest holder of that role for this team — so the field is
-              // locked to that name and another may not be selected.
-              const wideHolder =
-                roleId !== undefined
-                  ? wideHolderByRoleId.get(roleId)
-                  : undefined;
-              return (
-              <li
-                key={index}
-                className="flex flex-wrap items-end gap-2 rounded-md border border-border-default bg-surface-page p-3"
-              >
-                <span className="w-6 shrink-0 pb-2 text-sm font-medium text-text-muted">
-                  {index + 1}
-                </span>
-                <div className="min-w-44 flex-1">
-                  <label
-                    htmlFor={`step-role-${index}`}
-                    className="mb-1 block text-xs font-medium text-text-secondary"
-                  >
-                    Role
-                  </label>
-                  <select
-                    id={`step-role-${index}`}
-                    value={step.approver_role}
-                    onChange={(event) =>
-                      changeRole(index, event.target.value)
-                    }
-                    className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
-                  >
-                    {availableRoles.map((role) => {
-                      const usedIndex = steps.findIndex(
-                        (step) => step.approver_role === role.code
-                      );
-                      const usedElsewhere =
-                        usedIndex !== -1 && usedIndex !== index;
-                      return (
-                        <option
-                          key={role.id}
-                          value={role.code}
-                          disabled={usedElsewhere}
-                        >
-                          {role.label}
-                          {role.is_institution_wide
-                            ? " (institution-wide)"
-                            : ""}
-                          {usedElsewhere
-                            ? ` — used in step ${usedIndex + 1}`
-                            : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div className="min-w-40 flex-1">
-                  <label
-                    htmlFor={`step-approver-${index}`}
-                    className="mb-1 block text-xs font-medium text-text-secondary"
-                  >
-                    Approver
-                  </label>
-                  {wideHolder ? (
-                    <div
-                      id={`step-approver-${index}`}
-                      className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
-                    >
-                      <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
-                      <span className="font-medium">{wideHolder.name}</span>
-                    </div>
-                  ) : (
-                    <select
-                      id={`step-approver-${index}`}
-                      value={step.approver ?? ""}
-                      onChange={(event) =>
-                        update(index, {
-                          approver: event.target.value
-                            ? Number(event.target.value)
-                            : null,
-                        })
-                      }
-                      disabled={roleId === undefined}
-                      className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">
-                        {step.approver != null
-                          ? approverNameById.get(step.approver) ?? "Not appointed yet"
-                          : people.length > 0
-                            ? "Not appointed yet"
-                            : roleId === undefined
-                              ? "Pick a role first"
-                              : "Nobody may be appointed here yet"}
-                      </option>
-                      {optionPeople.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.full_name}
-                          {person.designation ? ` — ${person.designation}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 pb-1">
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    aria-label={`Move step ${index + 1} earlier`}
-                    disabled={index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    aria-label={`Move step ${index + 1} later`}
-                    disabled={index === steps.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    aria-label={`Remove step ${index + 1}`}
-                    onClick={() => remove(index)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </li>
-              );
-            })}
-          </ol>
-        )}
-      </div>
-
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-text-primary">
-            Normal workflow members
-          </span>
-        </div>
-
-        {poolError && <p className="mb-2 text-sm text-status-rejected">{poolError}</p>}
-
-        {!pool && !poolError && (
-          <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
-            Loading members...
-          </p>
-        )}
-
-        {pool && (
-          <div className="space-y-3">
-            {memberIds.length > 0 ? (
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
-                  On this chain ({memberIds.length})
-                </p>
-                <ul className="mt-1 divide-y divide-border-default rounded-md border border-border-default">
-                  {memberIds.map((userId) => {
-                    const person = peopleById.get(userId);
-                    return (
-                      <li
-                        key={userId}
-                        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-text-primary">
-                            {person?.full_name ?? "Member"}
-                          </p>
-                          <p className="text-xs text-text-muted">
-                            {[person?.designation ?? "", person?.email ?? ""]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => toggleMember(userId)}
-                        >
-                          Remove
-                        </Button>
-                      </li>
-                    );
-                  })}
-                </ul>
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium text-text-primary">Steps</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  ref={newRoleRef}
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => {
+                    setRoleDialogError("");
+                    setNewRoleName("");
+                    setRoleDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  New role
+                </Button>
+                <Button
+                  ref={addStepRef}
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={addStep}
+                  disabled={unusedRoles.length === 0}
+                >
+                  Add step
+                </Button>
               </div>
+            </div>
+
+            {rolesError && (
+              <p className="mb-2 text-xs text-status-rejected">{rolesError}</p>
+            )}
+            {candidateError && (
+              <p className="mb-2 text-xs text-status-rejected">{candidateError}</p>
+            )}
+            {roleNotice && (
+              <p className="mb-2 text-xs text-status-approved">{roleNotice}</p>
+            )}
+            {availableRoles.length === 0 && (
+              <p className="mb-2 text-xs text-status-pending">
+                No approver roles yet. Use “New role” to add one.
+              </p>
+            )}
+            {steps.length > 0 &&
+              availableRoles.length > 0 &&
+              unusedRoles.length === 0 && (
+                <p className="mb-2 text-xs text-status-pending">
+                  Every role is already on a step. Use “New role” to add
+                  another.
+                </p>
+              )}
+
+            {steps.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
+                No steps yet.
+              </p>
             ) : (
-              <p className="rounded-md border border-dashed border-border-default p-3 text-sm text-text-muted">
-                No members yet.
+              <ol className="space-y-2">
+                {steps.map((step, index) => {
+                  const roleId = roleIdByCode.get(step.approver_role);
+                  const people =
+                    roleId === undefined
+                      ? []
+                      : (candidates[`${team.id}:${roleId}`] ?? []);
+                  // An appointed approver must stay visible and selectable even if
+                  // they are not in the fetched pool any more (e.g. the step's
+                  // role changed since they were appointed, or they left the team's
+                  // pool after the appointment).
+                  const optionPeople =
+                    step.approver != null &&
+                    !people.some((person) => person.id === step.approver)
+                      ? [
+                          ...people,
+                          {
+                            id: step.approver,
+                            full_name: approverNameById.get(step.approver) ?? "Current approver",
+                            email: "",
+                            designation: "",
+                          },
+                        ]
+                      : people;
+                  // A role with a wide holder has one true approver — the
+                  // narrowest holder of that role for this team — so the field is
+                  // locked to that name and another may not be selected.
+                  const wideHolder =
+                    roleId !== undefined
+                      ? wideHolderByRoleId.get(roleId)
+                      : undefined;
+                  return (
+                  <li
+                    key={index}
+                    className="flex flex-wrap items-end gap-2 rounded-md border border-border-default bg-surface-page p-3"
+                  >
+                    <span className="w-6 shrink-0 pb-2 text-sm font-medium text-text-muted">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-44 flex-1">
+                      <label
+                        htmlFor={`step-role-${index}`}
+                        className="mb-1 block text-xs font-medium text-text-secondary"
+                      >
+                        Role
+                      </label>
+                      <select
+                        id={`step-role-${index}`}
+                        ref={(element) => {
+                          roleRefs.current[index] = element;
+                        }}
+                        value={step.approver_role}
+                        onChange={(event) =>
+                          changeRole(index, event.target.value)
+                        }
+                        className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus"
+                      >
+                        {availableRoles.map((role) => {
+                          const usedIndex = steps.findIndex(
+                            (step) => step.approver_role === role.code
+                          );
+                          const usedElsewhere =
+                            usedIndex !== -1 && usedIndex !== index;
+                          return (
+                            <option
+                              key={role.id}
+                              value={role.code}
+                              disabled={usedElsewhere}
+                            >
+                              {role.label}
+                              {role.is_institution_wide
+                                ? " (institution-wide)"
+                                : ""}
+                              {usedElsewhere
+                                ? ` — used in step ${usedIndex + 1}`
+                                : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    <div className="min-w-40 flex-1">
+                      <label
+                        htmlFor={`step-approver-${index}`}
+                        className="mb-1 block text-xs font-medium text-text-secondary"
+                      >
+                        Approver
+                      </label>
+                      {wideHolder ? (
+                        <div
+                          id={`step-approver-${index}`}
+                          className="flex items-center gap-2 rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary"
+                        >
+                          <Lock className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+                          <span className="font-medium">{wideHolder.name}</span>
+                        </div>
+                      ) : (
+                        <select
+                          id={`step-approver-${index}`}
+                          value={step.approver ?? ""}
+                          onChange={(event) =>
+                            update(index, {
+                              approver: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            })
+                          }
+                          disabled={roleId === undefined}
+                          className="w-full rounded-md border border-input-border bg-input-background px-3 py-1.5 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">
+                            {step.approver != null
+                              ? approverNameById.get(step.approver) ?? "Not appointed yet"
+                              : people.length > 0
+                                ? "Not appointed yet"
+                                : roleId === undefined
+                                  ? "Pick a role first"
+                                  : "Nobody may be appointed here yet"}
+                          </option>
+                          {optionPeople.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.full_name}
+                              {person.designation ? ` — ${person.designation}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 pb-1">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        aria-label={`Move step ${index + 1} earlier`}
+                        disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        aria-label={`Move step ${index + 1} later`}
+                        disabled={index === steps.length - 1}
+                        onClick={() => move(index, 1)}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        aria-label={`Remove step ${index + 1}`}
+                        onClick={() => remove(index)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </>
+      )}
+
+      {page === 2 && (
+        <>
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium text-text-primary">
+                Normal workflow members
+              </span>
+            </div>
+
+            {poolError && <p className="mb-2 text-sm text-status-rejected">{poolError}</p>}
+
+            {!pool && !poolError && (
+              <p className="rounded-md border border-dashed border-border-default p-4 text-sm text-text-muted">
+                Loading members...
               </p>
             )}
 
-            {addable.length > 0 ? (
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
-                  Team members who can join
-                </p>
-                <ul className="mt-1 divide-y divide-border-default rounded-md border border-border-default">
-                  {addable.map((person) => (
-                    <li
-                      key={person.user}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">
-                          {person.full_name}
-                        </p>
-                        <p className="text-xs text-text-muted">
-                          {[person.designation, person.email]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => toggleMember(person.user)}
-                      >
-                        Add
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
-              <p className="text-xs text-text-muted">No other members can join.</p>
-            )}
+            {pool && (
+              <div className="space-y-3">
+                {memberIds.length > 0 ? (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                      On this chain ({memberIds.length})
+                    </p>
+                    <ul className="mt-1 divide-y divide-border-default rounded-md border border-border-default">
+                      {memberIds.map((userId) => {
+                        const person = peopleById.get(userId);
+                        return (
+                          <li
+                            key={userId}
+                            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-text-primary">
+                                {person?.full_name ?? "Member"}
+                              </p>
+                              <p className="text-xs text-text-muted">
+                                {[person?.designation ?? "", person?.email ?? ""]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => toggleMember(userId)}
+                            >
+                              Remove
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-dashed border-border-default p-3 text-sm text-text-muted">
+                    No members yet.
+                  </p>
+                )}
 
-            {elsewhere.length > 0 && (
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
-                  Already on another chain of this team
-                </p>
-                <ul className="mt-1 divide-y divide-border-default rounded-md border border-border-default">
-                  {elsewhere.map((person) => (
-                    <li
-                      key={person.user}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                {addable.length > 0 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-border-default p-3">
+                    <div>
+                      <p className="text-sm font-medium text-text-primary">
+                        Team members who can join
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {addable.length} person
+                        {addable.length === 1 ? "" : "s"} on this team
+                        {addable.length === 1 ? " is" : " are"} not on another
+                        of its chains.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setAddMembersOpen(true)}
                     >
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">
-                          {person.full_name}
-                        </p>
-                        <p className="text-xs text-text-muted">
-                          On {person.workflow_name}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      Add employees
+                    </Button>
+                  </div>
+                ) : elsewhere.length > 0 ? (
+                  <p className="text-xs text-text-muted">
+                    Every other person on this team is already on one of its
+                    chains.
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-muted">No other members can join.</p>
+                )}
+
+                {elsewhere.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setElsewhereOpen(true)}
+                  >
+                    View {elsewhere.length} employee
+                    {elsewhere.length === 1 ? "" : "s"} already on another chain
+                  </Button>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {error && <Alert tone="error">{error}</Alert>}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="submit"
-          disabled={loading || availableRoles.length === 0}
-          loading={loading}
-        >
-          {workflow ? "Save workflow" : "Create workflow"}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() =>
-            router.push(`/dashboard/teams/${team.id}/workflows`)
-          }
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Cancel
-        </Button>
-      </div>
+      {page === 1 ? (
+        <div key="steps-actions" className="flex flex-wrap items-center gap-2">
+          {/* Forward only: this opens the member page and never writes. The
+              steps collected here are not sent anywhere until the member
+              page's own save is deliberately clicked. */}
+          <Button
+            type="button"
+            onClick={handleContinue}
+          >
+            Continue to members
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              router.push(`/dashboard/teams/${team.id}/workflows`)
+            }
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div key="members-actions" className="space-y-2">
+          {memberIds.length === 0 && (
+            <p className="text-xs text-text-muted">
+              Add at least one member to save this chain.
+            </p>
+          )}
+          {/* The write sits at the far end of the row, away from where
+              Continue was. The two action rows are keyed so the button under
+              the pointer is unmounted when the page changes, instead of being
+              reused as the save button with the old click's focus still on
+              it. A stray repeat click therefore lands on "Back to steps",
+              which never writes. */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" onClick={() => setPage(1)}>
+                <ArrowLeft className="h-4 w-4" />
+                Back to steps
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  router.push(`/dashboard/teams/${team.id}/workflows`)
+                }
+              >
+                Cancel
+              </Button>
+            </div>
+            <Button
+              type="button"
+              onClick={(event) => {
+                // Nothing that belongs to the gesture which opened this page can
+                // write it: not the second click of a double-click, and not a
+                // slower second click that lands on the write because the row
+                // wrapped under the pointer.
+                if (event.detail > 1) return;
+                if (isAdvanceGesture(event)) return;
+                void handleSave();
+              }}
+              disabled={loading || memberIds.length === 0}
+              loading={loading}
+            >
+              {workflow ? "Save workflow" : "Create workflow"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={elsewhereOpen} onOpenChange={setElsewhereOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Already on another chain</DialogTitle>
+            <DialogDescription>
+              A person serves one chain of {team.name} at a time. Nobody here
+              can join this chain until they are removed from the chain they are
+              on.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ul className="divide-y divide-border-default rounded-md border border-border-default">
+            {elsewhere.map((person) => (
+              <li
+                key={person.user}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary">
+                    {person.full_name}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    {[person.designation, person.email]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <p className="text-xs text-text-secondary">
+                  {person.kind === "step"
+                    ? `Approves a step on ${person.workflow_name}`
+                    : `On ${person.workflow_name}`}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setElsewhereOpen(false)}
+            >
+              Close list
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <EmployeePickerDialog
+        open={addMembersOpen}
+        onOpenChange={setAddMembersOpen}
+        title="Add employees to this chain"
+        description="Pick the team members who should join this chain. They start routing through it once the chain is saved."
+        employees={addable.map((person) => ({
+          id: person.user,
+          full_name: person.full_name,
+          email: person.email,
+          designation: person.designation,
+        }))}
+        onConfirm={addMembers}
+        confirmLabel={(count) =>
+          count === 0
+            ? "Add members"
+            : `Add ${count} member${count === 1 ? "" : "s"}`
+        }
+      />
 
       <Dialog
         open={roleDialogOpen}

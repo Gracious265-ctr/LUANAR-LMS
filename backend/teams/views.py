@@ -38,6 +38,7 @@ can_manage_team = _require_can_manage_team
 from teams.models import Team, TeamRoleAssignment
 from teams.serializers import (
     TeamMemberAddSerializer,
+    TeamMemberBulkAddSerializer,
     TeamMemberSummarySerializer,
     TeamSerializer,
 )
@@ -395,18 +396,24 @@ class TeamViewSet(
 
     @action(detail=True, methods=["get", "post"], url_path="members")
     def members(self, request, *args, **kwargs):
-        """List this team's normal members, or place one employee on it.
+        """List this team's normal members, or place employees on it.
 
         GET is the team members screen's roster: every employee whose
         :attr:`EmployeeProfile.team` is this team, with the workflow they are a
         normal member of and whether they also staff a step or hold a team-wide
-        role. POST places one employee through the same guards the service
-        applies, so a picker that offers a candidate from another team gets a
-        refusal naming that team rather than a silent move.
+        role. POST accepts either one ``user`` or a ``users`` list. The list is
+        one all-or-nothing write, so a picker that selects several people never
+        leaves the roster with only some of them. Both paths apply the same
+        guards, so a candidate from another team gets a refusal naming that
+        team rather than a silent move.
         """
         team = self.get_object()
         if request.method == "POST":
-            serializer = TeamMemberAddSerializer(
+            bulk = "users" in request.data
+            serializer_class = (
+                TeamMemberBulkAddSerializer if bulk else TeamMemberAddSerializer
+            )
+            serializer = serializer_class(
                 data=request.data, context={**self.get_serializer_context(), "team": team}
             )
             serializer.is_valid(raise_exception=True)

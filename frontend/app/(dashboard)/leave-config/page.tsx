@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 
-import { LeaveTypeTable } from "@/components/leave-config/LeaveTypeTable";
+import { LeaveTypeList } from "@/components/leave-config/LeaveTypeList";
 import { ShowInactiveToggle } from "@/components/leave-config/ShowInactiveToggle";
 import { Alert } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -70,7 +70,7 @@ export default async function LeaveConfigPage({
             {error}
           </Alert>
         ) : (
-          <LeaveTypeTable leaveTypes={leaveTypes} />
+          <LeaveTypeList leaveTypes={leaveTypes} />
         )}
       </div>
     </div>

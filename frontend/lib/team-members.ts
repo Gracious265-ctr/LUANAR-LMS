@@ -50,15 +50,23 @@ export interface PoolPerson {
 export interface AssignedElsewherePerson extends PoolPerson {
   workflow_id: number;
   workflow_name: string;
+  /**
+   * Why they are on that chain: a `"member"` is on its member list, a
+   * `"step"` approves one of its steps. Neither can be added to another chain
+   * until they are removed from where they are.
+   */
+  kind?: "member" | "step";
 }
 
 /**
  * The eligibility pool for one team's workflow memberships.
  *
  * `available` is whoever HR may add to the workflow without a refusal: active
- * team members not already a normal member of a different chain. `current` is
- * who is on the workflow already, and `assigned_elsewhere` is read-only — the
- * people the team placed on other chains, named so the UI can say *where*.
+ * team members not already placed on a different chain. `current` is who is on
+ * the workflow already. `assigned_elsewhere` is people the team placed on
+ * another chain — as a normal member or on one of its steps — and they show up
+ * for context only: one person serves one chain of the team at a time, so they
+ * become addable only after being removed from the chain they are on.
  */
 export interface WorkflowMemberPool {
   team: { id: number; name: string; code: string };

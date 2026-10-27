@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 
-import { CampusTable } from "@/components/hr/campus-table";
+import { CampusList } from "@/components/hr/CampusList";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
@@ -65,7 +65,7 @@ export default async function CampusesPage() {
           </div>
         </div>
       ) : (
-        <CampusTable
+        <CampusList
           campuses={campusesResult.value}
           teams={teamsResult.value}
         />

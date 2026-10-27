@@ -2,17 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Plus } from "lucide-react";
 
 import type { ApproverRole } from "@/lib/approver-roles";
 import type { Employee } from "@/lib/employees";
+import { matchesSearch } from "@/lib/search";
+import { teamCategoryLabel } from "@/lib/team-category";
 import type { Campus, Team } from "@/lib/teams";
+import { teamStatusLabel } from "@/lib/teams-client";
 import { useOverlayParam } from "@/lib/hooks/useOverlayParam";
 import { AdminFormOverlay } from "@/components/hr/AdminFormOverlay";
 import { TeamForm } from "@/components/hr/team-form";
 import { TeamTable } from "@/components/hr/team-table";
 import { Button } from "@/components/ui/button";
+import { EmptyPanel } from "@/components/ui/states";
+import { ListSearch } from "@/components/ui/list-search";
 
 /** Query key for the team overlay. Distinct from the `?retired` list filter. */
 export const TEAM_PARAM = "team";
@@ -91,6 +97,23 @@ export function TeamsSection({
 }: TeamsSectionProps) {
   const router = useRouter();
   const overlay = useOverlayParam(TEAM_PARAM);
+  const [search, setSearch] = useState("");
+
+  const visibleTeams = useMemo(
+    () =>
+      teams.filter((team) =>
+        matchesSearch(search, [
+          team.name,
+          team.code,
+          team.description,
+          team.campus_name,
+          team.workflow_name,
+          teamCategoryLabel(team.category),
+          teamStatusLabel(team.status),
+        ])
+      ),
+    [search, teams]
+  );
 
   return (
     <>
@@ -109,6 +132,14 @@ export function TeamsSection({
           </Button>
         )}
       </div>
+
+      <ListSearch
+        value={search}
+        onChange={setSearch}
+        label="Search teams"
+        placeholder="Search by team, campus, chain, or category"
+        className="mb-4 w-full sm:w-80"
+      />
 
       {filters.length > 0 && (
         <div
@@ -138,7 +169,17 @@ export function TeamsSection({
           {error}
         </div>
       ) : (
-        <TeamTable teams={teams} />
+        <TeamTable
+          teams={visibleTeams}
+          empty={
+            search ? (
+              <EmptyPanel
+                title="No teams match this search"
+                description="Try a different team, campus, chain, or category."
+              />
+            ) : undefined
+          }
+        />
       )}
 
       {canCreate && (
@@ -147,7 +188,7 @@ export function TeamsSection({
           targetKey={overlay.target}
           size="lg"
           title="New team"
-          description="A team routes nothing until it owns an approval chain."
+          description="Create a team and name its manager."
           onOpenChange={(open) => {
             if (!open) overlay.close();
           }}

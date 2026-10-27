@@ -11,15 +11,20 @@ import {
 
 export function ReassignmentTable({
   reassignments,
+  empty,
 }: {
   reassignments: Reassignment[];
+  /** Overrides the empty state — the history list supplies search-aware copy. */
+  empty?: React.ReactNode;
 }) {
   if (reassignments.length === 0) {
     return (
-      <EmptyState
-        title="No reassignments yet"
-        description="Reassign a pending application to record the first reassignment."
-      />
+      empty ?? (
+        <EmptyState
+          title="No reassignments yet"
+          description="Reassign a pending application to record the first reassignment."
+        />
+      )
     );
   }
 
