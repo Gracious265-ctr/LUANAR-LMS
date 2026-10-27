@@ -37,11 +37,12 @@ interface DraftSection {
  *
  * Creating a team asks what the team *is* — its kind, academic or
  * administration, its campus when it is academic, its name, and its window —
- * and then who runs it: the manager, named as a team-scoped approver role and
- * the category-matching person who holds it. The team is written as a chainless
- * draft, and the manager is the only one who configures its members, its chains,
- * and which chain routes, so HR's part ends at naming them; the next screen is
- * the new team's Members tab, where its roster is built.
+ * and then who runs it: one person, chosen by name. The manager need not hold a
+ * team-scoped role, because the designation is the team's own `manager` field;
+ * an institution-wide approver is a valid choice. The team is written as a
+ * chainless draft, and the manager is the only one who configures its members,
+ * its chains, and which chain routes, so HR's part ends at naming them; the next
+ * screen is the new team's Members tab, where its roster is built.
  *
  * Editing keeps the two-page shape. Page one is the same details; page two is
  * who decides for the team, one named person per step. Eligibility is answered
@@ -61,7 +62,6 @@ export function TeamForm({
   roles: initialRoles,
   rolesError = "",
   employees = [],
-  wideHolderUserIds = [],
   onSuccess,
   onCancel,
 }: {
@@ -72,16 +72,12 @@ export function TeamForm({
   rolesError?: string;
   /**
    * Everyone the create form's manager picker may offer: the manager is named
-   * when the team is created, so the people who may hold team-scoped roles have
-   * to be known before the save.
+   * when the team is created, so the people who may run it have to be known
+   * before the save. Any active employee is eligible — the manager is not
+   * required to hold a team-scoped role, and may be an institution-wide
+   * approver.
    */
   employees?: Employee[];
-  /**
-   * Every current wide approver, whatever their scope. A person holds only one
-   * wide approver role, so somebody who already holds one anywhere is not
-   * offered as a team's manager.
-   */
-  wideHolderUserIds?: number[];
   /**
    * Called with the saved team instead of navigating, so a host overlay can
    * close and refresh in place. Omit it and the form navigates itself, which is
@@ -124,7 +120,6 @@ export function TeamForm({
   );
   // The manager is named on the create form's second page. It is a create-only
   // decision: an existing team's manager is changed from its Approvers tab.
-  const [managerRoleId, setManagerRoleId] = useState("");
   const [managerUserId, setManagerUserId] = useState("");
 
   /**
@@ -144,39 +139,19 @@ export function TeamForm({
   const rolesUnavailable = rolesError !== "" || roles.length === 0;
 
   /**
-   * The team-scoped roles a manager may hold.
+   * The people who may run this team.
    *
-   * The page passes every role, because the edit form's chain builder needs
-   * them all. A manager is a *team-wide* approver, so an institution-wide role
-   * — held outside any one team — is filtered out here rather than excluded
-   * from the page and taken away from the chain builder.
+   * Every active employee with a record, in either half of the institution: the
+   * manager is designated on the team itself, so an institution-wide approver —
+   * who holds no team-scoped role — is a valid choice. Being a wide holder is
+   * not a bar either: running a team is a post, not a second wide holding.
    */
-  const managerRoles = useMemo(
-    () => roles.filter((role) => role.is_active && !role.is_institution_wide),
-    [roles]
-  );
-
-  /**
-   * The people who may manage this team.
-   *
-   * A manager is a team-wide approver, so the same rules the write enforces are
-   * applied here: they must be an active employee of the team's own category,
-   * and they cannot already hold a wide approver role anywhere — a person holds
-   * only one, so offering them would be a save that can only fail.
-   */
-  const excludedWideHolders = useMemo(
-    () => new Set(wideHolderUserIds),
-    [wideHolderUserIds]
-  );
   const managerCandidates = useMemo(
     () =>
-      employees.filter(
-        (employee) =>
-          employee.is_active &&
-          employee.category === details.category &&
-          !excludedWideHolders.has(employee.user_id)
-      ),
-    [employees, details.category, excludedWideHolders]
+      [...employees]
+        .filter((employee) => employee.is_active)
+        .sort((left, right) => left.full_name.localeCompare(right.full_name)),
+    [employees]
   );
 
   /**
@@ -444,28 +419,21 @@ interface TeamDetails {
       return;
     }
 
-    // A team is handed to a manager the moment it exists: the role they hold is
-    // what they approve with, and the person is who approves. Both are required,
-    // and the manager is a create-only decision — an existing team's manager is
-    // changed from its Approvers tab.
+    // A team is handed to a manager the moment it exists. Only the person is
+    // required: the designation is the team's own `manager` field, so no
+    // team-scoped role has to exist for an institution-wide approver to run a
+    // team. The manager is a create-only decision — an existing team's manager
+    // is changed from its Approvers tab.
     if (!team) {
-      const managerRole = Number(managerRoleId) || 0;
       const managerUser = Number(managerUserId) || 0;
-      if (!managerRole) {
-        setError(
-          "Choose the team-scoped role the manager will hold, so the backend knows what they may decide."
-        );
-        setLoading(false);
-        return;
-      }
       if (!managerUser) {
         setError(
-          "Choose who will manage this team. Only an active employee of this team's category who holds no wide approver role is offered."
+          "Choose who will manage this team. Any active employee may be named, including an institution-wide approver."
         );
         setLoading(false);
         return;
       }
-      input.manager = { role: managerRole, user: managerUser };
+      input.manager = { user: managerUser };
     }
 
     const named = describeSteps();
@@ -835,41 +803,12 @@ interface TeamDetails {
           </Alert>
         ) : null}
 
-        <div>
-          <label
-            htmlFor="manager-role"
-            className="mb-1 block text-sm font-medium text-text-primary"
-          >
-            Manager role
-          </label>
-          <select
-            id="manager-role"
-            name="manager_role"
-            value={managerRoleId}
-            disabled={managerRoles.length === 0}
-            onChange={(event) => setManagerRoleId(event.target.value)}
-            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="">Choose a team-scoped role…</option>
-            {managerRoles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.label}
-              </option>
-            ))}
-          </select>
-          {managerRoles.length === 0 ? (
-            <p className="mt-1 text-xs text-text-muted">
-              No team-scoped roles are available. Create one on the Roles page first.
-            </p>
-          ) : null}
-        </div>
-
-        <div>
+        <div className="md:col-span-2">
           <label
             htmlFor="manager-user"
             className="mb-1 block text-sm font-medium text-text-primary"
           >
-            Manager
+            Who runs this team?
           </label>
           <select
             id="manager-user"
@@ -883,12 +822,18 @@ interface TeamDetails {
             {managerCandidates.map((employee) => (
               <option key={employee.user_id} value={employee.user_id}>
                 {employee.full_name || employee.email}
+                {employee.designation ? ` — ${employee.designation}` : ""}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-text-muted">
+            Any active employee may run the team, including an institution-wide
+            approver. They staff its roster, build its chains, and choose its
+            default; HR keeps its identity and lifecycle.
+          </p>
           {managerCandidates.length === 0 ? (
-            <p className="mt-1 text-xs text-text-muted">
-              Nobody matching this team&apos;s category is free to manage it.
+            <p className="mt-1 text-xs text-status-pending">
+              No active employees with a record were found to name.
             </p>
           ) : null}
         </div>

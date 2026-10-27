@@ -157,9 +157,19 @@ export interface Team {
    * team read-only; the server refuses those writes to anyone else.
    */
   is_team_manager: boolean;
+  /** The designated manager, by user id, or null when the team has none. */
+  manager_user: number | null;
+  /** The designated manager's display name. Empty when the team has none. */
+  manager_name: string;
   /** Required: a team with no chain routes nothing, so it cannot be saved without one. */
   stage_roles: TeamStageRole[];
   member_count: number;
+  /**
+   * How many people are on the team's roster. Distinct from `member_count`,
+   * which counts staffed steps: an empty roster is what sends a manager to the
+   * add-members page.
+   */
+  roster_count: number;
   members: TeamMember[];
   /** The steps this team routes through, each with the people who can act. */
   sections: TeamSection[];
@@ -235,12 +245,13 @@ export interface TeamInput {
    */
   new_workflow?: TeamWorkflowInput;
   /**
-   * The manager designated at creation: the team-scoped role they hold, and the
-   * category-matching employee who holds it. Written on create only — a team's
-   * manager is changed from the team's Approvers tab afterwards, where the
-   * wide-holder panel offers "Make manager".
+   * The manager designated at creation. Only the person is required; an
+   * optional team-scoped `role` appoints a team-wide holding as well, which is
+   * the older shape. An institution-wide approver is named with `user` alone,
+   * because they hold no team-scoped role to flag. A team's manager is changed
+   * from its Approvers tab afterwards.
    */
-  manager?: { role: number; user: number };
+  manager?: { user: number; role?: number };
 }
 
 export interface Campus {

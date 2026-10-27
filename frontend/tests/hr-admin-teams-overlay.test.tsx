@@ -92,10 +92,7 @@ function fillCreateForm() {
   fireEvent.click(
     screen.getByRole("button", { name: "Continue to the manager" }),
   );
-  fireEvent.change(screen.getByLabelText("Manager role"), {
-    target: { value: "1" },
-  });
-  fireEvent.change(screen.getByLabelText("Manager"), {
+  fireEvent.change(screen.getByLabelText("Who runs this team?"), {
     target: { value: "21" },
   });
 }

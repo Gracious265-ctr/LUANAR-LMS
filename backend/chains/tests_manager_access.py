@@ -21,7 +21,14 @@ from campuses.models import CampusRoleAssignment
 from teams.models import TeamRoleAssignment
 from users.models import EmployeeProfile
 
-from .testing import DEV_PASSWORD, ensure_roles, make_employee, make_team
+from .testing import (
+    DEV_PASSWORD,
+    campus_for,
+    ensure_roles,
+    grant_approver_role,
+    make_employee,
+    make_team,
+)
 
 User = get_user_model()
 
@@ -709,6 +716,134 @@ class ManagerDesignationTests(ManagerAccessBase):
             f"{self.ASSIGNMENTS_URL}{self.deputy_holding.id}/set-manager/"
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class InstitutionWideManagerTests(ManagerAccessBase):
+    """An institution-wide approver may run a team, not just staff its steps.
+
+    The manager designation lives on the team (:attr:`Team.manager`), so it does
+    not require a team-scoped role holding — which an institution-wide approver
+    cannot have. These cover the appointment, what the appointment unlocks
+    (roster, wide-holder members, new chains), and who may make it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.institution_approver = make_employee(
+            "registrar-manager@manager.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        grant_approver_role(self.institution_approver, "registrar")
+
+    def _designate(self, user, *, actor=None):
+        self.client.force_authenticate(actor or self.hr)
+        return self.client.post(
+            f"{TEAMS_URL}{self.team.id}/set-manager/",
+            {"user": user.pk},
+            format="json",
+        )
+
+    def test_hr_designates_an_institution_wide_approver_as_manager(self):
+        response = self._designate(self.institution_approver)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["manager_user"], self.institution_approver.pk)
+        self.assertEqual(response.data["manager_name"], "Test Employee")
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.manager_id, self.institution_approver.pk)
+        # The sidebar reads the same union, so the way into the module unlocks.
+        self.assertIn(self.team.id, managed_team_ids_for(self.institution_approver))
+
+    def test_the_appointment_needs_no_team_scoped_holding(self):
+        response = self._designate(self.institution_approver)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        # An institution-wide role cannot be held *for* a team, so there is no
+        # second holding to represent the manager.
+        self.assertFalse(
+            TeamRoleAssignment.objects.filter(
+                team=self.team, user=self.institution_approver
+            ).exists()
+        )
+
+    def test_the_manager_can_add_wide_approvers_to_the_roster(self):
+        self._designate(self.institution_approver)
+        other_institution = make_employee(
+            "other-registrar@manager.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        grant_approver_role(other_institution, "registrar")
+        campus_holder = make_employee(
+            "campus-holder@manager.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        campus_role = grant_approver_role(
+            campus_holder, "campus_registrar", institution_wide=False
+        )
+        campus = campus_for("Manager Campus")
+        CampusRoleAssignment.objects.create(
+            campus=campus, role=campus_role, user=campus_holder
+        )
+
+        self.client.force_authenticate(self.institution_approver)
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.id}/members/",
+            {"users": [other_institution.pk, campus_holder.pk]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        other_institution.employee_profile.refresh_from_db()
+        campus_holder.employee_profile.refresh_from_db()
+        self.assertEqual(other_institution.employee_profile.team_id, self.team.id)
+        self.assertEqual(campus_holder.employee_profile.team_id, self.team.id)
+
+    def test_the_manager_can_create_a_workflow_for_the_team(self):
+        self._designate(self.institution_approver)
+        self.client.force_authenticate(self.institution_approver)
+        response = self.client.post(
+            WORKFLOWS_URL,
+            {"name": "Registrar chain", "team": self.team.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["team"], self.team.id)
+
+    def test_a_manager_cannot_designate_a_manager(self):
+        self._designate(self.institution_approver)
+        self.client.force_authenticate(self.plain)
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.id}/set-manager/",
+            {"user": self.plain.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_the_outgoing_manager_cannot_hand_the_team_on(self):
+        self._designate(self.institution_approver)
+        self.client.force_authenticate(self.institution_approver)
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.id}/set-manager/",
+            {"user": self.institution_approver.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_inactive_person_is_refused(self):
+        self.institution_approver.is_active = False
+        self.institution_approver.save(update_fields=["is_active"])
+        response = self._designate(self.institution_approver)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("user", response.data)
+
+    def test_clear_manager_removes_the_designation(self):
+        self._designate(self.institution_approver)
+        self.client.force_authenticate(self.hr)
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.id}/clear-manager/",
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIsNone(response.data["manager_user"])
+        self.team.refresh_from_db()
+        self.assertIsNone(self.team.manager_id)
 
 
 class ManagerScopingHelperTests(ManagerAccessBase):

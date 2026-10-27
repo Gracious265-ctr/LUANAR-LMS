@@ -86,8 +86,10 @@ const bob: EligibleApprover = {
 };
 
 /**
- * The people the create form may name as a team's manager: active employees of
- * the team's own category who hold no wide approver role.
+ * The people the create form may name as a team's manager. Any active employee
+ * is eligible — including a person from the other half of the institution, and
+ * an institution-wide approver — because the designation is the team's own
+ * `manager` field rather than a team-scoped role holding.
  */
 const maryManager = makeEmployee({
   user_id: 21,
@@ -103,14 +105,12 @@ const adaAcademic = makeEmployee({
 /**
  * The manager step, which every create walks through before it saves.
  *
- * The role is the first team-scoped role in the fixture above; the person is a
- * category match so the picker would actually offer them.
+ * One person is chosen by name. There is no role picker: an institution-wide
+ * approver holds no team-scoped role, and is exactly who HR may want to run a
+ * team.
  */
 function chooseManager(person = maryManager) {
-  fireEvent.change(screen.getByLabelText("Manager role"), {
-    target: { value: "1" },
-  });
-  fireEvent.change(screen.getByLabelText("Manager"), {
+  fireEvent.change(screen.getByLabelText("Who runs this team?"), {
     target: { value: String(person.user_id) },
   });
 }
@@ -228,7 +228,6 @@ describe("TeamForm", () => {
       "name",
     ]);
     expect(vi.mocked(createTeam).mock.calls[0][0].manager).toEqual({
-      role: 1,
       user: 21,
     });
     expect(push).toHaveBeenCalledWith("/dashboard/teams/4?tab=members");
@@ -450,8 +449,8 @@ describe("TeamForm", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Continue to the manager" })
     );
-    // An academic team's manager is an academic employee, so the picker offers
-    // only the half of the institution the write will accept.
+    // An academic team's manager may come from either half of the institution:
+    // the designation is a post on the team, not a category-scoped role.
     chooseManager(adaAcademic);
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
@@ -479,7 +478,7 @@ describe("TeamForm", () => {
     expect(
       await screen.findByText(/An academic team sits at a campus/i)
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Manager role")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Who runs this team?")).not.toBeInTheDocument();
     expect(createTeam).not.toHaveBeenCalled();
   });
 
@@ -550,7 +549,7 @@ describe("TeamForm", () => {
     ).toBeInTheDocument();
     // The refusal names what was wrong with the write, and the chosen manager
     // is still on screen so it can be corrected rather than re-entered.
-    expect(screen.getByLabelText("Manager")).toHaveValue("21");
+    expect(screen.getByLabelText("Who runs this team?")).toHaveValue("21");
     expect(push).not.toHaveBeenCalled();
   });
 

@@ -102,13 +102,19 @@ def is_hr_actor(actor) -> bool:
 def is_team_manager(user, team: Team | None) -> bool:
     """Whether ``user`` is the designated manager of ``team``.
 
-    A team's manager is the one team-wide holder flagged
-    :attr:`~workflows.models.TeamRoleAssignment.is_team_manager`. Only that
-    person — not every wide holder — is authorised to manage the team's members
-    and workflows, so management is scoped to a single designated approver.
+    The designation is :attr:`~teams.models.Team.manager`, so the manager may
+    be **any** active employee — including an institution-wide approver, who
+    holds no team-wide role to flag. The legacy
+    :attr:`~teams.models.TeamRoleAssignment.is_team_manager` flag is still read
+    as a second source, because a team-wide holder can also be designated
+    through the role-holding screens and older rows predate the team field.
+    Only the designated person — not every wide holder — is authorised to
+    manage the team's members and workflows.
     """
     if team is None or not getattr(user, "is_authenticated", False):
         return False
+    if team.manager_id == user.pk:
+        return True
     return TeamRoleAssignment.objects.filter(
         team=team, user=user, is_team_manager=True, role__is_active=True
     ).exists()
@@ -126,14 +132,15 @@ def managed_team_ids_for(user) -> list[int]:
     """
     if not getattr(user, "is_authenticated", False):
         return []
-    return list(
+    ids = set(
+        Team.objects.filter(manager=user).values_list("pk", flat=True)
+    )
+    ids.update(
         TeamRoleAssignment.objects.filter(
             user=user, is_team_manager=True, role__is_active=True
-        )
-        .order_by("team_id")
-        .values_list("team_id", flat=True)
-        .distinct()
+        ).values_list("team_id", flat=True)
     )
+    return sorted(ids)
 
 
 def _require_hr_actor(actor, error_cls: type[Exception]) -> None:
@@ -863,6 +870,10 @@ def create_team_role_assignment(
                 )
             ),
         )
+        if assignment.is_team_manager:
+            # The team field is the authoritative answer; the flag on the
+            # holding is kept in step for the holders screen and older callers.
+            Team.objects.filter(pk=team.pk).update(manager=user)
     return assignment
 
 
@@ -885,6 +896,7 @@ def set_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssign
         ).exclude(pk=locked.pk).update(is_team_manager=False)
         locked.is_team_manager = True
         locked.save(update_fields=["is_team_manager"])
+        Team.objects.filter(pk=locked.team_id).update(manager_id=locked.user_id)
         team = locked.team
         record_audit(
             actor=actor,
@@ -914,6 +926,12 @@ def clear_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssi
         before = _team_assignment_snapshot(locked)
         locked.is_team_manager = False
         locked.save(update_fields=["is_team_manager"])
+        # Only clear the team's manager when this holding is the person the
+        # team field names; an institution-wide manager has no holding, and
+        # clearing somebody else's flag must not unseat them.
+        Team.objects.filter(
+            pk=locked.team_id, manager_id=locked.user_id
+        ).update(manager=None)
         team = locked.team
         record_audit(
             actor=actor,
@@ -930,13 +948,107 @@ def clear_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssi
     return locked
 
 
+def set_team_manager_for_user(*, team: Team, user: User, actor) -> Team:
+    """Designate any active employee as ``team``'s manager.
+
+    Unlike :func:`set_team_manager`, which acts on a team-wide role holding,
+    this takes the person directly — so an institution-wide approver, who has
+    no team-scoped role to flag, can run a team. :attr:`Team.manager` is the
+    authoritative field; any legacy flag on a team-wide holding is cleared, and
+    re-set only on this person's own holding if they happen to have one.
+    """
+    _require_hr_actor(actor, RoleActionError)
+    if not user.is_active:
+        raise RoleActionError(
+            "user",
+            f"{_member_display_name(user)} is not an active user. Activate the "
+            "account before designating them as a team manager.",
+        )
+    if getattr(user, "employee_profile", None) is None:
+        raise RoleActionError(
+            "user",
+            f"{_member_display_name(user)} has no employee record, so there is "
+            "nothing to manage a team with. Complete their employee record first.",
+        )
+    with transaction.atomic():
+        locked = Team.objects.select_for_update().get(pk=team.pk)
+        previous = locked.manager
+        locked.manager = user
+        locked.save(update_fields=["manager", "updated_at"])
+        TeamRoleAssignment.objects.select_for_update().filter(team=locked).update(
+            is_team_manager=False
+        )
+        holding = TeamRoleAssignment.objects.filter(team=locked, user=user).first()
+        if holding is not None:
+            holding.is_team_manager = True
+            holding.save(update_fields=["is_team_manager"])
+        record_audit(
+            actor=actor,
+            action=AuditEntry.Action.UPDATED,
+            target_type=AuditEntry.TargetType.TEAM,
+            target_id=locked.pk,
+            target_summary=locked.name,
+            detail=changed_fields(
+                {
+                    "manager_id": previous.pk if previous else None,
+                    "manager": _member_display_name(previous) if previous else "",
+                },
+                {
+                    "manager_id": user.pk,
+                    "manager": _member_display_name(user),
+                },
+            ),
+            reason=f"{_member_display_name(user)} is the team manager for {locked.name}.",
+        )
+    return locked
+
+
+def clear_team_manager_for_team(*, team: Team, actor) -> Team:
+    """Remove a team's manager, whichever way they were designated."""
+    _require_hr_actor(actor, RoleActionError)
+    with transaction.atomic():
+        locked = Team.objects.select_for_update().get(pk=team.pk)
+        previous = locked.manager
+        if previous is not None:
+            locked.manager = None
+            locked.save(update_fields=["manager", "updated_at"])
+        TeamRoleAssignment.objects.select_for_update().filter(team=locked).update(
+            is_team_manager=False
+        )
+        if previous is not None:
+            record_audit(
+                actor=actor,
+                action=AuditEntry.Action.UPDATED,
+                target_type=AuditEntry.TargetType.TEAM,
+                target_id=locked.pk,
+                target_summary=locked.name,
+                detail=changed_fields(
+                    {
+                        "manager_id": previous.pk,
+                        "manager": _member_display_name(previous),
+                    },
+                    {"manager_id": None, "manager": ""},
+                ),
+                reason=f"{locked.name} no longer has a team manager.",
+            )
+    return locked
+
+
 def remove_team_role_assignment(*, assignment: TeamRoleAssignment, actor) -> None:
     """Drop a team-wide holding and audit it."""
     with transaction.atomic():
         team = assignment.team
         role = assignment.role
+        was_manager = assignment.is_team_manager
+        holder_id = assignment.user_id
         detail = changed_fields(_team_assignment_snapshot(assignment), {})
         assignment.delete()
+        if was_manager:
+            # The holding used to be the team's designation; dropping it must
+            # not leave the team pointing at a person it no longer names.
+            Team.objects.filter(pk=team.pk, manager_id=holder_id).update(
+                manager=None
+            )
         record_audit(
             actor=actor,
             action=AuditEntry.Action.CANCELLED,
@@ -1277,15 +1389,17 @@ def wide_role_holder_ids() -> set[int]:
 
     Three holdings are "wide": an institution-wide :class:`RoleAssignment`, a
     team-wide :class:`TeamRoleAssignment` on any team, and a campus-wide
-    :class:`CampusRoleAssignment` at any campus. A wide holder staffs steps from
-    the Approvers tab, so they are not roster material — a team's roster is the
-    people whose leave routes through the team, and a wide holder's leave routes
-    through the chains their holding staffs.
+    :class:`CampusRoleAssignment` at any campus. A wide holding crosses the
+    institution's halves, so it is what exempts a person from the roster's
+    category rule: a team's manager may place a wide holder on the roster even
+    when their category differs from the team's. It also marks them as roster
+    material for :func:`~roles.services.add_team_member`'s category check.
 
     :func:`wide_approver_ids_for_team` answers the narrower question "who staffs
     *this* team's steps"; this answers "who is a wide holder at all", which is
-    what a roster add refuses. The two differ exactly where a holding reaches a
-    different team or campus than the one being staffed.
+    what the roster's category exemption is keyed on. The two differ exactly
+    where a holding reaches a different team or campus than the one being
+    staffed.
     """
     ids: set[int] = set()
     ids.update(
@@ -1306,27 +1420,6 @@ def wide_role_holder_ids() -> set[int]:
     return ids
 
 
-def wide_role_labels_for(user) -> list[str]:
-    """Human names for the wide holdings ``user`` carries, one per holding.
-
-    Used in the refusal a roster add gives, so the manager sees *which* holding
-    keeps the person out rather than a bare "wide approver". Display-only: the
-    rule itself lives in :func:`wide_role_holder_ids`.
-    """
-    labels: list[str] = []
-    for assignment in RoleAssignment.objects.filter(user=user).select_related("role"):
-        labels.append(f"{assignment.role.label}, institution-wide")
-    for assignment in TeamRoleAssignment.objects.filter(user=user).select_related(
-        "role", "team"
-    ):
-        labels.append(f"{assignment.role.label} for {assignment.team.name}")
-    for assignment in CampusRoleAssignment.objects.filter(user=user).select_related(
-        "role", "campus"
-    ):
-        labels.append(f"{assignment.role.label} at {assignment.campus.name}")
-    return labels
-
-
 def _employee_profile_for(user: User):
     profile = getattr(user, "employee_profile", None)
     if profile is None:
@@ -1341,22 +1434,18 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
     approver eligibility: the employee's :attr:`EmployeeProfile.team` is the
     single record of which team's approval chain their leave routes through.
 
-    Membership is scoped two ways. The team's **category** decides who may
-    belong: an academic team takes academic employees, an administration team
-    takes administration employees, and a mismatch is refused rather than
-    allowed to sit on the roster until routing surprises someone. And a **wide
-    approver** — anyone holding an institution-wide, team-wide, or campus-wide
-    approver role, on this team or another — is not a normal member: they staff
-    steps from the Approvers tab, so joining a roster would quietly route their
-    leave through a team whose steps they already serve. Being a wide holder
-    *anywhere* is the bar; a holding on another team or campus still means the
-    person's leave is routed by that office.
+    Membership is scoped by the team's **category** for ordinary employees: an
+    academic team takes academic employees, an administration team takes
+    administration employees, and a mismatch is refused rather than allowed to
+    sit on the roster until routing surprises someone.
 
-    The team's **designated manager** is the one exception. Their own leave
-    must route through the team they run, and only a roster row makes that
-    true, so the manager may place themselves here. Once placed they leave
-    every other team's candidate list, which is the "one team per employee"
-    rule doing its job rather than a special case.
+    A **wide approver** — anyone holding an institution-wide, team-wide, or
+    campus-wide approver role — is the deliberate exception to that category
+    rule. A team's manager may add wide holders to the roster even when their
+    category differs, because a wide holding crosses the institution's halves:
+    an institution-wide approver runs an administration office, a campus-wide
+    approver an academic one, and a manager who holds one may need the other on
+    their team. The manager's own roster entry works the same way.
 
     Somebody already on a different team is refused rather than moved. Moving
     an employee off another team would leave that team with steps whose
@@ -1388,25 +1477,17 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             f"{_member_display_name(user)} has no employee record, so there is "
             "nothing to place on a team. Complete their employee record first.",
         )
-    if profile.category != team.category:
+    is_wide_holder = user.pk in wide_role_holder_ids()
+    if profile.category != team.category and not is_wide_holder:
         raise WorkflowMemberError(
             "user",
             f'{_member_display_name(user)} is an '
             f'{profile.get_category_display()} employee, but "{team.name}" is an '
             f'{team.get_category_display()} team. An '
             f'{team.get_category_display()} team takes only '
-            f'{team.get_category_display()} employees.',
+            f'{team.get_category_display()} employees, unless the person holds '
+            "a wide approver role.",
         )
-    if not is_team_manager(user, team):
-        holdings = wide_role_labels_for(user)
-        if holdings:
-            raise WorkflowMemberError(
-                "user",
-                f"{_member_display_name(user)} holds a wide approver role "
-                f"({'; '.join(holdings)}), so they staff steps from the "
-                "Approvers tab rather than joining a roster. Remove the holding "
-                "first if they should be a normal member.",
-            )
     with transaction.atomic():
         locked_profile = EmployeeProfile.objects.select_for_update().get(pk=profile.pk)
         if locked_profile.team_id == team.pk:

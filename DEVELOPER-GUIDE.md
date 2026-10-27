@@ -64,7 +64,7 @@ database directly; it always goes through the Django API.
 | `backend/leave_types` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_types/services.py` |
 | `backend/roles` | The **approver role registry**: `ApproverRole` and institution-wide (`RoleAssignment`) role holdings. |
 | `backend/campuses` | **Campus scoping**: `Campus` and campus-wide (`CampusRoleAssignment`) role holdings. |
-| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping) and `TeamRoleAssignment` (team-wide role holders, including the designated team manager). **Team endpoints live here** (`TeamViewSet`, routes under `api/v1/teams/` via `teams.urls`). |
+| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping, and the designated `manager`) and `TeamRoleAssignment` (team-wide role holders, kept in step with `Team.manager`). **Team endpoints live here** (`TeamViewSet`, routes under `api/v1/teams/` via `teams.urls`). |
 | `backend/roles` | Approver roles and team/campus role assignments split out of `organisation/` (`ApproverRole`, `RoleAssignment`, `TeamRoleAssignmentViewSet`, role permissions/services). |
 | `backend/campuses` | Campus entities and campus role assignments split out of `organisation/` (`Campus`, `CampusRoleAssignment`, campus APIs). |
 | `backend/org_structure` | The mirrored organisation tree (`OrgUnit`): the provider sync that creates/updates units and appoints `designated_approver` from role holders (formerly `org/`). |
@@ -194,6 +194,9 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | **Search and filter** controls on a list screen | `frontend/components/ui/list-search.tsx`, `frontend/components/ui/filter-chips.tsx`, matching rule in `frontend/lib/search.ts` |
 | The **progress rail** above a form split across pages | `frontend/components/ui/form-progress.tsx` (wraps `frontend/components/ui/Stepper.tsx`) |
 | The team create/edit form (details → manager or approval steps) | `frontend/components/hr/team-form.tsx` |
+| The team **manager card** on the Approvers tab (designate / remove) | `frontend/components/hr/team-manager-panel.tsx` |
+| The **add-members page** and its search/select/summary body | `frontend/app/(dashboard)/dashboard/teams/[id]/members/add/page.tsx` + `frontend/components/hr/add-team-members.tsx` |
+| A team's roster list (search, filter, remove, link to add) | `frontend/components/hr/team-members-panel.tsx` |
 | A team's **chain builder** (steps page → members page) | `frontend/components/hr/workflow-form.tsx` |
 | The **chain cards** on a team's workflows page (badge, Edit, Make default) | `frontend/components/hr/workflow-compact-card.tsx` |
 | The **multi-select employee picker** used to add a team's or a chain's members | `frontend/components/hr/employee-picker-dialog.tsx` |
@@ -454,10 +457,16 @@ so the team-manager path ships with a working fixture (sign in as that account t
 walk it).
 
 **I want to understand or change what a team manager may do.**
-A team manager is an ordinary employee holding a *team-wide* approver role whose
-`TeamRoleAssignment.is_team_manager` is set. One manager per team is a database
-constraint; HR designates them on the team's **Approvers** tab (Make manager) or
-at team creation (`manager={"role","user"}`). There are two guards in
+A team manager is the person named on the team itself: `Team.manager` (a nullable
+FK) is the authoritative designation. They may be **any active employee with an
+employee record**, including an **institution-wide approver**, who holds no
+team-scoped role to flag — that is the case the team field exists for. The legacy
+`TeamRoleAssignment.is_team_manager` flag is still read and kept in step, so a
+team-wide holder designated through the role screens (or an older row) is still a
+manager; one manager per team is enforced by the service that writes the field.
+HR designates them on the team's **Approvers** tab (`POST /teams/{id}/set-manager/`,
+`POST /teams/{id}/clear-manager/`) or at team creation (`manager={"user"}`, with an
+optional team-scoped `"role"`). There are two guards in
 `backend/chains/services/_shared.py`:
 
 * `_require_can_manage_team` — `is_hr_actor(actor) or is_team_manager(actor, team)`.
@@ -469,24 +478,29 @@ at team creation (`manager={"role","user"}`). There are two guards in
 
 | Surface | HR / superuser | Team manager |
 |---------|----------------|--------------|
-| Teams list | every team | only teams they manage (single team → redirect) |
+| Teams list | every team | only teams they manage (single team → team page, or the add-members page when its roster is empty) |
 | Team identity (category, campus, name) & retire | yes | **no** (403) |
+| Team manager (`set-manager` / `clear-manager`) | yes | **no** (403) |
 | Team chains (create/edit a `Workflow`) | yes | yes, own team only |
 | Default chain (`POST /teams/{id}/route/`) | **no** (403) | yes, own team only |
 | Workflow steps | staff from the whole directory | staff from the team's own members |
 | Roster (add/remove members) | **read-only** (writes 403) | yes, own team only |
-| Approvers tab (wide holders, Make manager) | read + write | **read-only** |
+| Approvers tab (wide holders) | read + write | **read-only** |
 | Approver roles (create/edit/retire) | yes | no (read-only active list) |
 
-A roster add is narrower than `EmployeeProfile.team`: the employee's **category**
-must match the team's (administration team → administration employee, academic
-team → academic employee), they must be on **no** team, and they must hold **no
-wide approver role anywhere** — institution-wide, on any team, or at any campus
-(`wide_role_holder_ids()` in `backend/roles/services.py`). The team's own
-designated manager is the one exemption, because joining the roster is how their
-leave routes through the team they run. `GET /teams/{id}/member-candidates/` and
-`GET /employees/?team=none&not_wide_holder=1` read the same rule, and the roster
-payload carries `is_team_manager` so the UI can hide the manager-only controls.
+A roster add is narrower than `EmployeeProfile.team`: an **ordinary employee's
+category** must match the team's (administration team → administration employee,
+academic team → academic employee) and they must be on **no** team. A **wide
+approver** — institution-wide, on any team, or at any campus
+(`wide_role_holder_ids()` in `backend/roles/services.py`) — is the deliberate
+exception to the category rule, because a wide holding crosses the institution's
+halves: an institution-wide manager may need a campus-wide holder, or the other
+half's approver, on their team. `GET /teams/{id}/member-candidates/` offers every
+unassigned category-matching employee **plus** every unassigned wide holder, and
+the write applies the same rule. The roster payload carries `is_team_manager`,
+`manager_user`, `manager_name`, and `roster_count` (people on the roster, distinct
+from `member_count`, which counts staffed steps) so the UI can hide manager-only
+controls and send a manager of an empty team straight to the add-members page.
 
 The manager path reads through **manager-scoped endpoints**, never by loosening an
 HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and

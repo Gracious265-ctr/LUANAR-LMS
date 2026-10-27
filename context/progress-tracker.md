@@ -6933,3 +6933,50 @@ holders, and institution/other-campus/other-team holdings refused);
 `chains.tests_team_configuration` routing-fixture failures (2 failures + 11
 errors: "has no approval workflow for this employee") are unchanged and
 unrelated.
+
+## Completed — Institution-wide managers, wide-holder rosters, and the add-members page (2026-10-27)
+
+**Goal.** HR had to be able to appoint an **institution-wide approver** as a team
+manager; that manager had to be able to add other institution-wide and
+campus-wide approvers to the roster and build chains for the team; and a manager
+whose roster was empty had to land on the add-members page when opening the Teams
+app. The add-members flow was to become a proper page rather than a dialog.
+
+**Manager designation.** `Team.manager` (nullable FK, migration `teams/0004`)
+is now authoritative, so a manager need not hold a team-scoped role — the one
+thing an institution-wide approver cannot have. The migration backfills from
+flagged `TeamRoleAssignment` rows. `roles.services.is_team_manager()` reads
+`team.manager_id` first and falls back to the legacy flag;
+`managed_team_ids_for()` unions both. `create_team_role_assignment`,
+`set_team_manager`, `clear_team_manager`, and `remove_team_role_assignment` keep
+the field and the flag in step. New audited services
+`set_team_manager_for_user()` / `clear_team_manager_for_team()` back the HR-only
+`POST /teams/{id}/set-manager/` and `POST /teams/{id}/clear-manager/` actions.
+`create_team`/`update_team` accept `manager={"user"}` (optional team-scoped
+`"role"`), through `_designate_manager` in `chains/services/lifecycle.py`.
+
+**Roster.** `add_team_member` no longer refuses wide holders: the category rule
+now waives for anyone in `wide_role_holder_ids()`, because a wide holding crosses
+the institution's halves. `member_candidates` offers every unassigned
+category-matching employee **plus** every unassigned wide holder, regardless of
+category. The one-team-per-employee rule is unchanged.
+
+**Frontend.** `Team` gains `manager_user`, `manager_name`, and `roster_count`
+(people on the roster, not staffed steps). The Approvers tab has a manager card
+(`TeamManagerPanel`) where HR designates or removes the manager from any active
+employee. The create form's manager page is a person-only picker. The Members
+panel links to a new `/dashboard/teams/{id}/members/add` page
+(`AddTeamMembers`) with search, multi-select, a live selection summary, and one
+all-or-nothing write; the old picker dialog is gone from this flow. The Teams
+landing redirects a single-team manager to that page when `roster_count === 0`,
+otherwise to the team page.
+
+**Verification.** Backend: `chains.tests_manager_access` +
+`chains.tests_wide_scope` + `chains.tests_workflow_members` **154 OK** (new
+`InstitutionWideManagerTests`: appointment, no holding needed, wide-holder roster
+adds, chain creation, non-HR 403, inactive refusal, clear); `roles`, `teams`,
+`users`, `chains.tests_teams` **273 OK**. Frontend: new
+`tests/add-team-members.test.tsx` and `tests/team-manager-panel.test.tsx`, the
+roster panel test rewritten for the page link, and the form/overlay tests updated
+for the person-only picker. The pre-existing `chains.tests_team_configuration`
+routing-fixture failures (2 failures + 11 errors) are unchanged and unrelated.

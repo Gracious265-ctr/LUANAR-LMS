@@ -29,6 +29,7 @@ from roles.models import ApproverRole, RoleAssignment
 from roles.services import (
     _require_hr_actor,
     create_team_role_assignment,
+    set_team_manager_for_user,
 )
 from teams.models import Team, TeamRoleAssignment
 from users.models import User
@@ -358,6 +359,30 @@ def _ensure_team_category(team: Team) -> None:
         raise TeamActionError(field, message)
 
 
+def _designate_manager(*, team: Team, manager: dict, actor) -> None:
+    """Make ``manager["user"]`` the team's manager.
+
+    ``manager`` is either ``{"user"}`` — a person, with no capability attached —
+    or ``{"role", "user"}``, the older shape that also appoints a team-scoped
+    role holding. A role is honoured only when it is team-scoped: an
+    institution-wide role cannot be held *for* a team, so naming one is the same
+    instruction as naming nobody and the person is designated on the team
+    itself. Either way the team's ``manager`` field ends up naming them, and the
+    designation is audited by the service that writes it.
+    """
+    role = manager.get("role")
+    if role is not None and not role.is_institution_wide:
+        create_team_role_assignment(
+            team=team,
+            role=role,
+            user=manager["user"],
+            actor=actor,
+            is_team_manager=True,
+        )
+        return
+    set_team_manager_for_user(team=team, user=manager["user"], actor=actor)
+
+
 def create_team(
     *,
     actor,
@@ -383,13 +408,13 @@ def create_team(
     together or not at all: a half-built team with a chain but no steps is exactly
     the object that used to look configured and then fail at submission.
 
-    ``manager`` is ``{"role": <ApproverRole>, "user": <User>}``, the second page
-    of HR's create flow. When given, that team-scoped role is appointed to the
-    person as a team-wide holding and flagged the team's manager, in the same
-    transaction as the team, through :func:`create_team_role_assignment`.
-    Naming the role *and* the person is the whole instruction: the holding is
-    what lets the manager act, so "assign the manager" is not a separate object
-    to keep in step.
+    ``manager`` is ``{"user": <User>}`` — the person who runs the team — and may
+    optionally carry ``"role": <ApproverRole>``. When a team-scoped role is
+    named the person is appointed to it as a team-wide holding and designated
+    through that holding; otherwise (no role, or an institution-wide role that
+    cannot be held for a team) they are designated on the team itself, which is
+    the field every management check reads. An institution-wide approver is
+    named this way, because they have no team-scoped holding to flag.
 
     A team starts **active**: creating it is the act of putting it in force, and
     HR does not confirm that afterwards — so there is no draft state and no
@@ -470,13 +495,7 @@ def create_team(
                 reason=f"Created with the {team.name} team.",
             )
         if manager is not None:
-            create_team_role_assignment(
-                team=team,
-                role=manager["role"],
-                user=manager["user"],
-                actor=actor,
-                is_team_manager=True,
-            )
+            _designate_manager(team=team, manager=manager, actor=actor)
     return team
 
 def _appoint_institution_wide_holder(*, section: Section, actor=None) -> None:
@@ -678,9 +697,9 @@ def update_team(
     refused by the ``PROTECT`` on ``ApplicationStage.section_ref``, so an edit
     here cannot rewrite the past.
 
-    ``manager`` is the same ``{"role", "user"}`` instruction as on
-    :func:`create_team`: the role is appointed to the person as a team-wide
-    holding and designated the team's manager. Passing it re-designates the
+    ``manager`` is the same instruction as on :func:`create_team`: ``{"user"}``
+    designates the person on the team, and an optional team-scoped ``"role"``
+    appoints them a team-wide holding as well. Passing it re-designates the
     manager without touching anything else.
     """
     _require_hr_actor(actor, TeamActionError)
@@ -710,13 +729,7 @@ def update_team(
             )
 
         if manager is not None:
-            create_team_role_assignment(
-                team=team,
-                role=manager["role"],
-                user=manager["user"],
-                actor=actor,
-                is_team_manager=True,
-            )
+            _designate_manager(team=team, manager=manager, actor=actor)
     return team
 
 def route_team(*, team: Team, actor, workflow: Workflow) -> Team:

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
 import { TeamLifecycleActions } from "@/components/hr/team-lifecycle-actions";
+import { TeamManagerPanel } from "@/components/hr/team-manager-panel";
 import { TeamMemberList } from "@/components/hr/team-member-list";
 import { TeamMembersPanel } from "@/components/hr/team-members-panel";
 import type {
@@ -19,7 +20,7 @@ import {
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
-import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
 import {
   canAccessTeams,
@@ -27,7 +28,6 @@ import {
 } from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
-import { listMemberCandidates } from "@/lib/teams-client";
 import {
   teamCategoryBadgeTone,
   teamCategoryLabel,
@@ -58,32 +58,6 @@ const TABS = [
 ] as const;
 
 type TabValue = (typeof TABS)[number]["value"];
-
-/**
- * The people a roster may add, read by whoever is looking.
- *
- * HR reads the employee directory's "unassigned, matching category, not a wide
- * approver for this team" filters. A team's manager may not reach the directory
- * at all, so they read the same list through the team's own member-candidates
- * route, scoped by the backend to the team they run. Both are the backend's
- * answer, never a subtraction here.
- */
-async function loadMemberCandidates(
-  team: Team,
-  isAdministrator: boolean
-): Promise<Employee[]> {
-  try {
-    if (isAdministrator) {
-      return await listUnassignedEmployees(
-        team.category as EmployeeCategory,
-        true
-      );
-    }
-    return await listMemberCandidates(team.id);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The roles a team-wide holder may be given, read by whoever is looking.
@@ -145,23 +119,17 @@ export default async function TeamPage({
     ? (tabParam as TabValue)
     : "overview";
 
-  const [employeesResult, candidatesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
+  const [employeesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
     await Promise.all([
-      // A team-wide holder must be the same category as the team, so the
-      // Approvers tab's feed is the whole directory's matching half, read as a
-      // server filter rather than by subtracting here. A holder need not be a
-      // member of the team. HR-only: a manager cannot read the directory, so for
-      // them this is empty and the Approvers tab is read-only.
+      // The people the manager picker and the team-wide holder picker may
+      // offer. Both halves of the institution are read: a team's manager may be
+      // an institution-wide approver from either half, while a team-wide holder
+      // is narrowed to the team's own category by the panel. A holder need not
+      // be a member of the team. HR-only: a manager cannot read the directory,
+      // so for them this is empty and the Approvers tab is read-only.
       isAdministrator
-        ? listAllEmployees(team.category as EmployeeCategory).catch(
-            () => [] as Employee[]
-          )
+        ? listAllEmployees().catch(() => [] as Employee[])
         : Promise.resolve([] as Employee[]),
-      // The roster's candidates match this team: only unassigned employees of
-      // the team's own category, never a wide approver (who serves steps from
-      // the Approvers tab). Read through the team's own route, which a manager
-      // may reach; HR reads the same list from the directory's filters.
-      loadMemberCandidates(team, isAdministrator),
       listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
       // Every team's holdings, so this team's own can be filtered out here and
       // the whole set still fed to the panel as the one-wide-approver pool.
@@ -171,7 +139,6 @@ export default async function TeamPage({
       listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
     ]);
 
-  const candidates = candidatesResult;
   const workflows = workflowsResult;
   const holdings: WideHolding[] = holdersResult
     .filter((assignment) => assignment.team === team.id)
@@ -394,38 +361,57 @@ export default async function TeamPage({
       )}
 
       {tab === "approvers" && (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <h3 className="text-lg font-semibold text-text-primary">
-            Team-wide approvers
-          </h3>
-          <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole team.</p>
-          {roles.length === 0 ? (
-            <p className="mt-3 text-sm text-text-muted">
-              No active scoped roles to hold here yet. Institution-wide roles
-              are held on the{" "}
-              <Link
-                href="/dashboard/hr-admin/approvers"
-                className="font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                Approvers
-              </Link>{" "}
-              page.
+        <>
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Team manager
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              The one person who staffs this team&apos;s roster, builds its
+              chains, and chooses its default.
             </p>
-          ) : (
             <div className="mt-4">
-              <WideHoldingPanel
-                scope="team"
-                roles={roles}
-                scopeId={team.id}
-                requiredCategory={team.category as EmployeeCategory}
+              <TeamManagerPanel
+                team={team}
                 employees={employees}
-                holdings={holdings}
-                excludedUserIds={wideHolderUserIds}
                 canManage={isAdministrator}
               />
             </div>
-          )}
-        </div>
+          </div>
+
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Team-wide approvers
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole team.</p>
+            {roles.length === 0 ? (
+              <p className="mt-3 text-sm text-text-muted">
+                No active scoped roles to hold here yet. Institution-wide roles
+                are held on the{" "}
+                <Link
+                  href="/dashboard/hr-admin/approvers"
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  Approvers
+                </Link>{" "}
+                page.
+              </p>
+            ) : (
+              <div className="mt-4">
+                <WideHoldingPanel
+                  scope="team"
+                  roles={roles}
+                  scopeId={team.id}
+                  requiredCategory={team.category as EmployeeCategory}
+                  employees={employees}
+                  holdings={holdings}
+                  excludedUserIds={wideHolderUserIds}
+                  canManage={isAdministrator}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {tab === "members" && (
@@ -437,7 +423,6 @@ export default async function TeamPage({
           <div className="mt-4">
             <TeamMembersPanel
               team={team}
-              candidates={candidates}
               canManage={team.is_team_manager}
             />
           </div>

@@ -1,6 +1,7 @@
 """Team management endpoints (moved from chains)."""
 
 from django.db import IntegrityError
+from django.db.models import Q
 from rest_framework import mixins, permissions, serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -32,7 +33,9 @@ from roles.permissions import IsHROnly, IsHROrTeamManager, is_hr
 from roles.services import (
     RoleActionError,
     WorkflowMemberError,
+    clear_team_manager_for_team,
     is_team_manager,
+    set_team_manager_for_user,
     wide_role_holder_ids,
 )
 from chains.views import _managed_team_ids
@@ -58,6 +61,7 @@ def _require_team_manager(user, team) -> None:
 
 from teams.models import Team, TeamRoleAssignment
 from teams.serializers import (
+    TeamManagerDesignateSerializer,
     TeamMemberAddSerializer,
     TeamMemberBulkAddSerializer,
     TeamMemberSummarySerializer,
@@ -119,7 +123,14 @@ class TeamViewSet(
         roster and choosing the default chain are narrower still: those are the
         designated manager's alone, enforced on the write actions below.
         """
-        if self.action in ("create", "update", "partial_update", "deactivate"):
+        if self.action in (
+            "create",
+            "update",
+            "partial_update",
+            "deactivate",
+            "set_manager",
+            "clear_manager",
+        ):
             return [permissions.IsAuthenticated(), IsHROnly()]
         return super().get_permissions()
 
@@ -128,40 +139,36 @@ class TeamViewSet(
         """The people a manager may place on this team's roster.
 
         The roster's candidate list is "unassigned employees of the team's own
-        half of the institution, who hold no wide approver role anywhere". The
-        rule has three parts, and the write path refuses anyone this list does
-        not offer:
+        half of the institution" plus "unassigned wide approvers". The write
+        path refuses anyone this list does not offer:
 
-        * the employee's **category** must match the team's — an administration
-          team takes administration employees, an academic team academic ones;
-        * they must be on **no other team** (one employee belongs to one team);
-        * they must hold **no wide approver role** — institution-wide, on any
-          team, or at any campus — because a wide holder staffs steps from the
-          Approvers tab, and their leave is already routed by the office they
-          hold.
+        * an **ordinary employee** must match the team's **category** — an
+          administration team takes administration employees, an academic team
+          academic ones;
+        * a **wide approver** — institution-wide, on any team, or at any campus
+          — is offered regardless of category, because a wide holding crosses
+          the institution's halves. A team's manager who holds one is exactly
+          the person who needs the other half on their roster;
+        * everybody offered must be on **no other team** (one employee belongs
+          to one team).
 
-        The team's own designated manager is the one exception and is offered
-        anyway: joining the roster is how their own leave routes through the
-        team they run. Once they join, "unassigned employees" excludes them from
-        every other team's list.
+        The team's own manager is offered when they are unassigned, whichever
+        half they belong to: joining the roster is how their own leave routes
+        through the team they run. Once anybody joins, "unassigned" excludes
+        them from every other team's list.
 
         This answers from the team itself, through the scoped queryset, so a
         manager can read their own team's pool; it is the read half of
         ``members`` and nothing more.
         """
         team = self.get_object()
-        manager_ids = set(
-            TeamRoleAssignment.objects.filter(
-                team=team, is_team_manager=True, user__is_active=True
-            ).values_list("user_id", flat=True)
-        )
+        wide_ids = wide_role_holder_ids()
         queryset = (
             EmployeeProfile.objects.filter(
                 team__isnull=True,
-                category=team.category,
                 user__is_active=True,
             )
-            .exclude(user_id__in=wide_role_holder_ids() - manager_ids)
+            .filter(Q(category=team.category) | Q(user_id__in=wide_ids))
             .select_related("user", "team")
             .order_by("user__first_name", "user__last_name")
         )
@@ -627,5 +634,46 @@ class TeamViewSet(
             )
         return Response(
             TeamSerializer(retired, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="set-manager")
+    def set_manager(self, request, *args, **kwargs):
+        """Designate the person who runs this team.
+
+        HR's decision, and HR's alone: a manager inherits the team, they do not
+        name their successor. The person may be *any* active employee — an
+        institution-wide approver is the case this exists for, since they hold no
+        team-scoped role to flag. The team's ``manager`` field is the
+        authoritative designation, so a role holding is not required.
+        """
+        team = self.get_object()
+        serializer = TeamManagerDesignateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = set_team_manager_for_user(
+                team=team,
+                user=serializer.validated_data["user"],
+                actor=request.user,
+            )
+        except RoleActionError as exc:
+            return Response(
+                {exc.field: [exc.message]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            TeamSerializer(updated, context=self.get_serializer_context()).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="clear-manager")
+    def clear_manager(self, request, *args, **kwargs):
+        """Remove this team's manager, however they were designated.
+
+        Retirement is not tied to this: a team without a manager still exists and
+        still routes, it just has nobody to staff its roster until HR names
+        somebody.
+        """
+        team = self.get_object()
+        updated = clear_team_manager_for_team(team=team, actor=request.user)
+        return Response(
+            TeamSerializer(updated, context=self.get_serializer_context()).data
         )
 

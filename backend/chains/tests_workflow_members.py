@@ -279,22 +279,39 @@ class TeamMemberManagementTests(MemberAPIBase):
         academic.employee_profile.refresh_from_db()
         self.assertEqual(academic.employee_profile.team_id, academic_team.pk)
 
-    def test_add_member_who_is_a_wide_approver_is_refused(self):
-        # An approver serves steps from the Approvers tab; placing them on the
-        # roster as a normal member would silently also route their leave.
-        approver = make_employee("wide@members.test")
+    def test_add_member_who_is_a_wide_approver_is_accepted(self):
+        # A wide approver crosses the institution's halves, so a manager may put
+        # them on the roster even though their category differs from the team's.
+        # Their leave then routes through the team they were added to.
+        approver = make_employee("wide@members.test", category=EmployeeProfile.Category.ACADEMIC)
         grant_approver_role(approver, "registrar")
         response = self.client.post(
             f"{TEAMS_URL}{self.team.pk}/members/",
             {"user": approver.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         approver.employee_profile.refresh_from_db()
-        self.assertIsNone(approver.employee_profile.team_id)
+        self.assertEqual(approver.employee_profile.team_id, self.team.pk)
 
-    def test_add_member_who_is_campus_wide_approver_for_that_campus_is_refused(self):
+    def test_add_member_with_a_mismatched_category_and_no_wide_role_is_refused(self):
+        # The category rule still applies to ordinary employees: only a wide
+        # holding is the exemption, not "the manager asked".
+        academic = make_employee(
+            "academic-refused@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": academic.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Administration team", response.json()["user"][0])
+        academic.employee_profile.refresh_from_db()
+        self.assertIsNone(academic.employee_profile.team_id)
+
+    def test_add_member_who_is_campus_wide_approver_for_that_campus_is_accepted(self):
         academic_team = make_team(
             "Campus Members Team", ["supervisor"], campus="Members Campus"
         )
@@ -316,10 +333,9 @@ class TeamMemberManagementTests(MemberAPIBase):
             {"user": holder.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         holder.employee_profile.refresh_from_db()
-        self.assertIsNone(holder.employee_profile.team_id)
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
 
     def test_remove_member_clears_team(self):
         response = self.client.delete(self.member_url(self.alice.pk))
@@ -510,8 +526,11 @@ class TeamRosterAuthorityTests(MemberAPIBase):
         self.alice.employee_profile.refresh_from_db()
         self.assertEqual(self.alice.employee_profile.team_id, self.team.pk)
 
-    def test_member_candidates_omit_wide_holders(self):
-        holder = make_employee("wide-candidate@members.test")
+    def test_member_candidates_offer_wide_holders(self):
+        holder = make_employee(
+            "wide-candidate@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
         grant_approver_role(holder, "registrar")
         ordinary = make_employee("ordinary-candidate@members.test")
         self.client.force_authenticate(self.manager)
@@ -522,9 +541,11 @@ class TeamRosterAuthorityTests(MemberAPIBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         ids = {row["user_id"] for row in response.json()}
         self.assertIn(ordinary.pk, ids)
-        self.assertNotIn(holder.pk, ids)
+        # A wide holding is offered regardless of category: it crosses the
+        # institution's halves, so the team's own category cannot exclude it.
+        self.assertIn(holder.pk, ids)
 
-    def test_institution_wide_holder_is_refused_by_an_academic_team(self):
+    def test_institution_wide_holder_is_accepted_by_an_academic_team(self):
         academic_team = make_team(
             "Authority Academic Team", ["supervisor"], campus="Members Campus"
         )
@@ -543,12 +564,11 @@ class TeamRosterAuthorityTests(MemberAPIBase):
             {"user": holder.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         holder.employee_profile.refresh_from_db()
-        self.assertIsNone(holder.employee_profile.team_id)
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
 
-    def test_campus_wide_holder_at_another_campus_is_refused(self):
+    def test_campus_wide_holder_at_another_campus_is_accepted(self):
         academic_team = make_team(
             "Authority Campus Team", ["supervisor"], campus="Members Campus"
         )
@@ -575,14 +595,18 @@ class TeamRosterAuthorityTests(MemberAPIBase):
             {"user": holder.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        # A holding at another campus still makes them a wide approver, and a
+        # wide holding is what the category rule exempts.
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         holder.employee_profile.refresh_from_db()
-        self.assertIsNone(holder.employee_profile.team_id)
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
 
-    def test_team_wide_holder_on_another_team_is_refused(self):
+    def test_team_wide_holder_on_another_team_is_accepted(self):
         other = make_team("Authority Holder Team", ["supervisor"])
-        holder = make_employee("other-team-wide@members.test")
+        holder = make_employee(
+            "other-team-wide@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
         role = ensure_roles("hod")["hod"]
         TeamRoleAssignment.objects.create(team=other, role=role, user=holder)
         self.client.force_authenticate(self.manager)
@@ -592,10 +616,9 @@ class TeamRosterAuthorityTests(MemberAPIBase):
             {"user": holder.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         holder.employee_profile.refresh_from_db()
-        self.assertIsNone(holder.employee_profile.team_id)
+        self.assertEqual(holder.employee_profile.team_id, self.team.pk)
 
 
 class WorkflowMemberEligibilityTests(MemberAPIBase):
