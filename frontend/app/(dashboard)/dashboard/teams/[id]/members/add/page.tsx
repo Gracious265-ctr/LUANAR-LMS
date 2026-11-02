@@ -15,7 +15,7 @@ import {
   teamCategoryBadgeTone,
   teamCategoryLabel,
 } from "@/lib/teams";
-import { listMemberCandidates } from "@/lib/teams-client";
+import { apiClient } from "@/lib/api-client";
 
 const CANDIDATES_ERROR =
   "Unable to load the people who can join, so the list below may be incomplete.";
@@ -64,7 +64,9 @@ export default async function AddTeamMembersPage({
   let candidates: Employee[] = [];
   let candidatesError = "";
   try {
-    candidates = await listMemberCandidates(team.id);
+    candidates = await apiClient<Employee[]>(
+      `/api/v1/teams/${team.id}/member-candidates/`
+    );
   } catch {
     candidatesError = CANDIDATES_ERROR;
   }

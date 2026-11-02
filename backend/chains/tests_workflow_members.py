@@ -862,7 +862,13 @@ class WorkflowMemberEligibilityTests(MemberAPIBase):
         # must not trip against the section's own workflow.
         ensure_membership_allowed(section=section_a, user=self.alice)
 
-    def test_team_wide_approver_joins_both_chains_and_stays_eligible(self):
+    def test_team_wide_approver_joins_one_chain_only(self):
+        """A wide holding staffs steps; it does not enrol on several chains.
+
+        The person's normal-member row is where their own leave routes, so it
+        stays a single row even when their team-wide post staffs every chain's
+        steps.
+        """
         TeamRoleAssignment.objects.create(
             user=self.alice,
             team=self.team,
@@ -872,17 +878,25 @@ class WorkflowMemberEligibilityTests(MemberAPIBase):
             workflow=self.flow_a, user=self.alice, actor=self.hr
         )
         self.assertTrue(first.is_wide_approver)
-        second = assign_workflow_member(
-            workflow=self.flow_b, user=self.alice, actor=self.hr
+        with self.assertRaises(WorkflowMemberError):
+            assign_workflow_member(
+                workflow=self.flow_b, user=self.alice, actor=self.hr
+            )
+        self.assertFalse(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_b, user=self.alice
+            ).exists()
         )
-        self.assertTrue(second.is_wide_approver)
         pool = workflow_member_pool(team=self.team, workflow=self.flow_b)
-        self.assertIn(self.alice.pk, {row["user"] for row in pool["available"]})
         self.assertNotIn(
-            self.alice.pk, {row["user"] for row in pool["assigned_elsewhere"]}
+            self.alice.pk, {row["user"] for row in pool["available"]}
         )
+        row = next(
+            r for r in pool["assigned_elsewhere"] if r["user"] == self.alice.pk
+        )
+        self.assertEqual(row["kind"], "member")
 
-    def test_institution_wide_approver_is_exempt_from_the_elsewhere_rule(self):
+    def test_institution_wide_approver_is_exempt_from_the_step_elsewhere_rule(self):
         grant_approver_role(self.alice, "hod")
         step_b = self.flow_b.sections.first()
         ensure_membership_allowed(section=step_b, user=self.alice)
@@ -929,6 +943,31 @@ class WorkflowMemberAPITests(MemberAPIBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual({m["user"] for m in response.json()["members"]},
                          {self.bob.pk})
+
+    def test_detail_members_carry_the_roster_fields(self):
+        """The detail payload is what the chain's member table prints.
+
+        The roster shows one row per member with a name, a designation and an
+        email, so the embedded ``members`` must be the member serializer's
+        shape. A hand-rolled payload with different keys still counts the
+        members but leaves every row blank.
+        """
+        assign_workflow_member(workflow=self.flow, user=self.alice, actor=self.hr)
+        profile = self.alice.employee_profile
+        profile.designation = "Lecturer"
+        profile.save(update_fields=["designation"])
+
+        response = self.client.get(f"{WORKFLOWS_URL}{self.flow.pk}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(
+            m for m in response.json()["members"] if m["user"] == self.alice.pk
+        )
+        self.assertEqual(row["user_name"], "Test Employee")
+        self.assertEqual(row["user_email"], "alice@members.test")
+        self.assertEqual(row["designation"], "Lecturer")
+        self.assertEqual(row["team_name"], self.team.name)
+        self.assertEqual(row["workflow_name"], self.flow.name)
 
     def test_create_workflow_refuses_a_member_of_another_chain(self):
         """A new chain cannot take its members off the live one.

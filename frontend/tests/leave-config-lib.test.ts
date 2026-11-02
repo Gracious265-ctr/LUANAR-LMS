@@ -229,11 +229,12 @@ describe("module rail (spec 3.5)", () => {
     expect(isLeaveConfigModule("/dashboard/leave")).toBe(false);
   });
 
-  it("offers exactly the two destinations the spec lists", () => {
+  it("offers exactly the three destinations the module lists", () => {
     expect(
       LEAVE_CONFIG_NAV_ITEMS.map((item) => [item.label, item.href])
     ).toEqual([
       ["Leave Types", "/leave-config"],
+      ["Annual Days", "/leave-config/annual-days"],
       ["Create Leave Type", "/leave-config/new"],
     ]);
   });
@@ -243,13 +244,27 @@ describe("module rail (spec 3.5)", () => {
     expect(leaveTypes.match("/leave-config")).toBe(true);
     expect(leaveTypes.match("/leave-config/7")).toBe(true);
     expect(leaveTypes.match("/leave-config/new")).toBe(false);
+    expect(leaveTypes.match("/leave-config/annual-days")).toBe(false);
     expect(leaveTypes.match("/dashboard")).toBe(false);
   });
 
+  it("lights Annual Days on its list and overlay routes", () => {
+    const annualDays = LEAVE_CONFIG_NAV_ITEMS[1];
+    expect(annualDays.href).toBe("/leave-config/annual-days");
+    expect(annualDays.match("/leave-config/annual-days")).toBe(true);
+    expect(annualDays.match("/leave-config/annual-days/new")).toBe(true);
+    expect(annualDays.match("/leave-config/annual-days/7/edit")).toBe(true);
+    expect(annualDays.match("/leave-config")).toBe(false);
+    expect(annualDays.match("/leave-config/new")).toBe(false);
+  });
+
   it("lights Create Leave Type only on the create form", () => {
-    const create = LEAVE_CONFIG_NAV_ITEMS[1];
+    const create = LEAVE_CONFIG_NAV_ITEMS.find(
+      (item) => item.href === "/leave-config/new"
+    )!;
     expect(create.match("/leave-config/new")).toBe(true);
     expect(create.match("/leave-config")).toBe(false);
     expect(create.match("/leave-config/7")).toBe(false);
+    expect(create.match("/leave-config/annual-days")).toBe(false);
   });
 });

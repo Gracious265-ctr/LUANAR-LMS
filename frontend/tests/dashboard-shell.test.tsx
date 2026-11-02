@@ -602,7 +602,7 @@ describe("DashboardShell Plans module", () => {
 });
 
 describe("DashboardShell Leave Configuration module", () => {
-  it("scopes the rail to the launcher plus exactly the two configuration items", () => {
+  it("scopes the rail to the launcher plus exactly the three configuration items", () => {
     currentPath = "/leave-config";
     // The strictest visitor again: an HR approver must lose their HR and
     // approvals destinations, not merely the employee-only extras.
@@ -617,12 +617,16 @@ describe("DashboardShell Leave Configuration module", () => {
       "href",
       "/leave-config",
     );
+    expect(within(nav).getByRole("link", { name: "Annual Days" })).toHaveAttribute(
+      "href",
+      "/leave-config/annual-days",
+    );
     expect(
       within(nav).getByRole("link", { name: "Create Leave Type" }),
     ).toHaveAttribute("href", "/leave-config/new");
 
-    // Exactly two destinations and the launcher — nothing leaks in.
-    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+    // Exactly three destinations and the launcher — nothing leaks in.
+    expect(within(nav).getAllByRole("link")).toHaveLength(4);
 
     for (const hidden of [
       "Dashboard",
@@ -666,6 +670,28 @@ describe("DashboardShell Leave Configuration module", () => {
     expect(
       within(nav).getByRole("link", { name: "Create Leave Type" }),
     ).not.toHaveAttribute("aria-current");
+    expect(
+      within(nav).getByRole("link", { name: "Annual Days" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+
+  it.each([
+    ["/leave-config/annual-days"],
+    ["/leave-config/annual-days/new"],
+  ])("marks Annual Days active at %s", (path) => {
+    currentPath = path;
+    renderShell(mockUser);
+
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: "Annual Days" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: "Leave Types" })).not.toHaveAttribute(
+      "aria-current",
+    );
+    expect(
+      within(nav).getByRole("link", { name: "Create Leave Type" }),
+    ).not.toHaveAttribute("aria-current");
   });
 
   it("marks Create Leave Type active only on the create form", () => {
@@ -679,6 +705,9 @@ describe("DashboardShell Leave Configuration module", () => {
     expect(within(nav).getByRole("link", { name: "Leave Types" })).not.toHaveAttribute(
       "aria-current",
     );
+    expect(
+      within(nav).getByRole("link", { name: "Annual Days" }),
+    ).not.toHaveAttribute("aria-current");
   });
 
   it("does not let an edit path be mistaken for the create form", () => {

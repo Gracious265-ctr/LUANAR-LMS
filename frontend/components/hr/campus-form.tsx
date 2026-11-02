@@ -39,9 +39,15 @@ export function CampusForm({
     setLoading(true);
 
     const formData = new FormData(event.currentTarget);
+    const name = String(formData.get("name") || "");
+    const slug = name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
     const input: CampusInput = {
-      name: String(formData.get("name") || ""),
-      code: String(formData.get("code") || ""),
+      name,
+      code: slug || name.replace(/\s+/g, "-").toLowerCase(),
       description: String(formData.get("description") || ""),
     };
 
@@ -86,25 +92,6 @@ export function CampusForm({
       </div>
       <div>
         <label
-          htmlFor="campus_code"
-          className="mb-1 block text-sm font-medium text-text-primary"
-        >
-          Code
-        </label>
-        <Input
-          id="campus_code"
-          name="code"
-          required
-          defaultValue={campus?.code ?? ""}
-          placeholder="e.g. main"
-        />
-        <p className="mt-1 text-xs text-text-muted">
-          A short, stable identifier. Teams that sit at this campus keep working
-          if the name changes later.
-        </p>
-      </div>
-      <div>
-        <label
           htmlFor="campus_description"
           className="mb-1 block text-sm font-medium text-text-primary"
         >
@@ -136,61 +123,5 @@ export function CampusForm({
         </Button>
       </div>
     </form>
-  );
-}
-
-/**
- * The campus list, with the form one click away.
- *
- * Kept on the teams page because that is where a campus is usually first
- * needed — "this team sits at a campus" is the question, and the campus not
- * existing is the answer that stops the form. The full list lives on the
- * Campuses page, which is where a campus is edited once teams already use it.
- */
-export function CampusQuickAdd({ campuses }: { campuses: Campus[] }) {
-  const [open, setOpen] = useState(false);
-
-  if (!open) {
-    return (
-      <div>
-        {campuses.length === 0 ? (
-          <p className="text-sm text-text-muted">
-            No campuses yet. A campus is required for an academic team.
-          </p>
-        ) : (
-          <ul className="space-y-1 text-sm text-text-secondary">
-            {campuses.map((campus) => (
-              <li key={campus.id}>
-                <a
-                  href={`/dashboard/hr-admin/campuses/${campus.id}`}
-                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
-                >
-                  {campus.name}
-                </a>{" "}
-                <span className="font-mono text-xs text-text-muted">
-                  {campus.code}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <Button
-          variant="secondary"
-          onClick={() => setOpen(true)}
-          className="mt-3"
-        >
-          Add a campus
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <CampusForm onSaved={() => setOpen(false)} returnTo="" />
-      <Button variant="secondary" onClick={() => setOpen(false)}>
-        Cancel
-      </Button>
-    </div>
   );
 }

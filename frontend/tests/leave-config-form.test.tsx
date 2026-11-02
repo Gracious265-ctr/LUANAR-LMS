@@ -438,7 +438,7 @@ describe("LeaveTypeForm — the record's own state", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "entitlements" })
-    ).toHaveAttribute("href", "/dashboard/hr-admin/entitlements");
+    ).toHaveAttribute("href", "/leave-config/annual-days");
   });
 
   it("offers no deactivate control for the annual type", () => {

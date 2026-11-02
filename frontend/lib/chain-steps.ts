@@ -81,7 +81,11 @@ const WORKFLOW_STATUS: Record<StageStatus, StepStatus> = {
 
 export function chainFromWorkflow(stages: ApprovalStage[]): Step[] {
   return stages.map((stage): Step => {
-    const assigned = stage.assigned_approver || null;
+    const assigned =
+      (stage as any).approver ||
+      (stage as any).assigned_approver ||
+      (stage as any).acting_for ||
+      null;
     const vacant = stage.status === "pending" && !assigned;
     const status: StepStatus = vacant ? "blocked" : WORKFLOW_STATUS[stage.status];
 
@@ -89,7 +93,7 @@ export function chainFromWorkflow(stages: ApprovalStage[]): Step[] {
     if (vacant) sublabel = "No approver assigned";
     else if (stage.status === "rejected") sublabel = "Rejected";
     else if (stage.status === "skipped")
-      sublabel = stage.skip_reason ?? "Skipped";
+      sublabel = (stage as any).skip_reason ?? "Skipped";
     else if (stage.status === "pending" && stage.assigned_at)
       sublabel = `Assigned ${formatDateTime(stage.assigned_at)}`;
 
@@ -101,7 +105,7 @@ export function chainFromWorkflow(stages: ApprovalStage[]): Step[] {
       actor: assigned ? { id: assigned, name: assigned } : null,
       timestamp: stage.decided_at,
       detail: stage.comment,
-      isActing: false,
+      isActing: !!(stage as any).acting_for,
     };
   });
 }

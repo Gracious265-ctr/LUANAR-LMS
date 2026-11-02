@@ -328,12 +328,14 @@ export default async function TeamPage({
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      <Link
-                        href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-                        className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                      >
-                        Edit steps
-                      </Link>
+                      {team.is_team_manager && (
+                        <Link
+                          href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
+                          className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                        >
+                          Edit steps
+                        </Link>
+                      )}
                       <RouteChainButton
                         teamId={team.id}
                         workflow={workflow}
@@ -422,7 +424,7 @@ export default async function TeamPage({
           <p className="mt-1 text-sm text-text-secondary">People whose submissions this team&apos;s chains decide.</p>
           <div className="mt-4">
             <TeamMembersPanel
-              team={team}
+              team={team as any}
               canManage={team.is_team_manager}
             />
           </div>

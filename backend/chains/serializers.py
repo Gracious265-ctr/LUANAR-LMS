@@ -287,23 +287,20 @@ class WorkflowSerializer(serializers.ModelSerializer):
 
         Separate from ``sections``: section approvers decide each step; these
         are the team members on the chain who are not step appointments.
+
+        Delegates to :class:`WorkflowMemberSerializer` rather than hand-rolling
+        a shape: this payload feeds the chain's member roster, whose columns
+        (name, designation, email) are exactly the fields that serializer owns.
+        Two shapes for the same row is how a screen ends up counting three
+        members and printing three blank names.
         """
-        rows = list(
-            instance.workflow_members.select_related("user", "team").order_by(
-                "user__first_name", "user__last_name", "user_id"
+        rows = (
+            instance.workflow_members.select_related(
+                "user", "user__employee_profile", "team", "workflow"
             )
+            .order_by("user__first_name", "user__last_name", "user_id")
         )
-        return [
-            {
-                "id": row.user_id,
-                "user": row.user_id,
-                "full_name": row.user.get_full_name() or row.user.username,
-                "email": row.user.email,
-                "team": row.team_id,
-                "created_at": row.created_at,
-            }
-            for row in rows
-        ]
+        return WorkflowMemberSerializer(rows, many=True).data
 
 
 

@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
@@ -136,24 +137,37 @@ class PersonRoutedChainTests(RoutingTestCase):
         self.assertEqual(self.routed_roles(second), ["supervisor", "registrar"])
         # first has no chain, so routed_roles would fail - that's expected
 
-    def test_a_wide_approver_on_several_chains_routes_through_enrolment(self):
-        """A wide approver on several chains routes through their enrolment, not a default."""
+    def test_a_wide_approver_routes_through_their_single_enrolment(self):
+        """A wide holding staffs every chain, but enrols on one.
+
+        The registrar's post puts them on every chain's steps; their own leave
+        still routes through the one chain they are a normal member of, never
+        through a default fallback.
+        """
         wide = make_employee("wide@test.luanar", team=self.team)
         registrar = ensure_roles("registrar")["registrar"]
         RoleAssignment.objects.create(role=registrar, user=wide)
-        # A registrar staffs every chain of an administration team, so the
-        # membership rows exist on both — their own leave cannot use both.
-        self.enroll(self.default, wide, is_wide=True)
         self.enroll(self.second, wide, is_wide=True)
-        self.assertTrue(
-            WorkflowMember.objects.filter(user=wide, team=self.team).count() == 2
+        self.assertEqual(
+            WorkflowMember.objects.filter(user=wide).count(),
+            1,
         )
 
-        # wide is enrolled on both chains; since routing has no default fallback,
-        # they route through the lowest-id enrolled chain (self.default)
-        self.assertEqual(routed_workflow_for(self.team, wide), self.default)
-        # Their roles come from that chain
-        self.assertEqual(self.routed_roles(wide), ["supervisor", "hod"])
+        self.assertEqual(routed_workflow_for(self.team, wide), self.second)
+        self.assertEqual(self.routed_roles(wide), ["supervisor", "registrar"])
+
+    def test_a_wide_approver_cannot_enrol_on_a_second_chain(self):
+        """Wide staffing is about steps; membership stays one workflow."""
+        wide = make_employee("wide-two@test.luanar", team=self.team)
+        registrar = ensure_roles("registrar")["registrar"]
+        RoleAssignment.objects.create(role=registrar, user=wide)
+        self.enroll(self.default, wide, is_wide=True)
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                self.enroll(self.second, wide, is_wide=True)
+
+        self.assertEqual(WorkflowMember.objects.filter(user=wide).count(), 1)
 
     def test_the_chain_is_resolved_for_the_signed_in_person(self):
         member = make_employee("signed-in@test.luanar", team=self.team)

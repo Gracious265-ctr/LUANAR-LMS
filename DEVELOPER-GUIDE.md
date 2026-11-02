@@ -157,7 +157,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 |--------|---------------|
 | `frontend/app/(dashboard)/dashboard/…` | The pages you see inside the app (employee + HR) |
 | `frontend/app/(dashboard)/approvals/…` | Approvers' "pending approvals" pages |
-| `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit) |
+| `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit, and the annual-days screen) |
 | `frontend/app/(dashboard)/dashboard/hr-admin/calendar/…` | The HR **Calendar** app (tabbed landing page: financial years, holidays & events, working days, with a month grid) |
 | `frontend/app/(auth)/login/` | The login page |
 | `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans, leave-config) |
@@ -187,6 +187,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | The **Calendar** app's own sidebar rail (only the launcher + one Calendar entry; the HR folio is hidden inside the app) | `frontend/lib/nav/calendar-nav.ts` (`isCalendarModule`, `CALENDAR_NAV_ITEMS`) |
 | Who may open the Calendar (the frontend access check) | `frontend/lib/financial-years.ts` (`canAccessCalendar`/`requireCalendarAccess`; backend twin in `backend/calendar_app/services.py`) |
 | The **Leave Configuration** app (list/create/edit leave types, deactivate & reactivate) | `frontend/app/(dashboard)/leave-config/…` + `frontend/components/leave-config/`, `frontend/lib/leave-config*.ts` |
+| The **Annual Days** screen inside Leave Configuration (grade band × leave type × financial year → days) | `frontend/app/(dashboard)/leave-config/annual-days/…` + `frontend/components/hr/annual-days-config.tsx`, `EntitlementsSection.tsx`, `entitlement-table.tsx`; backend `leave.GradeLeaveEntitlement` and `/api/v1/entitlements/` |
 | Who may open Leave Configuration (the frontend access check) | `frontend/lib/leave-config-server.ts` (`canAccessLeaveConfig`; backend twin in `backend/leave_config/services.py`) |
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
 | Shared API client / how tokens are attached | `frontend/lib/api-client.ts` |
@@ -198,7 +199,8 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | The **add-members page** and its search/select/summary body | `frontend/app/(dashboard)/dashboard/teams/[id]/members/add/page.tsx` + `frontend/components/hr/add-team-members.tsx` |
 | A team's roster list (search, filter, remove, link to add) | `frontend/components/hr/team-members-panel.tsx` |
 | A team's **chain builder** (steps page → members page) | `frontend/components/hr/workflow-form.tsx` |
-| The **chain cards** on a team's workflows page (badge, Edit, Make default) | `frontend/components/hr/workflow-compact-card.tsx` |
+| The **chain cards** on a team's workflows page (badge, Edit, Make default, View members) | `frontend/components/hr/workflow-compact-card.tsx` |
+| A chain's read-only **member roster** (the `#members` table) | `frontend/components/hr/workflow-member-table.tsx`, rendered by `frontend/app/(dashboard)/dashboard/teams/[id]/workflows/[workflowId]/page.tsx`; the payload comes from `WorkflowSerializer.get_members` → `WorkflowMemberSerializer` in `backend/chains/serializers.py` |
 | The **multi-select employee picker** used to add a team's or a chain's members | `frontend/components/hr/employee-picker-dialog.tsx` |
 | The Supporting/Approved **document tables** (shared by both pages) | `frontend/components/documents/documents-table.tsx` |
 
@@ -322,10 +324,11 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    employee directory, which a team's manager cannot read. The rule is enforced
    on the write side too: both `assign_workflow_member` and
    `sync_workflow_members` refuse an already-placed person (the sync reports it
-   against `members`) instead of silently moving them off another chain. Wide
-   approvers are the one exception: their holdings staff chains automatically,
-   so they stay addable to several and their row carries
-   `is_wide_approver`.
+   against `members`) instead of silently moving them off another chain. A wide
+   approver is **not** exempt from membership: their holding staffs every
+   chain's *steps*, but their own normal-member row is still one workflow, so
+   they appear under `assigned_elsewhere` once enrolled and the write refuses a
+   second one. The row keeps `is_wide_approver` for display.
 7. Add members several at a time. Both rosters open
    `frontend/components/hr/employee-picker-dialog.tsx`, which holds the
    selection, searches the already-loaded pool, and confirms with a count. The
@@ -508,6 +511,16 @@ HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and
 Writes are scoped too: `SectionMemberWriteSerializer.validate_section` refuses a
 manager staffing a step of a team they do not run, because a write names its
 section directly and the viewset queryset alone would not stop it.
+
+**I want to change the annual days a grade gets.**
+Open **Leave Configuration → Annual Days** (`/leave-config/annual-days`), or the
+HR-admin **Entitlements** page — both render the same `AnnualDaysConfig` body and
+read the same `/api/v1/entitlements/` registry. A rule is a grade band
+(`grade_start`–`grade_end`), a leave type, a number of days, and an
+`effective_from` date; bands must not overlap, so change an existing band rather
+than adding a second rule for it. There is deliberately **no** days-per-year
+field on `LeaveType` (`leave_types/models.py`): the entitlement is grade-based,
+and saving a band is what provisions the canonical annual leave type.
 
 **I want the seeded demo accounts gone.**
 ```bash

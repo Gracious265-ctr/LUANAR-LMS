@@ -50,9 +50,91 @@ export function RouteChainButton({
 
   if (workflow.is_routing) {
     return (
-      <Badge size="sm" tone="info">
-        Default
-      </Badge>
+      <span className="inline-flex items-center gap-2">
+        <Badge size="sm" tone="info">
+          Default
+        </Badge>
+        {canManage && (
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+          >
+            Remove default
+          </Button>
+        )}
+        <Dialog
+          open={confirming}
+          onOpenChange={(next) => {
+            if (!next && !busy) {
+              setConfirming(false);
+              setError("");
+            }
+          }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Remove as default chain?</DialogTitle>
+              <DialogDescription>
+                The team will no longer have a default fallback. Employees not
+                enrolled on any chain and wide approvers will need to be
+                enrolled explicitly.
+              </DialogDescription>
+            </DialogHeader>
+            {error && (
+              <p className="text-sm text-status-rejected">{error}</p>
+            )}
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setConfirming(false);
+                  setError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                loading={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setError("");
+                  try {
+                    const res = await fetch(`/api/hr/teams/${teamId}/route`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ workflow: null }),
+                    });
+                    if (!res.ok) {
+                      let msg = "An error occurred. Please try again.";
+                      try {
+                        const data = await res.json();
+                        msg = data.workflow?.[0] || data.detail || msg;
+                      } catch {}
+                      throw new Error(msg);
+                    }
+                    setConfirming(false);
+                    router.refresh();
+                  } catch (err) {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "An error occurred. Please try again."
+                    );
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Remove default
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </span>
     );
   }
 

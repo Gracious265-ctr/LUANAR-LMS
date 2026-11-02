@@ -163,12 +163,17 @@ class TeamViewSet(
         """
         team = self.get_object()
         wide_ids = wide_role_holder_ids()
+        # The team manager should not appear in the list of people to be added
+        manager_ids = []
+        if team.manager_id:
+            manager_ids.append(team.manager_id)
         queryset = (
             EmployeeProfile.objects.filter(
                 team__isnull=True,
                 user__is_active=True,
             )
             .filter(Q(category=team.category) | Q(user_id__in=wide_ids))
+            .exclude(user_id__in=manager_ids)
             .select_related("user", "team")
             .order_by("user__first_name", "user__last_name")
         )
@@ -295,9 +300,23 @@ class TeamViewSet(
                 {"team": "That team is missing."}
             )
 
+        manager_ids = []
+        if team.manager_id:
+            manager_ids.append(team.manager_id)
+        try:
+            from teams.models import TeamRoleAssignment
+
+            manager_ids.extend(
+                TeamRoleAssignment.objects.filter(
+                    team=team, is_team_manager=True, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+        except Exception:
+            pass
+        manager_ids = set(manager_ids)
         queryset = EmployeeProfile.objects.filter(
             team=team, user__is_active=True
-        ).select_related("user", "team")
+        ).select_related("user", "team").exclude(user_id__in=manager_ids)
 
         workflow_filter = params.get("workflow")
         if workflow_filter:

@@ -277,7 +277,7 @@ export function LeaveTypeForm({ leaveType }: { leaveType?: LeaveType }) {
               {leaveType?.name} is created by its first entitlement, so its name
               and short code are fixed. Days per grade are set in{" "}
               <Link
-                href="/dashboard/hr-admin/entitlements"
+                href="/leave-config/annual-days"
                 className="font-medium underline"
               >
                 entitlements

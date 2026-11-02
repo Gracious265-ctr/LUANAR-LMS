@@ -3,9 +3,10 @@
 A *team* is the organisational unit that owns one or more approval chains and is
 put in force when HR creates it; a *workflow* is one of the chains it owns. A
 team routes every chain its people are enrolled on at the same time, and the
-chain named as the team's :attr:`~teams.models.Team.workflow` is the **default**
-one — where somebody not yet placed on one of the team's chains routes, and where
-a wide approver routes when their holding staffs several. This module owns the
+chain named as the team's :attr:`~teams.models.Team.workflow` is its
+**default**. Routing itself is per person: an employee routes through the one
+chain they are enrolled on, and a wide approver is enrolled on one like
+anybody else — their holding staffs steps, not memberships. This module owns the
 two lifecycles and the readiness check that reports — without mutating anything
 — whether a team can route an application today.
 
@@ -158,10 +159,10 @@ def _routing_chains(team: Team) -> list[Workflow]:
     """Every chain the team routes, its default chain first.
 
     A team routes one or more chains at the same time: its default chain
-    (:attr:`Team.workflow` — where somebody nobody enrolled routes, and where a
-    wide approver routes when their holding staffs several) and every chain one
-    of its people is enrolled on (:class:`~chains.models.WorkflowMember`).
-    Readiness that stopped at the default would report a team as ready while a
+    (:attr:`Team.workflow`) and every chain one of its people is enrolled on
+    (:class:`~chains.models.WorkflowMember`). A person is enrolled on one chain,
+    wide approver or not. Readiness that stopped at the default would report a
+    team as ready while a
     second chain it routes has lost its approver, which is exactly the failure
     the check exists to catch.
 
@@ -379,6 +380,17 @@ def _designate_manager(*, team: Team, manager: dict, actor) -> None:
             actor=actor,
             is_team_manager=True,
         )
+        # Ensure the team manager is automatically added as a team member
+        from roles.services import _employee_profile_for
+        from users.models import EmployeeProfile
+
+        profile = _employee_profile_for(manager["user"])
+        if profile is not None and profile.team_id != team.pk:
+            locked_profile = EmployeeProfile.objects.select_for_update().get(
+                pk=profile.pk
+            )
+            locked_profile.team = team
+            locked_profile.save(update_fields=["team"])
         return
     set_team_manager_for_user(team=team, user=manager["user"], actor=actor)
 
@@ -732,7 +744,7 @@ def update_team(
             _designate_manager(team=team, manager=manager, actor=actor)
     return team
 
-def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
+def route_team(*, team: Team, actor, workflow: Workflow | None = None) -> Team:
     """Make one of the team's chains its default chain.
 
     A team routes every chain its people are enrolled on, so this is not a
@@ -755,7 +767,23 @@ def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
     _require_team_manager(actor, team, TeamActionError)
     with transaction.atomic():
         team = Team.objects.select_for_update().get(pk=team.pk)
-        if workflow is None or workflow.team_id != team.pk:
+        if workflow is None:
+            before = _team_snapshot(team)
+            if team.workflow_id is None:
+                return team
+            team.workflow = None
+            team.save(update_fields=["workflow", "updated_at"])
+            _shared.record_audit(
+                actor=actor,
+                action=AuditEntry.Action.UPDATED,
+                target_type=AuditEntry.TargetType.TEAM,
+                target_id=team.pk,
+                target_summary=team.name,
+                detail=_shared.changed_fields(before, _team_snapshot(team)),
+                reason="Removed default chain routing.",
+            )
+            return team
+        if workflow.team_id != team.pk:
             raise TeamActionError(
                 "workflow",
                 "A team can only route through a workflow it owns. Create the "

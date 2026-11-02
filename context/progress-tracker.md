@@ -2,6 +2,108 @@
 
 Update this file after every meaningful implementation change.
 
+## Chains — a wide approver is a normal member of one workflow (2026-11-02)
+
+- **DONE — the wide-approver membership exemption is gone.** `WorkflowMember`
+  now has a single unconditional `UniqueConstraint(fields=["user"])`
+  (`workflow_member_user_unique`), replacing the conditional `(team, user)`
+  rule keyed on `is_wide_approver`. One employee is a normal member of exactly
+  one workflow, anywhere. A wide holding still staffs the *steps* of every
+  chain (`Section.approver`), which is a different record and is unchanged.
+- **DONE — the service refuses the second membership with a reason.**
+  `assign_workflow_member` runs `_ensure_member_not_assigned_elsewhere` for
+  everyone, and that check now looks across teams and names the workflow the
+  person is already on. It also stopped swallowing `WorkflowMemberError` (the
+  old `try/except: pass` let a second row through to the database and turned a
+  clean 400 into an `IntegrityError`; the pre-existing
+  `test_create_workflow_refuses_a_member_of_another_chain` failure is fixed by
+  this).
+- **DONE — the pool offers a wide approver once, not once per chain.**
+  `workflow_member_pool` keeps the wide exemption only for *step* assignments
+  (`approver_elsewhere`); a normal membership (`member_elsewhere`) removes the
+  person from `available` and names them under `assigned_elsewhere` with
+  `kind: "member"`. Memberships are read across teams for the people the pool
+  may offer, because the rule is now global.
+- **DONE — migration `0033_one_workflow_member_per_user`.** Removes both old
+  constraints, collapses any existing duplicate rows (preferring the row whose
+  workflow is its team's routing default, then the oldest), adds the `user`
+  constraint, and refreshes the `is_wide_approver` help text. Reversing is a
+  no-op — deleted duplicate rows cannot be reconstructed.
+- **DECISION — `is_wide_approver` stays, as display only.** The roster table
+  shows the badge so HR can see who staffs several chains' steps; it no longer
+  backs any constraint.
+- **VERIFIED** — `chains.tests_workflow_members` (including the rewritten
+  `test_team_wide_approver_joins_one_chain_only` and concurrency constraint
+  tests), `chains.tests_chain_routing` (rewritten wide routing + a new
+  second-enrolment refusal), `chains.tests_wide_scope` and
+  `leave.tests.test_on_leave`: 142 tests pass. `chains.tests_migrations` gained
+  `OneWorkflowMemberPerUserMigrationTests`, which builds two pre-0033 wide
+  memberships and proves the upgrade keeps the routing-default row and then
+  refuses a second. `makemigrations --check` clean. The wider `chains` suite
+  still has 26 pre-existing failures caused by fixture teams whose employees are
+  never enrolled (the no-default-fallback routing change); they fail before any
+  membership code runs and are unrelated to this change.
+
+## Chains — View members from every chain card (2026-11-02)
+
+- **DONE — each chain card has a View members button.** `WorkflowCompactCard`
+  now links to `/dashboard/teams/{team}/workflows/{chain}#members` and is shown
+  to every viewer, not just the team manager, so reading a chain's roster does
+  not depend on edit rights. Edit still renders only for the manager.
+- **DONE — the chain detail page carries the roster.** The `#members` section on
+  `workflows/[workflowId]/page.tsx` lists each `WorkflowMember` (name,
+  designation, email) with a count and an empty state pointing managers to
+  Edit steps.
+- **VERIFIED** — new `workflow-compact-card` suite (2 tests: href, and
+  non-manager access without Edit); `tsc --noEmit` and targeted eslint clean.
+
+- **DONE — the roster is a table, fed by one contract.** The `#members` section
+  on `workflows/[workflowId]/page.tsx` renders
+  `frontend/components/hr/workflow-member-table.tsx`: one row per member with
+  **Name / Designation / Email** and a count above it. The blank rows this
+  replaced were a contract mismatch — `WorkflowSerializer.get_members` hand-rolled
+  `full_name`/`email` while the frontend type read `user_name`/`user_email`. The
+  serializer now delegates to `WorkflowMemberSerializer`, so the detail payload
+  and `lib/team-members.ts` agree by construction.
+- **DONE — the "smallest gap" summary card is gone.** The chain detail page no
+  longer renders `AdvanceCard`; its Team / State / Effective from / Steps /
+  Members / Routing summary was removed on request. `components/hr/advance-card.tsx`
+  is now unreferenced and kept only in case the summary is wanted elsewhere.
+- **VERIFIED** — `workflow-member-table` suite (4 tests: columns and rows,
+  contract fields, em-dash fallbacks, empty state) plus `workflow-compact-card`
+  (2 tests) pass; backend
+  `WorkflowMemberAPITests.test_detail_members_carry_the_roster_fields` passes
+  against `chains.tests_workflow_members`; `tsc --noEmit` and targeted eslint
+  clean. Repo-wide `npm run lint` still reports pre-existing errors in unrelated
+  team/approvals files.
+
+## Leave Configuration — Annual Days screen (2026-11-02)
+
+- **DONE — annual days are configurable from Leave Configuration.** New page
+  `frontend/app/(dashboard)/leave-config/annual-days/page.tsx`, reachable from
+  the module rail as **Annual Days**. It is HR-gated by the same
+  `requireLeaveConfigAccess()` as the rest of the module and exposes the
+  existing grade-based registry: grade band → leave type → days →
+  `effective_from`.
+- **DONE — one shared body, no duplicate screens.** The HR-admin Entitlements
+  page and the new Leave Configuration page both render
+  `frontend/components/hr/annual-days-config.tsx`, so the resolve widget and the
+  `EntitlementsSection` create/edit overlay cannot drift. `EntitlementsSection` /
+  `EntitlementTable` gained an optional `basePath` so a row's edit link stays in
+  whichever module rendered it; the default preserves the HR-admin deep links.
+- **DONE — overlay URLs work inside the new module.** `annual-days/new` and
+  `annual-days/[id]/edit` redirect to `?entitlement=new|id`, mirroring the
+  HR-admin shims. The annual leave type's alert on `LeaveTypeForm` now links to
+  the Leave Configuration screen instead of the HR-admin page.
+- **DECISION — no schema change.** Annual days remain
+  `leave.GradeLeaveEntitlement`, keyed by grade + leave type + financial year;
+  `LeaveType` still deliberately has no days-per-year field (§1.3), and its
+  backend test asserting that is untouched.
+- **VERIFIED** — frontend targeted suites: `leave-config-lib`, `dashboard-shell`,
+  `leave-config-form`, `entitlement-table`, `hr-admin-registry-overlays`
+  (129 tests pass); `tsc --noEmit` clean. Repo-wide `npm run lint` still reports
+  pre-existing errors in unrelated team/approvals files.
+
 ## Rosters — employees are added several at a time (2026-10-27)
 
 - **DONE — one picker adds a whole selection.** `EmployeePickerDialog`
@@ -123,10 +225,11 @@ Update this file after every meaningful implementation change.
   tests. Frontend "keeps people on another chain behind a list button" replaces
   the move test (no **Move here**/**Add**, save disabled with nobody on the
   chain, and the list only appears in the dialog).
-- **Still open — wide approvers.** The deliberate `is_wide_approver` exemption
-  is unchanged: an institution/campus-wide role holder may still serve on
-  several chains. Confirm whether the strict one-chain rule should also cover
-  them.
+- **RESOLVED (2026-11-02) — wide approvers follow the strict one-chain rule.** The
+  `is_wide_approver` exemption was removed: a wide approver is a normal member
+  of one workflow like everyone else, and only their *step* staffing spans
+  chains. See the entry at the top of this file. The paragraph below records the
+  earlier behaviour.
 - **VERIFIED** — backend `uv run manage.py test chains.tests_workflow_members`
   (69 tests); frontend targeted `workflow-form-members` (35 tests); eslint clean
   on the form, pool types and tests; `tsc --noEmit` clean after removing a

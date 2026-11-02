@@ -764,3 +764,74 @@ class InstitutionWideFinalApprovalMigrationTests(MigrationTestCase):
         result = self._read()
         self.assertFalse(result["is_institution_wide"])
         self.assertEqual(result["holdings"], 1)
+
+
+class OneWorkflowMemberPerUserMigrationTests(MigrationTestCase):
+    """0033 collapses the wide-approver duplicates and closes the door.
+
+    Migration 0033 replaces the conditional ``(team, user)`` uniqueness with a
+    plain uniqueness on ``user``. A database that already carries a wide
+    approver on two of a team's chains must survive the upgrade with exactly one
+    row — the one whose workflow is the team's routing default, because that is
+    the chain the person's leave actually uses.
+    """
+
+    def _duplicate_state(self):
+        """A team with two chains and one wide approver on both, pre-0033."""
+        self.migrate(("chains", "0032_workflow_effective_to_and_more"))
+        apps = self.state(("chains", "0032_workflow_effective_to_and_more"))
+        Workflow = apps.get_model("chains", "Workflow")
+        Team = apps.get_model("teams", "Team")
+        User = apps.get_model("users", "User")
+        WorkflowMember = apps.get_model("chains", "WorkflowMember")
+
+        default = Workflow.objects.create(name="Default chain", is_active=True)
+        spare = Workflow.objects.create(name="Spare chain", is_active=True)
+        team = Team.objects.create(name="Migration team", code="migration-team")
+        team.workflow = default
+        team.save(update_fields=["workflow"])
+        default.team = team
+        default.save(update_fields=["team"])
+        spare.team = team
+        spare.save(update_fields=["team"])
+        person = User.objects.create(
+            username="wide@migration.test", email="wide@migration.test"
+        )
+        # Created on the spare chain first so "oldest" and "default" disagree;
+        # the default must win the tie-break.
+        WorkflowMember.objects.create(
+            workflow=spare, user=person, team=team, is_wide_approver=True
+        )
+        WorkflowMember.objects.create(
+            workflow=default, user=person, team=team, is_wide_approver=True
+        )
+        return default, spare, person
+
+    def test_the_default_chain_survives_and_the_extra_row_goes(self):
+        default, spare, person = self._duplicate_state()
+
+        self.migrate(("chains", "0033_one_workflow_member_per_user"))
+
+        from chains.models import WorkflowMember  # noqa: PLC0415
+
+        rows = WorkflowMember.objects.filter(user_id=person.pk)
+        self.assertEqual(rows.count(), 1)
+        self.assertEqual(rows.get().workflow_id, default.pk)
+
+    def test_a_second_membership_is_refused_afterwards(self):
+        from django.db import IntegrityError, transaction  # noqa: PLC0415
+
+        default, spare, person = self._duplicate_state()
+        self.migrate(("chains", "0033_one_workflow_member_per_user"))
+
+        from chains.models import WorkflowMember  # noqa: PLC0415
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                WorkflowMember.objects.create(
+                    workflow_id=spare.pk,
+                    user_id=person.pk,
+                    team_id=spare.team_id,
+                    is_wide_approver=True,
+                )
+        self.assertEqual(WorkflowMember.objects.filter(user_id=person.pk).count(), 1)

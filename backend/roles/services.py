@@ -535,9 +535,9 @@ def _repoint_wide_positions(
     holder, so a step HR gave to somebody else by hand is left alone. Each
     handover closes the outgoing holder's :class:`SectionMember` period and opens
     the successor's, exactly as :func:`chains.services.add_section_member`
-    does, so "who held the step in March" stays answerable. A wide membership the
-    successor already has on the same workflow is not duplicated — the outgoing
-    row is simply dropped.
+    does, so "who held the step in March" stays answerable. A normal membership
+    is one per employee, so if the successor already has one anywhere the
+    outgoing row is simply dropped rather than creating a second.
     """
     sections = Section.objects.filter(approver_role=role, approver=previous_user)
     if team is not None:
@@ -566,9 +566,9 @@ def _repoint_wide_positions(
     if campus is not None:
         memberships = memberships.filter(team__campus=campus)
     for membership in memberships:
-        clash = WorkflowMember.objects.filter(
-            workflow=membership.workflow, user=new_user
-        ).exists()
+        # One normal membership per employee: if the successor already has one
+        # (on this workflow or any other) there is nowhere to move this row to.
+        clash = WorkflowMember.objects.filter(user=new_user).exists()
         if clash:
             membership.delete()
         else:
@@ -982,6 +982,14 @@ def set_team_manager_for_user(*, team: Team, user: User, actor) -> Team:
         if holding is not None:
             holding.is_team_manager = True
             holding.save(update_fields=["is_team_manager"])
+        # Ensure the team manager is automatically added as a team member
+        profile = _employee_profile_for(user)
+        if profile is not None and profile.team_id != locked.pk:
+            locked_profile = EmployeeProfile.objects.select_for_update().get(
+                pk=profile.pk
+            )
+            locked_profile.team = locked
+            locked_profile.save(update_fields=["team"])
         record_audit(
             actor=actor,
             action=AuditEntry.Action.UPDATED,
@@ -1346,9 +1354,10 @@ def wide_approver_ids_for_team(team: Team | None) -> set[int]:
     A wide approver staffs a chain without being appointed to its steps: the
     holder of a team-wide role on this team, the holder of a campus-wide role
     at the team's campus, or — for an administration team only — the holder of
-    an institution-wide role. They are the deliberate exception to "one employee
-    sits on one chain per team": a team building a second chain reuses its
-    registrar or bursar, it does not move them off the first chain.
+    an institution-wide role. Their exemption is about *staffing steps*: one
+    holding covers every chain, so the approver picker keeps offering them to
+    each one. It is **not** an exemption from normal membership — an employee
+    is a :class:`WorkflowMember` of exactly one workflow, wide or not.
 
     Two exclusions keep that exception honest:
 
@@ -1478,7 +1487,8 @@ def add_team_member(*, team: Team, user: User, actor) -> EmployeeProfile:
             "nothing to place on a team. Complete their employee record first.",
         )
     is_wide_holder = user.pk in wide_role_holder_ids()
-    if profile.category != team.category and not is_wide_holder:
+    is_manager_himself = is_team_manager(user, team) or getattr(team, "manager_id", None) == user.pk
+    if profile.category != team.category and not (is_wide_holder or is_manager_himself):
         raise WorkflowMemberError(
             "user",
             f'{_member_display_name(user)} is an '

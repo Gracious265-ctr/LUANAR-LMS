@@ -1,7 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { CampusQuickAdd } from "@/components/hr/campus-form";
 import { TeamsSection } from "@/components/hr/TeamsSection";
 import type { ApproverRole } from "@/lib/approver-roles";
 import { listApproverRoles } from "@/lib/approver-roles";
@@ -17,7 +15,6 @@ import {
 import { FadeIn } from "@/components/motion/FadeIn";
 
 const TEAMS_ERROR = "Unable to load teams. Please try again.";
-const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
 
 /**
@@ -55,18 +52,15 @@ async function TeamsPage({
   // A manager creates no teams (that is an HR decision), so for them none of it
   // is read: every one of these endpoints is HR-only, and asking would only fill
   // the page with errors about a form they never open.
-  const [teamsResult, campusesResult, rolesResult, employeesResult] =
+  const [teamsResult, campuses, rolesResult, employeesResult] =
     await Promise.all([
       listTeams({ includeInactive: showRetired }).then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Team[], error: TEAMS_ERROR })
       ),
       isAdministrator
-        ? listCampuses().then(
-            (value) => ({ value, error: "" }),
-            () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
-          )
-        : Promise.resolve({ value: [] as Campus[], error: "" }),
+        ? listCampuses().catch(() => [] as Campus[])
+        : Promise.resolve([] as Campus[]),
       isAdministrator
         ? listApproverRoles().then(
             (value) => ({ value, error: "" }),
@@ -115,7 +109,7 @@ async function TeamsPage({
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
           <TeamsSection
             teams={teamsResult.value}
-            campuses={campusesResult.value}
+            campuses={campuses}
             roles={rolesResult.value}
             rolesError={rolesResult.error}
             employees={employeesResult}
@@ -124,29 +118,6 @@ async function TeamsPage({
             canCreate={isAdministrator}
           />
         </div>
-
-        {isAdministrator && (
-          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold text-text-primary">
-                Campuses
-              </h3>
-              <Link
-                href="/dashboard/hr-admin/campuses"
-                className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                Manage campuses
-              </Link>
-            </div>
-            {campusesResult.error ? (
-              <p className="text-sm text-status-rejected">
-                {campusesResult.error}
-              </p>
-            ) : (
-              <CampusQuickAdd campuses={campusesResult.value} />
-            )}
-          </div>
-        )}
       </div>
     </FadeIn>
   );

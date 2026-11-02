@@ -38,7 +38,7 @@ export function TeamMembersPanel({
   team,
   canManage = false,
 }: {
-  team: { id: number; name: string };
+  team: { id: number; name: string; manager_user?: number | null; manager_name?: string };
   /** Only the team's designated manager may add or remove members. */
   canManage?: boolean;
 }) {
@@ -129,6 +129,14 @@ export function TeamMembersPanel({
         <p className="text-sm text-text-muted">Loading the roster...</p>
       ) : (
         <>
+          {canManage && (
+            <div className="flex justify-end">
+              <Link href={addHref} className={buttonVariants({ size: "sm" })}>
+                <UserPlus className="h-4 w-4" />
+                Add team members
+              </Link>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-52 flex-1">
               <label className="sr-only" htmlFor="roster-search">
@@ -197,6 +205,11 @@ export function TeamMembersPanel({
                       {!member.is_active && (
                         <Badge size="sm" tone="muted">
                           Inactive
+                        </Badge>
+                      )}
+                      {((team as any).manager_user === member.user || (team as any).manager_name && member.full_name && (team as any).manager_name === member.full_name) && (
+                        <Badge size="sm" tone="info">
+                          Manager
                         </Badge>
                       )}
                       {member.is_section_approver && (
@@ -272,24 +285,13 @@ export function TeamMembersPanel({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {canManage ? (
-              <Link href={addHref} className={buttonVariants()}>
-                <UserPlus className="h-4 w-4" />
-                Add employees
-              </Link>
-            ) : (
+          {!canManage && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-text-muted">
                 Only this team&apos;s designated manager can change its roster.
               </p>
-            )}
-            {canManage && (
-              <p className="text-xs text-text-muted">
-                The page offers every unassigned employee of this team&apos;s
-                category, plus unassigned wide approvers of either category.
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </div>

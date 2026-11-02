@@ -34,13 +34,14 @@ def _plans_badge(user) -> dict | None:
 def can_access_approvals(user) -> bool:
     if not getattr(user, "is_authenticated", False):
         return False
-    # HR, superuser, or approver roles can access approvals
+    if getattr(user, "is_superuser", False):
+        return True
     role = getattr(user, "role", None)
-    if role in ("hr", "superuser", "approver", "hod", "dean", "registrar", "dvc"):
+    if role == "hr":
         return True
-    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
-    return False
+    from roles.services import is_approver_user
+
+    return is_approver_user(user)
 
 
 def _approvals_badge(user) -> dict | None:

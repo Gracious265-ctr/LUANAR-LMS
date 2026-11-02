@@ -69,13 +69,15 @@ export default async function TeamWorkflowsPage({
             </h2>
             <p className="text-text-secondary">The approval chains {team.name} owns.</p>
           </div>
-          <Link
-            href={`/dashboard/teams/${team.id}/workflows/new`}
-            className={buttonVariants({ variant: "primary" })}
-          >
-            <Plus className="h-4 w-4" />
-            New workflow
-          </Link>
+          {team.is_team_manager && (
+            <Link
+              href={`/dashboard/teams/${team.id}/workflows/new`}
+              className={buttonVariants({ variant: "primary" })}
+            >
+              <Plus className="h-4 w-4" />
+              New workflow
+            </Link>
+          )}
         </div>
       </div>
 

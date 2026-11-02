@@ -152,7 +152,10 @@ export interface ApprovalStage {
   role_label: string;
   status: StageStatus;
   decision_version: number;
-  assigned_approver: string;
+  assigned_approver: string | null;
+  approver?: string | null;
+  acting_for?: string | null;
+  eligible_approvers?: string[];
   assigned_at: string | null;
   decided_at: string | null;
   comment: string | null;
