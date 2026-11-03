@@ -2,6 +2,26 @@
 
 Update this file after every meaningful implementation change.
 
+## Review screen — holiday snapshots no longer 500 the payload (2026-11-03)
+
+- **FIX — `GET /api/v1/approvals/{id}/` crashed for any application whose
+  rules snapshot carried holidays.** `_rules_block` called `_iso_date(day)` only
+  when `day` was already a `str`, so `_iso_date` tried `value.isoformat()` on a
+  string (`AttributeError: 'str' object has no attribute 'isoformat'`). The
+  snapshot has always stored holidays as ISO strings
+  (`build_rules_snapshot`), which is also what the frontend
+  `ReviewRules.holidays: string[]` expects.
+- **DONE — `_iso_date` accepts both.** It now passes strings through and calls
+  `isoformat()` on real dates, and the holidays comprehension is a plain map
+  over the snapshot. This also covers `start_date`, `end_date` and
+  `appointment_date`, which are genuine `date` objects.
+- **VERIFIED** — new
+  `chains.tests_approvals.ApprovalAPITests.test_detail_renders_holiday_dates_stored_as_iso_strings`
+  asserts the endpoint returns the two ISO strings; the whitelisted-payload
+  test still passes. The rest of `chains.tests_approvals` keeps its 13
+  pre-existing `WorkflowProviderDatabaseTests` failures (fixture teams with no
+  enrolment, unrelated to this path).
+
 ## Chains — a wide approver is a normal member of one workflow (2026-11-02)
 
 - **DONE — the wide-approver membership exemption is gone.** `WorkflowMember`

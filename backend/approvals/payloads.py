@@ -200,8 +200,7 @@ def _rules_block(application: LeaveApplication) -> dict:
     return {
         "leave_type": leave_type_block(application),
         "holidays": [
-            _iso_date(day) if isinstance(day, str) else day
-            for day in (snapshot.get("holidays") or [])
+            _iso_date(day) for day in (snapshot.get("holidays") or [])
         ],
         "working_days": snapshot.get("working_days")
         or application.working_days,
@@ -651,7 +650,18 @@ def _current_snapshot_payload(application: LeaveApplication) -> dict:
 
 
 def _iso_date(value):
-    return value.isoformat() if value else None
+    """An ISO date string for ``value``, whichever way it is stored.
+
+    Rules snapshots keep holidays as ISO strings (see
+    ``leave.services.submission.build_rules_snapshot``), while dates read off a
+    model are :class:`datetime.date` objects. Accepting both here is what keeps
+    the review payload from calling ``isoformat()`` on a string.
+    """
+    if not value:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
 
 
 def _iso(value):

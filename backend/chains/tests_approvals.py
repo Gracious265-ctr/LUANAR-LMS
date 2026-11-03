@@ -923,6 +923,27 @@ class ApprovalAPITests(ApprovalBase):
             all("assigned_approver" in s and "status" in s for s in stages)
         )
 
+    def test_detail_renders_holiday_dates_stored_as_iso_strings(self):
+        """The snapshot stores holidays as strings; the payload must pass them through.
+
+        ``build_rules_snapshot`` writes ISO strings, not date objects, so a
+        review payload that calls ``isoformat()`` on every holiday 500s the
+        whole screen for any application that overlapped a public holiday.
+        """
+        app = self.make_submitted()
+        snapshot = dict(app.rules_snapshot or {})
+        snapshot["holidays"] = ["2026-07-06", "2026-07-07"]
+        app.rules_snapshot = snapshot
+        app.save(update_fields=["rules_snapshot"])
+
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.get(self.url(f"{app.pk}/"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["rules"]["holidays"], ["2026-07-06", "2026-07-07"]
+        )
+
     def test_detail_review_payload_with_active_financial_year(self):
         FinancialYear.objects.create(
             start_date=date(2026, 7, 1),
