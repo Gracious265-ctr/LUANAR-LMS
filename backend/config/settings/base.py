@@ -35,6 +35,12 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "django_q",
+    # Installed so a signed-out refresh token can be revoked server-side. Without
+    # it, "Sign out" only clears the browser's cookies: a copied refresh token
+    # would keep minting access tokens for its full 24-hour lifetime. The app
+    # also makes ``RefreshView`` refuse a token presented after logout.
+    "rest_framework_simplejwt.token_blacklist",
+
     # Local apps
     "users",
     "leave",
@@ -169,10 +175,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": False,
     # A fingerprint of the password is written into every token, and tokens that
-    # no longer match the account's current hash are rejected. Since this app
-    # neither rotates nor blacklists refresh tokens, this is the entire of
-    # session revocation — without it, changing a password would leave every
-    # other device signed in for the rest of the refresh token's 24 hours.
+    # no longer match the account's current hash are rejected. Rotation is off,
+    # and blacklisting only happens on an explicit sign-out, so this is what
+    # makes changing a password end every other device's session — without it,
+    # a token captured before the change would keep minting access tokens for
+    # the rest of the refresh token's 24 hours.
     "CHECK_REVOKE_TOKEN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }

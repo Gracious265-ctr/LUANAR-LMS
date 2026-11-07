@@ -79,11 +79,15 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     effective_from: "2026-01-01",
     effective_to: null,
     is_effective: true,
+    is_team_manager: false,
+    manager_user: null,
+    manager_name: "",
     stage_roles: [
       { id: 1, code: "supervisor", label: "Supervisor" },
       { id: 2, code: "lead", label: "Team Leader" },
     ],
     member_count: 2,
+    roster_count: 0,
     members: [],
     sections: [
       {

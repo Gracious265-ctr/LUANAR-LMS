@@ -2,6 +2,96 @@
 
 Update this file after every meaningful implementation change.
 
+## Authentication and session security — end-to-end audit (2026-11-04)
+
+**Goal.** Make sign-in, session lifetime, sign-out, password change and the
+production configuration hold up under audit rather than merely working.
+
+**Throttling was keyed on the proxy, not the account.** The browser never talks
+to Django; the Next.js server forwards every auth request, so `AnonRateThrottle`
+saw one client address for the whole institution. `10/min` on login therefore
+became an institution-wide lockout after ten bad guesses anywhere, while an
+attacker spreading guesses across accounts was barely slowed. `users/throttles.py`
+now derives from `SimpleRateThrottle` and keys each limit on the endpoint's own
+subject: login and set-password *request* on the submitted email, set-password
+*confirm* on a SHA-256 of the token, password *change* on `request.user.pk`. Two
+colleagues no longer share a bucket, and an authenticated caller cannot opt out
+of the login limit (`AnonRateThrottle` returns no key for authenticated
+requests, which let any token holder brute-force unthrottled).
+
+**Sign-out now revokes the refresh token.** Clearing the httpOnly cookies only
+forgot the token locally; a copy kept minting access tokens for its full 24
+hours. `rest_framework_simplejwt.token_blacklist` is installed and
+`POST /api/v1/auth/logout/` blacklists the `jti`. It answers `204` for valid,
+expired, revoked and malformed tokens alike, so it cannot be used as a token
+oracle, and it is anonymous because a caller whose access token has died still
+needs to leave. The frontend calls it before clearing cookies, and clears them
+regardless of the upstream answer. Deployments must run `migrate` for the new
+tables.
+
+**Deactivated accounts.** `LoginView` now rejects `is_active=False` explicitly
+rather than relying on `authenticate()`'s fallback, and the refresh path refuses
+a token whose account was deactivated (SimpleJWT's authentication rule), so
+ending a session no longer waits for the refresh token to expire.
+
+**Session ended every 15 minutes in the frontend.** `proxy.ts`, `lib/auth.ts`
+and `lib/api-client.ts` all treated a missing *access* cookie as signed out. The
+access cookie lives 15 minutes; the refresh cookie lives a day. The proxy now
+decodes `exp`, treats a live refresh token as a live session, and clears dead
+cookies on the way to `/login` (which is what stopped the
+`/dashboard → /login → /` redirect loop). The API client refreshes before the
+first request when the access cookie is gone and retries once on `401` whenever
+a refresh token exists. `/applications/[id]` was also added to the proxy's
+protected routes — it sits in `(dashboard)` but is outside the `/dashboard`
+prefix, so the matcher had never covered it.
+
+**Login CSRF.** Sign-in needs no cookie of its own, so `SameSite=Lax` cannot
+protect it: another site could form-POST the attacker's credentials and have the
+victim's browser accept the session, leaving the victim filing leave inside the
+attacker's account. `/api/auth/login` now requires `Origin` to match `Host` and
+answers `403` otherwise; a request with no `Origin` is not a browser and cannot
+make a browser store a cookie.
+
+**Production settings.** `config/settings/production.py` is now the default for
+`wsgi.py`/`asgi.py` (`manage.py` stays on development). It fails the boot on the
+committed placeholder `SECRET_KEY`, on a `SECRET_KEY` under 50 characters or with
+too few distinct characters (Django's own `security.W009` thresholds), on an
+empty `ALLOWED_HOSTS`, and on a non-HTTPS `FRONTEND_URL` (a set-password link is
+a bearer secret). It enables secure/HttpOnly/SameSite cookies, HSTS, SSL
+redirect, proxy-scheme trust, `CSRF_TRUSTED_ORIGINS`, `NUM_PROXIES=1`, and turns
+CORS down to an explicit empty list — browsers never call Django directly.
+`CACHE_URL` optionally points the throttle counters at a shared cache; without
+it each worker keeps its own counters and multiplies every rate limit.
+`manage.py check --deploy` now reports only `W005`/`W021` (HSTS
+subdomains/preload), which stay opt-in by design.
+
+**Browser headers.** `next.config.ts` sends `X-Content-Type-Options`,
+`X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` on every
+route. HSTS is left to the TLS terminator. The set-password page already
+scrubbed `?token=` from the URL via `history.replaceState`, so the link does not
+leak through history or `Referer`.
+
+**Verification.** Backend: new `users/tests_auth_security.py` (12 tests: login
+throttle, per-account isolation, authenticated-bypass refusal, set-password
+request/confirm limits, logout revocation, malformed and body-less logout,
+inactive login, refresh after deactivation); `users` **177 OK**; `manage.py
+check` and `makemigrations --check` clean. Production guards verified by import
+with overridden env, plus `check --deploy`. Frontend: new
+`tests/proxy.test.ts` (8), `tests/api-client-refresh.test.ts` (4) and
+`tests/auth-routes.test.ts` (6); auth-adjacent suites **127 OK**; full run
+**1133 passed / 5 failed**. The five failures
+(`tests/team-members-panel.test.tsx` ×3,
+`tests/workflow-form-members.test.tsx` ×2) reproduce with these changes stashed
+and belong to the roster rework, not auth. Two pre-existing fixture type errors
+in `tests/team-member-list.test.tsx` and `tests/tracking-service.test.ts` were
+fixed so `tsc -p tsconfig.test.json` is clean.
+
+**Known, accepted.** An access token stays valid for its own 15-minute lifetime
+after sign-out (stateless JWT); that is bounded and documented rather than
+extended. `chains.tests_approvals.WorkflowProviderDatabaseTests` keeps its 13
+pre-existing routing-fixture failures ("has no approval workflow for this
+employee"), unchanged and unrelated.
+
 ## Review screen — holiday snapshots no longer 500 the payload (2026-11-03)
 
 - **FIX — `GET /api/v1/approvals/{id}/` crashed for any application whose
