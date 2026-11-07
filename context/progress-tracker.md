@@ -92,6 +92,35 @@ extended. `chains.tests_approvals.WorkflowProviderDatabaseTests` keeps its 13
 pre-existing routing-fixture failures ("has no approval workflow for this
 employee"), unchanged and unrelated.
 
+## Content-Security-Policy — enforced where it cannot break, reported elsewhere (2026-11-07)
+
+**Goal.** Add CSP without a blank-page risk, and without pretending a policy is
+protecting something it is not.
+
+**Two headers, deliberately split.** `Content-Security-Policy` enforces only
+directives that are independent and cannot change how any resource loads:
+`base-uri 'self'` (an injected `<base>` would otherwise re-point the relative
+`/_next/*` URLs), `object-src 'none'`, `frame-ancestors 'none'` (the modern twin
+of `X-Frame-Options`), and `form-action 'self'` (a compromised page cannot post
+the sign-in or password form to another origin — every form here submits to a
+same-origin route handler). `Content-Security-Policy-Report-Only` carries the
+full policy: `default-src`/`connect-src`/`font-src`/`img-src`/`worker-src`/
+`manifest-src` same-origin, `style-src` with `'unsafe-inline'` for React's
+`style={{...}}` and Tailwind's dev stylesheet, and `script-src 'self'`.
+
+**Why `script-src` is not enforced.** Next.js emits inline hydration scripts;
+blocking them needs a per-request nonce threaded through `proxy.ts`. Report-only
+collects exactly which inline scripts need it at zero risk. Once those reports
+are empty behind a nonce, the header moves from `-Report-Only` to enforced.
+
+**Verified.** New `tests/security-headers.test.ts` (3) reads the same
+`headers()` the server calls at boot and asserts the enforced header names no
+fetch directive, the report-only header carries the full policy, and the
+baseline headers are present. A directive typo would otherwise be silent — CSP
+ignores names it does not recognise. `tsc -p tsconfig.test.json` and eslint
+clean. No page embeds a frame or loads a third-party origin, so a same-origin
+policy is accurate rather than aspirational.
+
 ## Review screen — holiday snapshots no longer 500 the payload (2026-11-03)
 
 - **FIX — `GET /api/v1/approvals/{id}/` crashed for any application whose
