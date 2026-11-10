@@ -1,12 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 import { BalanceSection } from "@/components/leave/BalanceSection";
 import { DashboardStatCards } from "@/components/leave/DashboardStatCards";
 import { NeedsAttentionSection } from "@/components/leave/NeedsAttentionSection";
 import { RecentApplicationsSection } from "@/components/leave/RecentApplicationsSection";
-import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { useLeaveDashboard } from "@/lib/hooks/useLeaveDashboard";
@@ -42,23 +39,14 @@ function DashboardSkeleton() {
 
 export default function LeaveDashboardPage() {
   const { data, isLoading, error, refetch } = useLeaveDashboard();
-  const router = useRouter();
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
-            Leave Applications
-          </h1>
-          <p className="text-text-muted">Welcome back</p>
-        </div>
-        <Button
-          variant="primary"
-          onClick={() => router.push("/dashboard/leave/drafts?compose=1")}
-        >
-          + New Application
-        </Button>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
+          Leave Applications
+        </h1>
+        <p className="text-text-muted">Welcome back</p>
       </div>
 
       {isLoading && <DashboardSkeleton />}

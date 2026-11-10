@@ -150,13 +150,18 @@ describe("LeaveDashboardPage", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it("routes the New Application CTA to the compose overlay", () => {
-    mockDashboard({ data: data() });
+  it("leaves the create action to the sidebar, not the page header", () => {
+    // The header's "+ New Application" button was removed, so a dashboard with
+    // applications on it opens on its figures rather than a second copy of an
+    // action the sidebar already offers (/dashboard/leave/new). The empty state
+    // below still carries it for an employee who has nothing yet.
+    mockDashboard({ data: data({ recent: [summary({ id: "recent-1" })] }) });
 
     render(<LeaveDashboardPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "+ New Application" }));
-    expect(pushMock).toHaveBeenCalledWith("/dashboard/leave/drafts?compose=1");
+    expect(
+      screen.queryByRole("button", { name: /New Application/ })
+    ).not.toBeInTheDocument();
   });
 
   it("routes a needs-attention card straight to the edit overlay", () => {

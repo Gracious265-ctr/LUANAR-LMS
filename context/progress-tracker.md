@@ -2,6 +2,21 @@
 
 Update this file after every meaningful implementation change.
 
+## Leave dashboard: the header no longer duplicates the create action (2026-11-10)
+
+The `+ New Application` button is gone from the top of `/dashboard/leave`, so
+the page now opens on its heading and figures. The action is still reachable
+twice: the sidebar's **New Application** entry (`/dashboard/leave/new`, which
+redirects to the compose overlay) and the empty state under Recent Applications,
+which is where a brand-new employee actually needs it. The header wrapper lost
+its `justify-between` with the button, and `useRouter`/`Button` came out of the
+page now that nothing there uses them.
+
+The test that clicked `+ New Application` was replaced by one asserting a
+populated dashboard offers no create button at all — the removed affordance, so
+it cannot quietly come back. Frontend **139 files / 1146 tests pass**; tsc and
+eslint clean.
+
 ## Leave dashboard: balances move to a rail beside the lists (2026-11-10)
 
 `/dashboard/leave` was a single full-width stack — header, two stat cards, the
