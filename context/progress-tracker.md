@@ -2,6 +2,46 @@
 
 Update this file after every meaningful implementation change.
 
+## Fonts: Inter is self-hosted, so the build no longer calls Google (2026-11-10)
+
+**The failure.** The frontend build died with `Module not found: Can't resolve
+'@vercel/turbopack-next/internal/font/google/font'` and the misleading
+`next/font/google queries have exactly one entry`, traced through
+`[next]/internal/font/google/inter_*.module.css` to `app/layout.tsx`. Nothing in
+`layout.tsx` was wrong. `next/font/google` downloads the font files at build
+time, and Google now answers some downloads with an extensionless
+`/l/font?kit=…` URL; Turbopack 16.3.5's font replacer parses that URL expecting
+a filename, gets `null`, and fails the resolve
+([vercel/next.js#99114](https://github.com/vercel/next.js/issues/99114)). Both
+patches on that issue are webpack-only, so there was no fix on 16.3.5. The
+failure was intermittent because the bad response is cached per dev-server
+lifetime, and this tree had a stale 1.5 GB `.next` (an Oct 27 `build/` beside a
+live `dev/`).
+
+**The change.** `app/layout.tsx` now uses `next/font/local` against a committed
+`app/fonts/inter-latin.woff2`. Inter v20 is a variable font — the Google CSS
+returned the *same* file for weights 400, 500, 600 and 700 — so one 48 KB file
+carries the whole `wght` axis for the latin subset and `weight: "400 700"`
+declares the range the product uses (`font-normal`/`medium`/`semibold`/`bold`;
+there is no `light` or `black` in the tree). `variable: "--font-sans"` and
+`display: "swap"` are unchanged, so every component reads the same custom
+property. No CSP change was needed: `next.config.ts` already sets
+`font-src 'self'`, which `next/font/google` also satisfied by self-hosting at
+build time — it was only the *fetch* that was fragile.
+
+**Guard.** `tests/font-self-hosting.test.ts` (3 tests) fails if any source file
+imports `next/font/google`, if the committed woff2 is missing or is not really a
+woff2 (`wOF2` magic bytes, not an HTML error page saved under the right name),
+or if `layout.tsx` stops declaring the local file, the weight range, or
+`--font-sans`.
+
+**Verified.** `npm run build` completes and emits
+`.next/static/media/inter_latin-s.p.<hash>.woff2` with no `fonts.gstatic.com` or
+`fonts.googleapis.com` reference anywhere in `.next`; the generated
+`@font-face` is `font-weight:400 700` with `font-display:swap`. `next dev`
+serving `/login` logs no errors and preloads the font. Frontend **139 files /
+1146 tests pass**; `tsc -p tsconfig.test.json` and eslint clean.
+
 ## Red suite cleared — routing fixtures now enrol, and one roster CTA (2026-11-10)
 
 **What was red.** 18 tests were failing on the branch: 5 in the roster/chain
