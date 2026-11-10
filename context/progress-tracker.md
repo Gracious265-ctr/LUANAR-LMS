@@ -2,6 +2,33 @@
 
 Update this file after every meaningful implementation change.
 
+## Table header rows carry a tinted band (2026-11-10)
+
+`TableHeader` now sets `bg-surface-muted` on the `<thead>`, so every table in the
+app gets the same header band — the fill `TableFooter` already used, which makes
+a table's head and foot read as the same chrome. The hand-rolled
+`admin-user-table.tsx` got it on its header row too, so it matches the primitives
+it doesn't use. `hr/document-template-preview.tsx` is deliberately untouched: it
+is a printable A4 layout table, not a data table.
+
+Header rows reuse `TableRow`, whose `hover:bg-surface-hover` would have made the
+headings tint lighter under the pointer as if they were clickable, so
+`TableHeader` also sets `[&_tr:hover]:bg-transparent` — the row goes clear and the
+`<thead>` band shows through. Verified in the built CSS that both utilities
+compile (`.bg-surface-muted{background-color:var(--surface-muted)}` and
+`.\[\&_tr\:hover\]\:bg-transparent tr:hover{background-color:#0000}`); an
+arbitrary variant that silently emitted nothing would have left the flicker in
+place. The override wins on specificity (0,2,1 against the row's 0,2,0), not on
+source order.
+
+**Worth knowing:** the header text is `text-text-muted`, which measures ~2.4:1 on
+`#f8fafc` in light mode — it was already ~2.5:1 on white, so the band does not
+introduce the problem, but small uppercase text needs 4.5:1. Dark mode is fine
+at ~7.3:1. Moving the heading to `text-text-secondary` would fix it; left alone
+because it changes the type colour on every table, which is a design decision.
+
+Frontend **140 files / 1149 tests pass**; `npm run build`, tsc and eslint clean.
+
 ## Table headings: no blank column, and every heading is scoped (2026-11-10)
 
 Audited every table in the app for a heading that is missing, blank, or repeated

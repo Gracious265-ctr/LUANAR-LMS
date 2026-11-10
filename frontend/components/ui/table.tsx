@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils";
  * Data table primitives.
  *
  * These carry the styling that used to be copy-pasted into every table
- * component: `Table` owns the horizontal scroll container, `TableHead` the
- * uppercase header typography, `TableRow` the borders and hover, and
- * `TableBody` the last-row rule. So drop a manual `overflow-x-auto` wrapper
- * and the per-cell `py-3 pr-4` when converting a hand-rolled `<table>`.
+ * component: `Table` owns the horizontal scroll container, `TableHeader` the
+ * tinted header band, `TableHead` the uppercase header typography, `TableRow`
+ * the borders and hover, and `TableBody` the last-row rule. So drop a manual
+ * `overflow-x-auto` wrapper and the per-cell `py-3 pr-4` when converting a
+ * hand-rolled `<table>`.
  *
  * Cells get `px-4` where the hand-rolled tables used `pr-4`, so a converted
  * table gains a left gutter. Pass `className` to keep a deliberately tighter
@@ -38,8 +39,14 @@ export function TableHeader({
   return (
     <thead
       data-slot="table-header"
+      // The tinted band separates the headings from the rows without a heavier
+      // border, and it is the same `surface-muted` fill TableFooter uses, so a
+      // table's head and foot read as the same kind of chrome.
       className={cn(
-        "[&_tr]:border-b [&_tr]:border-border-default",
+        // The row keeps the band's own fill on hover: header rows reuse
+        // `TableRow`, whose `hover:bg-surface-hover` would otherwise tint the
+        // headings as if they were clickable.
+        "bg-surface-muted [&_tr]:border-b [&_tr]:border-border-default [&_tr:hover]:bg-transparent",
         className
       )}
       {...props}
