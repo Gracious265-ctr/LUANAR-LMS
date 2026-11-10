@@ -98,7 +98,7 @@ describe("TeamMembersPanel", () => {
     render(<TeamMembersPanel team={team} canManage />);
     await screen.findByText("Ruth Member");
 
-    const add = screen.getByRole("link", { name: "Add employees" });
+    const add = screen.getByRole("link", { name: "Add team members" });
     expect(add).toHaveAttribute("href", "/dashboard/teams/4/members/add");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -155,15 +155,20 @@ describe("TeamMembersPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("names who the add page offers", async () => {
+  it("offers one add link when the roster is empty, not two", async () => {
+    // The header action and the empty-state action point at the same page, so
+    // rendering both put two identical links on the first screen a manager of a
+    // new team sees.
+    vi.mocked(listTeamMembers).mockResolvedValue([]);
+
     render(<TeamMembersPanel team={team} canManage />);
-    await screen.findByText("Ruth Member");
 
     expect(
-      screen.getByText(
-        /every unassigned employee of this team's category, plus unassigned wide approvers of either category/i
-      )
+      await screen.findByText(/Nobody's leave routes through this team yet/)
     ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: "Add team members" })
+    ).toHaveLength(1);
   });
 
   it("offers a non-manager the roster read-only", async () => {
@@ -171,7 +176,7 @@ describe("TeamMembersPanel", () => {
     await screen.findByText("Ruth Member");
 
     expect(
-      screen.queryByRole("link", { name: "Add employees" })
+      screen.queryByRole("link", { name: "Add team members" })
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {

@@ -2,6 +2,46 @@
 
 Update this file after every meaningful implementation change.
 
+## Red suite cleared — routing fixtures now enrol, and one roster CTA (2026-11-10)
+
+**What was red.** 18 tests were failing on the branch: 5 in the roster/chain
+screens and 13 in `chains.tests_approvals.WorkflowProviderDatabaseTests`. A
+further 13 in `chains.tests_team_configuration` had been recorded as
+"pre-existing and unrelated"; investigation showed the same cause, so 31 tests
+were fixed in all. The earlier notes claiming those 13 were unrelated are
+superseded by this entry.
+
+**Backend root cause (26 tests).** `c59d36e` made routing per enrolment:
+`routed_workflow_for()` reads `WorkflowMember` rows and deliberately has no
+`team.workflow` fallback. Three fixtures still built "a team with a chain" by
+setting `EmployeeProfile.team` and `Team.workflow` only, so every routing test
+failed with "The <team> team has no approval workflow for this employee" — the
+fixture's routing premise, not the code under test. `_place_on_team`
+(`tests_approvals`) and `place_employee` (`tests_team_configuration`) now
+`update_or_create` the single `WorkflowMember`, moving it when the employee is
+re-placed on another team. That is what the HR write path does, and the global
+one-membership constraint means a move, not a second row.
+
+**Frontend — two stale tests, one real bug.**
+- `membersProblem()` is a documented no-op ("A chain can be created without
+  members and add them later"), and the form shows exactly that guidance, but
+  two tests still asserted the save was disabled with the old
+  "Add at least one member" warning. Rewritten to the current rule: guidance
+  present, button enabled, write carries `members: []`.
+- **Real bug:** with an empty roster the panel rendered "Add team members"
+  twice — the header action and the empty-state action are the same
+  destination. The header link now renders only when `count > 0`, so each
+  state has exactly one call to action; a new test asserts a single link.
+- The panel test also asserted the add page's eligibility sentence, which now
+  lives on `AddTeamMembers`; that assertion moved to
+  `tests/add-team-members.test.tsx`.
+
+**Verified.** Backend `chains` **739 OK** (previously 2 failures + 11 errors in
+`tests_team_configuration` and 8 errors + 5 failures in `WorkflowProviderDatabaseTests`);
+the remaining apps **213 OK**. Frontend **138 files / 1143 tests pass** (was 5
+failures). The only production code touched is the duplicate-link guard in
+`TeamMembersPanel`.
+
 ## Authentication and session security — end-to-end audit (2026-11-04)
 
 **Goal.** Make sign-in, session lifetime, sign-out, password change and the

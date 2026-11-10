@@ -129,7 +129,11 @@ export function TeamMembersPanel({
         <p className="text-sm text-text-muted">Loading the roster...</p>
       ) : (
         <>
-          {canManage && (
+          {/* The header action appears only once there is a roster to add to.
+              An empty team already offers the same link as its empty-state
+              action, and rendering both put two identical "Add team members"
+              links on a page a manager sees first. */}
+          {canManage && count > 0 && (
             <div className="flex justify-end">
               <Link href={addHref} className={buttonVariants({ size: "sm" })}>
                 <UserPlus className="h-4 w-4" />
@@ -207,7 +211,10 @@ export function TeamMembersPanel({
                           Inactive
                         </Badge>
                       )}
-                      {((team as any).manager_user === member.user || (team as any).manager_name && member.full_name && (team as any).manager_name === member.full_name) && (
+                      {(team.manager_user === member.user ||
+                        (team.manager_name &&
+                          member.full_name &&
+                          team.manager_name === member.full_name)) && (
                         <Badge size="sm" tone="info">
                           Manager
                         </Badge>

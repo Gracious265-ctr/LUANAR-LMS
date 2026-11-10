@@ -49,6 +49,18 @@ beforeEach(() => {
 });
 
 describe("AddTeamMembers", () => {
+  it("names who the page offers, including the category crossing", () => {
+    render(<AddTeamMembers team={team} candidates={[sam, pat]} />);
+
+    // This sentence used to live on the roster panel; the rule it describes is
+    // the add page's, so it is asserted here.
+    expect(
+      screen.getByText(
+        /Unassigned employees of this team's category, plus unassigned wide approvers of either category/i
+      )
+    ).toBeInTheDocument();
+  });
+
   it("lists the candidates and adds the chosen people in one write", async () => {
     render(<AddTeamMembers team={team} candidates={[sam, pat]} />);
 
