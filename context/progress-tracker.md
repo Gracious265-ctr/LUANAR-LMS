@@ -2,6 +2,35 @@
 
 Update this file after every meaningful implementation change.
 
+## Leave dashboard: balances move to a rail beside the lists (2026-11-10)
+
+`/dashboard/leave` was a single full-width stack — header, two stat cards, the
+needs-attention cards, the balance rings, then the recent-applications table. On
+a desktop that spent a screen and a half on six facts, and put the balances
+third, so the question the page exists to answer ("how much leave do I have
+left") was below the fold behind the lists.
+
+From `lg` up the page is now two columns: the actionable content (pending and
+upcoming figures, anything rejected back, recent applications) fills the main
+column, and `BalanceSection` sits in a 24rem rail beside it. 24rem is deliberate
+— `BalanceRing` is `w-40` and the rail's `gap-6`, so two rings share a row
+without wrapping to one per row.
+
+Placement is explicit (`lg:col-start-1/2` plus `lg:row-start-1` on the balance
+block) rather than DOM order, which lets the balance block stay after the
+needs-attention section in the markup. The effect is that **below `lg` the
+reading order is unchanged** — figures, anything needing attention, balances,
+history — and only the wide layout gains the rail. `DashboardStatCards` also
+moved from a fixed `grid-cols-2` to `grid-cols-1 sm:grid-cols-2`, because two
+cards side by side on a phone left each label and caption a column too narrow to
+read. `DashboardSkeleton` was reshaped to the same two-column layout so loading
+does not shift the page.
+
+No copy, no data, and no interaction changed: every heading, caption, route and
+button is identical, which is why the 18 tests covering this page and its stat
+cards passed untouched. Frontend **139 files / 1146 tests pass**; tsc and eslint
+clean.
+
 ## Fonts: Inter is self-hosted, so the build no longer calls Google (2026-11-10)
 
 **The failure.** The frontend build died with `Module not found: Can't resolve
