@@ -39,14 +39,15 @@ export function TableHeader({
   return (
     <thead
       data-slot="table-header"
-      // The tinted band separates the headings from the rows without a heavier
-      // border, and it is the same `surface-muted` fill TableFooter uses, so a
-      // table's head and foot read as the same kind of chrome.
+      // One step stronger than the card beneath it (`surface-subtle` rather
+      // than the `surface-muted` grey, which read almost white on a white
+      // card), so the band is a visible edge that separates the headings from
+      // the rows without a heavier border.
       className={cn(
         // The row keeps the band's own fill on hover: header rows reuse
         // `TableRow`, whose `hover:bg-surface-hover` would otherwise tint the
         // headings as if they were clickable.
-        "bg-surface-muted [&_tr]:border-b [&_tr]:border-border-default [&_tr:hover]:bg-transparent",
+        "bg-surface-subtle [&_tr]:border-b [&_tr]:border-border-default [&_tr:hover]:bg-transparent",
         className
       )}
       {...props}

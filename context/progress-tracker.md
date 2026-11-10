@@ -2,6 +2,31 @@
 
 Update this file after every meaningful implementation change.
 
+## Table header band: one step stronger (2026-11-10)
+
+The band moved from `bg-surface-muted` to `bg-surface-subtle`, one step away from
+the card, because `#f8fafc` on a `#ffffff` card read almost white and the band
+was hard to see. Light goes `#f8fafc` → `#f1f5f9`; dark goes `#0c121d` →
+`#0a1017`, which is darker than the `#0f1520` card, so the band strengthens in
+both themes rather than only in light mode. Applied in `TableHeader` and in the
+hand-rolled `admin-user-table.tsx` header row.
+
+The old comment claimed the band matched `TableFooter` for head/foot parity.
+`TableFooter` is never rendered anywhere in the app, so that rationale was
+writing about nothing; the comment now states the actual reason (a visible edge
+without a heavier border).
+
+**Contrast note, now slightly worse:** the heading text is still
+`text-text-muted`, which measures ~2.3:1 on `#f1f5f9` (it was ~2.4:1 on the
+previous grey, and ~2.5:1 on plain white). Small uppercase text needs 4.5:1.
+Dark mode is ~7.3:1 and fine. Changing `TableHead` to `text-text-secondary`
+fixes it whenever that design decision is made.
+
+Frontend **140 files / 1149 tests pass**; tsc and eslint clean. No build was run
+here on purpose — a production `.next` left behind a running dev server caused a
+hydration mismatch earlier, and `bg-surface-subtle` is already compiled elsewhere
+(`ActivityTimeline`, `Stepper`, `badge`).
+
 ## Table header rows carry a tinted band (2026-11-10)
 
 `TableHeader` now sets `bg-surface-muted` on the `<thead>`, so every table in the
