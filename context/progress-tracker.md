@@ -2,6 +2,33 @@
 
 Update this file after every meaningful implementation change.
 
+## Table headings: no blank column, and every heading is scoped (2026-11-10)
+
+Audited every table in the app for a heading that is missing, blank, or repeated
+inside the same table. There were no duplicates and only one blank:
+`components/admin/admin-user-table.tsx` hand-rolls its `<thead>` and gave the
+Edit column a bare `<th></th>`, so a screen reader announced a nameless column
+and a row of Edit links read as a column with no purpose. It is now `Actions`,
+the label every other table in the app already uses for that column, and the
+row-level `aria-label="Edit <name>"` is unchanged — the heading names the
+column, the control names the row.
+
+`TableHead` in `components/ui/table.tsx` also now defaults to `scope="col"`.
+Every table in the tree heads its columns from `<thead>` (checked: no
+`TableHead` is used inside a `TableBody`), so the default is correct and a
+caller that ever needs a row header can pass `scope="row"`. Explicit scope means
+the column is still named when the header row has scrolled out of view.
+
+`tests/admin-user-table.test.tsx` (3 tests) pins this: the headings are exactly
+`Name/Email/Status/Role/Actions`, none is blank, each is `scope="col"`, and the
+edit control still names its account. Frontend **140 files / 1149 tests pass**;
+tsc and eslint clean.
+
+> Left alone: the dashboard's Recent Applications table labels its last column
+> "Submitted" but renders `created_at`. For a draft nothing was submitted, so
+> "Created" would be the accurate heading — noted rather than changed, since it
+> is a copy decision on a page under active iteration.
+
 ## Leave dashboard: the header no longer duplicates the create action (2026-11-10)
 
 The `+ New Application` button is gone from the top of `/dashboard/leave`, so

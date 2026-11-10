@@ -83,10 +83,19 @@ export function TableRow({ className, ...props }: React.ComponentPropsWithRef<"t
   );
 }
 
-export function TableHead({ className, ...props }: React.ComponentPropsWithRef<"th">) {
+export function TableHead({
+  className,
+  scope = "col",
+  ...props
+}: React.ComponentPropsWithRef<"th">) {
   return (
     <th
       data-slot="table-head"
+      // Every table in the app heads its columns from `<thead>`, so `col` is the
+      // right default; a caller that uses this as a row header passes
+      // `scope="row"`. Being explicit means assistive tech names the column even
+      // where the header row has scrolled out of view.
+      scope={scope}
       className={cn(
         "px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-text-muted",
         "[&:has([role=checkbox])]:pr-0",
