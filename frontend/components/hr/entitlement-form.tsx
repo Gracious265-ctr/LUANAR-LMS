@@ -148,7 +148,6 @@ export function EntitlementForm({
       <Field
         label="Leave type"
         htmlFor="leave_type"
-        hint="Annual Leave is created for you and appears in every employee&apos;s leave-type selection for their grade. Choose another type to grant that instead. Defaults (30-day cap, balance-deducting) are editable under Leave Configuration."
         error={ltError || null}
       >
         <Select

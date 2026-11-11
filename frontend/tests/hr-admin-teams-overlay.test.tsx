@@ -82,8 +82,9 @@ function renderSection(
 
 /**
  * A create records what the team is and who runs it: name, category, campus,
- * and a manager. The approval chain is built afterwards from the team's own
- * page, so the overlay's second step names a manager rather than a chain.
+ * the manager, and the team-wide role the manager holds. The approval chain is
+ * built afterwards from the team's own page, so the overlay's second step names
+ * a manager rather than a chain.
  */
 function fillCreateForm() {
   fireEvent.change(screen.getByLabelText("Name"), {
@@ -92,11 +93,11 @@ function fillCreateForm() {
   fireEvent.click(
     screen.getByRole("button", { name: "Continue to the manager" }),
   );
-  fireEvent.change(screen.getByLabelText("Manager role"), {
-    target: { value: "1" },
-  });
-  fireEvent.change(screen.getByLabelText("Manager"), {
+  fireEvent.change(screen.getByLabelText("Who runs this team?"), {
     target: { value: "21" },
+  });
+  fireEvent.change(screen.getByLabelText("Role on this team"), {
+    target: { value: "1" },
   });
 }
 
@@ -284,8 +285,8 @@ describe("TeamsSection — wave 2", () => {
 
   it("still opens the dialog when the roles read failed", () => {
     // Option data that failed to load is the form's problem to report, not a
-    // reason to hide the entry point. Creating a team never reads the roles,
-    // so the failure cannot block the way in.
+    // reason to hide the entry point. The failure is shown on the manager step,
+    // where the role it affects is chosen, rather than blocking the way in.
     searchParamsRef.current = new URLSearchParams("team=new");
     renderSection({
       teams: [],

@@ -86,8 +86,10 @@ const bob: EligibleApprover = {
 };
 
 /**
- * The people the create form may name as a team's manager: active employees of
- * the team's own category who hold no wide approver role.
+ * The people the create form may name as a team's manager. A manager is also
+ * given a team-wide role, so the ordinary candidates come from the team's own
+ * half of the institution; somebody who already holds a wide approver role is
+ * the exception and may run a team of either category.
  */
 const maryManager = makeEmployee({
   user_id: 21,
@@ -103,15 +105,16 @@ const adaAcademic = makeEmployee({
 /**
  * The manager step, which every create walks through before it saves.
  *
- * The role is the first team-scoped role in the fixture above; the person is a
- * category match so the picker would actually offer them.
+ * The person and the team-wide role they hold are one appointment: a manager
+ * who is not already a wide holder is given the role on the team, so the form
+ * asks for both before it will save.
  */
-function chooseManager(person = maryManager) {
-  fireEvent.change(screen.getByLabelText("Manager role"), {
-    target: { value: "1" },
-  });
-  fireEvent.change(screen.getByLabelText("Manager"), {
+function chooseManager(person = maryManager, role = roles[0]) {
+  fireEvent.change(screen.getByLabelText("Who runs this team?"), {
     target: { value: String(person.user_id) },
+  });
+  fireEvent.change(screen.getByLabelText("Role on this team"), {
+    target: { value: String(role.id) },
   });
 }
 
@@ -228,11 +231,100 @@ describe("TeamForm", () => {
       "name",
     ]);
     expect(vi.mocked(createTeam).mock.calls[0][0].manager).toEqual({
-      role: 1,
       user: 21,
+      role: 1,
     });
     expect(push).toHaveBeenCalledWith("/dashboard/teams/4?tab=members");
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("will not create a team without the team-wide role its manager holds", async () => {
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+    render(
+      <TeamForm campuses={campuses} roles={roles} employees={[maryManager]} />
+    );
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registry" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+    // The person alone is half an appointment: without the role, the manager is
+    // not on the team's approver list at all.
+    fireEvent.change(screen.getByLabelText("Who runs this team?"), {
+      target: { value: "21" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    expect(
+      await screen.findByText(/team-wide role this manager holds/i)
+    ).toBeInTheDocument();
+    expect(createTeam).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for a second holding from somebody who already holds a wide role", async () => {
+    vi.mocked(createTeam).mockResolvedValue(makeTeam());
+    render(
+      <TeamForm
+        campuses={campuses}
+        roles={roles}
+        employees={[maryManager]}
+        wideHolderUserIds={[21]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registry" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+    fireEvent.change(screen.getByLabelText("Who runs this team?"), {
+      target: { value: "21" },
+    });
+
+    // A person holds one wide approver role, so the role is not offered and the
+    // designation works through the team's own manager field instead.
+    expect(screen.getByLabelText("Role on this team")).toBeDisabled();
+    expect(
+      screen.getByText(/already holds a wide approver role/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create team" }));
+
+    await waitFor(() => expect(createTeam).toHaveBeenCalled());
+    expect(vi.mocked(createTeam).mock.calls[0][0].manager).toEqual({
+      user: 21,
+    });
+  });
+
+  it("does not offer a manager from the other half when the role could not be held", () => {
+    render(
+      <TeamForm
+        campuses={campuses}
+        roles={roles}
+        employees={[maryManager, adaAcademic]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Registry" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to the manager" })
+    );
+
+    const person = screen.getByLabelText("Who runs this team?");
+    const offered = within(person)
+      .getAllByRole("option")
+      .map((option) => option.getAttribute("value"));
+
+    // The default team is administration, and a team-wide holding is scoped to
+    // the team's category; offering an academic employee would be a save the
+    // backend refuses.
+    expect(offered).toContain("21");
+    expect(offered).not.toContain("22");
   });
 
   it("refuses to save a chain whose step names no single approver", async () => {
@@ -450,8 +542,9 @@ describe("TeamForm", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Continue to the manager" })
     );
-    // An academic team's manager is an academic employee, so the picker offers
-    // only the half of the institution the write will accept.
+    // A manager takes a team-wide role, and a team-wide holding must match the
+    // team's category, so an academic team's manager comes from the academic
+    // half of the institution.
     chooseManager(adaAcademic);
     fireEvent.click(screen.getByRole("button", { name: "Create team" }));
 
@@ -479,7 +572,7 @@ describe("TeamForm", () => {
     expect(
       await screen.findByText(/An academic team sits at a campus/i)
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Manager role")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Who runs this team?")).not.toBeInTheDocument();
     expect(createTeam).not.toHaveBeenCalled();
   });
 
@@ -550,7 +643,7 @@ describe("TeamForm", () => {
     ).toBeInTheDocument();
     // The refusal names what was wrong with the write, and the chosen manager
     // is still on screen so it can be corrected rather than re-entered.
-    expect(screen.getByLabelText("Manager")).toHaveValue("21");
+    expect(screen.getByLabelText("Who runs this team?")).toHaveValue("21");
     expect(push).not.toHaveBeenCalled();
   });
 

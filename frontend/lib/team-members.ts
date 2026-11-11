@@ -93,6 +93,8 @@ export interface WorkflowMember {
   designation: string;
   team: number;
   team_name: string;
+  /** A wide approver may sit on several of a team's chains at once. */
+  is_wide_approver?: boolean;
   added_by: number;
   created_at: string;
 }

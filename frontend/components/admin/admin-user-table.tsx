@@ -36,12 +36,15 @@ export function AdminUserTable({
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-border-default text-xs uppercase tracking-wide text-text-muted">
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">Email</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Role</th>
-            <th className="px-3 py-2 font-medium"></th>
+          <tr className="border-b border-border-default bg-surface-subtle text-xs uppercase tracking-wide text-text-muted">
+            <th scope="col" className="px-3 py-2 font-medium">Name</th>
+            <th scope="col" className="px-3 py-2 font-medium">Email</th>
+            <th scope="col" className="px-3 py-2 font-medium">Status</th>
+            <th scope="col" className="px-3 py-2 font-medium">Role</th>
+            {/* The Edit column used to carry an empty <th>, which a screen
+                reader announces as a nameless column. "Actions" is what every
+                other table in the app calls this column. */}
+            <th scope="col" className="px-3 py-2 font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>

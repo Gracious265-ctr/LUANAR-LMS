@@ -151,9 +151,25 @@ export interface Team {
   effective_to: string | null;
   /** False outside the team's effective window, even when it is active. */
   is_effective: boolean;
+  /**
+   * Whether the signed-in user is this team's designated manager. The roster
+   * and the default chain are the manager's to change, so HR reads the same
+   * team read-only; the server refuses those writes to anyone else.
+   */
+  is_team_manager: boolean;
+  /** The designated manager, by user id, or null when the team has none. */
+  manager_user: number | null;
+  /** The designated manager's display name. Empty when the team has none. */
+  manager_name: string;
   /** Required: a team with no chain routes nothing, so it cannot be saved without one. */
   stage_roles: TeamStageRole[];
   member_count: number;
+  /**
+   * How many people are on the team's roster. Distinct from `member_count`,
+   * which counts staffed steps: an empty roster is what sends a manager to the
+   * add-members page.
+   */
+  roster_count: number;
   members: TeamMember[];
   /** The steps this team routes through, each with the people who can act. */
   sections: TeamSection[];
@@ -229,12 +245,14 @@ export interface TeamInput {
    */
   new_workflow?: TeamWorkflowInput;
   /**
-   * The manager designated at creation: the team-scoped role they hold, and the
-   * category-matching employee who holds it. Written on create only — a team's
-   * manager is changed from the team's Approvers tab afterwards, where the
-   * wide-holder panel offers "Make manager".
+   * The manager designated at creation, and the team-wide role they hold on
+   * the new team. The role is the appointment's other half: without it the
+   * manager runs the team but is not on its approver list. A person who already
+   * holds a wide approver role anywhere is named with `user` alone, because a
+   * person holds one wide role and the designation lives on the team. A team's
+   * manager is changed from its Approvers tab afterwards.
    */
-  manager?: { role: number; user: number };
+  manager?: { user: number; role?: number };
 }
 
 export interface Campus {

@@ -45,6 +45,7 @@ from .services import (
     ensure_membership_allowed,
     remove_team_member,
     remove_workflow_member,
+    route_team,
     sync_workflow_members,
     team_member_summaries,
     workflow_member_pool,
@@ -68,6 +69,28 @@ User = get_user_model()
 
 TEAMS_URL = "/api/v1/teams/"
 WORKFLOWS_URL = "/api/v1/workflows/"
+
+
+def make_team_manager(team, email: str):
+    """An employee designated as ``team``'s manager.
+
+    The designation is the team-wide holding flagged ``is_team_manager``, which
+    is the only thing that authorises staffing the roster and choosing the
+    default chain.
+    """
+    user = User.objects.create_user(
+        username=email,
+        email=email,
+        password=DEV_PASSWORD,
+        first_name="Team",
+        last_name="Manager",
+        role=User.Role.EMPLOYEE,
+    )
+    role = ensure_roles("supervisor")["supervisor"]
+    TeamRoleAssignment.objects.create(
+        team=team, role=role, user=user, is_team_manager=True
+    )
+    return user
 
 
 class MemberAPIBase(TestCase):
@@ -100,7 +123,18 @@ class MemberAPIBase(TestCase):
 
 
 class TeamMemberManagementTests(MemberAPIBase):
-    """Adding and removing employees from a team, with the safeguards."""
+    """Adding and removing employees from a team, with the safeguards.
+
+    A team's roster is the designated manager's to staff, so these requests are
+    made as the manager of ``self.team``. HR keeps reading the roster and keeps
+    the HR-only decisions around the team; the refusals for everybody else live
+    in :class:`TeamRosterAuthorityTests` below.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.manager = make_team_manager(self.team, "manager@members.test")
+        self.client.force_authenticate(self.manager)
 
     def test_list_team_members_with_footprint(self):
         response = self.client.get(f"{TEAMS_URL}{self.team.pk}/members/")
@@ -227,6 +261,11 @@ class TeamMemberManagementTests(MemberAPIBase):
         academic_team = make_team(
             "Academic Members Team", ["supervisor"], campus="Members Campus"
         )
+        # A manager may only reach a team they manage, so staffing this second
+        # team means acting as *its* manager rather than as the first team's.
+        self.client.force_authenticate(
+            make_team_manager(academic_team, "academic-manager@members.test")
+        )
         academic = make_employee(
             "academic-ok@members.test",
             category=EmployeeProfile.Category.ACADEMIC,
@@ -240,24 +279,44 @@ class TeamMemberManagementTests(MemberAPIBase):
         academic.employee_profile.refresh_from_db()
         self.assertEqual(academic.employee_profile.team_id, academic_team.pk)
 
-    def test_add_member_who_is_a_wide_approver_is_refused(self):
-        # An approver serves steps from the Approvers tab; placing them on the
-        # roster as a normal member would silently also route their leave.
-        approver = make_employee("wide@members.test")
+    def test_add_member_who_is_a_wide_approver_is_accepted(self):
+        # A wide approver crosses the institution's halves, so a manager may put
+        # them on the roster even though their category differs from the team's.
+        # Their leave then routes through the team they were added to.
+        approver = make_employee("wide@members.test", category=EmployeeProfile.Category.ACADEMIC)
         grant_approver_role(approver, "registrar")
         response = self.client.post(
             f"{TEAMS_URL}{self.team.pk}/members/",
             {"user": approver.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         approver.employee_profile.refresh_from_db()
-        self.assertIsNone(approver.employee_profile.team_id)
+        self.assertEqual(approver.employee_profile.team_id, self.team.pk)
 
-    def test_add_member_who_is_campus_wide_approver_for_that_campus_is_refused(self):
+    def test_add_member_with_a_mismatched_category_and_no_wide_role_is_refused(self):
+        # The category rule still applies to ordinary employees: only a wide
+        # holding is the exemption, not "the manager asked".
+        academic = make_employee(
+            "academic-refused@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": academic.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Administration team", response.json()["user"][0])
+        academic.employee_profile.refresh_from_db()
+        self.assertIsNone(academic.employee_profile.team_id)
+
+    def test_add_member_who_is_campus_wide_approver_for_that_campus_is_accepted(self):
         academic_team = make_team(
             "Campus Members Team", ["supervisor"], campus="Members Campus"
+        )
+        self.client.force_authenticate(
+            make_team_manager(academic_team, "campus-manager@members.test")
         )
         holder = make_employee(
             "campus-wide@members.test",
@@ -274,10 +333,9 @@ class TeamMemberManagementTests(MemberAPIBase):
             {"user": holder.pk},
             format="json",
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wide approver", response.json()["user"][0])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
         holder.employee_profile.refresh_from_db()
-        self.assertIsNone(holder.employee_profile.team_id)
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
 
     def test_remove_member_clears_team(self):
         response = self.client.delete(self.member_url(self.alice.pk))
@@ -347,6 +405,220 @@ class TeamMemberManagementTests(MemberAPIBase):
             employee_profile__team__isnull=True
         ).count()
         self.assertGreaterEqual(unassigned, 0)
+
+
+class TeamRosterAuthorityTests(MemberAPIBase):
+    """Staffing a team and choosing its chain belong to its designated manager.
+
+    HR hands a team to one person and keeps the decisions around it — its
+    identity, its lifecycle, and who manages it — but the roster and the default
+    chain are the manager's. These tests pin the boundary at both layers: the
+    view answers 403/404, and the services refuse even a caller that reaches
+    them without the view.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.manager = make_team_manager(self.team, "manager@members.test")
+
+    def _other_workflow(self):
+        workflow = make_workflow("Members Alternate", ["supervisor"])
+        workflow.team = self.team
+        workflow.save(update_fields=["team"])
+        return workflow
+
+    def test_hr_may_read_the_roster_but_not_add_to_it(self):
+        self.client.force_authenticate(self.hr)
+        read = self.client.get(f"{TEAMS_URL}{self.team.pk}/members/")
+        self.assertEqual(read.status_code, status.HTTP_200_OK)
+
+        carol = make_employee("carol-hr@members.test")
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": carol.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        carol.employee_profile.refresh_from_db()
+        self.assertIsNone(carol.employee_profile.team_id)
+
+    def test_hr_cannot_remove_a_member(self):
+        self.client.force_authenticate(self.hr)
+        response = self.client.delete(self.member_url(self.alice.pk))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.alice.employee_profile.refresh_from_db()
+        self.assertEqual(self.alice.employee_profile.team_id, self.team.pk)
+
+    def test_hr_cannot_choose_the_default_chain(self):
+        self.client.force_authenticate(self.hr)
+        workflow = self.team.workflow
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/route/",
+            {"workflow": workflow.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_another_teams_manager_cannot_staff_this_team(self):
+        other = make_team("Other Authority Team", ["supervisor"])
+        stranger = make_team_manager(other, "stranger@members.test")
+        self.client.force_authenticate(stranger)
+        carol = make_employee("carol-stranger@members.test")
+
+        add = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": carol.pk},
+            format="json",
+        )
+        remove = self.client.delete(self.member_url(self.alice.pk))
+        route = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/route/",
+            {"workflow": self.team.workflow_id},
+            format="json",
+        )
+        # The scoped queryset makes the team invisible, so every attempt is a
+        # 404 rather than an answer that confirms the team exists.
+        self.assertEqual(add.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(remove.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(route.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_designated_manager_can_add_and_remove_members(self):
+        self.client.force_authenticate(self.manager)
+        carol = make_employee("carol-manager@members.test")
+        add = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": carol.pk},
+            format="json",
+        )
+        self.assertEqual(add.status_code, status.HTTP_201_CREATED)
+        carol.employee_profile.refresh_from_db()
+        self.assertEqual(carol.employee_profile.team_id, self.team.pk)
+
+        remove = self.client.delete(self.member_url(self.alice.pk))
+        self.assertEqual(remove.status_code, status.HTTP_204_NO_CONTENT)
+        self.alice.employee_profile.refresh_from_db()
+        self.assertIsNone(self.alice.employee_profile.team_id)
+
+    def test_designated_manager_can_choose_the_default_chain(self):
+        self.client.force_authenticate(self.manager)
+        alternate = self._other_workflow()
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/route/",
+            {"workflow": alternate.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.workflow_id, alternate.pk)
+
+    def test_services_refuse_hr_even_without_the_view(self):
+        carol = make_employee("carol-service@members.test")
+        with self.assertRaises(WorkflowMemberError):
+            add_team_member(team=self.team, user=carol, actor=self.hr)
+        with self.assertRaises(WorkflowMemberError):
+            remove_team_member(team=self.team, user=self.alice, actor=self.hr)
+        with self.assertRaises(TeamActionError):
+            route_team(
+                team=self.team, actor=self.hr, workflow=self.team.workflow
+            )
+        carol.employee_profile.refresh_from_db()
+        self.assertIsNone(carol.employee_profile.team_id)
+        self.alice.employee_profile.refresh_from_db()
+        self.assertEqual(self.alice.employee_profile.team_id, self.team.pk)
+
+    def test_member_candidates_offer_wide_holders(self):
+        holder = make_employee(
+            "wide-candidate@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        grant_approver_role(holder, "registrar")
+        ordinary = make_employee("ordinary-candidate@members.test")
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(
+            f"{TEAMS_URL}{self.team.pk}/member-candidates/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        ids = {row["user_id"] for row in response.json()}
+        self.assertIn(ordinary.pk, ids)
+        # A wide holding is offered regardless of category: it crosses the
+        # institution's halves, so the team's own category cannot exclude it.
+        self.assertIn(holder.pk, ids)
+
+    def test_institution_wide_holder_is_accepted_by_an_academic_team(self):
+        academic_team = make_team(
+            "Authority Academic Team", ["supervisor"], campus="Members Campus"
+        )
+        manager = make_team_manager(
+            academic_team, "authority-academic-manager@members.test"
+        )
+        holder = make_employee(
+            "academic-institution-wide@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        grant_approver_role(holder, "registrar")
+        self.client.force_authenticate(manager)
+
+        response = self.client.post(
+            f"{TEAMS_URL}{academic_team.pk}/members/",
+            {"user": holder.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
+        holder.employee_profile.refresh_from_db()
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
+
+    def test_campus_wide_holder_at_another_campus_is_accepted(self):
+        academic_team = make_team(
+            "Authority Campus Team", ["supervisor"], campus="Members Campus"
+        )
+        manager = make_team_manager(
+            academic_team, "authority-campus-manager@members.test"
+        )
+        other_team = make_team(
+            "Authority Other Campus Team", ["supervisor"], campus="Other Campus"
+        )
+        holder = make_employee(
+            "other-campus-wide@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        role = grant_approver_role(
+            holder, "campus_registrar", institution_wide=False
+        )
+        CampusRoleAssignment.objects.create(
+            campus=other_team.campus, role=role, user=holder
+        )
+        self.client.force_authenticate(manager)
+
+        response = self.client.post(
+            f"{TEAMS_URL}{academic_team.pk}/members/",
+            {"user": holder.pk},
+            format="json",
+        )
+        # A holding at another campus still makes them a wide approver, and a
+        # wide holding is what the category rule exempts.
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
+        holder.employee_profile.refresh_from_db()
+        self.assertEqual(holder.employee_profile.team_id, academic_team.pk)
+
+    def test_team_wide_holder_on_another_team_is_accepted(self):
+        other = make_team("Authority Holder Team", ["supervisor"])
+        holder = make_employee(
+            "other-team-wide@members.test",
+            category=EmployeeProfile.Category.ACADEMIC,
+        )
+        role = ensure_roles("hod")["hod"]
+        TeamRoleAssignment.objects.create(team=other, role=role, user=holder)
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.post(
+            f"{TEAMS_URL}{self.team.pk}/members/",
+            {"user": holder.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.json())
+        holder.employee_profile.refresh_from_db()
+        self.assertEqual(holder.employee_profile.team_id, self.team.pk)
 
 
 class WorkflowMemberEligibilityTests(MemberAPIBase):
@@ -590,7 +862,13 @@ class WorkflowMemberEligibilityTests(MemberAPIBase):
         # must not trip against the section's own workflow.
         ensure_membership_allowed(section=section_a, user=self.alice)
 
-    def test_team_wide_approver_joins_both_chains_and_stays_eligible(self):
+    def test_team_wide_approver_joins_one_chain_only(self):
+        """A wide holding staffs steps; it does not enrol on several chains.
+
+        The person's normal-member row is where their own leave routes, so it
+        stays a single row even when their team-wide post staffs every chain's
+        steps.
+        """
         TeamRoleAssignment.objects.create(
             user=self.alice,
             team=self.team,
@@ -600,17 +878,25 @@ class WorkflowMemberEligibilityTests(MemberAPIBase):
             workflow=self.flow_a, user=self.alice, actor=self.hr
         )
         self.assertTrue(first.is_wide_approver)
-        second = assign_workflow_member(
-            workflow=self.flow_b, user=self.alice, actor=self.hr
+        with self.assertRaises(WorkflowMemberError):
+            assign_workflow_member(
+                workflow=self.flow_b, user=self.alice, actor=self.hr
+            )
+        self.assertFalse(
+            WorkflowMember.objects.filter(
+                workflow=self.flow_b, user=self.alice
+            ).exists()
         )
-        self.assertTrue(second.is_wide_approver)
         pool = workflow_member_pool(team=self.team, workflow=self.flow_b)
-        self.assertIn(self.alice.pk, {row["user"] for row in pool["available"]})
         self.assertNotIn(
-            self.alice.pk, {row["user"] for row in pool["assigned_elsewhere"]}
+            self.alice.pk, {row["user"] for row in pool["available"]}
         )
+        row = next(
+            r for r in pool["assigned_elsewhere"] if r["user"] == self.alice.pk
+        )
+        self.assertEqual(row["kind"], "member")
 
-    def test_institution_wide_approver_is_exempt_from_the_elsewhere_rule(self):
+    def test_institution_wide_approver_is_exempt_from_the_step_elsewhere_rule(self):
         grant_approver_role(self.alice, "hod")
         step_b = self.flow_b.sections.first()
         ensure_membership_allowed(section=step_b, user=self.alice)
@@ -657,6 +943,31 @@ class WorkflowMemberAPITests(MemberAPIBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual({m["user"] for m in response.json()["members"]},
                          {self.bob.pk})
+
+    def test_detail_members_carry_the_roster_fields(self):
+        """The detail payload is what the chain's member table prints.
+
+        The roster shows one row per member with a name, a designation and an
+        email, so the embedded ``members`` must be the member serializer's
+        shape. A hand-rolled payload with different keys still counts the
+        members but leaves every row blank.
+        """
+        assign_workflow_member(workflow=self.flow, user=self.alice, actor=self.hr)
+        profile = self.alice.employee_profile
+        profile.designation = "Lecturer"
+        profile.save(update_fields=["designation"])
+
+        response = self.client.get(f"{WORKFLOWS_URL}{self.flow.pk}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        row = next(
+            m for m in response.json()["members"] if m["user"] == self.alice.pk
+        )
+        self.assertEqual(row["user_name"], "Test Employee")
+        self.assertEqual(row["user_email"], "alice@members.test")
+        self.assertEqual(row["designation"], "Lecturer")
+        self.assertEqual(row["team_name"], self.team.name)
+        self.assertEqual(row["workflow_name"], self.flow.name)
 
     def test_create_workflow_refuses_a_member_of_another_chain(self):
         """A new chain cannot take its members off the live one.

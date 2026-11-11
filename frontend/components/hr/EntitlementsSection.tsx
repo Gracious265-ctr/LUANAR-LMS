@@ -35,6 +35,7 @@ export const ENTITLEMENT_PARAM = "entitlement";
 export function EntitlementsSection({
   entitlements,
   today,
+  basePath,
 }: {
   entitlements: Entitlement[];
   /**
@@ -43,6 +44,11 @@ export function EntitlementsSection({
    * of each visitor's browser deciding it.
    */
   today?: string;
+  /**
+   * Base route for a row's edit link, e.g. `/leave-config/annual-days`. Omitted
+   * on the HR-admin page so its historical deep links keep working.
+   */
+  basePath?: string;
 }) {
   const router = useRouter();
   const overlay = useOverlayParam(ENTITLEMENT_PARAM);
@@ -108,6 +114,7 @@ export function EntitlementsSection({
         entitlements={visible}
         today={today}
         onEdit={overlay.openEdit}
+        basePath={basePath}
         empty={
           search ? (
             <EmptyState
@@ -127,7 +134,7 @@ export function EntitlementsSection({
         description={
           band
             ? "Update the annual days or the date this band takes effect. Grade ranges must not overlap, so a change that collides with another band is rejected."
-            : "Define an annual leave entitlement for a grade range that is not already covered. To change an existing band, edit that rule instead."
+            : undefined
         }
         onOpenChange={(open) => {
           if (!open) overlay.close();

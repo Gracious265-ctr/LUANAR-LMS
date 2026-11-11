@@ -957,10 +957,10 @@ class EmployeeRosterFilterTests(TestCase):
     The team screen's member picker asks ``?team=none`` and scopes the answer by
     the team's own category — an academic team takes academic employees, an
     administration team takes administration employees — and by who already
-    serves it as a wide approver (institution-wide, team-wide on that team, or
-    campus-wide at its campus): an approver is managed on the Approvers tab, not
-    placed on the roster. The write path enforces the same two rules; these are
-    the read half, so a picker offers exactly the people it may add.
+    holds a wide approver role *anywhere* (institution-wide, on any team, or at
+    any campus): a wide holder is managed on the Approvers tab, not placed on the
+    roster. The write path enforces the same rules; these are the read half, so a
+    picker offers exactly the people it may add.
     """
 
     LIST_URL = "/api/v1/employees/"
@@ -1010,35 +1010,34 @@ class EmployeeRosterFilterTests(TestCase):
         self.assertIn(self.academic.email, self.emails(response))
         self.assertIn(self.admin.email, self.emails(response))
 
-    def test_institution_wide_approver_is_kept_out_but_only_for_that_team(self):
+    def test_institution_wide_approver_is_kept_out_of_every_roster(self):
         registrar = make_approver(
             "registrar",
             username="roster-registrar@test.luanar",
             institution_wide=True,
         )
-        team = team_for("Roster Team")
         response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team={team.pk}"
+            f"{self.LIST_URL}?team=none&not_wide_holder=1"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn(registrar.email, self.emails(response))
-        # Without the filter the same person is offered again: the exclusion is
-        # per team, not a hide-an-approver-everywhere rule.
+        # Without the filter the same person is offered again: this is a
+        # roster-picker scope, not a hide-an-approver-everywhere rule.
         plain = self.client.get(f"{self.LIST_URL}?team=none")
         self.assertIn(registrar.email, self.emails(plain))
 
-    def test_team_wide_approver_is_kept_out_of_that_team_roster(self):
+    def test_team_wide_approver_is_kept_out_of_every_roster(self):
         role = grant_approver_role(self.academic, "hod", institution_wide=False)
         team = team_for("Roster Team")
         TeamRoleAssignment.objects.create(team=team, role=role, user=self.academic)
         response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team={team.pk}"
+            f"{self.LIST_URL}?team=none&not_wide_holder=1"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn(self.academic.email, self.emails(response))
         self.assertIn(self.admin.email, self.emails(response))
 
-    def test_campus_wide_approver_is_kept_out_of_an_academic_team_roster(self):
+    def test_campus_wide_approver_is_kept_out_of_every_roster(self):
         academic_team = make_team(
             "Roster Academic Team", ["supervisor"], campus="Roster Campus"
         )
@@ -1050,27 +1049,21 @@ class EmployeeRosterFilterTests(TestCase):
             role=campus_role,
             user=self.academic,
         )
-        self.assertTrue(academic_team.category == EmployeeProfile.Category.ACADEMIC)
-        # A campus-wide holding is invisible anywhere outside the holding campus's
-        # teams: query for a different team and the person is still a candidate.
-        other_team = team_for("Roster Other Team")
+        # A campus holding on one campus still means the person is a wide
+        # holder, so no roster anywhere offers them.
         response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team={other_team.pk}"
-        )
-        self.assertIn(self.academic.email, self.emails(response))
-        response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team={academic_team.pk}"
+            f"{self.LIST_URL}?team=none&not_wide_holder=1"
         )
         self.assertNotIn(self.academic.email, self.emails(response))
+        self.assertIn(self.admin.email, self.emails(response))
 
-    def test_a_missing_team_or_garbage_id_ignores_the_wide_filter(self):
+    def test_the_wide_filter_is_opt_in(self):
+        grant_approver_role(self.academic, "registrar")
+        plain = self.client.get(f"{self.LIST_URL}?team=none")
+        self.assertEqual(plain.status_code, status.HTTP_200_OK)
+        self.assertIn(self.academic.email, self.emails(plain))
         response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team=999999"
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn(self.academic.email, self.emails(response))
-        response = self.client.get(
-            f"{self.LIST_URL}?team=none&not_wide_for_team=not-a-number"
+            f"{self.LIST_URL}?team=none&not_wide_holder=0"
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn(self.academic.email, self.emails(response))

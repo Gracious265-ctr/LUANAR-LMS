@@ -43,6 +43,7 @@ from .models import (
     Section,
     SectionMember,
     Workflow,
+    WorkflowMember,
 )
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
@@ -204,6 +205,16 @@ class TeamConfigurationBase(TestCase):
             user=self.employee,
             defaults={"team": team},
         )
+        # Being on the roster is not routing: a team routes the chains its people
+        # are enrolled on, and an employee is a member of exactly one. Placing
+        # somebody on the team therefore means enrolling them on the chain the
+        # team owns, which is what the HR write path does. ``update_or_create``
+        # moves the single membership row instead of adding a second.
+        if team.workflow_id is not None:
+            WorkflowMember.objects.update_or_create(
+                user=self.employee,
+                defaults={"workflow": team.workflow, "team": team},
+            )
         # Writing the profile caches it on the user instance, holding on to the
         # Team object the caller passed — which may be a read taken before the
         # team's chain was written. Dropping the cache means the routing

@@ -371,8 +371,9 @@ describe("WorkflowForm members section", () => {
     );
   });
 
-  it("will not save a chain with nobody on it", async () => {
+  it("saves a chain with nobody on it, and says members can be added later", async () => {
     vi.mocked(getWorkflowMemberPool).mockResolvedValue(makePool());
+    vi.mocked(createWorkflow).mockResolvedValue(makeWorkflow());
 
     render(<WorkflowForm team={team} roles={roles} />);
     fillName();
@@ -380,22 +381,24 @@ describe("WorkflowForm members section", () => {
     continueToMembers();
     await screen.findByRole("button", { name: "Add employees" });
 
+    // A chain's steps are worth writing down before its people are enrolled —
+    // a manager describing a new structure should not have to wait for them —
+    // so an empty member list is a warning, not a refusal.
     expect(
-      screen.getByRole("button", { name: "Create workflow" })
-    ).toBeDisabled();
-    expect(
-      screen.getByText("Add at least one member to save this chain.")
+      screen.getByText(
+        "You can save this chain without members and add them later."
+      )
     ).toBeInTheDocument();
+    const save = screen.getByRole("button", { name: "Create workflow" });
+    expect(save).not.toBeDisabled();
 
-    // Nothing writes through the form: not an implicit submit, and not a click
-    // that jsdom still delivers to the disabled button.
-    fireEvent.submit(
-      screen.getByRole("button", { name: "Create workflow" }).closest("form")!
+    fireEvent.click(save, { detail: 1 });
+
+    await waitFor(() =>
+      expect(createWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ members: [], team: 4 })
+      )
     );
-    fireEvent.click(screen.getByRole("button", { name: "Create workflow" }));
-
-    expect(createWorkflow).not.toHaveBeenCalled();
-    expect(screen.getByText("Normal workflow members")).toBeInTheDocument();
   });
 
   it("ignores the second click of a double-click on save", async () => {
@@ -582,8 +585,8 @@ describe("WorkflowForm members section", () => {
     expect(screen.queryByText("Bea Approver")).not.toBeInTheDocument();
 
     // Neither a normal member nor a step approver of another chain may join
-    // this one, so there is no add action and the chain cannot be saved with
-    // nobody on it.
+    // this one, so there is no add action. Nobody can be enrolled here, but the
+    // chain can still be written and its members added from the team later.
     expect(
       screen.queryByRole("button", { name: "Move here" })
     ).not.toBeInTheDocument();
@@ -592,8 +595,13 @@ describe("WorkflowForm members section", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/On this chain/)).not.toBeInTheDocument();
     expect(
+      screen.getByText(
+        "You can save this chain without members and add them later."
+      )
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole("button", { name: "Create workflow" })
-    ).toBeDisabled();
+    ).not.toBeDisabled();
 
     fireEvent.click(listButton);
 

@@ -64,7 +64,7 @@ database directly; it always goes through the Django API.
 | `backend/leave_types` | **The leave-type registry** — the one owner of `LeaveType` and every rule on it: branch/grade/gender eligibility, maximum duration, notice period, supporting-document requirement, plannability, institutional-registrar escalation, the deactivate/reactivate lifecycle, and the reserved annual-leave identity. Every other module reads these rules through `leave_types/services.py` |
 | `backend/roles` | The **approver role registry**: `ApproverRole` and institution-wide (`RoleAssignment`) role holdings. |
 | `backend/campuses` | **Campus scoping**: `Campus` and campus-wide (`CampusRoleAssignment`) role holdings. |
-| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping) and `TeamRoleAssignment` (team-wide role holders, including the designated team manager). **Team endpoints live here** (`TeamViewSet`, routes under `api/v1/teams/` via `teams.urls`). |
+| `backend/teams` | **Teams and their role holdings**: `Team` (identification, lifecycle, the one chain it routes, campus/category scoping, and the designated `manager`) and `TeamRoleAssignment` (team-wide role holders, kept in step with `Team.manager`). **Team endpoints live here** (`TeamViewSet`, routes under `api/v1/teams/` via `teams.urls`). |
 | `backend/roles` | Approver roles and team/campus role assignments split out of `organisation/` (`ApproverRole`, `RoleAssignment`, `TeamRoleAssignmentViewSet`, role permissions/services). |
 | `backend/campuses` | Campus entities and campus role assignments split out of `organisation/` (`Campus`, `CampusRoleAssignment`, campus APIs). |
 | `backend/org_structure` | The mirrored organisation tree (`OrgUnit`): the provider sync that creates/updates units and appoints `designated_approver` from role holders (formerly `org/`). |
@@ -157,7 +157,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 |--------|---------------|
 | `frontend/app/(dashboard)/dashboard/…` | The pages you see inside the app (employee + HR) |
 | `frontend/app/(dashboard)/approvals/…` | Approvers' "pending approvals" pages |
-| `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit) |
+| `frontend/app/(dashboard)/leave-config/…` | The HR **Leave Configuration** app (leave-type list, create, edit, and the annual-days screen) |
 | `frontend/app/(dashboard)/dashboard/hr-admin/calendar/…` | The HR **Calendar** app (tabbed landing page: financial years, holidays & events, working days, with a month grid) |
 | `frontend/app/(auth)/login/` | The login page |
 | `frontend/app/api/…` | Thin proxy route handlers, one per backend endpoint group (auth, leave, hr, approvals, plans, leave-config) |
@@ -187,6 +187,7 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | The **Calendar** app's own sidebar rail (only the launcher + one Calendar entry; the HR folio is hidden inside the app) | `frontend/lib/nav/calendar-nav.ts` (`isCalendarModule`, `CALENDAR_NAV_ITEMS`) |
 | Who may open the Calendar (the frontend access check) | `frontend/lib/financial-years.ts` (`canAccessCalendar`/`requireCalendarAccess`; backend twin in `backend/calendar_app/services.py`) |
 | The **Leave Configuration** app (list/create/edit leave types, deactivate & reactivate) | `frontend/app/(dashboard)/leave-config/…` + `frontend/components/leave-config/`, `frontend/lib/leave-config*.ts` |
+| The **Annual Days** screen inside Leave Configuration (grade band × leave type × financial year → days) | `frontend/app/(dashboard)/leave-config/annual-days/…` + `frontend/components/hr/annual-days-config.tsx`, `EntitlementsSection.tsx`, `entitlement-table.tsx`; backend `leave.GradeLeaveEntitlement` and `/api/v1/entitlements/` |
 | Who may open Leave Configuration (the frontend access check) | `frontend/lib/leave-config-server.ts` (`canAccessLeaveConfig`; backend twin in `backend/leave_config/services.py`) |
 | An API call's payload or types (e.g. entitlements) | `frontend/lib/entitlements.ts` (mirror in `app/api/hr/entitlements/route.ts` for how it is sent) |
 | Shared API client / how tokens are attached | `frontend/lib/api-client.ts` |
@@ -194,8 +195,12 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
 | **Search and filter** controls on a list screen | `frontend/components/ui/list-search.tsx`, `frontend/components/ui/filter-chips.tsx`, matching rule in `frontend/lib/search.ts` |
 | The **progress rail** above a form split across pages | `frontend/components/ui/form-progress.tsx` (wraps `frontend/components/ui/Stepper.tsx`) |
 | The team create/edit form (details → manager or approval steps) | `frontend/components/hr/team-form.tsx` |
+| The team **manager card** on the Approvers tab (designate / remove) | `frontend/components/hr/team-manager-panel.tsx` |
+| The **add-members page** and its search/select/summary body | `frontend/app/(dashboard)/dashboard/teams/[id]/members/add/page.tsx` + `frontend/components/hr/add-team-members.tsx` |
+| A team's roster list (search, filter, remove, link to add) | `frontend/components/hr/team-members-panel.tsx` |
 | A team's **chain builder** (steps page → members page) | `frontend/components/hr/workflow-form.tsx` |
-| The **chain cards** on a team's workflows page (badge, Edit, Make default) | `frontend/components/hr/workflow-compact-card.tsx` |
+| The **chain cards** on a team's workflows page (badge, Edit, Make default, View members) | `frontend/components/hr/workflow-compact-card.tsx` |
+| A chain's read-only **member roster** (the `#members` table) | `frontend/components/hr/workflow-member-table.tsx`, rendered by `frontend/app/(dashboard)/dashboard/teams/[id]/workflows/[workflowId]/page.tsx`; the payload comes from `WorkflowSerializer.get_members` → `WorkflowMemberSerializer` in `backend/chains/serializers.py` |
 | The **multi-select employee picker** used to add a team's or a chain's members | `frontend/components/hr/employee-picker-dialog.tsx` |
 | The Supporting/Approved **document tables** (shared by both pages) | `frontend/components/documents/documents-table.tsx` |
 
@@ -319,10 +324,11 @@ the `lib` helper (types + which endpoint) and the page/component (the look).
    employee directory, which a team's manager cannot read. The rule is enforced
    on the write side too: both `assign_workflow_member` and
    `sync_workflow_members` refuse an already-placed person (the sync reports it
-   against `members`) instead of silently moving them off another chain. Wide
-   approvers are the one exception: their holdings staff chains automatically,
-   so they stay addable to several and their row carries
-   `is_wide_approver`.
+   against `members`) instead of silently moving them off another chain. A wide
+   approver is **not** exempt from membership: their holding staffs every
+   chain's *steps*, but their own normal-member row is still one workflow, so
+   they appear under `assigned_elsewhere` once enrolled and the write refuses a
+   second one. The row keeps `is_wide_approver` for display.
 7. Add members several at a time. Both rosters open
    `frontend/components/hr/employee-picker-dialog.tsx`, which holds the
    selection, searches the already-loaded pool, and confirms with a count. The
@@ -454,21 +460,50 @@ so the team-manager path ships with a working fixture (sign in as that account t
 walk it).
 
 **I want to understand or change what a team manager may do.**
-A team manager is an ordinary employee holding a *team-wide* approver role whose
-`TeamRoleAssignment.is_team_manager` is set. One manager per team is a database
-constraint; HR designates them on the team's **Approvers** tab (Make manager) or
-at team creation (`manager={"role","user"}`). Authority is `is_hr_actor(actor) or
-is_team_manager(actor, team)` (`backend/chains/services/_shared.py::_require_can_manage_team`).
+A team manager is the person named on the team itself: `Team.manager` (a nullable
+FK) is the authoritative designation. They may be **any active employee with an
+employee record**, including an **institution-wide approver**, who holds no
+team-scoped role to flag — that is the case the team field exists for. The legacy
+`TeamRoleAssignment.is_team_manager` flag is still read and kept in step, so a
+team-wide holder designated through the role screens (or an older row) is still a
+manager; one manager per team is enforced by the service that writes the field.
+HR designates them on the team's **Approvers** tab (`POST /teams/{id}/set-manager/`,
+`POST /teams/{id}/clear-manager/`) or at team creation (`manager={"user"}`, with an
+optional team-scoped `"role"`). There are two guards in
+`backend/chains/services/_shared.py`:
+
+* `_require_can_manage_team` — `is_hr_actor(actor) or is_team_manager(actor, team)`.
+  The wider manager surface: team identity edits, chains, steps.
+* `_require_team_manager` — the designated manager only; HR is refused. Staffing
+  the roster (add/remove) and choosing the team's default chain. The views repeat
+  it as a 403 before the service runs, and `add_team_member`,
+  `remove_team_member`, and `route_team` enforce it again.
 
 | Surface | HR / superuser | Team manager |
 |---------|----------------|--------------|
-| Teams list | every team | only teams they manage (single team → redirect) |
+| Teams list | every team | only teams they manage (single team → team page, or the add-members page when its roster is empty) |
 | Team identity (category, campus, name) & retire | yes | **no** (403) |
-| Team chains (create/edit/route a `Workflow`) | yes | yes, own team only |
+| Team manager (`set-manager` / `clear-manager`) | yes | **no** (403) |
+| Team chains (create/edit a `Workflow`) | yes | yes, own team only |
+| Default chain (`POST /teams/{id}/route/`) | **no** (403) | yes, own team only |
 | Workflow steps | staff from the whole directory | staff from the team's own members |
-| Roster (add/remove members) | yes | yes, own team only |
-| Approvers tab (wide holders, Make manager) | read + write | **read-only** |
+| Roster (add/remove members) | **read-only** (writes 403) | yes, own team only |
+| Approvers tab (wide holders) | read + write | **read-only** |
 | Approver roles (create/edit/retire) | yes | no (read-only active list) |
+
+A roster add is narrower than `EmployeeProfile.team`: an **ordinary employee's
+category** must match the team's (administration team → administration employee,
+academic team → academic employee) and they must be on **no** team. A **wide
+approver** — institution-wide, on any team, or at any campus
+(`wide_role_holder_ids()` in `backend/roles/services.py`) — is the deliberate
+exception to the category rule, because a wide holding crosses the institution's
+halves: an institution-wide manager may need a campus-wide holder, or the other
+half's approver, on their team. `GET /teams/{id}/member-candidates/` offers every
+unassigned category-matching employee **plus** every unassigned wide holder, and
+the write applies the same rule. The roster payload carries `is_team_manager`,
+`manager_user`, `manager_name`, and `roster_count` (people on the roster, distinct
+from `member_count`, which counts staffed steps) so the UI can hide manager-only
+controls and send a manager of an empty team straight to the add-members page.
 
 The manager path reads through **manager-scoped endpoints**, never by loosening an
 HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and
@@ -476,6 +511,16 @@ HR-only one: `GET /api/v1/teams/{id}/member-candidates/` and
 Writes are scoped too: `SectionMemberWriteSerializer.validate_section` refuses a
 manager staffing a step of a team they do not run, because a write names its
 section directly and the viewset queryset alone would not stop it.
+
+**I want to change the annual days a grade gets.**
+Open **Leave Configuration → Annual Days** (`/leave-config/annual-days`), or the
+HR-admin **Entitlements** page — both render the same `AnnualDaysConfig` body and
+read the same `/api/v1/entitlements/` registry. A rule is a grade band
+(`grade_start`–`grade_end`), a leave type, a number of days, and an
+`effective_from` date; bands must not overlap, so change an existing band rather
+than adding a second rule for it. There is deliberately **no** days-per-year
+field on `LeaveType` (`leave_types/models.py`): the entitlement is grade-based,
+and saving a band is what provisions the canonical annual leave type.
 
 **I want the seeded demo accounts gone.**
 ```bash

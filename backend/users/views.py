@@ -38,8 +38,7 @@ from .throttles import (
     PasswordSetRequestRateThrottle,
 )
 
-from teams.models import Team
-from roles.services import wide_approver_ids_for_team
+from roles.services import wide_role_holder_ids
 
 User = get_user_model()
 
@@ -60,7 +59,7 @@ class LoginView(APIView):
             password=serializer.validated_data["password"],
         )
 
-        if user is None:
+        if user is None or not user.is_active:
             return Response(
                 {"detail": "Invalid credentials"},
                 status=status.HTTP_401_UNAUTHORIZED,
@@ -83,15 +82,21 @@ class RefreshView(TokenRefreshView):
     ``TokenRefreshView`` hands the raw token to ``TokenRefreshSerializer``, which
     mints a new access token without consulting the user record at all. A refresh
     token captured before a password change would therefore keep working — and
-    mint access tokens that pass the access-path check. Since this app neither
-    rotates nor blacklists refresh tokens, closing this is the whole of "changing
-    my password signs the other devices out".
+    mint access tokens that pass the access-path check. Rotation is off and
+    blacklisting only happens on an explicit sign-out, so this check is what
+    makes "changing my password signs the other devices out" true.
+
+    A refresh token revoked by :class:`LogoutView` is refused before this point:
+    SimpleJWT's blacklist mixin checks the ``BlacklistedToken`` table while the
+    token is parsed. ``TokenRefreshSerializer`` also re-checks the account's
+    active flag, so deactivating somebody ends their session even if their
+    token has not expired.
     """
 
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
-        raw = request.data.get("refresh")
+        raw = request.data.get("refresh") if hasattr(request.data, "get") else None
         if raw:
             try:
                 token = RefreshToken(raw)
@@ -115,6 +120,46 @@ class RefreshView(TokenRefreshView):
                 assert_token_matches_password(user, token)
 
         return super().post(request, *args, **kwargs)
+
+
+class LogoutView(APIView):
+    """Revoke a refresh token so signing out is more than clearing cookies.
+
+    The browser clears its httpOnly cookies on sign-out, but that only forgets
+    the token locally. Until now a copied refresh token — from a shared machine,
+    a proxy log, or a backup — kept minting access tokens for its whole 24-hour
+    lifetime after the owner had signed out. Blacklisting its ``jti`` here is what
+    makes the server agree the session is over.
+
+    The token being revoked is itself the proof, so the endpoint is anonymous:
+    a caller whose access token has already expired still needs to be able to
+    sign out. Every outcome returns ``204`` — valid, expired, already revoked, or
+    malformed — so the endpoint cannot be used to ask whether a token was real.
+    The access token minted alongside it remains valid until its own 15-minute
+    expiry; that short window is the cost of stateless access tokens, and it is
+    bounded and documented rather than extended.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        # A body-less POST is a legitimate way to ask for a sign-out, and a
+        # parser error here would turn the promised 204 into a 400. Anything
+        # unreadable is simply "no token to revoke".
+        try:
+            data = request.data
+        except Exception:  # noqa: BLE001 - an unparsable body is not an error
+            data = {}
+        raw = data.get("refresh") if hasattr(data, "get") else None
+        if raw:
+            try:
+                RefreshToken(raw).blacklist()
+            except TokenError:
+                # Malformed, expired, or already blacklisted. The caller still
+                # wants to be signed out, and saying which one would turn this
+                # into a token oracle.
+                pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MeView(APIView):
@@ -294,23 +339,15 @@ class EmployeeViewSet(
         if category in EmployeeProfile.Category.values:
             queryset = queryset.filter(category=category)
 
-        # ``not_wide_for_team=<id>`` drops the people who staff the team's steps
-        # as wide approvers (institution-wide, team-wide on that team, or
-        # campus-wide at its campus): an approver is managed on the Approvers
-        # tab, not placed on the roster, so they are offered to nothing here.
-        # The same rule the write path enforces, read once for the picker.
-        not_wide_for_team = self.request.query_params.get("not_wide_for_team")
-        if not_wide_for_team:
-            try:
-                team_id = int(not_wide_for_team)
-            except ValueError:
-                team_id = None
-            if team_id is not None:
-                wide_team = Team.objects.filter(pk=team_id).first()
-                if wide_team is not None:
-                    queryset = queryset.exclude(
-                        user_id__in=wide_approver_ids_for_team(wide_team)
-                    )
+        # ``not_wide_holder=1`` drops everyone who holds a wide approver role —
+        # institution-wide, team-wide on any team, or campus-wide at any campus.
+        # A wide holder staffs steps from the Approvers tab and their leave is
+        # already routed by that office, so they are not roster material. This is
+        # the read half of the roster write's guard, kept on one rule. The team's
+        # own manager is the documented exception and is offered through the
+        # team's own ``member-candidates`` route instead.
+        if self.request.query_params.get("not_wide_holder") in {"1", "true"}:
+            queryset = queryset.exclude(user_id__in=wide_role_holder_ids())
         return queryset
 
     @action(detail=True, methods=["post"], url_path="password-set-link")

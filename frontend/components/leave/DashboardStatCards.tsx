@@ -36,7 +36,9 @@ export function DashboardStatCards({
     : "No upcoming leave scheduled";
 
   return (
-    <div className="grid grid-cols-2 gap-4">
+    /* One per row on a phone: two stat cards side by side leave each figure a
+       column too narrow for both the label and its caption. */
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <StatCard
         title="Pending Applications"
         value={String(pendingCount)}

@@ -1,13 +1,11 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Plus } from "lucide-react";
 
 import { CampusList } from "@/components/hr/CampusList";
+import { CampusCreateDialog } from "@/components/hr/campus-create-dialog";
 import type { Campus, Team } from "@/lib/teams";
 import { listCampuses, listTeams } from "@/lib/teams";
 import { getCurrentUser } from "@/lib/auth";
 import { isTeamsAdministrator } from "@/lib/nav/teams-nav";
-import { buttonVariants } from "@/components/ui/button";
 
 const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const TEAMS_ERROR = "Unable to load teams, so the campuses cannot be listed.";
@@ -49,13 +47,7 @@ export default async function CampusesPage() {
           <h2 className="text-2xl font-bold text-text-primary">Campuses</h2>
           <p className="text-text-secondary">Where an academic team sits.</p>
         </div>
-        <Link
-          href="/dashboard/hr-admin/campuses/new"
-          className={buttonVariants({ variant: "primary" })}
-        >
-          <Plus className="h-4 w-4" />
-          New campus
-        </Link>
+        <CampusCreateDialog />
       </div>
 
       {campusesResult.error ? (

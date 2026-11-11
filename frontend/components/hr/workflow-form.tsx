@@ -635,18 +635,9 @@ export function WorkflowForm({
   /**
    * What page two still needs before the chain may be written.
    *
-   * A chain with nobody on it routes no one: it looks configured and does
-   * nothing. That is why the workflow is only saved once the people who will
-   * follow it have been put on it, and why the save button stays disabled
-   * until then. The submit guard catches an implicit Enter as well.
+   * A chain can be created without members - members can be added later.
    */
   function membersProblem(): string | null {
-    if (memberIds.length === 0) {
-      return (
-        "Add at least one team member to this chain before saving it — " +
-        "a chain nobody is on routes no one."
-      );
-    }
     return null;
   }
 
@@ -1156,7 +1147,7 @@ export function WorkflowForm({
         <div key="members-actions" className="space-y-2">
           {memberIds.length === 0 && (
             <p className="text-xs text-text-muted">
-              Add at least one member to save this chain.
+              You can save this chain without members and add them later.
             </p>
           )}
           {/* The write sits at the far end of the row, away from where
@@ -1191,7 +1182,7 @@ export function WorkflowForm({
                 if (isAdvanceGesture(event)) return;
                 void handleSave();
               }}
-              disabled={loading || memberIds.length === 0}
+              disabled={loading}
               loading={loading}
             >
               {workflow ? "Save workflow" : "Create workflow"}

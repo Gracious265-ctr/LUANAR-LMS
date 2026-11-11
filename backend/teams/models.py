@@ -134,6 +134,19 @@ class Team(models.Model):
             "configured."
         ),
     )
+    manager = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_teams",
+        help_text=(
+            "The employee designated to run this team: its roster, its chains, "
+            "and which chain is default. May be any active employee, including "
+            "an institution-wide approver; the designation is a property of the "
+            "team, not a team-wide role holding."
+        ),
+    )
     status = models.CharField(
         max_length=20,
         choices=Status.choices,

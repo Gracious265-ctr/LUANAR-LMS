@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import type { EligibleApprover, Team, TeamSection } from "@/lib/teams";
+import type { ChainStep } from "@/lib/team-chains";
+import type { EligibleApprover, Team } from "@/lib/teams";
 import { listEligibleApprovers } from "@/lib/teams-client";
 import {
   addSectionMember,
@@ -23,7 +24,21 @@ import { ConfirmButton } from "@/components/ui/confirm-button";
  * outgoing person's period and opens the incoming one in the same action. The
  * history is kept because a person who left a step in March still signed for it.
  */
-export function TeamMemberList({ team }: { team: Team }) {
+export function TeamMemberList({
+  team,
+  sections = team.sections,
+  workflowId = team.workflow,
+}: {
+  team: Team;
+  /**
+   * The steps to list. Defaults to the team's routed chain, which is all this
+   * screen could show while a team had one chain; the page passes each chain's
+   * own steps so a team holding several shows all of them.
+   */
+  sections?: ChainStep[];
+  /** The chain those steps belong to; scopes the eligible-approver list. */
+  workflowId?: number | null;
+}) {
   const router = useRouter();
   const [candidates, setCandidates] = useState<Record<number, EligibleApprover[]>>(
     {}
@@ -45,12 +60,12 @@ export function TeamMemberList({ team }: { team: Team }) {
   useEffect(() => {
     let cancelled = false;
     Promise.all(
-      team.sections.map(async (section) => {
+      sections.map(async (section) => {
         const roleId = roleIdByCode.get(section.approver_role);
         const [people, periods] = await Promise.all([
           roleId === undefined
             ? Promise.resolve([] as EligibleApprover[])
-            : listEligibleApprovers(team.id, roleId, team.workflow ?? undefined),
+            : listEligibleApprovers(team.id, roleId, workflowId ?? undefined),
           listSectionMembers(section.id),
         ]);
         return [section.id, { people, open: periods[0] ?? null }] as const;
@@ -78,10 +93,10 @@ export function TeamMemberList({ team }: { team: Team }) {
       cancelled = true;
     };
     // Re-run when the server props change after an appointment, so the current
-    // holder and the eligible list stay in step with the team.
-  }, [team.id, team.sections, team.workflow, roleIdByCode]);
+    // holder and the eligible list stay in step with the chain.
+  }, [team.id, sections, workflowId, roleIdByCode]);
 
-  async function appoint(section: TeamSection, userId: number) {
+  async function appoint(section: ChainStep, userId: number) {
     setError("");
     setBusy(section.id);
     try {
@@ -96,7 +111,7 @@ export function TeamMemberList({ team }: { team: Team }) {
     }
   }
 
-  async function clear(section: TeamSection) {
+  async function clear(section: ChainStep) {
     const membership = openMembership[section.id];
     if (!membership) return;
     setError("");
@@ -134,11 +149,11 @@ export function TeamMemberList({ team }: { team: Team }) {
     }
   }
 
-  if (team.sections.length === 0) {
+  if (sections.length === 0) {
     return (
       <p className="mt-3 text-sm text-text-muted">
-        This team has no approval steps, so there is nobody to appoint. Add a
-        step to its chain first.
+        This chain has no steps yet, so there is nobody to appoint. Add a step to
+        it first.
       </p>
     );
   }
@@ -150,7 +165,7 @@ export function TeamMemberList({ team }: { team: Team }) {
       ) : null}
 
       <div className="space-y-3">
-        {team.sections.map((section) => {
+        {sections.map((section) => {
           const current = section.approver;
           const people = candidates[section.id] ?? [];
           // The current holder is offered even when the eligibility list has
@@ -161,7 +176,7 @@ export function TeamMemberList({ team }: { team: Team }) {
                   {
                     id: current.id,
                     full_name: current.user_name,
-                    email: current.user_email,
+                    email: current.user_email ?? "",
                     designation: "",
                   },
                   ...people,
@@ -271,7 +286,7 @@ function PastApprovers({
   section,
   periods,
 }: {
-  section: TeamSection;
+  section: ChainStep;
   periods: SectionMember[];
 }) {
   const past = periods.filter((period) => !period.is_effective);

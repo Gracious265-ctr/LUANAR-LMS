@@ -296,26 +296,19 @@ class WorkflowMember(models.Model):
     offered as a normal workflow participant — without being appointed to any
     step.
 
-    A person is a member of at most one workflow per team
-    (``workflow_member_team_user_unique``). The ``team`` column is denormalised
-    from :attr:`Workflow.team` at write time so that uniqueness is enforceable
-    at the database level rather than only in a service check that two
-    concurrent requests could both pass.
+    A person is a member of **at most one workflow, anywhere**
+    (``workflow_member_user_unique``). The ``team`` column is denormalised
+    from :attr:`Workflow.team` at write time so the pool can be scoped without
+    a join; it no longer carries a uniqueness rule of its own.
 
-    The exception is a **wide approver** — somebody who holds an
-    institution-wide :class:`RoleAssignment`, a team-wide
-    :class:`TeamRoleAssignment` on this team, or a campus-wide
-    :class:`CampusRoleAssignment` at this team's campus. A wide approver
-    staffs several chain *automatically* from one holding, so they are the one
-    person a team may legitimately place on more than one of its chains —
-    the team's second chain is built by reassigning the same registrar or
-    bursar, not by moving them off the first. To allow that the uniqueness
-    constraint above is conditional on :attr:`is_wide_approver`: a non-wide
-    member is still one workflow per team, a wide one may sit on several.
-
-    :attr:`is_wide_approver` is denormalised from the live holdings at write
-    time purely so the conditional constraint is expressible; eligibility is
-    always judged against the live holdings, never against this flag.
+    A **wide approver** — somebody who holds an institution-wide
+    :class:`RoleAssignment`, a team-wide :class:`TeamRoleAssignment` on this
+    team, or a campus-wide :class:`CampusRoleAssignment` at this team's campus
+    — is no exception to that rule. Their holdings staff the *steps* of many
+    chains automatically, but their normal-member row is still a place for
+    their own leave to route through, and an employee routes through exactly
+    one chain. The flag below records that they are a wide approver; it does
+    not loosen membership.
     """
 
     workflow = models.ForeignKey(
@@ -359,10 +352,10 @@ class WorkflowMember(models.Model):
         help_text=(
             "Denormalised from the wide-approver holdings (institution-wide, "
             "team-wide on this team, or campus-wide at this team's campus) at "
-            "the time the membership was written, so the database can enforce "
-            "that a primary member sits on one workflow per team while a wide "
-            "approver may sit on several. Eligibility is always re-checked "
-            "against the live holdings; this flag only backs the constraint."
+            "the time the membership was written, so the roster can say who "
+            "serves several chains as an approver. It is informational only: "
+            "membership itself is one workflow per employee, wide or not. "
+            "Eligibility is always re-checked against the live holdings."
         ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -371,13 +364,8 @@ class WorkflowMember(models.Model):
         ordering = ["user__first_name", "user__last_name", "user_id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["workflow", "user"],
-                name="workflow_member_workflow_user_unique",
-            ),
-            models.UniqueConstraint(
-                fields=["team", "user"],
-                condition=models.Q(is_wide_approver=False),
-                name="workflow_member_team_user_unique",
+                fields=["user"],
+                name="workflow_member_user_unique",
             ),
         ]
 

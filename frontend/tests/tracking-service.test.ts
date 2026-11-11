@@ -102,7 +102,7 @@ describe("fetchTracking", () => {
 
 describe("acceptRejection", () => {
   it("posts to the accept-rejection proxy path", async () => {
-    const seen: Array<{ url: string; method?: string }> = [];
+    const seen: string[] = [];
     mockFetch((url) => {
       seen.push(url);
       return Promise.resolve(jsonResponse({ status: "rejected" }, 200));

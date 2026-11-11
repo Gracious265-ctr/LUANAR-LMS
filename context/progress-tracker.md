@@ -2,6 +2,565 @@
 
 Update this file after every meaningful implementation change.
 
+## "Your Balance" is one card (2026-11-11)
+
+The balance rail's heading floated above uncontained rings: `Your Balance`,
+then a bare `21 / days left / Annual Leave / 0 of 21 days used` in the rail,
+so it read as stray figures beside the lists rather than a panel. The section
+now wraps the heading, the rings, and the no-balances message in `Card` — the
+design system's `rounded-sm bg-surface-card p-8 shadow-card` surface — so the
+rail is a single panel with the same edge as every other card on the page. The
+loading placeholder matches its footprint: one `h-72` rounded block instead of a
+fake heading plus two fake rings, so nothing jumps when the data lands.
+
+`tests/leave-dashboard.test.tsx` asserts the heading's parent carries
+`bg-surface-card` and `shadow-card`, so the panel cannot quietly regress to
+loose figures. Full frontend suite **142 files / 1168 tests pass**; `tsc` and
+targeted eslint clean.
+
+## Team managers: the role is part of the appointment (2026-11-11)
+
+**Make manager did not report its own result.** The three pages that feed
+`WideHoldingPanel` mapped each API assignment to a `WideHolding` and copied only
+id/role/user/label, dropping `is_team_manager`. The panel chooses between "Make
+manager" and "Remove as manager" from that field, so the write succeeded, the
+page re-read, and the button still offered to make the same person manager —
+a button that looked broken while doing exactly what it was told. The mapping now
+lives in one client-safe `lib/wide-holdings.ts` (`wideHoldingFrom`), used by the
+team page, the HR approvers page, and the campus page, with a test that asserts
+the flag survives for a team-wide holding and is absent for the other scopes.
+The panel also reports success ("Jane now runs this team") and renders its error
+outside the form, so a refused toggle is visible even when no form is drawn.
+
+`set_team_manager` (the holding's action) now leaves the same state as
+`/teams/{id}/set-manager/`: it moves the manager's `EmployeeProfile.team` onto
+the team, so "which button HR used" cannot decide whether the manager is on the
+roster. Tests cover the roster move, the designation, and the one-wide-role
+exemption.
+
+**Creation now assigns the role too.** The create form named a manager and sent
+`manager: {user}` only, so the new manager held no team-wide role and did not
+appear on the team's approvers list — HR had to assign the role in a second
+place. Page two is now a person *and* a role: `manager: {user, role}` creates the
+team-wide holding with `is_team_manager=True` in the same transaction. The role
+picker offers active, team-scoped roles only. Manager candidates are the team's
+own category, because a team-wide holding is category-scoped; somebody who
+already holds a wide approver role anywhere is the exception (a person holds
+one), so they remain eligible whatever their category, the picker explains why,
+and the person is designated on the team itself. The teams page reads the three
+holder lists to know who those people are.
+
+Found while testing the create path: `_designate_manager` writes through a
+locked copy of the team, so the instance `create_team` serialized still said
+`manager_user: null`. It now sets the in-memory `team.manager` before returning,
+so the create response names the manager it just appointed.
+
+Backend `chains.tests_manager_access` **62 OK** (new `ManagerRoleAtCreationTests`:
+role assigned with the flag and roster move; person-only create for an existing
+wide holder) and `chains.tests_teams` + `chains.tests_workflow_members` **193
+OK**. Frontend **142 files / 1167 tests pass**, including the new
+`tests/wide-holdings.test.ts` and the manager-role create tests; `tsc` and
+targeted eslint clean.
+
+## "Who decides at each step" now lists every chain (2026-11-11)
+
+The team page's steps tab rendered `<TeamMemberList team={team} />`, which maps
+`team.sections`. `Team.sections` carries the steps of the chain the team
+*routes* through and nothing else, so a team owning a second chain (a
+replacement HR builds beside the default) showed only one chain — and a team
+whose routed chain happened to have no steps said "this team has no approval
+steps" while another chain sat there fully staffed.
+
+**Reading it correctly.** The team payload cannot answer this: `Team.sections`
+is one chain's steps, and `Team.workflows` (`listTeamWorkflows`) is every chain
+but as a `WorkflowRef` — id, name, flag, count, no steps. So the tab now lists
+the chains the team owns and reads each non-routed one with `getWorkflow(id)`,
+whose `sections` carry the approver id and `approver_name`. The routed chain is
+*not* re-fetched; its steps are already in `team.sections`. Fetching is gated on
+`tab === "steps"` so a viewer reading the overview does not pay for it.
+
+**Ordering and fallback.** Default chain first (`is_routing`), then the rest by
+name — the list endpoint's order is not a meaning. `listTeamWorkflows` is caught
+to `[]` on failure up in the page, which would have made a routing team look like
+it owned no chains at all; `teamChains()` falls back to the routed chain from
+the team payload in that case.
+
+**Failures stay visible.** Each chain is read independently and a failed read
+becomes `steps: null`, not `[]`: an empty list renders as "this chain has no
+steps yet", which would be a false statement about a chain that simply could not
+be loaded. An unreadable chain keeps its place in the listing with its own
+message and a link to open it.
+
+**Where the logic lives.** `teamChains()` and `assembleChainSteps()` are pure,
+so they went into a new client-safe `lib/team-chains.ts` rather than
+`lib/teams.ts` — the latter imports `api-client`, which imports `next/headers`,
+which makes its runtime functions unusable in jsdom and drags server-only code
+into anything that touches it. `ChainStep` is the reduced shape both
+`TeamSection` and `WorkflowSection` satisfy.
+
+**Component.** `TeamMemberList` takes optional `sections` (default
+`team.sections`) and `workflowId` (default `team.workflow`), the latter forwarded
+to `listEligibleApprovers` so each chain offers only people eligible for *that*
+chain. The empty-state copy is now "This chain has no steps yet…" because the
+component no longer necessarily speaks for the whole team. The tab renders one
+card per chain with a "Default chain" badge, a per-chain "Add a step" /
+"Open chain" link, and one row of copy explaining routing ("where anyone not
+enrolled on a chain routes") versus enrolment.
+
+Also removed a pre-existing `team as any` cast on the same page; the
+`TeamMembersPanel` prop already accepts `Team`.
+
+**Verification.** New `tests/team-chains.test.ts` (8 tests: default-first
+ordering, name ordering, list-failure fallback, no-chains case, routed-chain
+reuse, unstaffed step, unreadable and missing chains). `tests/team-member-list.test.tsx`
+is 9 tests, including per-chain props and eligible-approver scoping. Full suite
+**141 files / 1159 tests pass**; `tsc -p tsconfig.test.json` and targeted eslint
+clean.
+
+## Table header band: one step stronger (2026-11-10)
+
+The band moved from `bg-surface-muted` to `bg-surface-subtle`, one step away from
+the card, because `#f8fafc` on a `#ffffff` card read almost white and the band
+was hard to see. Light goes `#f8fafc` → `#f1f5f9`; dark goes `#0c121d` →
+`#0a1017`, which is darker than the `#0f1520` card, so the band strengthens in
+both themes rather than only in light mode. Applied in `TableHeader` and in the
+hand-rolled `admin-user-table.tsx` header row.
+
+The old comment claimed the band matched `TableFooter` for head/foot parity.
+`TableFooter` is never rendered anywhere in the app, so that rationale was
+writing about nothing; the comment now states the actual reason (a visible edge
+without a heavier border).
+
+**Contrast note, now slightly worse:** the heading text is still
+`text-text-muted`, which measures ~2.3:1 on `#f1f5f9` (it was ~2.4:1 on the
+previous grey, and ~2.5:1 on plain white). Small uppercase text needs 4.5:1.
+Dark mode is ~7.3:1 and fine. Changing `TableHead` to `text-text-secondary`
+fixes it whenever that design decision is made.
+
+Frontend **140 files / 1149 tests pass**; tsc and eslint clean. No build was run
+here on purpose — a production `.next` left behind a running dev server caused a
+hydration mismatch earlier, and `bg-surface-subtle` is already compiled elsewhere
+(`ActivityTimeline`, `Stepper`, `badge`).
+
+## Table header rows carry a tinted band (2026-11-10)
+
+`TableHeader` now sets `bg-surface-muted` on the `<thead>`, so every table in the
+app gets the same header band — the fill `TableFooter` already used, which makes
+a table's head and foot read as the same chrome. The hand-rolled
+`admin-user-table.tsx` got it on its header row too, so it matches the primitives
+it doesn't use. `hr/document-template-preview.tsx` is deliberately untouched: it
+is a printable A4 layout table, not a data table.
+
+Header rows reuse `TableRow`, whose `hover:bg-surface-hover` would have made the
+headings tint lighter under the pointer as if they were clickable, so
+`TableHeader` also sets `[&_tr:hover]:bg-transparent` — the row goes clear and the
+`<thead>` band shows through. Verified in the built CSS that both utilities
+compile (`.bg-surface-muted{background-color:var(--surface-muted)}` and
+`.\[\&_tr\:hover\]\:bg-transparent tr:hover{background-color:#0000}`); an
+arbitrary variant that silently emitted nothing would have left the flicker in
+place. The override wins on specificity (0,2,1 against the row's 0,2,0), not on
+source order.
+
+**Worth knowing:** the header text is `text-text-muted`, which measures ~2.4:1 on
+`#f8fafc` in light mode — it was already ~2.5:1 on white, so the band does not
+introduce the problem, but small uppercase text needs 4.5:1. Dark mode is fine
+at ~7.3:1. Moving the heading to `text-text-secondary` would fix it; left alone
+because it changes the type colour on every table, which is a design decision.
+
+Frontend **140 files / 1149 tests pass**; `npm run build`, tsc and eslint clean.
+
+## Table headings: no blank column, and every heading is scoped (2026-11-10)
+
+Audited every table in the app for a heading that is missing, blank, or repeated
+inside the same table. There were no duplicates and only one blank:
+`components/admin/admin-user-table.tsx` hand-rolls its `<thead>` and gave the
+Edit column a bare `<th></th>`, so a screen reader announced a nameless column
+and a row of Edit links read as a column with no purpose. It is now `Actions`,
+the label every other table in the app already uses for that column, and the
+row-level `aria-label="Edit <name>"` is unchanged — the heading names the
+column, the control names the row.
+
+`TableHead` in `components/ui/table.tsx` also now defaults to `scope="col"`.
+Every table in the tree heads its columns from `<thead>` (checked: no
+`TableHead` is used inside a `TableBody`), so the default is correct and a
+caller that ever needs a row header can pass `scope="row"`. Explicit scope means
+the column is still named when the header row has scrolled out of view.
+
+`tests/admin-user-table.test.tsx` (3 tests) pins this: the headings are exactly
+`Name/Email/Status/Role/Actions`, none is blank, each is `scope="col"`, and the
+edit control still names its account. Frontend **140 files / 1149 tests pass**;
+tsc and eslint clean.
+
+> Left alone: the dashboard's Recent Applications table labels its last column
+> "Submitted" but renders `created_at`. For a draft nothing was submitted, so
+> "Created" would be the accurate heading — noted rather than changed, since it
+> is a copy decision on a page under active iteration.
+
+## Leave dashboard: the header no longer duplicates the create action (2026-11-10)
+
+The `+ New Application` button is gone from the top of `/dashboard/leave`, so
+the page now opens on its heading and figures. The action is still reachable
+twice: the sidebar's **New Application** entry (`/dashboard/leave/new`, which
+redirects to the compose overlay) and the empty state under Recent Applications,
+which is where a brand-new employee actually needs it. The header wrapper lost
+its `justify-between` with the button, and `useRouter`/`Button` came out of the
+page now that nothing there uses them.
+
+The test that clicked `+ New Application` was replaced by one asserting a
+populated dashboard offers no create button at all — the removed affordance, so
+it cannot quietly come back. Frontend **139 files / 1146 tests pass**; tsc and
+eslint clean.
+
+## Leave dashboard: balances move to a rail beside the lists (2026-11-10)
+
+`/dashboard/leave` was a single full-width stack — header, two stat cards, the
+needs-attention cards, the balance rings, then the recent-applications table. On
+a desktop that spent a screen and a half on six facts, and put the balances
+third, so the question the page exists to answer ("how much leave do I have
+left") was below the fold behind the lists.
+
+From `lg` up the page is now two columns: the actionable content (pending and
+upcoming figures, anything rejected back, recent applications) fills the main
+column, and `BalanceSection` sits in a 24rem rail beside it. 24rem is deliberate
+— `BalanceRing` is `w-40` and the rail's `gap-6`, so two rings share a row
+without wrapping to one per row.
+
+Placement is explicit (`lg:col-start-1/2` plus `lg:row-start-1` on the balance
+block) rather than DOM order, which lets the balance block stay after the
+needs-attention section in the markup. The effect is that **below `lg` the
+reading order is unchanged** — figures, anything needing attention, balances,
+history — and only the wide layout gains the rail. `DashboardStatCards` also
+moved from a fixed `grid-cols-2` to `grid-cols-1 sm:grid-cols-2`, because two
+cards side by side on a phone left each label and caption a column too narrow to
+read. `DashboardSkeleton` was reshaped to the same two-column layout so loading
+does not shift the page.
+
+No copy, no data, and no interaction changed: every heading, caption, route and
+button is identical, which is why the 18 tests covering this page and its stat
+cards passed untouched. Frontend **139 files / 1146 tests pass**; tsc and eslint
+clean.
+
+## Fonts: Inter is self-hosted, so the build no longer calls Google (2026-11-10)
+
+**The failure.** The frontend build died with `Module not found: Can't resolve
+'@vercel/turbopack-next/internal/font/google/font'` and the misleading
+`next/font/google queries have exactly one entry`, traced through
+`[next]/internal/font/google/inter_*.module.css` to `app/layout.tsx`. Nothing in
+`layout.tsx` was wrong. `next/font/google` downloads the font files at build
+time, and Google now answers some downloads with an extensionless
+`/l/font?kit=…` URL; Turbopack 16.3.5's font replacer parses that URL expecting
+a filename, gets `null`, and fails the resolve
+([vercel/next.js#99114](https://github.com/vercel/next.js/issues/99114)). Both
+patches on that issue are webpack-only, so there was no fix on 16.3.5. The
+failure was intermittent because the bad response is cached per dev-server
+lifetime, and this tree had a stale 1.5 GB `.next` (an Oct 27 `build/` beside a
+live `dev/`).
+
+**The change.** `app/layout.tsx` now uses `next/font/local` against a committed
+`app/fonts/inter-latin.woff2`. Inter v20 is a variable font — the Google CSS
+returned the *same* file for weights 400, 500, 600 and 700 — so one 48 KB file
+carries the whole `wght` axis for the latin subset and `weight: "400 700"`
+declares the range the product uses (`font-normal`/`medium`/`semibold`/`bold`;
+there is no `light` or `black` in the tree). `variable: "--font-sans"` and
+`display: "swap"` are unchanged, so every component reads the same custom
+property. No CSP change was needed: `next.config.ts` already sets
+`font-src 'self'`, which `next/font/google` also satisfied by self-hosting at
+build time — it was only the *fetch* that was fragile.
+
+**Guard.** `tests/font-self-hosting.test.ts` (3 tests) fails if any source file
+imports `next/font/google`, if the committed woff2 is missing or is not really a
+woff2 (`wOF2` magic bytes, not an HTML error page saved under the right name),
+or if `layout.tsx` stops declaring the local file, the weight range, or
+`--font-sans`.
+
+**Verified.** `npm run build` completes and emits
+`.next/static/media/inter_latin-s.p.<hash>.woff2` with no `fonts.gstatic.com` or
+`fonts.googleapis.com` reference anywhere in `.next`; the generated
+`@font-face` is `font-weight:400 700` with `font-display:swap`. `next dev`
+serving `/login` logs no errors and preloads the font. Frontend **139 files /
+1146 tests pass**; `tsc -p tsconfig.test.json` and eslint clean.
+
+## Red suite cleared — routing fixtures now enrol, and one roster CTA (2026-11-10)
+
+**What was red.** 18 tests were failing on the branch: 5 in the roster/chain
+screens and 13 in `chains.tests_approvals.WorkflowProviderDatabaseTests`. A
+further 13 in `chains.tests_team_configuration` had been recorded as
+"pre-existing and unrelated"; investigation showed the same cause, so 31 tests
+were fixed in all. The earlier notes claiming those 13 were unrelated are
+superseded by this entry.
+
+**Backend root cause (26 tests).** `c59d36e` made routing per enrolment:
+`routed_workflow_for()` reads `WorkflowMember` rows and deliberately has no
+`team.workflow` fallback. Three fixtures still built "a team with a chain" by
+setting `EmployeeProfile.team` and `Team.workflow` only, so every routing test
+failed with "The <team> team has no approval workflow for this employee" — the
+fixture's routing premise, not the code under test. `_place_on_team`
+(`tests_approvals`) and `place_employee` (`tests_team_configuration`) now
+`update_or_create` the single `WorkflowMember`, moving it when the employee is
+re-placed on another team. That is what the HR write path does, and the global
+one-membership constraint means a move, not a second row.
+
+**Frontend — two stale tests, one real bug.**
+- `membersProblem()` is a documented no-op ("A chain can be created without
+  members and add them later"), and the form shows exactly that guidance, but
+  two tests still asserted the save was disabled with the old
+  "Add at least one member" warning. Rewritten to the current rule: guidance
+  present, button enabled, write carries `members: []`.
+- **Real bug:** with an empty roster the panel rendered "Add team members"
+  twice — the header action and the empty-state action are the same
+  destination. The header link now renders only when `count > 0`, so each
+  state has exactly one call to action; a new test asserts a single link.
+- The panel test also asserted the add page's eligibility sentence, which now
+  lives on `AddTeamMembers`; that assertion moved to
+  `tests/add-team-members.test.tsx`.
+
+**Verified.** Backend `chains` **739 OK** (previously 2 failures + 11 errors in
+`tests_team_configuration` and 8 errors + 5 failures in `WorkflowProviderDatabaseTests`);
+the remaining apps **213 OK**. Frontend **138 files / 1143 tests pass** (was 5
+failures). The only production code touched is the duplicate-link guard in
+`TeamMembersPanel`.
+
+## Authentication and session security — end-to-end audit (2026-11-04)
+
+**Goal.** Make sign-in, session lifetime, sign-out, password change and the
+production configuration hold up under audit rather than merely working.
+
+**Throttling was keyed on the proxy, not the account.** The browser never talks
+to Django; the Next.js server forwards every auth request, so `AnonRateThrottle`
+saw one client address for the whole institution. `10/min` on login therefore
+became an institution-wide lockout after ten bad guesses anywhere, while an
+attacker spreading guesses across accounts was barely slowed. `users/throttles.py`
+now derives from `SimpleRateThrottle` and keys each limit on the endpoint's own
+subject: login and set-password *request* on the submitted email, set-password
+*confirm* on a SHA-256 of the token, password *change* on `request.user.pk`. Two
+colleagues no longer share a bucket, and an authenticated caller cannot opt out
+of the login limit (`AnonRateThrottle` returns no key for authenticated
+requests, which let any token holder brute-force unthrottled).
+
+**Sign-out now revokes the refresh token.** Clearing the httpOnly cookies only
+forgot the token locally; a copy kept minting access tokens for its full 24
+hours. `rest_framework_simplejwt.token_blacklist` is installed and
+`POST /api/v1/auth/logout/` blacklists the `jti`. It answers `204` for valid,
+expired, revoked and malformed tokens alike, so it cannot be used as a token
+oracle, and it is anonymous because a caller whose access token has died still
+needs to leave. The frontend calls it before clearing cookies, and clears them
+regardless of the upstream answer. Deployments must run `migrate` for the new
+tables.
+
+**Deactivated accounts.** `LoginView` now rejects `is_active=False` explicitly
+rather than relying on `authenticate()`'s fallback, and the refresh path refuses
+a token whose account was deactivated (SimpleJWT's authentication rule), so
+ending a session no longer waits for the refresh token to expire.
+
+**Session ended every 15 minutes in the frontend.** `proxy.ts`, `lib/auth.ts`
+and `lib/api-client.ts` all treated a missing *access* cookie as signed out. The
+access cookie lives 15 minutes; the refresh cookie lives a day. The proxy now
+decodes `exp`, treats a live refresh token as a live session, and clears dead
+cookies on the way to `/login` (which is what stopped the
+`/dashboard → /login → /` redirect loop). The API client refreshes before the
+first request when the access cookie is gone and retries once on `401` whenever
+a refresh token exists. `/applications/[id]` was also added to the proxy's
+protected routes — it sits in `(dashboard)` but is outside the `/dashboard`
+prefix, so the matcher had never covered it.
+
+**Login CSRF.** Sign-in needs no cookie of its own, so `SameSite=Lax` cannot
+protect it: another site could form-POST the attacker's credentials and have the
+victim's browser accept the session, leaving the victim filing leave inside the
+attacker's account. `/api/auth/login` now requires `Origin` to match `Host` and
+answers `403` otherwise; a request with no `Origin` is not a browser and cannot
+make a browser store a cookie.
+
+**Production settings.** `config/settings/production.py` is now the default for
+`wsgi.py`/`asgi.py` (`manage.py` stays on development). It fails the boot on the
+committed placeholder `SECRET_KEY`, on a `SECRET_KEY` under 50 characters or with
+too few distinct characters (Django's own `security.W009` thresholds), on an
+empty `ALLOWED_HOSTS`, and on a non-HTTPS `FRONTEND_URL` (a set-password link is
+a bearer secret). It enables secure/HttpOnly/SameSite cookies, HSTS, SSL
+redirect, proxy-scheme trust, `CSRF_TRUSTED_ORIGINS`, `NUM_PROXIES=1`, and turns
+CORS down to an explicit empty list — browsers never call Django directly.
+`CACHE_URL` optionally points the throttle counters at a shared cache; without
+it each worker keeps its own counters and multiplies every rate limit.
+`manage.py check --deploy` now reports only `W005`/`W021` (HSTS
+subdomains/preload), which stay opt-in by design.
+
+**Browser headers.** `next.config.ts` sends `X-Content-Type-Options`,
+`X-Frame-Options: DENY`, `Referrer-Policy` and `Permissions-Policy` on every
+route. HSTS is left to the TLS terminator. The set-password page already
+scrubbed `?token=` from the URL via `history.replaceState`, so the link does not
+leak through history or `Referer`.
+
+**Verification.** Backend: new `users/tests_auth_security.py` (12 tests: login
+throttle, per-account isolation, authenticated-bypass refusal, set-password
+request/confirm limits, logout revocation, malformed and body-less logout,
+inactive login, refresh after deactivation); `users` **177 OK**; `manage.py
+check` and `makemigrations --check` clean. Production guards verified by import
+with overridden env, plus `check --deploy`. Frontend: new
+`tests/proxy.test.ts` (8), `tests/api-client-refresh.test.ts` (4) and
+`tests/auth-routes.test.ts` (6); auth-adjacent suites **127 OK**; full run
+**1133 passed / 5 failed**. The five failures
+(`tests/team-members-panel.test.tsx` ×3,
+`tests/workflow-form-members.test.tsx` ×2) reproduce with these changes stashed
+and belong to the roster rework, not auth. Two pre-existing fixture type errors
+in `tests/team-member-list.test.tsx` and `tests/tracking-service.test.ts` were
+fixed so `tsc -p tsconfig.test.json` is clean.
+
+**Known, accepted.** An access token stays valid for its own 15-minute lifetime
+after sign-out (stateless JWT); that is bounded and documented rather than
+extended. `chains.tests_approvals.WorkflowProviderDatabaseTests` keeps its 13
+pre-existing routing-fixture failures ("has no approval workflow for this
+employee"), unchanged and unrelated.
+
+## Content-Security-Policy — enforced where it cannot break, reported elsewhere (2026-11-07)
+
+**Goal.** Add CSP without a blank-page risk, and without pretending a policy is
+protecting something it is not.
+
+**Two headers, deliberately split.** `Content-Security-Policy` enforces only
+directives that are independent and cannot change how any resource loads:
+`base-uri 'self'` (an injected `<base>` would otherwise re-point the relative
+`/_next/*` URLs), `object-src 'none'`, `frame-ancestors 'none'` (the modern twin
+of `X-Frame-Options`), and `form-action 'self'` (a compromised page cannot post
+the sign-in or password form to another origin — every form here submits to a
+same-origin route handler). `Content-Security-Policy-Report-Only` carries the
+full policy: `default-src`/`connect-src`/`font-src`/`img-src`/`worker-src`/
+`manifest-src` same-origin, `style-src` with `'unsafe-inline'` for React's
+`style={{...}}` and Tailwind's dev stylesheet, and `script-src 'self'`.
+
+**Why `script-src` is not enforced.** Next.js emits inline hydration scripts;
+blocking them needs a per-request nonce threaded through `proxy.ts`. Report-only
+collects exactly which inline scripts need it at zero risk. Once those reports
+are empty behind a nonce, the header moves from `-Report-Only` to enforced.
+
+**Verified.** New `tests/security-headers.test.ts` (3) reads the same
+`headers()` the server calls at boot and asserts the enforced header names no
+fetch directive, the report-only header carries the full policy, and the
+baseline headers are present. A directive typo would otherwise be silent — CSP
+ignores names it does not recognise. `tsc -p tsconfig.test.json` and eslint
+clean. No page embeds a frame or loads a third-party origin, so a same-origin
+policy is accurate rather than aspirational.
+
+## Review screen — holiday snapshots no longer 500 the payload (2026-11-03)
+
+- **FIX — `GET /api/v1/approvals/{id}/` crashed for any application whose
+  rules snapshot carried holidays.** `_rules_block` called `_iso_date(day)` only
+  when `day` was already a `str`, so `_iso_date` tried `value.isoformat()` on a
+  string (`AttributeError: 'str' object has no attribute 'isoformat'`). The
+  snapshot has always stored holidays as ISO strings
+  (`build_rules_snapshot`), which is also what the frontend
+  `ReviewRules.holidays: string[]` expects.
+- **DONE — `_iso_date` accepts both.** It now passes strings through and calls
+  `isoformat()` on real dates, and the holidays comprehension is a plain map
+  over the snapshot. This also covers `start_date`, `end_date` and
+  `appointment_date`, which are genuine `date` objects.
+- **VERIFIED** — new
+  `chains.tests_approvals.ApprovalAPITests.test_detail_renders_holiday_dates_stored_as_iso_strings`
+  asserts the endpoint returns the two ISO strings; the whitelisted-payload
+  test still passes. The rest of `chains.tests_approvals` keeps its 13
+  pre-existing `WorkflowProviderDatabaseTests` failures (fixture teams with no
+  enrolment, unrelated to this path).
+
+## Chains — a wide approver is a normal member of one workflow (2026-11-02)
+
+- **DONE — the wide-approver membership exemption is gone.** `WorkflowMember`
+  now has a single unconditional `UniqueConstraint(fields=["user"])`
+  (`workflow_member_user_unique`), replacing the conditional `(team, user)`
+  rule keyed on `is_wide_approver`. One employee is a normal member of exactly
+  one workflow, anywhere. A wide holding still staffs the *steps* of every
+  chain (`Section.approver`), which is a different record and is unchanged.
+- **DONE — the service refuses the second membership with a reason.**
+  `assign_workflow_member` runs `_ensure_member_not_assigned_elsewhere` for
+  everyone, and that check now looks across teams and names the workflow the
+  person is already on. It also stopped swallowing `WorkflowMemberError` (the
+  old `try/except: pass` let a second row through to the database and turned a
+  clean 400 into an `IntegrityError`; the pre-existing
+  `test_create_workflow_refuses_a_member_of_another_chain` failure is fixed by
+  this).
+- **DONE — the pool offers a wide approver once, not once per chain.**
+  `workflow_member_pool` keeps the wide exemption only for *step* assignments
+  (`approver_elsewhere`); a normal membership (`member_elsewhere`) removes the
+  person from `available` and names them under `assigned_elsewhere` with
+  `kind: "member"`. Memberships are read across teams for the people the pool
+  may offer, because the rule is now global.
+- **DONE — migration `0033_one_workflow_member_per_user`.** Removes both old
+  constraints, collapses any existing duplicate rows (preferring the row whose
+  workflow is its team's routing default, then the oldest), adds the `user`
+  constraint, and refreshes the `is_wide_approver` help text. Reversing is a
+  no-op — deleted duplicate rows cannot be reconstructed.
+- **DECISION — `is_wide_approver` stays, as display only.** The roster table
+  shows the badge so HR can see who staffs several chains' steps; it no longer
+  backs any constraint.
+- **VERIFIED** — `chains.tests_workflow_members` (including the rewritten
+  `test_team_wide_approver_joins_one_chain_only` and concurrency constraint
+  tests), `chains.tests_chain_routing` (rewritten wide routing + a new
+  second-enrolment refusal), `chains.tests_wide_scope` and
+  `leave.tests.test_on_leave`: 142 tests pass. `chains.tests_migrations` gained
+  `OneWorkflowMemberPerUserMigrationTests`, which builds two pre-0033 wide
+  memberships and proves the upgrade keeps the routing-default row and then
+  refuses a second. `makemigrations --check` clean. The wider `chains` suite
+  still has 26 pre-existing failures caused by fixture teams whose employees are
+  never enrolled (the no-default-fallback routing change); they fail before any
+  membership code runs and are unrelated to this change.
+
+## Chains — View members from every chain card (2026-11-02)
+
+- **DONE — each chain card has a View members button.** `WorkflowCompactCard`
+  now links to `/dashboard/teams/{team}/workflows/{chain}#members` and is shown
+  to every viewer, not just the team manager, so reading a chain's roster does
+  not depend on edit rights. Edit still renders only for the manager.
+- **DONE — the chain detail page carries the roster.** The `#members` section on
+  `workflows/[workflowId]/page.tsx` lists each `WorkflowMember` (name,
+  designation, email) with a count and an empty state pointing managers to
+  Edit steps.
+- **VERIFIED** — new `workflow-compact-card` suite (2 tests: href, and
+  non-manager access without Edit); `tsc --noEmit` and targeted eslint clean.
+
+- **DONE — the roster is a table, fed by one contract.** The `#members` section
+  on `workflows/[workflowId]/page.tsx` renders
+  `frontend/components/hr/workflow-member-table.tsx`: one row per member with
+  **Name / Designation / Email** and a count above it. The blank rows this
+  replaced were a contract mismatch — `WorkflowSerializer.get_members` hand-rolled
+  `full_name`/`email` while the frontend type read `user_name`/`user_email`. The
+  serializer now delegates to `WorkflowMemberSerializer`, so the detail payload
+  and `lib/team-members.ts` agree by construction.
+- **DONE — the "smallest gap" summary card is gone.** The chain detail page no
+  longer renders `AdvanceCard`; its Team / State / Effective from / Steps /
+  Members / Routing summary was removed on request. `components/hr/advance-card.tsx`
+  is now unreferenced and kept only in case the summary is wanted elsewhere.
+- **VERIFIED** — `workflow-member-table` suite (4 tests: columns and rows,
+  contract fields, em-dash fallbacks, empty state) plus `workflow-compact-card`
+  (2 tests) pass; backend
+  `WorkflowMemberAPITests.test_detail_members_carry_the_roster_fields` passes
+  against `chains.tests_workflow_members`; `tsc --noEmit` and targeted eslint
+  clean. Repo-wide `npm run lint` still reports pre-existing errors in unrelated
+  team/approvals files.
+
+## Leave Configuration — Annual Days screen (2026-11-02)
+
+- **DONE — annual days are configurable from Leave Configuration.** New page
+  `frontend/app/(dashboard)/leave-config/annual-days/page.tsx`, reachable from
+  the module rail as **Annual Days**. It is HR-gated by the same
+  `requireLeaveConfigAccess()` as the rest of the module and exposes the
+  existing grade-based registry: grade band → leave type → days →
+  `effective_from`.
+- **DONE — one shared body, no duplicate screens.** The HR-admin Entitlements
+  page and the new Leave Configuration page both render
+  `frontend/components/hr/annual-days-config.tsx`, so the resolve widget and the
+  `EntitlementsSection` create/edit overlay cannot drift. `EntitlementsSection` /
+  `EntitlementTable` gained an optional `basePath` so a row's edit link stays in
+  whichever module rendered it; the default preserves the HR-admin deep links.
+- **DONE — overlay URLs work inside the new module.** `annual-days/new` and
+  `annual-days/[id]/edit` redirect to `?entitlement=new|id`, mirroring the
+  HR-admin shims. The annual leave type's alert on `LeaveTypeForm` now links to
+  the Leave Configuration screen instead of the HR-admin page.
+- **DECISION — no schema change.** Annual days remain
+  `leave.GradeLeaveEntitlement`, keyed by grade + leave type + financial year;
+  `LeaveType` still deliberately has no days-per-year field (§1.3), and its
+  backend test asserting that is untouched.
+- **VERIFIED** — frontend targeted suites: `leave-config-lib`, `dashboard-shell`,
+  `leave-config-form`, `entitlement-table`, `hr-admin-registry-overlays`
+  (129 tests pass); `tsc --noEmit` clean. Repo-wide `npm run lint` still reports
+  pre-existing errors in unrelated team/approvals files.
+
 ## Rosters — employees are added several at a time (2026-10-27)
 
 - **DONE — one picker adds a whole selection.** `EmployeePickerDialog`
@@ -123,10 +682,11 @@ Update this file after every meaningful implementation change.
   tests. Frontend "keeps people on another chain behind a list button" replaces
   the move test (no **Move here**/**Add**, save disabled with nobody on the
   chain, and the list only appears in the dialog).
-- **Still open — wide approvers.** The deliberate `is_wide_approver` exemption
-  is unchanged: an institution/campus-wide role holder may still serve on
-  several chains. Confirm whether the strict one-chain rule should also cover
-  them.
+- **RESOLVED (2026-11-02) — wide approvers follow the strict one-chain rule.** The
+  `is_wide_approver` exemption was removed: a wide approver is a normal member
+  of one workflow like everyone else, and only their *step* staffing spans
+  chains. See the entry at the top of this file. The paragraph below records the
+  earlier behaviour.
 - **VERIFIED** — backend `uv run manage.py test chains.tests_workflow_members`
   (69 tests); frontend targeted `workflow-form-members` (35 tests); eslint clean
   on the form, pool types and tests; `tsc --noEmit` clean after removing a
@@ -6887,3 +7447,96 @@ over HTTP). Frontend: `tests/on-leave-lib.test.ts`,
 `tests/on-leave-table.test.tsx`, `tests/leave-nav.test.ts` (20 tests) and the
 dashboard-shell rail assertion for the new nav item; the full suite is **126
 files / 1061 tests OK**. `tsc --noEmit` clean; eslint reports no new warnings.
+
+## Completed — Roster and default chain are the designated manager's alone (2026-10-27)
+
+**Goal.** HR continued to appear as a second manager on the team screen: it could
+add and remove members and choose the default chain. The user wanted that power
+narrowed to the one person the team was handed to, and wanted the roster's
+candidates scoped to the team's own half of the institution.
+
+**Authority.** A new, strictly narrower guard lives beside the existing one:
+
+- `_require_can_manage_team` stays the broad manager surface
+  (`is_hr_actor or is_team_manager`) for team identity edits, chains, and steps.
+- `_require_team_manager` admits only `TeamRoleAssignment.is_team_manager` and
+  refuses HR. It gates `members` POST, `remove_member`, and `route` in
+  `teams/views.py` (403 before the service), and is repeated in
+  `add_team_member`, `remove_team_member`, and `route_team`. A team with no
+  designated manager therefore cannot be staffed until HR names one — the
+  deadlock is intentional.
+
+**Candidates.** `member_candidates` and the HR directory's
+`?not_wide_holder=1` now exclude **any** wide holder — an institution-wide
+`RoleAssignment`, a `TeamRoleAssignment` on any team, or a
+`CampusRoleAssignment` at any campus — via the new
+`roles.services.wide_role_holder_ids()`. The team's own manager is the one
+exemption, since joining the roster is how their leave routes through the team
+they run. `wide_approver_ids_for_team` keeps its narrower routing meaning and is
+still what step eligibility reads. The refusal names the holdings through
+`wide_role_labels_for(user)`.
+
+**Frontend.** `Team.is_team_manager` is on the team payload; `TeamMembersPanel`
+hides Add/Remove for non-managers and says "Only this team's designated manager
+can change its roster"; `RouteChainButton` disappears for non-managers while the
+Default badge stays; `WorkflowCompactCard` forwards `canMakeDefault`; the team
+and workflows pages pass the flag. The HR picker now sends
+`not_wide_holder=1` (`listUnassignedEmployees(category, excludeWideHolders)`).
+
+**Verification.** Backend `chains.tests_workflow_members` **83 OK** (new
+`TeamRosterAuthorityTests`: HR add/remove/route 403, another team's manager 404,
+manager add/remove/route success, service-layer refusals, candidates omit wide
+holders, and institution/other-campus/other-team holdings refused);
+`chains.tests_teams` + `chains.tests_wide_scope` **119 OK**; `users` **165 OK**
+(roster-filter tests rewritten for the holder-wide rule). Frontend **130 files /
+1107 tests OK**; `tsc --noEmit` and targeted eslint clean. The pre-existing
+`chains.tests_team_configuration` routing-fixture failures (2 failures + 11
+errors: "has no approval workflow for this employee") are unchanged and
+unrelated.
+
+## Completed — Institution-wide managers, wide-holder rosters, and the add-members page (2026-10-27)
+
+**Goal.** HR had to be able to appoint an **institution-wide approver** as a team
+manager; that manager had to be able to add other institution-wide and
+campus-wide approvers to the roster and build chains for the team; and a manager
+whose roster was empty had to land on the add-members page when opening the Teams
+app. The add-members flow was to become a proper page rather than a dialog.
+
+**Manager designation.** `Team.manager` (nullable FK, migration `teams/0004`)
+is now authoritative, so a manager need not hold a team-scoped role — the one
+thing an institution-wide approver cannot have. The migration backfills from
+flagged `TeamRoleAssignment` rows. `roles.services.is_team_manager()` reads
+`team.manager_id` first and falls back to the legacy flag;
+`managed_team_ids_for()` unions both. `create_team_role_assignment`,
+`set_team_manager`, `clear_team_manager`, and `remove_team_role_assignment` keep
+the field and the flag in step. New audited services
+`set_team_manager_for_user()` / `clear_team_manager_for_team()` back the HR-only
+`POST /teams/{id}/set-manager/` and `POST /teams/{id}/clear-manager/` actions.
+`create_team`/`update_team` accept `manager={"user"}` (optional team-scoped
+`"role"`), through `_designate_manager` in `chains/services/lifecycle.py`.
+
+**Roster.** `add_team_member` no longer refuses wide holders: the category rule
+now waives for anyone in `wide_role_holder_ids()`, because a wide holding crosses
+the institution's halves. `member_candidates` offers every unassigned
+category-matching employee **plus** every unassigned wide holder, regardless of
+category. The one-team-per-employee rule is unchanged.
+
+**Frontend.** `Team` gains `manager_user`, `manager_name`, and `roster_count`
+(people on the roster, not staffed steps). The Approvers tab has a manager card
+(`TeamManagerPanel`) where HR designates or removes the manager from any active
+employee. The create form's manager page is a person-only picker. The Members
+panel links to a new `/dashboard/teams/{id}/members/add` page
+(`AddTeamMembers`) with search, multi-select, a live selection summary, and one
+all-or-nothing write; the old picker dialog is gone from this flow. The Teams
+landing redirects a single-team manager to that page when `roster_count === 0`,
+otherwise to the team page.
+
+**Verification.** Backend: `chains.tests_manager_access` +
+`chains.tests_wide_scope` + `chains.tests_workflow_members` **154 OK** (new
+`InstitutionWideManagerTests`: appointment, no holding needed, wide-holder roster
+adds, chain creation, non-HR 403, inactive refusal, clear); `roles`, `teams`,
+`users`, `chains.tests_teams` **273 OK**. Frontend: new
+`tests/add-team-members.test.tsx` and `tests/team-manager-panel.test.tsx`, the
+roster panel test rewritten for the page link, and the form/overlay tests updated
+for the person-only picker. The pre-existing `chains.tests_team_configuration`
+routing-fixture failures (2 failures + 11 errors) are unchanged and unrelated.

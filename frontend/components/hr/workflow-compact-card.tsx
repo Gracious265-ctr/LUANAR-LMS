@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Pencil, Users } from "lucide-react";
 
 import type { WorkflowRef } from "@/lib/teams";
 import { RouteChainButton } from "@/components/hr/workflow-routing-actions";
@@ -8,11 +8,14 @@ import { buttonVariants } from "@/components/ui/button";
 interface WorkflowCompactCardProps {
   workflow: WorkflowRef;
   teamId: number;
+  /** Only the team's designated manager may make a chain its default. */
+  canMakeDefault?: boolean;
 }
 
 export function WorkflowCompactCard({
   workflow,
   teamId,
+  canMakeDefault = true,
 }: WorkflowCompactCardProps) {
   const steps = workflow.section_count;
   const effective = workflow.effective_from ?? "—";
@@ -37,25 +40,27 @@ export function WorkflowCompactCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <span
-            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              workflow.is_routing
-                ? "bg-brand-secondary-subtle text-brand-secondary"
-                : "bg-surface-muted text-text-muted"
-            }`}
-          >
-            {routing}
-          </span>
           <Link
-            href={`/dashboard/teams/${teamId}/workflows/${workflow.id}/edit`}
+            href={`/dashboard/teams/${teamId}/workflows/${workflow.id}#members`}
             className={buttonVariants({ variant: "secondary", size: "sm" })}
           >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit
+            <Users className="h-3.5 w-3.5" />
+            View members
           </Link>
-          {!workflow.is_routing && (
-            <RouteChainButton teamId={teamId} workflow={workflow} />
+          {canMakeDefault && (
+            <Link
+              href={`/dashboard/teams/${teamId}/workflows/${workflow.id}/edit`}
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Link>
           )}
+          <RouteChainButton
+            teamId={teamId}
+            workflow={workflow}
+            canManage={canMakeDefault}
+          />
         </div>
       </div>
     </div>

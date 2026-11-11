@@ -20,6 +20,7 @@ from roles.services import (
     add_team_member,
     add_team_members,
     approver_role_codes_for,
+    is_team_manager,
 )
 from teams.models import Team, TeamRoleAssignment
 from users.models import EmployeeProfile, User
@@ -226,17 +227,34 @@ class WorkflowWriteSerializer(serializers.Serializer):
 
 
 class TeamManagerInputSerializer(serializers.Serializer):
-    """The team-wide role holding to designate as a team's manager.
+    """The person HR designates to run a team, and the role they hold on it.
 
-    HR picks a team-scoped approver role and the person who holds it: the role is
-    the capability the manager acts with, the person is who acts. Both are
-    required — a manager without a role could not approve, and a role without a
-    holder names nobody. The role/person/team rules (active, team-scoped, and
-    category-matching) are enforced where every other wide holding is, in
-    :func:`workflows.services.create_team_role_assignment`.
+    ``user`` is the manager. ``role`` is the team-wide holding they take on the
+    team, which is the shape the create form sends: the appointment is the
+    person *and* the post, so the new manager is on the team's approver list from
+    the start. It is omitted for somebody who already holds a wide approver role
+    anywhere — a person holds one — and, since an institution-wide role cannot
+    be held *for* a team, naming one is the same as naming nobody. In both of
+    those cases the person is designated on the team itself, which is the field
+    every management check reads.
     """
 
-    role = serializers.PrimaryKeyRelatedField(queryset=ApproverRole.objects.all())
+    role = serializers.PrimaryKeyRelatedField(
+        queryset=ApproverRole.objects.all(), required=False, allow_null=True
+    )
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+
+
+class TeamManagerDesignateSerializer(serializers.Serializer):
+    """The person to make a team's manager, named on its own.
+
+    Used by the ``set-manager`` action, which changes *who runs the team*
+    without touching its details or its chain. ``user`` alone is enough because
+    the designation is :attr:`Team.manager`: the manager need not hold a
+    team-scoped role, and an institution-wide approver — who holds none — is
+    exactly who HR may want here.
+    """
+
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
 
 
@@ -293,8 +311,23 @@ class TeamSerializer(serializers.ModelSerializer):
     members = serializers.SerializerMethodField()
     stage_roles = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    # How many people are on the roster. Distinct from ``member_count``, which
+    # counts staffed steps: an empty roster is what sends a manager to the
+    # add-members page, and a team can route through staffed steps with nobody
+    # on its roster at all.
+    roster_count = serializers.SerializerMethodField()
+    # The manager, so the screen can name them without a second request. The
+    # ``manager`` field above is write-only, because a team's manager is
+    # designated through the audited action rather than a bare PATCH.
+    manager_user = serializers.SerializerMethodField()
+    manager_name = serializers.SerializerMethodField()
     sections = serializers.SerializerMethodField()
     is_effective = serializers.BooleanField(read_only=True)
+    # Whether the requesting user is this team's designated manager. It decides
+    # the roster and the default chain on the screen, which the API now lets
+    # only the manager write, so the UI must not offer HR buttons that would be
+    # refused. Read-only and computed, never stored.
+    is_team_manager = serializers.SerializerMethodField()
 
     class Meta:
         model = Team
@@ -315,8 +348,12 @@ class TeamSerializer(serializers.ModelSerializer):
             "effective_from",
             "effective_to",
             "is_effective",
+            "is_team_manager",
             "stage_roles",
             "member_count",
+            "roster_count",
+            "manager_user",
+            "manager_name",
             "members",
             "sections",
             "created_at",
@@ -334,6 +371,9 @@ class TeamSerializer(serializers.ModelSerializer):
             "workflows",
             "stage_roles",
             "member_count",
+            "roster_count",
+            "manager_user",
+            "manager_name",
             "members",
             "sections",
             "created_at",
@@ -418,6 +458,39 @@ class TeamSerializer(serializers.ModelSerializer):
                 }
             )
         return attrs
+
+    def get_is_team_manager(self, instance: Team) -> bool:
+        """Whether the caller is the one manager this team was handed to.
+
+        The roster and the default chain are the manager's to change, so the
+        team screen reads this instead of re-deriving the rule from the viewer's
+        role: HR sees the same roster read-only, and a manager sees their
+        controls on their own team only.
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        return is_team_manager(user, instance)
+
+    def get_roster_count(self, instance: Team) -> int:
+        """How many employees call this team theirs.
+
+        Counted from the roster itself rather than from the chain, because the
+        two answer different questions: ``member_count`` says how many steps are
+        staffed, while an empty roster is what sends a manager to the add-members
+        page. A brand-new team has staffed-nothing and nobody on it.
+        """
+        return EmployeeProfile.objects.filter(team=instance).count()
+
+    def get_manager_user(self, instance: Team) -> int | None:
+        return instance.manager_id
+
+    def get_manager_name(self, instance: Team) -> str:
+        manager = instance.manager
+        if manager is None:
+            return ""
+        return manager.get_full_name() or manager.username
 
     def get_workflows(self, instance: Team) -> list[dict]:
         """Every workflow this team owns, flagging the one it routes through.

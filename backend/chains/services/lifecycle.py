@@ -3,9 +3,10 @@
 A *team* is the organisational unit that owns one or more approval chains and is
 put in force when HR creates it; a *workflow* is one of the chains it owns. A
 team routes every chain its people are enrolled on at the same time, and the
-chain named as the team's :attr:`~teams.models.Team.workflow` is the **default**
-one — where somebody not yet placed on one of the team's chains routes, and where
-a wide approver routes when their holding staffs several. This module owns the
+chain named as the team's :attr:`~teams.models.Team.workflow` is its
+**default**. Routing itself is per person: an employee routes through the one
+chain they are enrolled on, and a wide approver is enrolled on one like
+anybody else — their holding staffs steps, not memberships. This module owns the
 two lifecycles and the readiness check that reports — without mutating anything
 — whether a team can route an application today.
 
@@ -29,6 +30,7 @@ from roles.models import ApproverRole, RoleAssignment
 from roles.services import (
     _require_hr_actor,
     create_team_role_assignment,
+    set_team_manager_for_user,
 )
 from teams.models import Team, TeamRoleAssignment
 from users.models import User
@@ -41,6 +43,7 @@ from chains.services._shared import (
     TeamReadiness,
     WorkflowActionError,
     _require_can_manage_team,
+    _require_team_manager,
     _unique_team_code,
     _unique_workflow_name,
 )
@@ -156,10 +159,10 @@ def _routing_chains(team: Team) -> list[Workflow]:
     """Every chain the team routes, its default chain first.
 
     A team routes one or more chains at the same time: its default chain
-    (:attr:`Team.workflow` — where somebody nobody enrolled routes, and where a
-    wide approver routes when their holding staffs several) and every chain one
-    of its people is enrolled on (:class:`~chains.models.WorkflowMember`).
-    Readiness that stopped at the default would report a team as ready while a
+    (:attr:`Team.workflow`) and every chain one of its people is enrolled on
+    (:class:`~chains.models.WorkflowMember`). A person is enrolled on one chain,
+    wide approver or not. Readiness that stopped at the default would report a
+    team as ready while a
     second chain it routes has lost its approver, which is exactly the failure
     the check exists to catch.
 
@@ -357,6 +360,48 @@ def _ensure_team_category(team: Team) -> None:
         raise TeamActionError(field, message)
 
 
+def _designate_manager(*, team: Team, manager: dict, actor) -> None:
+    """Make ``manager["user"]`` the team's manager.
+
+    ``manager`` is ``{"user", "role"}`` — the person and the team-wide role they
+    hold on the team, which is what the create form asks for — or ``{"user"}``
+    alone for somebody who already holds a wide approver role. A person holds one
+    wide role, so a second holding cannot be written for them; the designation
+    then lands on the team's own ``manager`` field. A role is honoured only when
+    it is team-scoped: an institution-wide role cannot be held *for* a team, so
+    naming one is the same instruction as naming nobody. Either way the team's
+    ``manager`` field ends up naming them, and the designation is audited by the
+    service that writes it.
+    """
+    role = manager.get("role")
+    if role is not None and not role.is_institution_wide:
+        create_team_role_assignment(
+            team=team,
+            role=role,
+            user=manager["user"],
+            actor=actor,
+            is_team_manager=True,
+        )
+        # Ensure the team manager is automatically added as a team member
+        from roles.services import _employee_profile_for
+        from users.models import EmployeeProfile
+
+        profile = _employee_profile_for(manager["user"])
+        if profile is not None and profile.team_id != team.pk:
+            locked_profile = EmployeeProfile.objects.select_for_update().get(
+                pk=profile.pk
+            )
+            locked_profile.team = team
+            locked_profile.save(update_fields=["team"])
+    else:
+        set_team_manager_for_user(team=team, user=manager["user"], actor=actor)
+    # Both services write the designation through a locked copy of the team, so
+    # the instance ``create_team`` returns still says it has no manager. Keep it
+    # in step: the create response is read by the screen that just named them,
+    # and "manager_user: null" would say the appointment did not happen.
+    team.manager = manager["user"]
+
+
 def create_team(
     *,
     actor,
@@ -382,13 +427,14 @@ def create_team(
     together or not at all: a half-built team with a chain but no steps is exactly
     the object that used to look configured and then fail at submission.
 
-    ``manager`` is ``{"role": <ApproverRole>, "user": <User>}``, the second page
-    of HR's create flow. When given, that team-scoped role is appointed to the
-    person as a team-wide holding and flagged the team's manager, in the same
-    transaction as the team, through :func:`create_team_role_assignment`.
-    Naming the role *and* the person is the whole instruction: the holding is
-    what lets the manager act, so "assign the manager" is not a separate object
-    to keep in step.
+    ``manager`` is ``{"user": <User>, "role": <ApproverRole>}`` — the person who
+    runs the team and the team-wide role they hold on it. When a team-scoped role
+    is named the person is appointed to it as a team-wide holding and designated
+    through that holding. It may instead be ``{"user": <User>}`` alone, for
+    somebody who already holds a wide approver role somewhere: a person holds
+    one, and an institution-wide approver in particular has no team-scoped
+    holding to flag, so they are designated on the team itself — the field every
+    management check reads.
 
     A team starts **active**: creating it is the act of putting it in force, and
     HR does not confirm that afterwards — so there is no draft state and no
@@ -469,13 +515,7 @@ def create_team(
                 reason=f"Created with the {team.name} team.",
             )
         if manager is not None:
-            create_team_role_assignment(
-                team=team,
-                role=manager["role"],
-                user=manager["user"],
-                actor=actor,
-                is_team_manager=True,
-            )
+            _designate_manager(team=team, manager=manager, actor=actor)
     return team
 
 def _appoint_institution_wide_holder(*, section: Section, actor=None) -> None:
@@ -677,9 +717,9 @@ def update_team(
     refused by the ``PROTECT`` on ``ApplicationStage.section_ref``, so an edit
     here cannot rewrite the past.
 
-    ``manager`` is the same ``{"role", "user"}`` instruction as on
-    :func:`create_team`: the role is appointed to the person as a team-wide
-    holding and designated the team's manager. Passing it re-designates the
+    ``manager`` is the same instruction as on :func:`create_team`: ``{"user"}``
+    designates the person on the team, and an optional team-scoped ``"role"``
+    appoints them a team-wide holding as well. Passing it re-designates the
     manager without touching anything else.
     """
     _require_hr_actor(actor, TeamActionError)
@@ -709,16 +749,10 @@ def update_team(
             )
 
         if manager is not None:
-            create_team_role_assignment(
-                team=team,
-                role=manager["role"],
-                user=manager["user"],
-                actor=actor,
-                is_team_manager=True,
-            )
+            _designate_manager(team=team, manager=manager, actor=actor)
     return team
 
-def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
+def route_team(*, team: Team, actor, workflow: Workflow | None = None) -> Team:
     """Make one of the team's chains its default chain.
 
     A team routes every chain its people are enrolled on, so this is not a
@@ -731,14 +765,33 @@ def route_team(*, team: Team, actor, workflow: Workflow) -> Team:
     "adopt somebody else's chain" — which would strand every application
     inside the old one at a step nobody staffs.
 
-    The team's manager owns this day-to-day decision, but HR keeps the same
-    reach so an installation that has not yet designated a manager can still
-    configure its own teams.
+    The team's manager owns this decision outright. Choosing which chain
+    everybody who is not enrolled falls back to is a staffing decision about
+    that team, so HR is not a second key here: HR hands the team to a manager,
+    and the manager points it at a chain. A chain only becomes the default
+    among chains the team already owns (checked below), so this can never
+    become "adopt somebody else's chain".
     """
-    _require_can_manage_team(actor, team, TeamActionError)
+    _require_team_manager(actor, team, TeamActionError)
     with transaction.atomic():
         team = Team.objects.select_for_update().get(pk=team.pk)
-        if workflow is None or workflow.team_id != team.pk:
+        if workflow is None:
+            before = _team_snapshot(team)
+            if team.workflow_id is None:
+                return team
+            team.workflow = None
+            team.save(update_fields=["workflow", "updated_at"])
+            _shared.record_audit(
+                actor=actor,
+                action=AuditEntry.Action.UPDATED,
+                target_type=AuditEntry.TargetType.TEAM,
+                target_id=team.pk,
+                target_summary=team.name,
+                detail=_shared.changed_fields(before, _team_snapshot(team)),
+                reason="Removed default chain routing.",
+            )
+            return team
+        if workflow.team_id != team.pk:
             raise TeamActionError(
                 "workflow",
                 "A team can only route through a workflow it owns. Create the "

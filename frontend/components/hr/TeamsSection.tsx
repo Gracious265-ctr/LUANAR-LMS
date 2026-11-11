@@ -38,14 +38,17 @@ export interface TeamsSectionProps {
   rolesError: string;
   /**
    * Everyone the create overlay's manager picker may offer. The manager is
-   * designated when the team is created, so the people who may hold it have to
+   * designated when the team is created, so the people who may run it have to
    * be on the page before the overlay opens.
    */
   employees?: Employee[];
   /**
-   * Every current wide approver, whatever their scope. A person holds only one
-   * wide approver role, so those who already hold one are not offered as a
-   * team's manager.
+   * People who already hold a wide approver role somewhere in the institution.
+   *
+   * A person holds one wide role, so somebody on this list cannot also take the
+   * team-wide role a create asks for. They are still eligible to run a team —
+   * the designation lives on the team — and the form says so rather than
+   * offering a role the save would refuse.
    */
   wideHolderUserIds?: number[];
   /**

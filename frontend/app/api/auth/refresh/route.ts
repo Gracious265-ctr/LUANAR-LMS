@@ -3,14 +3,34 @@ import { NextResponse } from "next/server";
 
 const DJANGO_API_URL = process.env.DJANGO_API_URL || "http://localhost:8000";
 
+function clearSession(response: NextResponse): NextResponse {
+  response.cookies.set("access_token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set("refresh_token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+  return response;
+}
+
 export async function POST() {
   const cookieStore = await cookies();
   const refreshToken = cookieStore.get("refresh_token")?.value;
 
   if (!refreshToken) {
-    return NextResponse.json(
-      { detail: "No refresh token" },
-      { status: 401 }
+    // A stale access cookie with no refresh behind it cannot become a session.
+    // Clear it here so the proxy and the login page agree that it is gone,
+    // instead of looping between them.
+    return clearSession(
+      NextResponse.json({ detail: "No refresh token" }, { status: 401 })
     );
   }
 
@@ -22,7 +42,9 @@ export async function POST() {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Refresh failed" }));
-    return NextResponse.json(error, { status: response.status });
+    // The refresh token is expired, revoked, or predates a password change.
+    // Drop both cookies: continuing to send them only produces more 401s.
+    return clearSession(NextResponse.json(error, { status: response.status }));
   }
 
   const data = await response.json();

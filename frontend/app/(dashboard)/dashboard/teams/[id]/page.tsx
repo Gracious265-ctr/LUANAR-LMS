@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
 import { TeamLifecycleActions } from "@/components/hr/team-lifecycle-actions";
+import { TeamManagerPanel } from "@/components/hr/team-manager-panel";
 import { TeamMemberList } from "@/components/hr/team-member-list";
 import { TeamMembersPanel } from "@/components/hr/team-members-panel";
 import type {
@@ -19,7 +20,7 @@ import {
   listTeamRoleAssignments,
 } from "@/lib/approver-roles";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
-import { listAllEmployees, listUnassignedEmployees } from "@/lib/employees";
+import { listAllEmployees } from "@/lib/employees";
 import { getCurrentUser } from "@/lib/auth";
 import {
   canAccessTeams,
@@ -27,7 +28,9 @@ import {
 } from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
-import { listMemberCandidates } from "@/lib/teams-client";
+import { assembleChainSteps, teamChains } from "@/lib/team-chains";
+import type { WorkflowSection } from "@/lib/workflows";
+import { getWorkflow } from "@/lib/workflows";
 import {
   teamCategoryBadgeTone,
   teamCategoryLabel,
@@ -35,6 +38,7 @@ import {
   teamStatusLabel,
 } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
+import { wideHoldingFrom } from "@/lib/wide-holdings";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
 import { FadeIn } from "@/components/motion/FadeIn";
 import { Badge } from "@/components/ui/badge";
@@ -58,32 +62,6 @@ const TABS = [
 ] as const;
 
 type TabValue = (typeof TABS)[number]["value"];
-
-/**
- * The people a roster may add, read by whoever is looking.
- *
- * HR reads the employee directory's "unassigned, matching category, not a wide
- * approver for this team" filters. A team's manager may not reach the directory
- * at all, so they read the same list through the team's own member-candidates
- * route, scoped by the backend to the team they run. Both are the backend's
- * answer, never a subtraction here.
- */
-async function loadMemberCandidates(
-  team: Team,
-  isAdministrator: boolean
-): Promise<Employee[]> {
-  try {
-    if (isAdministrator) {
-      return await listUnassignedEmployees(
-        team.category as EmployeeCategory,
-        team.id
-      );
-    }
-    return await listMemberCandidates(team.id);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The roles a team-wide holder may be given, read by whoever is looking.
@@ -145,23 +123,17 @@ export default async function TeamPage({
     ? (tabParam as TabValue)
     : "overview";
 
-  const [employeesResult, candidatesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
+  const [employeesResult, workflowsResult, holdersResult, rolesResult, institutionHoldingsResult, campusHoldingsResult] =
     await Promise.all([
-      // A team-wide holder must be the same category as the team, so the
-      // Approvers tab's feed is the whole directory's matching half, read as a
-      // server filter rather than by subtracting here. A holder need not be a
-      // member of the team. HR-only: a manager cannot read the directory, so for
-      // them this is empty and the Approvers tab is read-only.
+      // The people the manager picker and the team-wide holder picker may
+      // offer. Both halves of the institution are read: a team's manager may be
+      // an institution-wide approver from either half, while a team-wide holder
+      // is narrowed to the team's own category by the panel. A holder need not
+      // be a member of the team. HR-only: a manager cannot read the directory,
+      // so for them this is empty and the Approvers tab is read-only.
       isAdministrator
-        ? listAllEmployees(team.category as EmployeeCategory).catch(
-            () => [] as Employee[]
-          )
+        ? listAllEmployees().catch(() => [] as Employee[])
         : Promise.resolve([] as Employee[]),
-      // The roster's candidates match this team: only unassigned employees of
-      // the team's own category, never a wide approver (who serves steps from
-      // the Approvers tab). Read through the team's own route, which a manager
-      // may reach; HR reads the same list from the directory's filters.
-      loadMemberCandidates(team, isAdministrator),
       listTeamWorkflows(id).catch(() => [] as WorkflowRef[]),
       // Every team's holdings, so this team's own can be filtered out here and
       // the whole set still fed to the panel as the one-wide-approver pool.
@@ -171,17 +143,48 @@ export default async function TeamPage({
       listCampusRoleAssignments().catch(() => [] as CampusRoleAssignment[]),
     ]);
 
-  const candidates = candidatesResult;
   const workflows = workflowsResult;
+
+  /**
+   * Every chain's steps, read chain by chain.
+   *
+   * The team payload carries only the steps of the chain it *routes* through
+   * (`Team.sections`), which is why this tab used to show one chain's work and
+   * nothing at all when that chain happened to have no steps. A team may own a
+   * second chain beside its default — a replacement HR builds one alongside it —
+   * and "who decides at each step" has an answer for each. So every chain is
+   * listed, the default one first, with the others read on their own.
+   *
+   * Only when this tab is open: extra requests are not worth paying for a viewer
+   * reading the overview.
+   */
+  const chains = teamChains(team, workflows);
+  const chainDetails: Record<number, WorkflowSection[] | null> =
+    tab === "steps"
+      ? Object.fromEntries(
+          await Promise.all(
+            chains
+              // The routed chain's steps are already in the team payload.
+              .filter((chain) => chain.id !== team.workflow)
+              .map(async (chain) => {
+                try {
+                  const detail = await getWorkflow(chain.id);
+                  return [chain.id, detail.sections] as const;
+                } catch {
+                  // One unreadable chain must not blank the tab: the others
+                  // still answer the question, and this one says so in place.
+                  return [chain.id, null] as const;
+                }
+              })
+          )
+        )
+      : {};
+  const chainSteps =
+    tab === "steps" ? assembleChainSteps(chains, team, chainDetails) : [];
+
   const holdings: WideHolding[] = holdersResult
     .filter((assignment) => assignment.team === team.id)
-    .map((assignment) => ({
-      id: assignment.id,
-      role: assignment.role,
-      user: assignment.user,
-      user_name: assignment.user_name,
-      role_label: assignment.role_label,
-    }));
+    .map(wideHoldingFrom);
   // A person holds one wide approver role, so everyone who already holds one
   // anywhere (institution, any team, any campus) is offered nowhere.
   const wideHolderUserIds = Array.from(
@@ -361,13 +364,19 @@ export default async function TeamPage({
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      <Link
-                        href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
-                        className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
-                      >
-                        Edit steps
-                      </Link>
-                      <RouteChainButton teamId={team.id} workflow={workflow} />
+                      {team.is_team_manager && (
+                        <Link
+                          href={`/dashboard/teams/${team.id}/workflows/${workflow.id}/edit`}
+                          className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                        >
+                          Edit steps
+                        </Link>
+                      )}
+                      <RouteChainButton
+                        teamId={team.id}
+                        workflow={workflow}
+                        canManage={team.is_team_manager}
+                      />
                     </div>
                   </li>
                 ))}
@@ -378,50 +387,154 @@ export default async function TeamPage({
       )}
 
       {tab === "steps" && (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <h3 className="text-lg font-semibold text-text-primary">
-            Who decides at each step
-          </h3>
-          <p className="mt-1 text-sm text-text-secondary">The default chain, and who acts at each step.</p>
-          <div className="mt-4">
-            <TeamMemberList team={team} />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Who decides at each step
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              Every chain this team owns — the default one it routes through, and
+              any other chain beside it — with who acts at each step. A step has
+              exactly one approver.
+            </p>
           </div>
+
+          {chainSteps.length === 0 ? (
+            <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+              <p className="text-sm text-text-muted">
+                This team owns no chains yet, so there are no steps to staff.{" "}
+                <Link
+                  href={`/dashboard/teams/${team.id}/workflows/new`}
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  Create a chain
+                </Link>{" "}
+                first.
+              </p>
+            </div>
+          ) : (
+            chainSteps.map(({ chain, steps }) => (
+              <section
+                key={chain.id}
+                aria-labelledby={`chain-${chain.id}-heading`}
+                className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4
+                      id={`chain-${chain.id}-heading`}
+                      className="text-base font-semibold text-text-primary"
+                    >
+                      {chain.name}
+                    </h4>
+                    {chain.is_routing && (
+                      <Badge tone="info" size="sm">
+                        Default chain
+                      </Badge>
+                    )}
+                  </div>
+                  <Link
+                    href={`/dashboard/teams/${team.id}/workflows/${chain.id}`}
+                    className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    Open chain
+                  </Link>
+                </div>
+                <p className="mt-1 text-sm text-text-muted">
+                  {chain.is_routing
+                    ? "Where anyone who is not enrolled on a chain routes."
+                    : "Only the people enrolled on this chain route through it."}
+                </p>
+
+                <div className="mt-4">
+                  {steps === null ? (
+                    <p className="text-sm text-text-muted">
+                      This chain&apos;s steps could not be loaded.{" "}
+                      <Link
+                        href={`/dashboard/teams/${team.id}/workflows/${chain.id}`}
+                        className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                      >
+                        Open it
+                      </Link>{" "}
+                      to read them.
+                    </p>
+                  ) : steps.length === 0 ? (
+                    <p className="text-sm text-text-muted">
+                      This chain has no steps yet, so there is nobody to appoint.{" "}
+                      <Link
+                        href={`/dashboard/teams/${team.id}/workflows/${chain.id}/edit`}
+                        className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                      >
+                        Add a step
+                      </Link>{" "}
+                      first.
+                    </p>
+                  ) : (
+                    <TeamMemberList
+                      team={team}
+                      sections={steps}
+                      workflowId={chain.id}
+                    />
+                  )}
+                </div>
+              </section>
+            ))
+          )}
         </div>
       )}
 
       {tab === "approvers" && (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <h3 className="text-lg font-semibold text-text-primary">
-            Team-wide approvers
-          </h3>
-          <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole team.</p>
-          {roles.length === 0 ? (
-            <p className="mt-3 text-sm text-text-muted">
-              No active scoped roles to hold here yet. Institution-wide roles
-              are held on the{" "}
-              <Link
-                href="/dashboard/hr-admin/approvers"
-                className="font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                Approvers
-              </Link>{" "}
-              page.
+        <>
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Team manager
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              The one person who staffs this team&apos;s roster, builds its
+              chains, and chooses its default.
             </p>
-          ) : (
             <div className="mt-4">
-              <WideHoldingPanel
-                scope="team"
-                roles={roles}
-                scopeId={team.id}
-                requiredCategory={team.category as EmployeeCategory}
+              <TeamManagerPanel
+                team={team}
                 employees={employees}
-                holdings={holdings}
-                excludedUserIds={wideHolderUserIds}
                 canManage={isAdministrator}
               />
             </div>
-          )}
-        </div>
+          </div>
+
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Team-wide approvers
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">One holder per role for this whole team.</p>
+            {roles.length === 0 ? (
+              <p className="mt-3 text-sm text-text-muted">
+                No active scoped roles to hold here yet. Institution-wide roles
+                are held on the{" "}
+                <Link
+                  href="/dashboard/hr-admin/approvers"
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  Approvers
+                </Link>{" "}
+                page.
+              </p>
+            ) : (
+              <div className="mt-4">
+                <WideHoldingPanel
+                  scope="team"
+                  roles={roles}
+                  scopeId={team.id}
+                  requiredCategory={team.category as EmployeeCategory}
+                  employees={employees}
+                  holdings={holdings}
+                  excludedUserIds={wideHolderUserIds}
+                  canManage={isAdministrator}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {tab === "members" && (
@@ -431,7 +544,10 @@ export default async function TeamPage({
           </h3>
           <p className="mt-1 text-sm text-text-secondary">People whose submissions this team&apos;s chains decide.</p>
           <div className="mt-4">
-            <TeamMembersPanel team={team} candidates={candidates} />
+            <TeamMembersPanel
+              team={team}
+              canManage={team.is_team_manager}
+            />
           </div>
         </div>
       )}

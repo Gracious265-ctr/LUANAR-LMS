@@ -30,9 +30,9 @@ def _pick_chain(chain_ids: list[int]) -> int | None:
     """The chain a person routes through, given the chains they are enrolled on.
 
     Enrolment wins, because it is the explicit statement of which of the
-    team's chains this person belongs to. Several enrolments only happen for a
-    wide approver, who staffs several chains without belonging to more than one:
-    the lowest id among the enrolled chains keeps the answer stable.
+    team's chains this person belongs to. A person is a normal member of one
+    workflow, so this normally sees a single id; the lowest-id tie-break stays
+    as a defensive rule for rows written before that constraint.
     """
     ordered = sorted({chain_id for chain_id in chain_ids if chain_id is not None})
     if not ordered:

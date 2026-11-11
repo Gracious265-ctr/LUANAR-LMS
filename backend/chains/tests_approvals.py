@@ -39,6 +39,7 @@ from .models import (
     Section,
     SectionMember,
     Workflow,
+    WorkflowMember,
 )
 from campuses.models import Campus, CampusRoleAssignment
 from roles.models import ApproverRole, RoleAssignment
@@ -189,9 +190,11 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             make_section(self.academic_workflow, index, role)
 
         # A team's workflow is what routes its members, so each workflow needs a
-        # team behind it — and the employees need to be on one. ``registrar`` is
-        # institution-wide, so it is a ``RoleAssignment`` rather than a member
-        # row; that is the fallback branch the provider is meant to exercise.
+        # team behind it — and the employee needs an enrolment, because a team
+        # routes the chains its people are on rather than a single default.
+        # ``_place_on_team`` writes both. ``registrar`` is institution-wide, so
+        # it is a ``RoleAssignment`` rather than a member row; that is the
+        # fallback branch the provider is meant to exercise.
         self.admin_team = make_team(
             "Admin team",
             ("supervisor", "hod"),
@@ -225,6 +228,15 @@ class WorkflowProviderDatabaseTests(ApprovalBase):
             )
         profile.team = team
         profile.save(update_fields=["team"])
+        # Routing is per enrolment, not per roster: a team routes the chains its
+        # people are on, and since one employee belongs to exactly one chain,
+        # moving them to another team means moving that enrolment too.
+        # ``update_or_create`` moves the existing row rather than adding a
+        # second, which the global one-membership constraint would refuse.
+        WorkflowMember.objects.update_or_create(
+            user=user,
+            defaults={"workflow": team.workflow, "team": team},
+        )
         return profile
 
     def test_chain_for_administration_starts_with_supervisor(self):
@@ -921,6 +933,27 @@ class ApprovalAPITests(ApprovalBase):
         self.assertEqual([s["order"] for s in stages], [1, 2, 3, 4])
         self.assertTrue(
             all("assigned_approver" in s and "status" in s for s in stages)
+        )
+
+    def test_detail_renders_holiday_dates_stored_as_iso_strings(self):
+        """The snapshot stores holidays as strings; the payload must pass them through.
+
+        ``build_rules_snapshot`` writes ISO strings, not date objects, so a
+        review payload that calls ``isoformat()`` on every holiday 500s the
+        whole screen for any application that overlapped a public holiday.
+        """
+        app = self.make_submitted()
+        snapshot = dict(app.rules_snapshot or {})
+        snapshot["holidays"] = ["2026-07-06", "2026-07-07"]
+        app.rules_snapshot = snapshot
+        app.save(update_fields=["rules_snapshot"])
+
+        self.client.force_authenticate(user=self.supervisor)
+        response = self.client.get(self.url(f"{app.pk}/"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["rules"]["holidays"], ["2026-07-06", "2026-07-07"]
         )
 
     def test_detail_review_payload_with_active_financial_year(self):

@@ -28,12 +28,42 @@ export interface DjangoTokens {
   refresh: string;
 }
 
+async function refreshAccessToken(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const refreshToken = cookieStore.get("refresh_token")?.value;
+  if (!refreshToken) return null;
+
+  const response = await fetch(`${DJANGO_API_URL}/api/v1/auth/refresh/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh: refreshToken }),
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+
+  const data = await response.json().catch(() => null);
+  return data?.access ?? null;
+}
+
 async function authorizedFetch(
   url: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
+  const refreshToken = cookieStore.get("refresh_token")?.value;
+  let accessToken = cookieStore.get("access_token")?.value;
+  let triedRefresh = false;
+
+  // The access cookie itself expires after 15 minutes while the refresh cookie
+  // lasts a day. Without this branch, every render after that point went out
+  // unauthenticated, got a 401, and — because the retry below only ran when an
+  // access token was present — sent the signed-in user back to the login screen
+  // even though their session was still valid. Refresh first so the request is
+  // authenticated on its first attempt.
+  if (!accessToken && refreshToken) {
+    triedRefresh = true;
+    accessToken = (await refreshAccessToken()) ?? undefined;
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -45,23 +75,17 @@ async function authorizedFetch(
 
   let response = await fetch(url, { ...options, headers });
 
-  if (response.status === 401 && accessToken) {
-    const refreshToken = cookieStore.get("refresh_token")?.value;
-    if (refreshToken) {
-      const refreshResponse = await fetch(
-        `${DJANGO_API_URL}/api/v1/auth/refresh/`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh: refreshToken }),
-        }
-      );
-
-      if (refreshResponse.ok) {
-        const { access: newAccess } = await refreshResponse.json();
-        headers["Authorization"] = `Bearer ${newAccess}`;
-        response = await fetch(url, { ...options, headers });
-      }
+  // A 401 means the token Django saw was expired (or invalid). Retry once with
+  // a fresh one, whether the token came from the cookie or was just minted
+  // above, so a clock skew or a token revoked mid-render is recovered without
+  // bouncing the user out. If the refresh was already attempted before this
+  // request, it failed: a second attempt would only repeat the same upstream
+  // call.
+  if (response.status === 401 && refreshToken && !triedRefresh) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      headers["Authorization"] = `Bearer ${refreshed}`;
+      response = await fetch(url, { ...options, headers });
     }
   }
 

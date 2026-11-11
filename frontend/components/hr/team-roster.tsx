@@ -66,8 +66,13 @@ export function TeamRoster({
               className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
             >
               <div>
-                <p className="text-sm font-medium text-text-primary">
+                <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-text-primary">
                   {member.full_name}
+                  {(team as any).manager_user === member.id && (
+                    <span className="inline-flex items-center rounded-sm bg-brand-secondary-subtle px-2 py-0.5 text-[11px] font-semibold text-brand-secondary">
+                      Manager
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-text-muted">
                   {[member.designation, member.email].filter(Boolean).join(" · ")}

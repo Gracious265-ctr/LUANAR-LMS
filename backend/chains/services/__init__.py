@@ -46,6 +46,7 @@ from chains.services._shared import (
     WorkflowActionError,
     WorkflowAssignmentError,
     _require_can_manage_team,
+    _require_team_manager,
     _unique_team_code,
     _unique_workflow_name,
 )
@@ -165,6 +166,7 @@ __all__ = [
     "_team_name",
     # shared helpers
     "_require_can_manage_team",
+    "_require_team_manager",
     "_unique_team_code",
     "_unique_workflow_name",
     # re-exported for compatibility

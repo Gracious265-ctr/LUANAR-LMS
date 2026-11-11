@@ -5,6 +5,7 @@ from .views import (
     AdminUserViewSet,
     EmployeeViewSet,
     LoginView,
+    LogoutView,
     MeView,
     PasswordChangeView,
     PasswordSetConfirmView,
@@ -22,6 +23,7 @@ router.register("admin-users", AdminUserViewSet, basename="admin-user")
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/refresh/", RefreshView.as_view(), name="refresh"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("auth/me/", MeView.as_view(), name="me"),
     # The one password endpoint that is NOT token-based: the caller is already
     # signed in and proves themselves with their current password instead.

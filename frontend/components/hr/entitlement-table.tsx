@@ -23,6 +23,7 @@ export function EntitlementTable({
   today = currentDateIso(),
   onEdit,
   empty,
+  basePath = "/dashboard/hr-admin/entitlements",
 }: {
   entitlements: Entitlement[];
   today?: string;
@@ -33,6 +34,11 @@ export function EntitlementTable({
   onEdit?: (id: number) => void;
   /** Overrides the empty state — the section supplies search-aware copy. */
   empty?: React.ReactNode;
+  /**
+   * Route the row's edit link hangs off. Defaults to the HR-admin entitlements
+   * page; Leave Configuration passes its own so a row stays in its module.
+   */
+  basePath?: string;
 }) {
   if (entitlements.length === 0) {
     return (
@@ -66,7 +72,7 @@ export function EntitlementTable({
             >
               <TableCell>
                 <Link
-                  href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                  href={`${basePath}/${rule.id}/edit`}
                   className="font-medium text-brand-primary hover:text-brand-primary-hover"
                 >
                   {rule.grade_start}–{rule.grade_end}
@@ -96,7 +102,7 @@ export function EntitlementTable({
                   />
                 ) : (
                   <EditActionLink
-                    href={`/dashboard/hr-admin/entitlements/${rule.id}/edit`}
+                    href={`${basePath}/${rule.id}/edit`}
                   />
                 )}
               </TableCell>

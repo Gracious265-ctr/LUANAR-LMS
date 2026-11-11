@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils";
  * Data table primitives.
  *
  * These carry the styling that used to be copy-pasted into every table
- * component: `Table` owns the horizontal scroll container, `TableHead` the
- * uppercase header typography, `TableRow` the borders and hover, and
- * `TableBody` the last-row rule. So drop a manual `overflow-x-auto` wrapper
- * and the per-cell `py-3 pr-4` when converting a hand-rolled `<table>`.
+ * component: `Table` owns the horizontal scroll container, `TableHeader` the
+ * tinted header band, `TableHead` the uppercase header typography, `TableRow`
+ * the borders and hover, and `TableBody` the last-row rule. So drop a manual
+ * `overflow-x-auto` wrapper and the per-cell `py-3 pr-4` when converting a
+ * hand-rolled `<table>`.
  *
  * Cells get `px-4` where the hand-rolled tables used `pr-4`, so a converted
  * table gains a left gutter. Pass `className` to keep a deliberately tighter
@@ -38,8 +39,15 @@ export function TableHeader({
   return (
     <thead
       data-slot="table-header"
+      // One step stronger than the card beneath it (`surface-subtle` rather
+      // than the `surface-muted` grey, which read almost white on a white
+      // card), so the band is a visible edge that separates the headings from
+      // the rows without a heavier border.
       className={cn(
-        "[&_tr]:border-b [&_tr]:border-border-default",
+        // The row keeps the band's own fill on hover: header rows reuse
+        // `TableRow`, whose `hover:bg-surface-hover` would otherwise tint the
+        // headings as if they were clickable.
+        "bg-surface-subtle [&_tr]:border-b [&_tr]:border-border-default [&_tr:hover]:bg-transparent",
         className
       )}
       {...props}
@@ -83,10 +91,19 @@ export function TableRow({ className, ...props }: React.ComponentPropsWithRef<"t
   );
 }
 
-export function TableHead({ className, ...props }: React.ComponentPropsWithRef<"th">) {
+export function TableHead({
+  className,
+  scope = "col",
+  ...props
+}: React.ComponentPropsWithRef<"th">) {
   return (
     <th
       data-slot="table-head"
+      // Every table in the app heads its columns from `<thead>`, so `col` is the
+      // right default; a caller that uses this as a row header passes
+      // `scope="row"`. Being explicit means assistive tech names the column even
+      // where the header row has scrolled out of view.
+      scope={scope}
       className={cn(
         "px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-text-muted",
         "[&:has([role=checkbox])]:pr-0",

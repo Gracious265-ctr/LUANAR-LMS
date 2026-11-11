@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Pencil } from "lucide-react";
 
-import { AdvanceCard } from "@/components/hr/advance-card";
+import { WorkflowMemberTable } from "@/components/hr/workflow-member-table";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessTeams } from "@/lib/nav/teams-nav";
 import { getWorkflow, workflowStateLabel } from "@/lib/workflows";
@@ -138,14 +138,31 @@ export default async function WorkflowDetailPage({
         )}
       </div>
 
-      <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-        <h3 className="mb-1 text-lg font-semibold text-text-primary">
-          The smallest gap<span className="text-text-muted">.</span>
-        </h3>
-        <p className="mb-3 text-sm text-text-secondary">
-          This chain as it is today — the smallest gap to the answer.
-        </p>
-        <AdvanceCard workflow={workflow} />
+      <div
+        id="members"
+        className="scroll-mt-24 rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-semibold text-text-primary">Members</h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              Team members enrolled on this chain. Each one routes their leave
+              through it.
+            </p>
+          </div>
+          <span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+            {workflow.members.length} member
+            {workflow.members.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        {workflow.members.length === 0 ? (
+          <p className="mt-3 rounded-md border border-dashed border-border-default p-3 text-sm text-text-muted">
+            No members yet. A team manager can add them from Edit steps.
+          </p>
+        ) : (
+          <WorkflowMemberTable members={workflow.members} />
+        )}
       </div>
     </div>
   );

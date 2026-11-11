@@ -1,16 +1,33 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 import { MotionProvider } from "@/components/motion/motion-provider";
 import { THEME_BOOTSTRAP_SCRIPT, THEME_COOKIE, type Theme } from "@/lib/theme";
 
-const inter = Inter({
+/**
+ * Inter, self-hosted from `app/fonts`.
+ *
+ * The build deliberately does not fetch from Google. `next/font/google`
+ * downloads the files at build time, and Google now answers some of those
+ * downloads with an extensionless `/l/font?kit=…` URL that Turbopack 16's font
+ * replacer cannot parse, which fails the build with
+ * "next/font/google queries have exactly one entry" (vercel/next.js#99114).
+ * Committing the font removes the network call, so the failure cannot recur and
+ * builds stay reproducible — and it is what `font-src 'self'` in next.config.ts
+ * already assumes.
+ *
+ * One file, because Inter ships as a variable font: the single woff2 carries the
+ * whole `wght` axis (100–900) for the latin subset, so 400 through 700 are real
+ * instances rather than four static cuts. The declared range matches the weights
+ * the product actually uses (font-normal/medium/semibold/bold).
+ */
+const inter = localFont({
+  src: "./fonts/inter-latin.woff2",
   variable: "--font-sans",
-  subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+  weight: "400 700",
 });
 
 export const metadata: Metadata = {

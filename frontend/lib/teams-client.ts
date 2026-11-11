@@ -147,6 +147,28 @@ export async function routeTeamThrough(
   });
 }
 
+/**
+ * Hand the team to a person.
+ *
+ * HR's decision, not a manager's: the manager runs the team, they do not name
+ * their successor. The person need not hold a team-scoped role — an
+ * institution-wide approver is the case this exists for — because the
+ * designation is the team's `manager` field.
+ */
+export async function setTeamManager(
+  teamId: number | string,
+  userId: number
+): Promise<Team> {
+  return send<Team>(`/api/hr/teams/${teamId}/set-manager`, "POST", {
+    user: userId,
+  });
+}
+
+/** Remove the team's manager, leaving the team itself intact. */
+export async function clearTeamManager(teamId: number | string): Promise<Team> {
+  return send<Team>(`/api/hr/teams/${teamId}/clear-manager`, "POST");
+}
+
 export async function createCampus(input: CampusInput): Promise<Campus> {
   return send<Campus>("/api/hr/campuses", "POST", input);
 }

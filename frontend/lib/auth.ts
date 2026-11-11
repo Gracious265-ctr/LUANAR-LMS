@@ -23,5 +23,12 @@ export const getCurrentUser = cache(async (): Promise<DjangoUser | null> => {
 
 export async function isAuthenticated(): Promise<boolean> {
   const cookieStore = await cookies();
-  return !!cookieStore.get("access_token")?.value;
+  // The access cookie expires after 15 minutes; the refresh cookie lasts a day
+  // and is what the API client uses to mint a new one. Treating "no access
+  // cookie" as signed out made every employee sign in again mid-session, so the
+  // session is present while either cookie is.
+  return Boolean(
+    cookieStore.get("access_token")?.value ||
+      cookieStore.get("refresh_token")?.value
+  );
 }

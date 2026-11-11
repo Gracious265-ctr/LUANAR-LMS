@@ -1,11 +1,12 @@
 """Session revocation on a password change.
 
 Changing a password is supposed to mean "everywhere else is signed out". Without
-this, it would not: the app issues a 24-hour ``refresh`` token and never rotates
-or blacklists it, and signing out only clears cookies without revoking anything
-server-side. A token captured before the change would keep minting fresh access
+this, it would not: the app issues a 24-hour ``refresh`` token and does not
+rotate it, so a token captured before the change would keep minting fresh access
 tokens for a full day afterwards — which is precisely the situation a person is
-trying to escape when they change a password they think is stolen.
+trying to escape when they change a password they think is stolen. (An explicit
+sign-out does blacklist its refresh token; this mechanism covers every *other*
+session, including tokens whose owner never signs out.)
 
 SimpleJWT has this mechanism already, as ``CHECK_REVOKE_TOKEN``: a fingerprint of
 the password hash is written into every token, and a token whose fingerprint no

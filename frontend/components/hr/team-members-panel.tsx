@@ -1,22 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, UserPlus } from "lucide-react";
 
-import type { Employee } from "@/lib/employees";
 import type { TeamMemberSummary } from "@/lib/team-members";
 import {
-  addTeamMembers,
   listTeamMembers,
   removeTeamMember,
 } from "@/lib/team-members-client";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
 import { Input } from "@/components/ui/input";
 import { Alert, EmptyState } from "@/components/ui/states";
-import { EmployeePickerDialog } from "@/components/hr/employee-picker-dialog";
 
 const PAGE_SIZE = 10;
 
@@ -30,13 +28,19 @@ type RosterFilter = "all" | "approver" | "role" | "workflow" | "inactive";
  * and writes the team's own roster, so a removal can be refused here by what
  * still ties the person to the team (a step appointment, a holding, a normal
  * workflow membership) rather than silently detaching the employee record.
+ *
+ * Adding is a page of its own (`/members/add`) rather than a dialog: choosing
+ * from a candidate list is a decision with its own search, selection, and
+ * confirmation, and it is the first screen a manager of an empty team lands on.
+ * The panel links to it rather than reproducing it in an overlay.
  */
 export function TeamMembersPanel({
   team,
-  candidates,
+  canManage = false,
 }: {
-  team: { id: number; name: string };
-  candidates: Employee[];
+  team: { id: number; name: string; manager_user?: number | null; manager_name?: string };
+  /** Only the team's designated manager may add or remove members. */
+  canManage?: boolean;
 }) {
   const router = useRouter();
   const [members, setMembers] = useState<TeamMemberSummary[] | null>(null);
@@ -45,9 +49,7 @@ export function TeamMembersPanel({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<RosterFilter>("all");
   const [page, setPage] = useState(1);
-  const [addOpen, setAddOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState("");
+  const addHref = `/dashboard/teams/${team.id}/members/add`;
 
   async function reload() {
     try {
@@ -101,27 +103,6 @@ export function TeamMembersPanel({
     setPage(1);
   }
 
-  async function addCandidates(userIds: number[]) {
-    if (userIds.length === 0) return;
-    setAdding(true);
-    setAddError("");
-    try {
-      await addTeamMembers(team.id, userIds);
-      setAddOpen(false);
-      setPage(1);
-      await reload();
-      router.refresh();
-    } catch (err) {
-      setAddError(
-        err instanceof Error
-          ? err.message
-          : "Those employees could not be added."
-      );
-    } finally {
-      setAdding(false);
-    }
-  }
-
   async function remove(member: TeamMemberSummary) {
     setBusyId(member.id);
     setError("");
@@ -148,6 +129,18 @@ export function TeamMembersPanel({
         <p className="text-sm text-text-muted">Loading the roster...</p>
       ) : (
         <>
+          {/* The header action appears only once there is a roster to add to.
+              An empty team already offers the same link as its empty-state
+              action, and rendering both put two identical "Add team members"
+              links on a page a manager sees first. */}
+          {canManage && count > 0 && (
+            <div className="flex justify-end">
+              <Link href={addHref} className={buttonVariants({ size: "sm" })}>
+                <UserPlus className="h-4 w-4" />
+                Add team members
+              </Link>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-52 flex-1">
               <label className="sr-only" htmlFor="roster-search">
@@ -188,7 +181,15 @@ export function TeamMembersPanel({
           {count === 0 ? (
             <EmptyState
               title="No members yet"
-              description="Nobody's leave routes through this team yet."
+              description="Nobody's leave routes through this team yet. Add the people whose submissions its chains should decide."
+              action={
+                canManage ? (
+                  <Link href={addHref} className={buttonVariants({ size: "sm" })}>
+                    <UserPlus className="h-4 w-4" />
+                    Add team members
+                  </Link>
+                ) : undefined
+              }
             />
           ) : filtered.length === 0 ? (
             <EmptyState
@@ -208,6 +209,14 @@ export function TeamMembersPanel({
                       {!member.is_active && (
                         <Badge size="sm" tone="muted">
                           Inactive
+                        </Badge>
+                      )}
+                      {(team.manager_user === member.user ||
+                        (team.manager_name &&
+                          member.full_name &&
+                          team.manager_name === member.full_name)) && (
+                        <Badge size="sm" tone="info">
+                          Manager
                         </Badge>
                       )}
                       {member.is_section_approver && (
@@ -235,16 +244,18 @@ export function TeamMembersPanel({
                       </p>
                     )}
                   </div>
-                  <ConfirmButton
-                    size="sm"
-                    onConfirm={() => remove(member)}
-                    disabled={busyId === member.id}
-                    loading={busyId === member.id}
-                    prompt={`Remove ${member.full_name} from ${team.name}?`}
-                    aria-label={`Remove ${member.full_name} from ${team.name}`}
-                  >
-                    Remove
-                  </ConfirmButton>
+                  {canManage && (
+                    <ConfirmButton
+                      size="sm"
+                      onConfirm={() => remove(member)}
+                      disabled={busyId === member.id}
+                      loading={busyId === member.id}
+                      prompt={`Remove ${member.full_name} from ${team.name}?`}
+                      aria-label={`Remove ${member.full_name} from ${team.name}`}
+                    >
+                      Remove
+                    </ConfirmButton>
+                  )}
                 </li>
               ))}
             </ul>
@@ -281,46 +292,15 @@ export function TeamMembersPanel({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button
-              type="button"
-              onClick={() => {
-                setAddError("");
-                setAddOpen(true);
-              }}
-              disabled={candidates.length === 0 || busyId !== null}
-            >
-              Add employees
-            </Button>
-            <p className="text-xs text-text-muted">
-              Only employees without a team who match this team&apos;s category
-              are offered here.
-            </p>
-          </div>
+          {!canManage && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-text-muted">
+                Only this team&apos;s designated manager can change its roster.
+              </p>
+            </div>
+          )}
         </>
       )}
-
-      <EmployeePickerDialog
-        open={addOpen}
-        onOpenChange={(next) => {
-          setAddOpen(next);
-          if (!next) setAddError("");
-        }}
-        title="Add employees to this team"
-        description="Only employees without a team and matching this team's category are offered. One employee belongs to one team."
-        employees={candidates.map((person) => ({
-          id: person.user_id,
-          full_name: person.full_name,
-          email: person.email,
-          designation: person.designation,
-        }))}
-        onConfirm={(userIds) => void addCandidates(userIds)}
-        confirmLabel={(count) =>
-          count === 0 ? "Add to team" : `Add ${count} to team`
-        }
-        busy={adding}
-        error={addError}
-      />
     </div>
   );
 }

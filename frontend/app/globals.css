@@ -39,8 +39,13 @@
   --brand-secondary-foreground: #FFFFFF;
 
   
-  --surface-page: #e2e8f0;
-  --surface-card: #F2F2F2;
+  /* Light theme grounds are pure white. Cards, sidebar and header share the
+     page colour, so separation comes from `--border-default` hairlines and the
+     subtle shadow rather than from a tinted fill. The `--surface-hover`,
+     `--surface-active` and `--surface-disabled` tints are deliberately kept so
+     interactive states still read as a change. */
+  --surface-page: #FFFFFF;
+  --surface-card: #FFFFFF;
   --surface-elevated: #FFFFFF;
   --surface-muted: #f8fafc;
   --surface-subtle: #f1f5f9;

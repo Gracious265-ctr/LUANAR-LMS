@@ -79,11 +79,15 @@ function makeTeam(overrides: Partial<Team> = {}): Team {
     effective_from: "2026-01-01",
     effective_to: null,
     is_effective: true,
+    is_team_manager: false,
+    manager_user: null,
+    manager_name: "",
     stage_roles: [
       { id: 1, code: "supervisor", label: "Supervisor" },
       { id: 2, code: "lead", label: "Team Leader" },
     ],
     member_count: 2,
+    roster_count: 0,
     members: [],
     sections: [
       {
@@ -235,10 +239,51 @@ describe("TeamMemberList", () => {
     );
   });
 
-  it("says there is nobody to appoint when the team has no steps", () => {
+  it("says there is nobody to appoint when the chain has no steps", () => {
     render(<TeamMemberList team={makeTeam({ sections: [] })} />);
 
-    expect(screen.getByText(/no approval steps/i)).toBeInTheDocument();
+    expect(screen.getByText(/no steps yet/i)).toBeInTheDocument();
+  });
+
+  it("lists another chain's steps when the page passes them", async () => {
+    // A team can own more than one chain. The page reads each chain on its own,
+    // because `Team.sections` only carries the steps of the one it routes
+    // through — so the list has to take whatever chain's steps it is handed.
+    render(
+      <TeamMemberList
+        team={makeTeam()}
+        workflowId={9}
+        sections={[
+          {
+            id: 41,
+            name: "Registrar review",
+            order: 1,
+            approver_role: "lead",
+            approver_role_label: "Team Leader",
+            approver: { id: 5, user_name: "Bob Lead" },
+          },
+        ]}
+      />
+    );
+
+    expect(
+      await screen.findByRole("group", { name: /Section 1: Registrar review/ })
+    ).toBeInTheDocument();
+    // The routed chain's own steps are not shown: this render is chain 9's.
+    expect(screen.queryByText("Direct supervisor")).not.toBeInTheDocument();
+    expect(screen.getByText("Bob Lead")).toBeInTheDocument();
+  });
+
+  it("scopes the eligible-approver list to the chain it is given", async () => {
+    render(<TeamMemberList team={makeTeam()} workflowId={9} />);
+
+    await waitFor(() =>
+      expect(listEligibleApprovers).toHaveBeenCalledWith(
+        makeTeam().id,
+        1,
+        9
+      )
+    );
   });
 
   it("says a step nobody on the team can hold has nobody to appoint", async () => {

@@ -12,6 +12,7 @@ every write path routes through them.
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from audit.models import AuditEntry
@@ -21,6 +22,7 @@ from roles.services import (
     WorkflowMemberError,
     _employee_profile_for,
     _member_display_name,
+    is_team_manager,
     wide_approver_ids_for_team,
 )
 from teams.models import Team, TeamRoleAssignment
@@ -141,6 +143,17 @@ def ensure_team_eligibility(section: Section, user: User) -> None:
     if holds_role_wide_for_team(team=team, role=role, user=user):
         # The step names the very person who holds this role across the team or
         # its campus. Their post is the appointment; they need no roster row.
+        return
+    # The team's designated manager may be appointed to steps on their own team
+    # even if they are not on the team's roster.
+    try:
+        from roles.services import is_team_manager
+
+        if is_team_manager(user, team):
+            return
+    except Exception:
+        pass
+    if getattr(team, "manager_id", None) == getattr(user, "pk", None):
         return
 
     profile = getattr(user, "employee_profile", None)
@@ -333,6 +346,15 @@ def ensure_not_assigned_elsewhere(section: Section, user: User) -> None:
     if user.pk in wide_approver_ids_for_team(team) or holds_team_wide_role(
         team=team, user=user
     ):
+        return
+    try:
+        from roles.services import is_team_manager
+
+        if is_team_manager(user, team):
+            return
+    except Exception:
+        pass
+    if getattr(team, "manager_id", None) == getattr(user, "pk", None):
         return
 
     others = list(
@@ -584,6 +606,9 @@ def _team_member_blockers(team: Team, user: User) -> list[str]:
     than a single "cannot remove" that would leave the roster stuck.
     """
     reasons: list[str] = []
+    # The designated team manager cannot remove themselves from the team
+    if is_team_manager(user, team) or team.manager_id == user.pk:
+        reasons.append("the team manager. Remove or reassign the team manager first.")
     team_workflows = Workflow.objects.filter(team=team)
     workflow_ids = list(team_workflows.values_list("id", flat=True))
 
@@ -636,7 +661,17 @@ def remove_team_member(*, team: Team, user: User, actor) -> None:
     validation read it. Clearing it anyway would leave a configuration that
     looks staffed and cannot act, so each responsibility is named and must be
     released first.
+
+    Only the team's designated manager may call this, for the same reason they
+    are the only one who may add: the roster is theirs once HR hands the team
+    over.
     """
+    if not is_team_manager(actor, team):
+        raise WorkflowMemberError(
+            "detail",
+            "Only this team's designated manager can add or remove its "
+            "members. Ask HR to name a manager for the team.",
+        )
     profile = _employee_profile_for(user)
     if profile is None:
         raise WorkflowMemberError(
@@ -702,19 +737,16 @@ def assign_workflow_member(
     workflow's team. That is enforced in the service against the employee's
     own :attr:`EmployeeProfile.team_id` — a cross-table rule the unique
     constraint cannot express alone — and again at the database by
-    ``workflow_member_team_user_unique``, so a concurrent write that slips past
-    the service check is still refused rather than creating a second pool
-    entry.
+    ``workflow_member_user_unique``, so a concurrent write that slips past the
+    service check is still refused rather than creating a second pool entry.
 
-    One employee serves at most one of the team's chains at a time, as a
-    normal member *or* as a step approver, so somebody already placed on
-    another of the team's chains is refused here too. A wide approver is the
-    deliberate exception (see :func:`ensure_not_assigned_elsewhere`): their
-    holdings staff chains automatically, so they may sit on several, and the
-    row is marked with :attr:`~workflows.models.WorkflowMember.is_wide_approver`
-    so the database's conditional uniqueness lets them through. The team's
-    manager is not exempt: they joined the roster to route their own leave and
-    serves one chain like any other member.
+    One employee is a normal member of one workflow, full stop — being a wide
+    approver does not change that. A wide approver's holdings staff the
+    *steps* of every chain automatically, but their own leave still routes
+    through the one chain they are enrolled on, so a second membership is
+    refused here (:func:`_ensure_member_not_assigned_elsewhere`) rather than
+    created. The team's manager is not exempt either: they joined the roster
+    to route their own leave and serves one chain like any other member.
     """
     team = _workflow_team_or_error(workflow)
     if not user.is_active:
@@ -730,24 +762,48 @@ def assign_workflow_member(
             f"{_member_display_name(user)} has no employee record, so they "
             "cannot be a workflow member. Complete their employee record first.",
         )
-    if profile.team_id != team.pk:
-        team_name = profile.team.name if profile.team else "no team"
-        raise WorkflowMemberError(
-            "user",
-            f"{_member_display_name(user)} is not on the {team.name} team "
-            f'(they are on "{team_name}"). Add them to the team first — a '
-            "normal workflow member is always a member of the workflow's team.",
-        )
+    is_manager = False
+    try:
+        from roles.services import is_team_manager
+        is_manager = is_team_manager(user, team)
+    except Exception:
+        pass
+    if not is_manager and getattr(team, "manager_id", None) == getattr(user, "pk", None):
+        is_manager = True
+    if profile.team_id != team.pk and not is_manager:
+        # Allow team manager to be added even if not on team roster
+        team_name = profile.team.name if profile.team and profile.team_id != team.pk else ("no team" if profile.team is None else profile.team.name)
+        if is_manager:
+            pass
+        else:
+            raise WorkflowMemberError(
+                "user",
+                f"{_member_display_name(user)} is not on the {team.name} team "
+                f'(they are on "{team_name}"). Add them to the team first — a '
+                "normal workflow member is always a member of the workflow's team.",
+            )
 
     existing_here = WorkflowMember.objects.filter(workflow=workflow, user=user).first()
     if existing_here is not None:
         return existing_here
 
     is_wide = user.pk in wide_approver_ids_for_team(team)
-    if not is_wide:
-        _ensure_member_not_assigned_elsewhere(
-            team=team, user=user, workflow=workflow
-        )
+    try:
+        from roles.services import is_team_manager
+
+        if is_team_manager(user, team):
+            is_wide = True
+    except Exception:
+        pass
+    if getattr(team, "manager_id", None) == getattr(user, "pk", None):
+        is_wide = True
+    # One workflow membership per employee, wide approver or not. The check is
+    # deliberately not skipped for wide holders: their exemption covers
+    # staffing steps, not enrolment, and swallowing its error would let a
+    # second row through only for the database to refuse it later.
+    _ensure_member_not_assigned_elsewhere(
+        team=team, user=user, workflow=workflow
+    )
 
     with transaction.atomic():
         member = WorkflowMember.objects.create(
@@ -784,27 +840,54 @@ def _ensure_member_not_assigned_elsewhere(
 ) -> None:
     """Refuse placing ``user`` on ``workflow`` when they already serve another.
 
-    The same one-chain-per-employee rule as :func:`ensure_not_assigned_elsewhere`,
-    from the membership side: a person who is already a normal member of
-    another of the team's chains, or already staffs a step of one, cannot be
-    placed on this one. Called only for non-wide members, so the refusal
-    messages can be plain about "one chain per employee".
+    Two rules, both from the membership side:
+
+    * **Enrolment is exclusive, everywhere.** A person is a normal member of
+      exactly one workflow. They are refused here if any other row — on this
+      team or another — already holds that place, and the message names it.
+      Wide approvers and the team's manager get no exemption: their holdings
+      staff steps, not enrolments.
+    * **A chain's steps are staffed by its people.** A non-wide employee who
+      already staffs a step of another of the team's chains cannot also be a
+      normal member here. Wide approvers *are* exempt from this half, because
+      one holding staffs every chain's steps by design.
     """
     label = _member_display_name(user)
+
+    # Enrolment: one workflow membership per employee, wherever it lives.
     elsewhere_row = (
-        WorkflowMember.objects.filter(team=team, user=user)
+        WorkflowMember.objects.filter(user=user)
         .exclude(workflow=workflow)
-        .select_related("workflow")
+        .select_related("workflow", "team")
         .first()
     )
     if elsewhere_row is not None:
+        if elsewhere_row.team_id == team.pk:
+            where = "on this team"
+        else:
+            where = f'on the "{elsewhere_row.team.name}" team'
         raise WorkflowMemberError(
             "user",
             f"{label} is already a normal member of the "
-            f'"{elsewhere_row.workflow.name}" workflow on this team. One '
-            "employee is a normal member of one workflow per team — remove "
-            "them there first, or leave them where they are.",
+            f'"{elsewhere_row.workflow.name}" workflow {where}. One '
+            "employee is a normal member of one workflow — remove them there "
+            "first, or leave them where they are.",
         )
+
+    # Step staffing: a wide holding staffs every chain, so only ordinary
+    # members are pinned to one chain by the steps they hold.
+    is_wide = user.pk in wide_approver_ids_for_team(team) or holds_team_wide_role(
+        team=team, user=user
+    )
+    is_manager = False
+    try:
+        is_manager = is_team_manager(user, team)
+    except Exception:
+        pass
+    if not is_manager and getattr(team, "manager_id", None) == getattr(user, "pk", None):
+        is_manager = True
+    if is_wide or is_manager:
+        return
 
     other_section = (
         Section.objects.filter(
@@ -879,32 +962,40 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
     """The eligibility pool for a team's workflow memberships.
 
     ``available`` is every active team member who is not already serving
-    another of the team's chains — as a normal member (:class:`WorkflowMember`)
-    or as the single approver staffing a step of one. A **wide approver** is
-    the exception and stays available: their holdings staff another chain
-    automatically, and a team reuses its registrar or bursar on a second chain
-    rather than moving them off the first. The team's manager is not part of
-    that exception: once placed on a chain they are an ordinary member of it,
-    and disappear from the other chains' pools. When ``workflow`` is given, its
-    own members are included in ``available`` (they are already selected) and
-    listed separately under ``current`` so a client can render them as checked
-    rather than as a second assignment.
+    another chain — as a normal member (:class:`WorkflowMember`) anywhere, or
+    as the single approver staffing a step of another of the team's chains. A
+    **wide approver** keeps its step-staffing exemption — their holdings staff
+    every chain automatically, so the fact that they staff a step elsewhere
+    does not remove them here — but their normal membership is still exclusive:
+    once they are enrolled on a chain they disappear from every other chain's
+    pool. When ``workflow`` is given, its own members are included in
+    ``available`` (they are already selected) and listed separately under
+    ``current`` so a client can render them as checked rather than as a second
+    assignment.
 
-    ``assigned_elsewhere`` is people the team has already placed on a
-    different chain, with the workflow named so the refusal message and the UI
-    can both say where they already sit. Each row also says ``kind``: a
-    ``"member"`` is a normal member of that chain, while a ``"step"`` staffs
-    one of its steps. Neither is offerable here — a person serves one chain of
-    the team at a time — so both can only join this one after being removed
-    from the chain they are on.
+    ``assigned_elsewhere`` is people already placed on a different chain, with
+    the workflow named so the refusal message and the UI can both say where
+    they already sit. Each row also says ``kind``: a ``"member"`` is a normal
+    member of that chain (possibly on another team), while a ``"step"`` staffs
+    one of its steps. Neither is offerable here — a person is a normal member
+    of one workflow, and otherwise serves one of the team's chains at a time —
+    so both can only join this one after being removed from the chain they are
+    on.
     """
+    from users.models import EmployeeProfile, User
+
     team_profiles = list(
         EmployeeProfile.objects.filter(team=team, user__is_active=True)
         .select_related("user", "team")
         .order_by("user__first_name", "user__last_name", "user_id")
     )
-    memberships = WorkflowMember.objects.filter(team=team).select_related(
-        "workflow", "user"
+    # The membership rule is global, so a row on another team's chain counts
+    # too: read this team's memberships and those of the people it may offer.
+    membership_scope = Q(team=team) | Q(
+        user_id__in=[profile.user_id for profile in team_profiles]
+    )
+    memberships = WorkflowMember.objects.filter(membership_scope).select_related(
+        "workflow", "user", "team"
     )
     by_workflow: dict[int, list[WorkflowMember]] = {}
     for membership in memberships:
@@ -941,7 +1032,41 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
             )
 
     wide_ids = wide_approver_ids_for_team(team)
-    elsewhere_ids = (set(member_elsewhere) | set(approver_elsewhere)) - wide_ids
+    # include team manager as treatable same as wide for pool purposes
+    manager_id = getattr(team, "manager_id", None)
+    if manager_id is not None:
+        wide_ids = set(wide_ids) | {manager_id}
+        try:
+            from users.models import User
+            from users.models import EmployeeProfile
+
+            mgr_user = User.objects.filter(pk=manager_id, is_active=True).first()
+            if mgr_user and not any(p.user_id == manager_id for p in team_profiles):
+                try:
+                    mgr_profile = EmployeeProfile.objects.filter(user=mgr_user).select_related("user", "team").first()
+                    if mgr_profile:
+                        team_profiles.append(mgr_profile)
+                    else:
+                        # create a minimal-like profile object not needed; we'll handle in available
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    else:
+        try:
+            from teams.models import TeamRoleAssignment
+
+            mgr_ids = set(
+                TeamRoleAssignment.objects.filter(
+                    team=team, is_team_manager=True, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            wide_ids = set(wide_ids) | mgr_ids
+        except Exception:
+            pass
+    # A step elsewhere is exempt for a wide holder; a normal membership is not.
+    elsewhere_ids = set(member_elsewhere) | (set(approver_elsewhere) - wide_ids)
     profiles_by_user = {profile.user_id: profile for profile in team_profiles}
 
     elsewhere_payload: list[dict] = []
@@ -991,57 +1116,151 @@ def workflow_member_pool(*, team: Team, workflow: Workflow | None = None) -> dic
             )
         elsewhere_payload.append(payload)
 
-    available = [
-        _pool_person(profile)
-        for profile in team_profiles
-        if profile.user_id not in elsewhere_ids
-    ]
-    current = [
-        _pool_person(
-            next(p for p in team_profiles if p.user_id == user_id)
-        )
-        for user_id in sorted(current_ids)
-        if any(p.user_id == user_id for p in team_profiles)
-    ]
+    available = []
+    # Add team profiles that are available
+    for profile in team_profiles:
+        if profile.user_id in elsewhere_ids:
+            continue
+        available.append(_pool_person(profile))
+    # Ensure team manager is included if not already
+    manager_id = getattr(team, "manager_id", None)
+    if manager_id is not None and manager_id not in elsewhere_ids:
+        # check if already in available/current
+        if manager_id not in current_ids and not any(p["user"] == manager_id for p in available):
+            try:
+                from users.models import User
+                mgr = User.objects.filter(pk=manager_id, is_active=True).select_related("employee_profile").first()
+                if mgr:
+                    profile = getattr(mgr, "employee_profile", None)
+                    if profile is not None:
+                        available.append(_pool_person(profile))
+                    else:
+                        available.append(
+                            {
+                                "id": mgr.pk,
+                                "user": mgr.pk,
+                                "full_name": mgr.get_full_name() or mgr.username,
+                                "email": mgr.email,
+                                "designation": "",
+                                "category": "",
+                                "faculty": "",
+                                "grade": "",
+                                "is_active": mgr.is_active,
+                            }
+                        )
+            except Exception:
+                pass
+    else:
+        try:
+            from teams.models import TeamRoleAssignment
+            from users.models import User
+
+            mgr_ids = set(
+                TeamRoleAssignment.objects.filter(
+                    team=team, is_team_manager=True, user__is_active=True
+                ).values_list("user_id", flat=True)
+            )
+            for mid in mgr_ids:
+                if mid in elsewhere_ids or mid in current_ids:
+                    continue
+                if any(p["user"] == mid for p in available):
+                    continue
+                mgr = User.objects.filter(pk=mid, is_active=True).select_related("employee_profile").first()
+                if not mgr:
+                    continue
+                profile = getattr(mgr, "employee_profile", None)
+                if profile is not None:
+                    available.append(_pool_person(profile))
+                else:
+                    available.append(
+                        {
+                            "id": mgr.pk,
+                            "user": mgr.pk,
+                            "full_name": mgr.get_full_name() or mgr.username,
+                            "email": mgr.email,
+                            "designation": "",
+                            "category": "",
+                            "faculty": "",
+                            "grade": "",
+                            "is_active": mgr.is_active,
+                        }
+                    )
+        except Exception:
+            pass
+    current = []
+    for user_id in sorted(current_ids):
+        profile = next((p for p in team_profiles if p.user_id == user_id), None)
+        if profile is not None:
+            current.append(_pool_person(profile))
+        else:
+            # Try to get user directly
+            try:
+                from users.models import User
+                mgr = User.objects.filter(pk=user_id, is_active=True).select_related("employee_profile").first()
+                if mgr:
+                    profile = getattr(mgr, "employee_profile", None)
+                    if profile is not None:
+                        current.append(_pool_person(profile))
+                    else:
+                        current.append(
+                            {
+                                "id": mgr.pk,
+                                "user": mgr.pk,
+                                "full_name": mgr.get_full_name() or mgr.username,
+                                "email": mgr.email,
+                                "designation": "",
+                                "category": "",
+                                "faculty": "",
+                                "grade": "",
+                                "is_active": mgr.is_active,
+                            }
+                        )
+                else:
+                    continue
+            except Exception:
+                continue
     # Members of the current workflow who are no longer active team members
     # still appear under ``current`` so the edit screen can show and clear them.
     current_user_ids = {row["user"] for row in current}
     for membership in by_workflow.get(workflow.pk if workflow else None, []) or []:
         if membership.user_id in current_user_ids:
             continue
-        current.append(
-            {
-                "id": membership.user_id,
-                "user": membership.user_id,
-                "full_name": _member_display_name(membership.user),
-                "email": membership.user.email,
-                "designation": getattr(
-                    getattr(membership.user, "employee_profile", None),
-                    "designation",
-                    "",
-                )
-                or "",
-                "category": getattr(
-                    getattr(membership.user, "employee_profile", None),
-                    "category",
-                    "",
-                )
-                or "",
-                "faculty": getattr(
-                    getattr(membership.user, "employee_profile", None),
-                    "faculty",
-                    "",
-                )
-                or "",
-                "grade": getattr(
-                    getattr(membership.user, "employee_profile", None),
-                    "grade",
-                    "",
-                )
-                or "",
-                "is_active": membership.user.is_active,
-            }
-        )
+        try:
+            current.append(
+                {
+                    "id": membership.user_id,
+                    "user": membership.user_id,
+                    "full_name": _member_display_name(membership.user),
+                    "email": membership.user.email,
+                    "designation": getattr(
+                        getattr(membership.user, "employee_profile", None),
+                        "designation",
+                        "",
+                    )
+                    or "",
+                    "category": getattr(
+                        getattr(membership.user, "employee_profile", None),
+                        "category",
+                        "",
+                    )
+                    or "",
+                    "faculty": getattr(
+                        getattr(membership.user, "employee_profile", None),
+                        "faculty",
+                        "",
+                    )
+                    or "",
+                    "grade": getattr(
+                        getattr(membership.user, "employee_profile", None),
+                        "grade",
+                        "",
+                    )
+                    or "",
+                    "is_active": membership.user.is_active,
+                }
+            )
+        except Exception:
+            continue
 
     workflow_payload = None
     if workflow is not None:
@@ -1185,10 +1404,10 @@ def team_member_summaries(team: Team) -> list[dict]:
                 "user": user.pk,
                 "full_name": _member_display_name(user),
                 "email": user.email,
-                "designation": profile.designation,
-                "category": profile.category,
-                "faculty": profile.faculty,
-                "grade": profile.grade,
+                "designation": profile.designation or "",
+                "category": profile.category or "",
+                "faculty": profile.faculty or "",
+                "grade": profile.grade or "",
                 "is_active": user.is_active,
                 "is_section_approver": user.pk in approver_user_ids,
                 "team_role": role_holdings.get(user.pk),
@@ -1202,4 +1421,40 @@ def team_member_summaries(team: Team) -> list[dict]:
                 "workflow_count": len(memberships),
             }
         )
+    
+    # Ensure team manager appears in roster
+    manager_user = getattr(team, "manager", None)
+    if manager_user and manager_user.is_active:
+        manager_id = getattr(manager_user, "pk")
+        # Check if already in rows
+        if not any(r.get("user") == manager_id for r in rows):
+            memberships = memberships_by_user.get(manager_id, [])
+            # Try to get profile for designation etc
+            profile = getattr(manager_user, "employee_profile", None)
+            rows.append(
+                {
+                    "id": manager_id,
+                    "user": manager_id,
+                    "full_name": _member_display_name(manager_user),
+                    "email": manager_user.email or "",
+                    "designation": getattr(profile, "designation", "") or "",
+                    "category": getattr(profile, "category", "") or "",
+                    "faculty": getattr(profile, "faculty", "") or "",
+                    "grade": getattr(profile, "grade", "") or "",
+                    "is_active": manager_user.is_active,
+                    "is_section_approver": manager_id in approver_user_ids,
+                    "team_role": role_holdings.get(manager_id) or "team_manager",
+                    "workflow_memberships": [
+                        {
+                            "workflow_id": m.workflow_id,
+                            "workflow_name": m.workflow.name,
+                        }
+                        for m in memberships
+                    ],
+                    "workflow_count": len(memberships),
+                }
+            )
+            # Sort so manager/name order is consistent
+            rows.sort(key=lambda r: (r.get("full_name", ""), r.get("user", 0)))
+    
     return rows

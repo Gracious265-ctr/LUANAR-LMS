@@ -200,8 +200,7 @@ def _rules_block(application: LeaveApplication) -> dict:
     return {
         "leave_type": leave_type_block(application),
         "holidays": [
-            _iso_date(day) if isinstance(day, str) else day
-            for day in (snapshot.get("holidays") or [])
+            _iso_date(day) for day in (snapshot.get("holidays") or [])
         ],
         "working_days": snapshot.get("working_days")
         or application.working_days,
@@ -413,6 +412,36 @@ def _stage_block(
         if responsible_id == stage.assigned_approver_id and acting_id != stage.assigned_approver_id:
             # A delegate covering for the configured approver (D3).
             acting_for = _user_name(responsible_id)
+    eligible_names = [
+        name
+        for name in (_user_name(uid) for uid in stage.eligible_approver_ids())
+        if name
+    ]
+    # If we still don't have a name (e.g. decision not yet claimed/assigned
+    # in a way we didn't expect), try to resolve a responsible/acting name
+    # from eligibility or from the decision if present.
+    if not approver_name and decision is not None:
+        approver_name = decision.approver_name or (
+            decision.approver.get_full_name() or decision.approver.username
+            if getattr(decision, "approver_id", None)
+            else None
+        )
+    elif not approver_name and stage.status == ApplicationStage.Status.PENDING:
+        # Try to get acting/responsible from service helpers
+        try:
+            from .services import acting_approver_id, responsible_approver_id
+
+            rid = responsible_id if responsible_id is not None else responsible_approver_id(stage.application)
+            aid = acting_id if acting_id is not None else acting_approver_id(stage.application)
+            if aid:
+                approver_name = _user_name(aid)
+            if not approver_name and rid:
+                approver_name = _user_name(rid)
+        except Exception:
+            pass
+    # For pending stages, show eligible approver name if still no specific name
+    if not approver_name and stage.status == ApplicationStage.Status.PENDING and eligible_names:
+        approver_name = eligible_names[0]
     return {
         "order": stage.stage_order,
         "role": stage.role,
@@ -420,16 +449,12 @@ def _stage_block(
         "status": stage.status,
         "submission_cycle": stage.submission_cycle,
         "decision_version": stage.decision_version,
-        "assigned_approver": assigned_name,
+        "assigned_approver": assigned_name or approver_name,
         "approver": approver_name,
         "acting_for": acting_for,
         # Who was entitled to act, read from the eligibility snapshot taken at
         # submission. A decided step keeps the record of who *could* have acted.
-        "eligible_approvers": [
-            name
-            for name in (_user_name(uid) for uid in stage.eligible_approver_ids())
-            if name
-        ],
+        "eligible_approvers": eligible_names,
         "assigned_at": _iso(stage.created_at),
         "decided_at": _iso(decision.decided_at if decision else None),
         "comment": decision.comment if decision else None,
@@ -625,7 +650,18 @@ def _current_snapshot_payload(application: LeaveApplication) -> dict:
 
 
 def _iso_date(value):
-    return value.isoformat() if value else None
+    """An ISO date string for ``value``, whichever way it is stored.
+
+    Rules snapshots keep holidays as ISO strings (see
+    ``leave.services.submission.build_rules_snapshot``), while dates read off a
+    model are :class:`datetime.date` objects. Accepting both here is what keeps
+    the review payload from calling ``isoformat()`` on a string.
+    """
+    if not value:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
 
 
 def _iso(value):

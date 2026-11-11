@@ -75,14 +75,14 @@ describe("EntitlementForm", () => {
     expect(screen.getByLabelText("Leave type")).toBeInTheDocument();
   });
 
-  it("says annual leave is provisioned for the band", () => {
+  it("does not repeat the annual-leave provisioning hint", () => {
     render(
       <EntitlementForm endpoint="/api/v1/entitlements/" method="POST" />
     );
 
     expect(
-      screen.getByText(/Annual Leave is created for you/)
-    ).toBeInTheDocument();
+      screen.queryByText(/Annual Leave is created for you/)
+    ).not.toBeInTheDocument();
   });
 
   it("sends null when the band is left on annual leave", async () => {

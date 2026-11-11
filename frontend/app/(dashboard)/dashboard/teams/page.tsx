@@ -1,9 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { CampusQuickAdd } from "@/components/hr/campus-form";
 import { TeamsSection } from "@/components/hr/TeamsSection";
-import type { ApproverRole } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
 import {
   listApproverRoles,
   listCampusRoleAssignments,
@@ -22,7 +25,6 @@ import {
 import { FadeIn } from "@/components/motion/FadeIn";
 
 const TEAMS_ERROR = "Unable to load teams. Please try again.";
-const CAMPUSES_ERROR = "Unable to load campuses. Please try again.";
 const ROLES_ERROR = "Unable to load approver roles. Please try again.";
 
 /**
@@ -53,56 +55,59 @@ async function TeamsPage({
 
   // The create overlay needs its option set on the page, so it is read here
   // rather than on open: the campuses an academic team may sit at, the approver
-  // roles its chain picks one of per step, the employees its manager may be
-  // chosen from, and every current wide holder — a person holds only one wide
-  // approver role, so those are excluded from the manager picker.
+  // roles its chain picks one of per step, and the employees its manager may be
+  // chosen from. Whose wide holdings are already spoken for is read too,
+  // because a person holds one wide approver role: naming a manager who already
+  // has one means they run the team without a second holding, while everybody
+  // else is given the team-wide role the create form asks for.
   //
   // A manager creates no teams (that is an HR decision), so for them none of it
   // is read: every one of these endpoints is HR-only, and asking would only fill
   // the page with errors about a form they never open.
   const [
     teamsResult,
-    campusesResult,
+    campuses,
     rolesResult,
     employeesResult,
-    institutionHoldingsResult,
-    teamHoldingsResult,
-    campusHoldingsResult,
+    institutionHoldings,
+    teamHoldings,
+    campusHoldings,
   ] = await Promise.all([
-    listTeams({ includeInactive: showRetired }).then(
-      (value) => ({ value, error: "" }),
-      () => ({ value: [] as Team[], error: TEAMS_ERROR })
-    ),
-    isAdministrator
-      ? listCampuses().then(
-          (value) => ({ value, error: "" }),
-          () => ({ value: [] as Campus[], error: CAMPUSES_ERROR })
-        )
-      : Promise.resolve({ value: [] as Campus[], error: "" }),
-    isAdministrator
-      ? listApproverRoles().then(
-          (value) => ({ value, error: "" }),
-          () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
-        )
-      : Promise.resolve({ value: [] as ApproverRole[], error: "" }),
-    isAdministrator
-      ? listAllEmployees().catch(() => [] as Employee[])
-      : Promise.resolve([] as Employee[]),
-    isAdministrator ? listRoleAssignments().catch(() => []) : Promise.resolve([]),
-    isAdministrator
-      ? listTeamRoleAssignments().catch(() => [])
-      : Promise.resolve([]),
-    isAdministrator
-      ? listCampusRoleAssignments().catch(() => [])
-      : Promise.resolve([]),
-  ]);
+      listTeams({ includeInactive: showRetired }).then(
+        (value) => ({ value, error: "" }),
+        () => ({ value: [] as Team[], error: TEAMS_ERROR })
+      ),
+      isAdministrator
+        ? listCampuses().catch(() => [] as Campus[])
+        : Promise.resolve([] as Campus[]),
+      isAdministrator
+        ? listApproverRoles().then(
+            (value) => ({ value, error: "" }),
+            () => ({ value: [] as ApproverRole[], error: ROLES_ERROR })
+          )
+        : Promise.resolve({ value: [] as ApproverRole[], error: "" }),
+      isAdministrator
+        ? listAllEmployees().catch(() => [] as Employee[])
+        : Promise.resolve([] as Employee[]),
+      isAdministrator
+        ? listRoleAssignments().catch(() => [] as RoleAssignment[])
+        : Promise.resolve([] as RoleAssignment[]),
+      isAdministrator
+        ? listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[])
+        : Promise.resolve([] as TeamRoleAssignment[]),
+      isAdministrator
+        ? listCampusRoleAssignments().catch(
+            () => [] as CampusRoleAssignment[]
+          )
+        : Promise.resolve([] as CampusRoleAssignment[]),
+    ]);
 
   const wideHolderUserIds = Array.from(
     new Set(
       [
-        ...institutionHoldingsResult,
-        ...teamHoldingsResult,
-        ...campusHoldingsResult,
+        ...institutionHoldings,
+        ...teamHoldings,
+        ...campusHoldings,
       ].map((assignment) => assignment.user)
     )
   );
@@ -111,12 +116,21 @@ async function TeamsPage({
   // list of one is a click that answers nothing, so they land straight on the
   // team they came to configure. HR and superusers keep the list: it is their
   // roster of every team, and the point of the page for them.
+  //
+  // An empty roster is the one thing a manager cannot act on from the team
+  // page — every other tab describes a team that has nobody to route — so the
+  // landing goes straight to the page that fills it.
   if (
     !isAdministrator &&
     !teamsResult.error &&
     teamsResult.value.length === 1
   ) {
-    redirect(`/dashboard/teams/${teamsResult.value[0].id}`);
+    const [team] = teamsResult.value;
+    redirect(
+      team.roster_count === 0
+        ? `/dashboard/teams/${team.id}/members/add`
+        : `/dashboard/teams/${team.id}`
+    );
   }
 
   const filters = [
@@ -135,7 +149,7 @@ async function TeamsPage({
         <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
           <TeamsSection
             teams={teamsResult.value}
-            campuses={campusesResult.value}
+            campuses={campuses}
             roles={rolesResult.value}
             rolesError={rolesResult.error}
             employees={employeesResult}
@@ -145,29 +159,6 @@ async function TeamsPage({
             canCreate={isAdministrator}
           />
         </div>
-
-        {isAdministrator && (
-          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold text-text-primary">
-                Campuses
-              </h3>
-              <Link
-                href="/dashboard/hr-admin/campuses"
-                className="text-sm font-medium text-brand-primary hover:text-brand-primary-hover"
-              >
-                Manage campuses
-              </Link>
-            </div>
-            {campusesResult.error ? (
-              <p className="text-sm text-status-rejected">
-                {campusesResult.error}
-              </p>
-            ) : (
-              <CampusQuickAdd campuses={campusesResult.value} />
-            )}
-          </div>
-        )}
       </div>
     </FadeIn>
   );
