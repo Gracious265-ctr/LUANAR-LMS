@@ -39,9 +39,18 @@ export interface TeamsSectionProps {
   /**
    * Everyone the create overlay's manager picker may offer. The manager is
    * designated when the team is created, so the people who may run it have to
-   * be on the page before the overlay opens. Any active employee may be named.
+   * be on the page before the overlay opens.
    */
   employees?: Employee[];
+  /**
+   * People who already hold a wide approver role somewhere in the institution.
+   *
+   * A person holds one wide role, so somebody on this list cannot also take the
+   * team-wide role a create asks for. They are still eligible to run a team —
+   * the designation lives on the team — and the form says so rather than
+   * offering a role the save would refuse.
+   */
+  wideHolderUserIds?: number[];
   /**
    * The retired/in-force toggle.
    *
@@ -84,6 +93,7 @@ export function TeamsSection({
   roles,
   rolesError,
   employees = [],
+  wideHolderUserIds = [],
   filters = [],
   error,
   canCreate = true,
@@ -191,6 +201,7 @@ export function TeamsSection({
             roles={roles}
             rolesError={rolesError}
             employees={employees}
+            wideHolderUserIds={wideHolderUserIds}
             onSuccess={() => {
               overlay.close();
               router.refresh();

@@ -19,6 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
+import type { WideHolding } from "@/lib/wide-holdings";
+
+export type { WideHolding } from "@/lib/wide-holdings";
 
 /** The three places a role may be held, narrowest first. */
 export type WideScope = "institution" | "team" | "campus";
@@ -31,29 +34,6 @@ export const WIDE_SCOPE_LABELS: Record<WideScope, string> = {
 
 export function wideScopeLabel(scope: WideScope): string {
   return WIDE_SCOPE_LABELS[scope];
-}
-
-/**
- * One holding, whatever its scope: the role, the person, and the scope it is
- * held at. The shape is the same at all three levels on purpose, so one panel
- * can render and write all three.
- */
-export interface WideHolding {
-  id: number;
-  role: number;
-  user: number;
-  user_name: string;
-  role_label: string;
-  /**
-   * The team's single designated manager, on a team-wide holding only.
-   *
-   * A manager is a team-wide approver who additionally runs the team's own
-   * members and workflow configuration, so the flag rides the holding rather
-   * than the person and is written by HR through the set-manager action. The
-   * campus and institution-wide scopes never carry it — there is nothing for
-   * them to manage.
-   */
-  is_team_manager?: boolean;
 }
 
 /**
@@ -139,6 +119,7 @@ export function WideHoldingPanel({
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [roleId, setRoleId] = useState("");
   const [scopeValue, setScopeValue] = useState("");
@@ -186,6 +167,7 @@ export function WideHoldingPanel({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    setNotice("");
     setBusy(true);
 
     const formData = new FormData(event.currentTarget);
@@ -244,6 +226,7 @@ export function WideHoldingPanel({
           await createRoleAssignment({ role, user });
         }
       }
+      setNotice("Holder saved.");
       router.refresh();
     } catch (err) {
       setError(
@@ -258,6 +241,7 @@ export function WideHoldingPanel({
 
   async function handleRemove(holding: WideHolding) {
     setError("");
+    setNotice("");
     setBusy(true);
     try {
       if (scope === "team") {
@@ -267,6 +251,7 @@ export function WideHoldingPanel({
       } else {
         await removeRoleAssignment(holding.id);
       }
+      setNotice(`${holding.user_name} no longer holds ${holding.role_label}.`);
       router.refresh();
     } catch (err) {
       setError(
@@ -290,12 +275,15 @@ export function WideHoldingPanel({
    */
   async function handleToggleManager(holding: WideHolding) {
     setError("");
+    setNotice("");
     setBusy(true);
     try {
       if (holding.is_team_manager) {
         await clearTeamManager(holding.id);
+        setNotice(`${holding.user_name} no longer runs this team.`);
       } else {
         await setTeamManager(holding.id);
+        setNotice(`${holding.user_name} now runs this team.`);
       }
       router.refresh();
     } catch (err) {
@@ -370,6 +358,13 @@ export function WideHoldingPanel({
 
       {holdings.length === 0 && (
         <p className="mt-2 text-xs text-text-muted">No holders here.</p>
+      )}
+
+      {error && (
+        <p className="mt-3 text-xs text-status-rejected">{error}</p>
+      )}
+      {notice && (
+        <p className="mt-3 text-xs text-status-approved">{notice}</p>
       )}
 
       {!canManage ? (
@@ -476,7 +471,6 @@ export function WideHoldingPanel({
               </>
             )}
           </div>
-          {error && <p className="text-xs text-status-rejected">{error}</p>}
         </form>
       )}
     </div>

@@ -16,9 +16,9 @@ import type { Employee, EmployeeCategory } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import {
   WideHoldingPanel,
-  type WideHolding,
   type WideScope,
 } from "@/components/hr/wide-holding-panel";
+import { wideHoldingFrom } from "@/lib/wide-holdings";
 import { ScopeFilterSelect } from "@/components/hr/scope-filter-select";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyPanel } from "@/components/ui/states";
@@ -128,15 +128,15 @@ export default async function ApproversPage({
     category: "academic" as const,
   }));
 
-  const institutionHoldings = holders.institution.map(toHolding);
+  const institutionHoldings = holders.institution.map(wideHoldingFrom);
   const teamHoldings = holders.team
     .filter((assignment) => teamFilter === null || assignment.team === teamFilter)
-    .map(toHolding);
+    .map(wideHoldingFrom);
   const campusHoldings = holders.campus
     .filter(
       (assignment) => campusFilter === null || assignment.campus === campusFilter
     )
-    .map(toHolding);
+    .map(wideHoldingFrom);
 
   // A person holds one wide approver role, so everybody who already holds one
   // anywhere (read unfiltered, not just the scope shown) is offered nowhere.
@@ -311,19 +311,4 @@ export default async function ApproversPage({
 
     </div>
   );
-}
-
-function toHolding(
-  assignment:
-    | RoleAssignment
-    | TeamRoleAssignment
-    | CampusRoleAssignment
-): WideHolding {
-  return {
-    id: assignment.id,
-    role: assignment.role,
-    user: assignment.user,
-    user_name: assignment.user_name,
-    role_label: assignment.role_label,
-  };
 }

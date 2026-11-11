@@ -227,15 +227,16 @@ class WorkflowWriteSerializer(serializers.Serializer):
 
 
 class TeamManagerInputSerializer(serializers.Serializer):
-    """The person HR designates to run a team.
+    """The person HR designates to run a team, and the role they hold on it.
 
-    ``user`` is the manager; any active employee may be named, including an
-    institution-wide approver who holds no team-scoped role. ``role`` is the
-    optional team-wide holding the manager used to be required to have: when it
-    is supplied and team-scoped, the person is appointed to it and designated
-    through that holding. Omitting it — or naming an institution-wide role —
-    designates the person on the team itself, which is the field every
-    management check reads.
+    ``user`` is the manager. ``role`` is the team-wide holding they take on the
+    team, which is the shape the create form sends: the appointment is the
+    person *and* the post, so the new manager is on the team's approver list from
+    the start. It is omitted for somebody who already holds a wide approver role
+    anywhere — a person holds one — and, since an institution-wide role cannot
+    be held *for* a team, naming one is the same as naming nobody. In both of
+    those cases the person is designated on the team itself, which is the field
+    every management check reads.
     """
 
     role = serializers.PrimaryKeyRelatedField(

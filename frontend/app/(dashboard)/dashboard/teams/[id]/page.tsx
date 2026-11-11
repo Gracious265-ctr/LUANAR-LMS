@@ -38,6 +38,7 @@ import {
   teamStatusLabel,
 } from "@/lib/teams";
 import type { WideHolding } from "@/components/hr/wide-holding-panel";
+import { wideHoldingFrom } from "@/lib/wide-holdings";
 import { WideHoldingPanel } from "@/components/hr/wide-holding-panel";
 import { FadeIn } from "@/components/motion/FadeIn";
 import { Badge } from "@/components/ui/badge";
@@ -183,13 +184,7 @@ export default async function TeamPage({
 
   const holdings: WideHolding[] = holdersResult
     .filter((assignment) => assignment.team === team.id)
-    .map((assignment) => ({
-      id: assignment.id,
-      role: assignment.role,
-      user: assignment.user,
-      user_name: assignment.user_name,
-      role_label: assignment.role_label,
-    }));
+    .map(wideHoldingFrom);
   // A person holds one wide approver role, so everyone who already holds one
   // anywhere (institution, any team, any campus) is offered nowhere.
   const wideHolderUserIds = Array.from(

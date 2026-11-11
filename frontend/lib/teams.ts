@@ -245,11 +245,12 @@ export interface TeamInput {
    */
   new_workflow?: TeamWorkflowInput;
   /**
-   * The manager designated at creation. Only the person is required; an
-   * optional team-scoped `role` appoints a team-wide holding as well, which is
-   * the older shape. An institution-wide approver is named with `user` alone,
-   * because they hold no team-scoped role to flag. A team's manager is changed
-   * from its Approvers tab afterwards.
+   * The manager designated at creation, and the team-wide role they hold on
+   * the new team. The role is the appointment's other half: without it the
+   * manager runs the team but is not on its approver list. A person who already
+   * holds a wide approver role anywhere is named with `user` alone, because a
+   * person holds one wide role and the designation lives on the team. A team's
+   * manager is changed from its Approvers tab afterwards.
    */
   manager?: { user: number; role?: number };
 }

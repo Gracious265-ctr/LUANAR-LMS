@@ -37,12 +37,16 @@ interface DraftSection {
  *
  * Creating a team asks what the team *is* — its kind, academic or
  * administration, its campus when it is academic, its name, and its window —
- * and then who runs it: one person, chosen by name. The manager need not hold a
- * team-scoped role, because the designation is the team's own `manager` field;
- * an institution-wide approver is a valid choice. The team is written as a
- * chainless draft, and the manager is the only one who configures its members,
- * its chains, and which chain routes, so HR's part ends at naming them; the next
- * screen is the new team's Members tab, where its roster is built.
+ * and then who runs it: one person, chosen by name, **and the team-wide role
+ * they hold on it**. The role is part of the appointment rather than something
+ * HR adds afterwards, so the new manager is a real holder on the team from the
+ * first screen that lists approvers. The one exception is a person who already
+ * holds a wide approver role somewhere: a person holds one, so they are
+ * designated on the team itself and the form says why no second role is
+ * offered. The team is written as a chainless draft, and the manager is the only
+ * one who configures its members, its chains, and which chain routes, so HR's
+ * part ends at naming them; the next screen is the new team's Members tab, where
+ * its roster is built.
  *
  * Editing keeps the two-page shape. Page one is the same details; page two is
  * who decides for the team, one named person per step. Eligibility is answered
@@ -62,6 +66,7 @@ export function TeamForm({
   roles: initialRoles,
   rolesError = "",
   employees = [],
+  wideHolderUserIds = [],
   onSuccess,
   onCancel,
 }: {
@@ -73,11 +78,21 @@ export function TeamForm({
   /**
    * Everyone the create form's manager picker may offer: the manager is named
    * when the team is created, so the people who may run it have to be known
-   * before the save. Any active employee is eligible — the manager is not
-   * required to hold a team-scoped role, and may be an institution-wide
-   * approver.
+   * before the save. A person who already holds a wide approver role anywhere is
+   * eligible whatever their category, because they are designated on the team
+   * itself; everybody else is offered as the holder of a team-wide role, which
+   * the backend scopes to the team's own category.
    */
   employees?: Employee[];
+  /**
+   * People who already hold a wide approver role somewhere in the institution.
+   *
+   * A person holds one wide role, so these people cannot also take the team-wide
+   * role the create form asks for. They are still eligible to run a team — the
+   * designation lives on the team — and the form disables the role picker with
+   * the reason rather than letting the save fail.
+   */
+  wideHolderUserIds?: number[];
   /**
    * Called with the saved team instead of navigating, so a host overlay can
    * close and refresh in place. Omit it and the form navigates itself, which is
@@ -119,8 +134,11 @@ export function TeamForm({
       : []
   );
   // The manager is named on the create form's second page. It is a create-only
-  // decision: an existing team's manager is changed from its Approvers tab.
+  // decision: an existing team's manager is changed from its Approvers tab. The
+  // role is the team-wide holding they take on the new team, asked for in the
+  // same breath so the appointment does not land as half a decision.
   const [managerUserId, setManagerUserId] = useState("");
+  const [managerRoleId, setManagerRoleId] = useState("");
 
   /**
    * The pages, in order, as the progress rail names them. Creating ends on the
@@ -141,18 +159,44 @@ export function TeamForm({
   /**
    * The people who may run this team.
    *
-   * Every active employee with a record, in either half of the institution: the
-   * manager is designated on the team itself, so an institution-wide approver —
-   * who holds no team-scoped role — is a valid choice. Being a wide holder is
-   * not a bar either: running a team is a post, not a second wide holding.
+   * Anybody already holding a wide approver role is eligible whatever their
+   * category, because they are designated on the team itself — the role graph
+   * allows them only one wide holding. Everybody else is offered as the holder
+   * of a team-wide role, and a team-wide holding must match the team's category,
+   * so the other half of the institution is not offered only to be refused on
+   * save.
    */
   const managerCandidates = useMemo(
     () =>
       [...employees]
-        .filter((employee) => employee.is_active)
+        .filter((employee) => {
+          if (!employee.is_active) return false;
+          if (wideHolderUserIds.includes(employee.user_id)) return true;
+          return employee.category === details.category;
+        })
         .sort((left, right) => left.full_name.localeCompare(right.full_name)),
-    [employees]
+    [employees, wideHolderUserIds, details.category]
   );
+
+  /** The roles a manager may hold on this team: active, and team-scoped. */
+  const managerRoles = useMemo(
+    () =>
+      roles.filter(
+        (role) => role.is_active && !role.is_institution_wide
+      ),
+    [roles]
+  );
+
+  const selectedManagerUserId = Number(managerUserId) || 0;
+  // A person holds one wide approver role, so somebody who already has one runs
+  // the team without a second holding; the form explains that instead of asking
+  // for a role the backend would refuse.
+  const managerHoldsWideRole =
+    selectedManagerUserId !== 0 &&
+    wideHolderUserIds.includes(selectedManagerUserId);
+  const selectedManagerName =
+    employees.find((employee) => employee.user_id === selectedManagerUserId)
+      ?.full_name || "This person";
 
   /**
    * Eligibility is answered by the team, so a team that does not exist yet has
@@ -419,21 +463,31 @@ interface TeamDetails {
       return;
     }
 
-    // A team is handed to a manager the moment it exists. Only the person is
-    // required: the designation is the team's own `manager` field, so no
-    // team-scoped role has to exist for an institution-wide approver to run a
-    // team. The manager is a create-only decision — an existing team's manager
-    // is changed from its Approvers tab.
+    // A team is handed to a manager the moment it exists, and that appointment
+    // includes the team-wide role they hold on it: HR is not asked to remember a
+    // second screen. A person who already holds a wide approver role anywhere is
+    // the exception — one wide holding per person — so they are designated on
+    // the team itself and no role is sent. The manager is a create-only
+    // decision; an existing team's manager is changed from its Approvers tab.
     if (!team) {
       const managerUser = Number(managerUserId) || 0;
       if (!managerUser) {
+        setError("Choose who will manage this team.");
+        setLoading(false);
+        return;
+      }
+      const holdsWideRole = wideHolderUserIds.includes(managerUser);
+      const managerRole = Number(managerRoleId) || 0;
+      if (!holdsWideRole && !managerRole) {
         setError(
-          "Choose who will manage this team. Any active employee may be named, including an institution-wide approver."
+          "Choose the team-wide role this manager holds on the team. The person and their role are one appointment."
         );
         setLoading(false);
         return;
       }
-      input.manager = { user: managerUser };
+      input.manager = holdsWideRole
+        ? { user: managerUser }
+        : { user: managerUser, role: managerRole };
     }
 
     const named = describeSteps();
@@ -827,15 +881,55 @@ interface TeamDetails {
             ))}
           </select>
           <p className="mt-1 text-xs text-text-muted">
-            Any active employee may run the team, including an institution-wide
-            approver. They staff its roster, build its chains, and choose its
-            default; HR keeps its identity and lifecycle.
+            The manager runs the team — its roster, its chains, and which chain
+            routes. HR keeps its identity and lifecycle.
           </p>
           {managerCandidates.length === 0 ? (
             <p className="mt-1 text-xs text-status-pending">
               No active employees with a record were found to name.
             </p>
           ) : null}
+        </div>
+
+        <div className="md:col-span-2">
+          <label
+            htmlFor="manager-role"
+            className="mb-1 block text-sm font-medium text-text-primary"
+          >
+            Role on this team
+          </label>
+          <select
+            id="manager-role"
+            name="manager_role"
+            value={managerRoleId}
+            disabled={managerHoldsWideRole || managerRoles.length === 0}
+            onChange={(event) => setManagerRoleId(event.target.value)}
+            className="w-full rounded-md border border-input-border bg-input-background px-3 py-2 text-sm text-text-primary focus:border-input-border-focus focus:outline-none focus:ring-2 focus:ring-input-ring-focus disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="">Choose a role…</option>
+            {managerRoles.map((role) => (
+              <option key={role.id} value={role.id}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+          {managerHoldsWideRole ? (
+            <p className="mt-1 text-xs text-text-muted">
+              {selectedManagerName} already holds a wide approver role, and a
+              person holds one across the institution. They run this team
+              without a second holding.
+            </p>
+          ) : managerRoles.length === 0 ? (
+            <p className="mt-1 text-xs text-status-pending">
+              No active team-wide roles are available. Create one in Roles
+              first — it must not be institution-wide.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-text-muted">
+              The manager holds this role across the whole team, so they appear
+              as a holder from the team&apos;s first approvers screen.
+            </p>
+          )}
         </div>
 
         {error && (

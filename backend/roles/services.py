@@ -896,8 +896,20 @@ def set_team_manager(*, assignment: TeamRoleAssignment, actor) -> TeamRoleAssign
         ).exclude(pk=locked.pk).update(is_team_manager=False)
         locked.is_team_manager = True
         locked.save(update_fields=["is_team_manager"])
-        Team.objects.filter(pk=locked.team_id).update(manager_id=locked.user_id)
+        Team.objects.filter(pk=locked.team_id).update(
+            manager_id=locked.user_id, updated_at=timezone.now()
+        )
         team = locked.team
+        # A manager runs the team's roster, so naming them manager puts them on
+        # it. ``set_team_manager_for_user`` (the team page's picker) does the
+        # same, and which screen HR used must not decide the team's membership.
+        profile = _employee_profile_for(locked.user)
+        if profile is not None and profile.team_id != team.pk:
+            locked_profile = EmployeeProfile.objects.select_for_update().get(
+                pk=profile.pk
+            )
+            locked_profile.team = team
+            locked_profile.save(update_fields=["team"])
         record_audit(
             actor=actor,
             action=AuditEntry.Action.UPDATED,

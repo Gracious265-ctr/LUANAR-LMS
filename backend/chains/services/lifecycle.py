@@ -363,13 +363,15 @@ def _ensure_team_category(team: Team) -> None:
 def _designate_manager(*, team: Team, manager: dict, actor) -> None:
     """Make ``manager["user"]`` the team's manager.
 
-    ``manager`` is either ``{"user"}`` — a person, with no capability attached —
-    or ``{"role", "user"}``, the older shape that also appoints a team-scoped
-    role holding. A role is honoured only when it is team-scoped: an
-    institution-wide role cannot be held *for* a team, so naming one is the same
-    instruction as naming nobody and the person is designated on the team
-    itself. Either way the team's ``manager`` field ends up naming them, and the
-    designation is audited by the service that writes it.
+    ``manager`` is ``{"user", "role"}`` — the person and the team-wide role they
+    hold on the team, which is what the create form asks for — or ``{"user"}``
+    alone for somebody who already holds a wide approver role. A person holds one
+    wide role, so a second holding cannot be written for them; the designation
+    then lands on the team's own ``manager`` field. A role is honoured only when
+    it is team-scoped: an institution-wide role cannot be held *for* a team, so
+    naming one is the same instruction as naming nobody. Either way the team's
+    ``manager`` field ends up naming them, and the designation is audited by the
+    service that writes it.
     """
     role = manager.get("role")
     if role is not None and not role.is_institution_wide:
@@ -391,8 +393,13 @@ def _designate_manager(*, team: Team, manager: dict, actor) -> None:
             )
             locked_profile.team = team
             locked_profile.save(update_fields=["team"])
-        return
-    set_team_manager_for_user(team=team, user=manager["user"], actor=actor)
+    else:
+        set_team_manager_for_user(team=team, user=manager["user"], actor=actor)
+    # Both services write the designation through a locked copy of the team, so
+    # the instance ``create_team`` returns still says it has no manager. Keep it
+    # in step: the create response is read by the screen that just named them,
+    # and "manager_user: null" would say the appointment did not happen.
+    team.manager = manager["user"]
 
 
 def create_team(
@@ -420,13 +427,14 @@ def create_team(
     together or not at all: a half-built team with a chain but no steps is exactly
     the object that used to look configured and then fail at submission.
 
-    ``manager`` is ``{"user": <User>}`` — the person who runs the team — and may
-    optionally carry ``"role": <ApproverRole>``. When a team-scoped role is
-    named the person is appointed to it as a team-wide holding and designated
-    through that holding; otherwise (no role, or an institution-wide role that
-    cannot be held for a team) they are designated on the team itself, which is
-    the field every management check reads. An institution-wide approver is
-    named this way, because they have no team-scoped holding to flag.
+    ``manager`` is ``{"user": <User>, "role": <ApproverRole>}`` — the person who
+    runs the team and the team-wide role they hold on it. When a team-scoped role
+    is named the person is appointed to it as a team-wide holding and designated
+    through that holding. It may instead be ``{"user": <User>}`` alone, for
+    somebody who already holds a wide approver role somewhere: a person holds
+    one, and an institution-wide approver in particular has no team-scoped
+    holding to flag, so they are designated on the team itself — the field every
+    management check reads.
 
     A team starts **active**: creating it is the act of putting it in force, and
     HR does not confirm that afterwards — so there is no draft state and no

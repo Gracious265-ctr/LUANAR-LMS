@@ -2,6 +2,50 @@
 
 Update this file after every meaningful implementation change.
 
+## Team managers: the role is part of the appointment (2026-11-11)
+
+**Make manager did not report its own result.** The three pages that feed
+`WideHoldingPanel` mapped each API assignment to a `WideHolding` and copied only
+id/role/user/label, dropping `is_team_manager`. The panel chooses between "Make
+manager" and "Remove as manager" from that field, so the write succeeded, the
+page re-read, and the button still offered to make the same person manager —
+a button that looked broken while doing exactly what it was told. The mapping now
+lives in one client-safe `lib/wide-holdings.ts` (`wideHoldingFrom`), used by the
+team page, the HR approvers page, and the campus page, with a test that asserts
+the flag survives for a team-wide holding and is absent for the other scopes.
+The panel also reports success ("Jane now runs this team") and renders its error
+outside the form, so a refused toggle is visible even when no form is drawn.
+
+`set_team_manager` (the holding's action) now leaves the same state as
+`/teams/{id}/set-manager/`: it moves the manager's `EmployeeProfile.team` onto
+the team, so "which button HR used" cannot decide whether the manager is on the
+roster. Tests cover the roster move, the designation, and the one-wide-role
+exemption.
+
+**Creation now assigns the role too.** The create form named a manager and sent
+`manager: {user}` only, so the new manager held no team-wide role and did not
+appear on the team's approvers list — HR had to assign the role in a second
+place. Page two is now a person *and* a role: `manager: {user, role}` creates the
+team-wide holding with `is_team_manager=True` in the same transaction. The role
+picker offers active, team-scoped roles only. Manager candidates are the team's
+own category, because a team-wide holding is category-scoped; somebody who
+already holds a wide approver role anywhere is the exception (a person holds
+one), so they remain eligible whatever their category, the picker explains why,
+and the person is designated on the team itself. The teams page reads the three
+holder lists to know who those people are.
+
+Found while testing the create path: `_designate_manager` writes through a
+locked copy of the team, so the instance `create_team` serialized still said
+`manager_user: null`. It now sets the in-memory `team.manager` before returning,
+so the create response names the manager it just appointed.
+
+Backend `chains.tests_manager_access` **62 OK** (new `ManagerRoleAtCreationTests`:
+role assigned with the flag and roster move; person-only create for an existing
+wide holder) and `chains.tests_teams` + `chains.tests_workflow_members` **193
+OK**. Frontend **142 files / 1167 tests pass**, including the new
+`tests/wide-holdings.test.ts` and the manager-role create tests; `tsc` and
+targeted eslint clean.
+
 ## "Who decides at each step" now lists every chain (2026-11-11)
 
 The team page's steps tab rendered `<TeamMemberList team={team} />`, which maps

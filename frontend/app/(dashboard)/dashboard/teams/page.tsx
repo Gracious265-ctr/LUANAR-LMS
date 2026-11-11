@@ -1,8 +1,18 @@
 import { redirect } from "next/navigation";
 
 import { TeamsSection } from "@/components/hr/TeamsSection";
-import type { ApproverRole } from "@/lib/approver-roles";
-import { listApproverRoles } from "@/lib/approver-roles";
+import type {
+  ApproverRole,
+  CampusRoleAssignment,
+  RoleAssignment,
+  TeamRoleAssignment,
+} from "@/lib/approver-roles";
+import {
+  listApproverRoles,
+  listCampusRoleAssignments,
+  listRoleAssignments,
+  listTeamRoleAssignments,
+} from "@/lib/approver-roles";
 import type { Employee } from "@/lib/employees";
 import { listAllEmployees } from "@/lib/employees";
 import type { Campus, Team } from "@/lib/teams";
@@ -46,14 +56,23 @@ async function TeamsPage({
   // The create overlay needs its option set on the page, so it is read here
   // rather than on open: the campuses an academic team may sit at, the approver
   // roles its chain picks one of per step, and the employees its manager may be
-  // chosen from. The manager may be any active employee, so the whole directory
-  // is read rather than one category's half.
+  // chosen from. Whose wide holdings are already spoken for is read too,
+  // because a person holds one wide approver role: naming a manager who already
+  // has one means they run the team without a second holding, while everybody
+  // else is given the team-wide role the create form asks for.
   //
   // A manager creates no teams (that is an HR decision), so for them none of it
   // is read: every one of these endpoints is HR-only, and asking would only fill
   // the page with errors about a form they never open.
-  const [teamsResult, campuses, rolesResult, employeesResult] =
-    await Promise.all([
+  const [
+    teamsResult,
+    campuses,
+    rolesResult,
+    employeesResult,
+    institutionHoldings,
+    teamHoldings,
+    campusHoldings,
+  ] = await Promise.all([
       listTeams({ includeInactive: showRetired }).then(
         (value) => ({ value, error: "" }),
         () => ({ value: [] as Team[], error: TEAMS_ERROR })
@@ -70,7 +89,28 @@ async function TeamsPage({
       isAdministrator
         ? listAllEmployees().catch(() => [] as Employee[])
         : Promise.resolve([] as Employee[]),
+      isAdministrator
+        ? listRoleAssignments().catch(() => [] as RoleAssignment[])
+        : Promise.resolve([] as RoleAssignment[]),
+      isAdministrator
+        ? listTeamRoleAssignments().catch(() => [] as TeamRoleAssignment[])
+        : Promise.resolve([] as TeamRoleAssignment[]),
+      isAdministrator
+        ? listCampusRoleAssignments().catch(
+            () => [] as CampusRoleAssignment[]
+          )
+        : Promise.resolve([] as CampusRoleAssignment[]),
     ]);
+
+  const wideHolderUserIds = Array.from(
+    new Set(
+      [
+        ...institutionHoldings,
+        ...teamHoldings,
+        ...campusHoldings,
+      ].map((assignment) => assignment.user)
+    )
+  );
 
   // A manager oversees a handful of teams at most, and often exactly one. A
   // list of one is a click that answers nothing, so they land straight on the
@@ -113,6 +153,7 @@ async function TeamsPage({
             roles={rolesResult.value}
             rolesError={rolesResult.error}
             employees={employeesResult}
+            wideHolderUserIds={wideHolderUserIds}
             error={teamsResult.error}
             filters={filters}
             canCreate={isAdministrator}
