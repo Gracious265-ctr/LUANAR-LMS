@@ -101,6 +101,20 @@ describe("LeaveDashboardPage", () => {
     expect(screen.getByText(/Not enough notice\./)).toBeInTheDocument();
   });
 
+  it("presents the balance figures as a card rather than loose in the rail", () => {
+    // The rail answers one question — how much leave is left — so the heading
+    // and its rings are one panel, drawn with the design system's card surface,
+    // instead of a heading floating above uncontained rings.
+    mockDashboard({ data: data() });
+
+    render(<LeaveDashboardPage />);
+
+    const card = screen.getByRole("heading", { name: "Your Balance" })
+      .parentElement;
+    expect(card).toHaveClass("bg-surface-card");
+    expect(card).toHaveClass("shadow-card");
+  });
+
   it("hides the needs-attention section when empty", () => {
     mockDashboard({ data: data() });
 

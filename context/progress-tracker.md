@@ -2,6 +2,22 @@
 
 Update this file after every meaningful implementation change.
 
+## "Your Balance" is one card (2026-11-11)
+
+The balance rail's heading floated above uncontained rings: `Your Balance`,
+then a bare `21 / days left / Annual Leave / 0 of 21 days used` in the rail,
+so it read as stray figures beside the lists rather than a panel. The section
+now wraps the heading, the rings, and the no-balances message in `Card` — the
+design system's `rounded-sm bg-surface-card p-8 shadow-card` surface — so the
+rail is a single panel with the same edge as every other card on the page. The
+loading placeholder matches its footprint: one `h-72` rounded block instead of a
+fake heading plus two fake rings, so nothing jumps when the data lands.
+
+`tests/leave-dashboard.test.tsx` asserts the heading's parent carries
+`bg-surface-card` and `shadow-card`, so the panel cannot quietly regress to
+loose figures. Full frontend suite **142 files / 1168 tests pass**; `tsc` and
+targeted eslint clean.
+
 ## Team managers: the role is part of the appointment (2026-11-11)
 
 **Make manager did not report its own result.** The three pages that feed

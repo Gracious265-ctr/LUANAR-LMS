@@ -24,13 +24,10 @@ function DashboardSkeleton() {
             <Skeleton className="h-48 w-full rounded-xl" />
           </div>
         </div>
-        <div className="space-y-3 lg:col-start-2 lg:row-start-1">
-          <Skeleton className="h-6 w-32" />
-          <div className="flex flex-wrap gap-6">
-            {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-44 w-40 rounded-xl" />
-            ))}
-          </div>
+        <div className="lg:col-start-2 lg:row-start-1">
+          {/* The balance panel is one card now, so the placeholder is its
+              footprint rather than a heading plus loose ring blocks. */}
+          <Skeleton className="h-72 w-full rounded-xl" />
         </div>
       </div>
     </SkeletonRegion>
