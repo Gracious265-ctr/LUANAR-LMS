@@ -28,6 +28,9 @@ import {
 } from "@/lib/nav/teams-nav";
 import type { Team, WorkflowRef } from "@/lib/teams";
 import { getTeam, listTeamWorkflows } from "@/lib/teams";
+import { assembleChainSteps, teamChains } from "@/lib/team-chains";
+import type { WorkflowSection } from "@/lib/workflows";
+import { getWorkflow } from "@/lib/workflows";
 import {
   teamCategoryBadgeTone,
   teamCategoryLabel,
@@ -140,6 +143,44 @@ export default async function TeamPage({
     ]);
 
   const workflows = workflowsResult;
+
+  /**
+   * Every chain's steps, read chain by chain.
+   *
+   * The team payload carries only the steps of the chain it *routes* through
+   * (`Team.sections`), which is why this tab used to show one chain's work and
+   * nothing at all when that chain happened to have no steps. A team may own a
+   * second chain beside its default — a replacement HR builds one alongside it —
+   * and "who decides at each step" has an answer for each. So every chain is
+   * listed, the default one first, with the others read on their own.
+   *
+   * Only when this tab is open: extra requests are not worth paying for a viewer
+   * reading the overview.
+   */
+  const chains = teamChains(team, workflows);
+  const chainDetails: Record<number, WorkflowSection[] | null> =
+    tab === "steps"
+      ? Object.fromEntries(
+          await Promise.all(
+            chains
+              // The routed chain's steps are already in the team payload.
+              .filter((chain) => chain.id !== team.workflow)
+              .map(async (chain) => {
+                try {
+                  const detail = await getWorkflow(chain.id);
+                  return [chain.id, detail.sections] as const;
+                } catch {
+                  // One unreadable chain must not blank the tab: the others
+                  // still answer the question, and this one says so in place.
+                  return [chain.id, null] as const;
+                }
+              })
+          )
+        )
+      : {};
+  const chainSteps =
+    tab === "steps" ? assembleChainSteps(chains, team, chainDetails) : [];
+
   const holdings: WideHolding[] = holdersResult
     .filter((assignment) => assignment.team === team.id)
     .map((assignment) => ({
@@ -351,14 +392,99 @@ export default async function TeamPage({
       )}
 
       {tab === "steps" && (
-        <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
-          <h3 className="text-lg font-semibold text-text-primary">
-            Who decides at each step
-          </h3>
-          <p className="mt-1 text-sm text-text-secondary">The default chain, and who acts at each step.</p>
-          <div className="mt-4">
-            <TeamMemberList team={team} />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+            <h3 className="text-lg font-semibold text-text-primary">
+              Who decides at each step
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              Every chain this team owns — the default one it routes through, and
+              any other chain beside it — with who acts at each step. A step has
+              exactly one approver.
+            </p>
           </div>
+
+          {chainSteps.length === 0 ? (
+            <div className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
+              <p className="text-sm text-text-muted">
+                This team owns no chains yet, so there are no steps to staff.{" "}
+                <Link
+                  href={`/dashboard/teams/${team.id}/workflows/new`}
+                  className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                >
+                  Create a chain
+                </Link>{" "}
+                first.
+              </p>
+            </div>
+          ) : (
+            chainSteps.map(({ chain, steps }) => (
+              <section
+                key={chain.id}
+                aria-labelledby={`chain-${chain.id}-heading`}
+                className="rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4
+                      id={`chain-${chain.id}-heading`}
+                      className="text-base font-semibold text-text-primary"
+                    >
+                      {chain.name}
+                    </h4>
+                    {chain.is_routing && (
+                      <Badge tone="info" size="sm">
+                        Default chain
+                      </Badge>
+                    )}
+                  </div>
+                  <Link
+                    href={`/dashboard/teams/${team.id}/workflows/${chain.id}`}
+                    className="text-xs font-medium text-brand-primary hover:text-brand-primary-hover"
+                  >
+                    Open chain
+                  </Link>
+                </div>
+                <p className="mt-1 text-sm text-text-muted">
+                  {chain.is_routing
+                    ? "Where anyone who is not enrolled on a chain routes."
+                    : "Only the people enrolled on this chain route through it."}
+                </p>
+
+                <div className="mt-4">
+                  {steps === null ? (
+                    <p className="text-sm text-text-muted">
+                      This chain&apos;s steps could not be loaded.{" "}
+                      <Link
+                        href={`/dashboard/teams/${team.id}/workflows/${chain.id}`}
+                        className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                      >
+                        Open it
+                      </Link>{" "}
+                      to read them.
+                    </p>
+                  ) : steps.length === 0 ? (
+                    <p className="text-sm text-text-muted">
+                      This chain has no steps yet, so there is nobody to appoint.{" "}
+                      <Link
+                        href={`/dashboard/teams/${team.id}/workflows/${chain.id}/edit`}
+                        className="font-medium text-brand-primary hover:text-brand-primary-hover"
+                      >
+                        Add a step
+                      </Link>{" "}
+                      first.
+                    </p>
+                  ) : (
+                    <TeamMemberList
+                      team={team}
+                      sections={steps}
+                      workflowId={chain.id}
+                    />
+                  )}
+                </div>
+              </section>
+            ))
+          )}
         </div>
       )}
 
@@ -424,7 +550,7 @@ export default async function TeamPage({
           <p className="mt-1 text-sm text-text-secondary">People whose submissions this team&apos;s chains decide.</p>
           <div className="mt-4">
             <TeamMembersPanel
-              team={team as any}
+              team={team}
               canManage={team.is_team_manager}
             />
           </div>

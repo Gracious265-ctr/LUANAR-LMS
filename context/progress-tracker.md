@@ -2,6 +2,61 @@
 
 Update this file after every meaningful implementation change.
 
+## "Who decides at each step" now lists every chain (2026-11-11)
+
+The team page's steps tab rendered `<TeamMemberList team={team} />`, which maps
+`team.sections`. `Team.sections` carries the steps of the chain the team
+*routes* through and nothing else, so a team owning a second chain (a
+replacement HR builds beside the default) showed only one chain — and a team
+whose routed chain happened to have no steps said "this team has no approval
+steps" while another chain sat there fully staffed.
+
+**Reading it correctly.** The team payload cannot answer this: `Team.sections`
+is one chain's steps, and `Team.workflows` (`listTeamWorkflows`) is every chain
+but as a `WorkflowRef` — id, name, flag, count, no steps. So the tab now lists
+the chains the team owns and reads each non-routed one with `getWorkflow(id)`,
+whose `sections` carry the approver id and `approver_name`. The routed chain is
+*not* re-fetched; its steps are already in `team.sections`. Fetching is gated on
+`tab === "steps"` so a viewer reading the overview does not pay for it.
+
+**Ordering and fallback.** Default chain first (`is_routing`), then the rest by
+name — the list endpoint's order is not a meaning. `listTeamWorkflows` is caught
+to `[]` on failure up in the page, which would have made a routing team look like
+it owned no chains at all; `teamChains()` falls back to the routed chain from
+the team payload in that case.
+
+**Failures stay visible.** Each chain is read independently and a failed read
+becomes `steps: null`, not `[]`: an empty list renders as "this chain has no
+steps yet", which would be a false statement about a chain that simply could not
+be loaded. An unreadable chain keeps its place in the listing with its own
+message and a link to open it.
+
+**Where the logic lives.** `teamChains()` and `assembleChainSteps()` are pure,
+so they went into a new client-safe `lib/team-chains.ts` rather than
+`lib/teams.ts` — the latter imports `api-client`, which imports `next/headers`,
+which makes its runtime functions unusable in jsdom and drags server-only code
+into anything that touches it. `ChainStep` is the reduced shape both
+`TeamSection` and `WorkflowSection` satisfy.
+
+**Component.** `TeamMemberList` takes optional `sections` (default
+`team.sections`) and `workflowId` (default `team.workflow`), the latter forwarded
+to `listEligibleApprovers` so each chain offers only people eligible for *that*
+chain. The empty-state copy is now "This chain has no steps yet…" because the
+component no longer necessarily speaks for the whole team. The tab renders one
+card per chain with a "Default chain" badge, a per-chain "Add a step" /
+"Open chain" link, and one row of copy explaining routing ("where anyone not
+enrolled on a chain routes") versus enrolment.
+
+Also removed a pre-existing `team as any` cast on the same page; the
+`TeamMembersPanel` prop already accepts `Team`.
+
+**Verification.** New `tests/team-chains.test.ts` (8 tests: default-first
+ordering, name ordering, list-failure fallback, no-chains case, routed-chain
+reuse, unstaffed step, unreadable and missing chains). `tests/team-member-list.test.tsx`
+is 9 tests, including per-chain props and eligible-approver scoping. Full suite
+**141 files / 1159 tests pass**; `tsc -p tsconfig.test.json` and targeted eslint
+clean.
+
 ## Table header band: one step stronger (2026-11-10)
 
 The band moved from `bg-surface-muted` to `bg-surface-subtle`, one step away from
