@@ -2,6 +2,25 @@
 
 Update this file after every meaningful implementation change.
 
+## The balance card matches the stat cards' height (2026-11-17)
+
+The balance card was a tall panel beside two short stat cards: the ring sat
+above its label and caption, so `p-8` + heading + 120px ring made it about 100px
+taller than Pending Applications and Upcoming Leave. The ring now sits *beside*
+its label and the caption, and `BalanceRing` takes a `size` (80px here, with a
+thinner 8px stroke) — vertical cost is the dial alone, so the card lands on the
+stat cards' 172px line. The heading uses the stat cards' own title style
+(`text-sm font-medium text-text-secondary`), and `min-h-[10.75rem]` keeps the
+footprint when there are no balances to draw.
+
+Because the ring's labels no longer sit under the dial, they are laid out in a
+text column beside it, which also uses the rail's spare width instead of leaving
+it empty. The loading placeholder dropped from `h-72` to `h-44` to match. A
+test pins the card's min-height alongside the surface classes, and another
+asserts `BalanceRing` honours the size it is given.
+
+Frontend **142 files / 1169 tests pass**; `tsc` and targeted eslint clean.
+
 ## "Your Balance" is one card (2026-11-11)
 
 The balance rail's heading floated above uncontained rings: `Your Balance`,

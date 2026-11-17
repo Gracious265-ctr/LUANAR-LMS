@@ -113,6 +113,9 @@ describe("LeaveDashboardPage", () => {
       .parentElement;
     expect(card).toHaveClass("bg-surface-card");
     expect(card).toHaveClass("shadow-card");
+    // The rail card shares the stat cards' footprint, so the top row reads as
+    // one band instead of a tall panel beside two short ones.
+    expect(card).toHaveClass("min-h-[10.75rem]");
   });
 
   it("hides the needs-attention section when empty", () => {

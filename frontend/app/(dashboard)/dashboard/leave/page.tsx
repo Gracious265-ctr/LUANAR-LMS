@@ -26,8 +26,9 @@ function DashboardSkeleton() {
         </div>
         <div className="lg:col-start-2 lg:row-start-1">
           {/* The balance panel is one card now, so the placeholder is its
-              footprint rather than a heading plus loose ring blocks. */}
-          <Skeleton className="h-72 w-full rounded-xl" />
+              footprint rather than a heading plus loose ring blocks. It is the
+              height of the stat cards beside it, not a tall panel. */}
+          <Skeleton className="h-44 w-full rounded-sm" />
         </div>
       </div>
     </SkeletonRegion>

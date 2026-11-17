@@ -7,21 +7,26 @@ import type { LeaveBalance } from "@/lib/leave-dashboard";
  * presented as a card so the answer to "how much leave have I left" reads as a
  * panel beside the lists rather than as loose figures in the rail.
  *
+ * The heading uses the stat cards' title style, and each ring sits beside its
+ * label instead of above it, so the panel is the same height as the Pending
+ * Applications and Upcoming Leave cards it shares a row with. The min-height
+ * holds that footprint when there is no balance to draw.
+ *
  * The dashboard summary already caps this at four rings server-side, so this is
  * a straight map with no overflow handling.
  */
 export function BalanceSection({ balances }: { balances: LeaveBalance[] }) {
   return (
     <section aria-labelledby="balance-heading">
-      <Card>
+      <Card className="min-h-[10.75rem]">
         <h2
           id="balance-heading"
-          className="text-lg font-semibold text-text-primary"
+          className="text-sm font-medium text-text-secondary"
         >
           Your Balance
         </h2>
         {balances.length === 0 ? (
-          <div className="mt-4">
+          <div className="mt-3">
             <p className="text-sm text-text-secondary">
               No leave balances are available for the current year yet.
             </p>
@@ -30,16 +35,18 @@ export function BalanceSection({ balances }: { balances: LeaveBalance[] }) {
             </p>
           </div>
         ) : (
-          <div className="mt-5 flex flex-wrap gap-6">
+          <ul className="mt-2 space-y-3">
             {balances.map((balance) => (
-              <BalanceRing
-                key={balance.leave_type}
-                label={balance.leave_type}
-                used={balance.used}
-                total={balance.total}
-              />
+              <li key={balance.leave_type}>
+                <BalanceRing
+                  label={balance.leave_type}
+                  used={balance.used}
+                  total={balance.total}
+                  size={80}
+                />
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </Card>
     </section>

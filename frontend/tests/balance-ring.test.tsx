@@ -29,4 +29,15 @@ describe("BalanceRing", () => {
 
     expect(screen.getByText("0")).toBeInTheDocument();
   });
+
+  it("takes the size it is given so a card can match its neighbours", () => {
+    // The dashboard passes a smaller dial than the standalone default: the ring
+    // and its label sit side by side, so the card is the height of the stat
+    // cards in the same row rather than a taller panel.
+    render(<BalanceRing label="Annual Leave" used={9} total={21} size={80} />);
+
+    expect(screen.getByRole("img")).toHaveAttribute("width", "80");
+    expect(screen.getByRole("img")).toHaveAttribute("height", "80");
+    expect(screen.getByText("Annual Leave")).toBeInTheDocument();
+  });
 });
