@@ -2,7 +2,7 @@
 
 Update this file after every meaningful implementation change.
 
-## The balance card matches the stat cards' height (2026-11-17)
+## The three top-row cards share one height (2026-11-17)
 
 The balance card was a tall panel beside two short stat cards: the ring sat
 above its label and caption, so `p-8` + heading + 120px ring made it about 100px
@@ -13,13 +13,21 @@ stat cards' 172px line. The heading uses the stat cards' own title style
 (`text-sm font-medium text-text-secondary`), and `min-h-[10.75rem]` keeps the
 footprint when there are no balances to draw.
 
+**Equality is now enforced by the grid, not by two matching numbers.** The
+dashboard's top row uses `lg:items-stretch`, `BalanceSection` and its card carry
+`h-full`, and the stat pair's grid does too. All three cards therefore fill the
+tallest one: with one balance they are the 172px band they were tuned to, and if
+an employee holds several balances the stat cards grow with the panel instead of
+leaving a ragged row. Below `lg` the grid is one column, so each card keeps its
+natural height and the reading order is unchanged.
+
 Because the ring's labels no longer sit under the dial, they are laid out in a
 text column beside it, which also uses the rail's spare width instead of leaving
-it empty. The loading placeholder dropped from `h-72` to `h-44` to match. A
-test pins the card's min-height alongside the surface classes, and another
-asserts `BalanceRing` honours the size it is given.
+it empty. All three loading placeholders are `h-44`. Tests pin the card's
+surface classes and min-height, assert the shared row stretches, and assert
+`BalanceRing` honours the size it is given.
 
-Frontend **142 files / 1169 tests pass**; `tsc` and targeted eslint clean.
+Frontend **142 files / 1170 tests pass**; `tsc` and targeted eslint clean.
 
 ## "Your Balance" is one card (2026-11-11)
 

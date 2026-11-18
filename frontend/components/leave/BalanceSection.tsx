@@ -9,16 +9,18 @@ import type { LeaveBalance } from "@/lib/leave-dashboard";
  *
  * The heading uses the stat cards' title style, and each ring sits beside its
  * label instead of above it, so the panel is the same height as the Pending
- * Applications and Upcoming Leave cards it shares a row with. The min-height
- * holds that footprint when there is no balance to draw.
+ * Applications and Upcoming Leave cards it shares a row with. `h-full` fills
+ * that row — if the balance list makes this panel the tallest, the two stat
+ * cards stretch to it — and the min-height holds the footprint when there is no
+ * balance to draw.
  *
  * The dashboard summary already caps this at four rings server-side, so this is
  * a straight map with no overflow handling.
  */
 export function BalanceSection({ balances }: { balances: LeaveBalance[] }) {
   return (
-    <section aria-labelledby="balance-heading">
-      <Card className="min-h-[10.75rem]">
+    <section aria-labelledby="balance-heading" className="h-full">
+      <Card className="h-full min-h-[10.75rem]">
         <h2
           id="balance-heading"
           className="text-sm font-medium text-text-secondary"

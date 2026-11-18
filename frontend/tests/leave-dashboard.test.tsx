@@ -113,9 +113,30 @@ describe("LeaveDashboardPage", () => {
       .parentElement;
     expect(card).toHaveClass("bg-surface-card");
     expect(card).toHaveClass("shadow-card");
-    // The rail card shares the stat cards' footprint, so the top row reads as
-    // one band instead of a tall panel beside two short ones.
+    // The panel keeps at least the stat cards' footprint, so the top row reads
+    // as one band instead of a tall panel beside two short ones.
     expect(card).toHaveClass("min-h-[10.75rem]");
+  });
+
+  it("stretches the balance panel and both stat cards to one row height", () => {
+    // All three cards in the top row are one height, whatever their content.
+    // The row stretches, the panel fills its cell, and the stat pair fills
+    // theirs — so a taller balance list makes the two stat cards taller rather
+    // than leaving a ragged band.
+    mockDashboard({ data: data() });
+
+    render(<LeaveDashboardPage />);
+
+    const card = screen.getByRole("heading", { name: "Your Balance" })
+      .parentElement;
+    expect(card).toHaveClass("h-full");
+
+    // Card → section → cell → the shared grid.
+    const row = card!.parentElement!.parentElement!.parentElement!;
+    expect(row).toHaveClass("lg:items-stretch");
+
+    const pending = screen.getByText("Pending Applications").closest("button");
+    expect(pending!.parentElement).toHaveClass("h-full");
   });
 
   it("hides the needs-attention section when empty", () => {

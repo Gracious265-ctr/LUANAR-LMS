@@ -37,8 +37,10 @@ export function DashboardStatCards({
 
   return (
     /* One per row on a phone: two stat cards side by side leave each figure a
-       column too narrow for both the label and its caption. */
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+       column too narrow for both the label and its caption. `h-full` lets the
+       pair fill the row the balance panel shares, so the three top-row cards
+       are one height. */
+    <div className="grid h-full grid-cols-1 gap-4 sm:grid-cols-2">
       <StatCard
         title="Pending Applications"
         value={String(pendingCount)}

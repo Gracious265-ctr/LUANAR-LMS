@@ -12,11 +12,11 @@ import { useLeaveDashboard } from "@/lib/hooks/useLeaveDashboard";
 function DashboardSkeleton() {
   return (
     <SkeletonRegion label="Loading your leave dashboard" className="space-y-8">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-stretch">
         <div className="space-y-8">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-32 rounded-xl" />
+              <Skeleton key={i} className="h-44 rounded-sm" />
             ))}
           </div>
           <div className="space-y-3">
@@ -26,8 +26,8 @@ function DashboardSkeleton() {
         </div>
         <div className="lg:col-start-2 lg:row-start-1">
           {/* The balance panel is one card now, so the placeholder is its
-              footprint rather than a heading plus loose ring blocks. It is the
-              height of the stat cards beside it, not a tall panel. */}
+              footprint rather than a heading plus loose ring blocks. All three
+              top-row cards share one height, so the placeholders do too. */}
           <Skeleton className="h-44 w-full rounded-sm" />
         </div>
       </div>
@@ -66,8 +66,11 @@ export default function LeaveDashboardPage() {
            lists. Below `lg` there is no rail, so the blocks simply stack in
            reading order: figures, anything needing attention, balances, history.
            Placement is explicit rather than DOM order in the wide layout, which
-           is why the balance block is written after the sections it sits beside. */
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+           is why the balance block is written after the sections it sits beside.
+           Row one stretches rather than starting each item: the two stat cards
+           and the balance panel are one band, so all three are the same height
+           even when a balance list makes the tallest of them. */
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-stretch">
           <div className="lg:col-start-1 lg:row-start-1">
             <DashboardStatCards
               pendingCount={data.pending_count}
